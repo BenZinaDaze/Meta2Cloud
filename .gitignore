@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+
+# Google Drive 认证（敏感，不入库）
+config/credentials.json
+config/token.json
+config/config.yaml
+
+# 运行时日志
+metadata2gd.log

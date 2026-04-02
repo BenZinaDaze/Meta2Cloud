@@ -1,0 +1,197 @@
+"""
+config.py —— 从 YAML 文件加载全局配置，对外提供结构化的配置对象。
+
+用法：
+    from mediaparser.config import Config
+
+    cfg = Config()                         # 自动查找 config.yaml
+    cfg = Config("/path/to/config.yaml")   # 指定路径
+    cfg = Config.from_dict({...})          # 从字典创建（测试用）
+
+    print(cfg.tmdb.api_key)
+    print(cfg.parser.custom_words)
+"""
+from __future__ import annotations
+
+import logging
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import List, Optional
+
+logger = logging.getLogger(__name__)
+
+# 默认配置文件查找路径（相对于调用方的工作目录 → 项目根）
+_DEFAULT_SEARCH_PATHS = [
+    Path.cwd() / "config" / "config.yaml",
+    Path(__file__).parent.parent / "config" / "config.yaml",
+    Path.cwd() / "config.yaml",                           # 向后兼容：根目录
+    Path(__file__).parent.parent / "config.yaml",         # 向后兼容：根目录
+]
+
+
+# ─────────────────────────────────────────────────────────
+# 配置数据类
+# ─────────────────────────────────────────────────────────
+
+@dataclass
+class TmdbConfig:
+    api_key: str = ""
+    language: str = "zh-CN"
+    proxy: str = ""
+    timeout: int = 10
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "TmdbConfig":
+        return cls(
+            api_key=str(d.get("api_key") or ""),
+            language=str(d.get("language") or "zh-CN"),
+            proxy=str(d.get("proxy") or ""),
+            timeout=int(d.get("timeout") or 10),
+        )
+
+
+@dataclass
+class ParserConfig:
+    custom_words: List[str] = field(default_factory=list)
+    custom_release_groups: List[str] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ParserConfig":
+        return cls(
+            custom_words=list(d.get("custom_words") or []),
+            custom_release_groups=list(d.get("custom_release_groups") or []),
+        )
+
+
+@dataclass
+class DriveConfig:
+    auth_mode: str = "oauth2"
+    credentials_json: str = "config/credentials.json"
+    token_json: str = "config/token.json"
+    service_account_json: str = "config/service_account.json"
+    scan_folder_id: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "DriveConfig":
+        return cls(
+            auth_mode=str(d.get("auth_mode") or "oauth2"),
+            credentials_json=str(d.get("credentials_json") or "config/credentials.json"),
+            token_json=str(d.get("token_json") or "config/token.json"),
+            service_account_json=str(d.get("service_account_json") or "config/service_account.json"),
+            scan_folder_id=str(d.get("scan_folder_id") or ""),
+        )
+
+
+@dataclass
+class OrganizerConfig:
+    root_folder_id: str = ""
+    movie_root_id: str = ""
+    tv_root_id: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "OrganizerConfig":
+        return cls(
+            root_folder_id=str(d.get("root_folder_id") or ""),
+            movie_root_id=str(d.get("movie_root_id") or ""),
+            tv_root_id=str(d.get("tv_root_id") or ""),
+        )
+
+
+@dataclass
+class PipelineConfig:
+    skip_tmdb: bool = False
+    move_on_tmdb_miss: bool = True
+    dry_run: bool = False
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "PipelineConfig":
+        return cls(
+            skip_tmdb=bool(d.get("skip_tmdb", False)),
+            move_on_tmdb_miss=bool(d.get("move_on_tmdb_miss", True)),
+            dry_run=bool(d.get("dry_run", False)),
+        )
+
+
+@dataclass
+class TelegramConfig:
+    bot_token: str = ""
+    chat_id: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "TelegramConfig":
+        return cls(
+            bot_token=str(d.get("bot_token") or ""),
+            chat_id=str(d.get("chat_id") or ""),
+        )
+
+
+@dataclass
+class Config:
+    tmdb: TmdbConfig = field(default_factory=TmdbConfig)
+    parser: ParserConfig = field(default_factory=ParserConfig)
+    drive: DriveConfig = field(default_factory=DriveConfig)
+    organizer: OrganizerConfig = field(default_factory=OrganizerConfig)
+    pipeline: PipelineConfig = field(default_factory=PipelineConfig)
+    telegram: TelegramConfig = field(default_factory=TelegramConfig)
+
+
+    # ── 加载方法 ─────────────────────────────────────────
+
+    @classmethod
+    def load(cls, path: Optional[str | Path] = None) -> "Config":
+        """
+        从 YAML 文件加载配置。
+        path 为 None 时，自动按 _DEFAULT_SEARCH_PATHS 顺序查找。
+        """
+        try:
+            import yaml  # 懒加载，避免没装 pyyaml 时整个模块崩溃
+        except ImportError:
+            logger.warning("未安装 pyyaml，将使用默认配置。运行 pip install pyyaml 来启用配置文件支持。")
+            return cls()
+
+        config_path = cls._find_config(path)
+        if config_path is None:
+            logger.warning("未找到 config.yaml，将使用默认配置。")
+            return cls()
+
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            logger.info("已加载配置文件：%s", config_path)
+            return cls.from_dict(data)
+        except Exception as e:
+            logger.error("读取配置文件失败：%s，将使用默认配置。", e)
+            return cls()
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Config":
+        """从字典创建配置（便于测试）"""
+        return cls(
+            tmdb=TmdbConfig.from_dict(d.get("tmdb") or {}),
+            parser=ParserConfig.from_dict(d.get("parser") or {}),
+            drive=DriveConfig.from_dict(d.get("drive") or {}),
+            organizer=OrganizerConfig.from_dict(d.get("organizer") or {}),
+            pipeline=PipelineConfig.from_dict(d.get("pipeline") or {}),
+            telegram=TelegramConfig.from_dict(d.get("telegram") or {}),
+        )
+
+    @staticmethod
+    def _find_config(path: Optional[str | Path]) -> Optional[Path]:
+        if path:
+            p = Path(path)
+            return p if p.exists() else None
+        for candidate in _DEFAULT_SEARCH_PATHS:
+            if candidate.exists():
+                return candidate
+        return None
+
+    # ── 便利属性 ─────────────────────────────────────────
+
+    @property
+    def tmdb_proxy(self) -> Optional[str]:
+        return self.tmdb.proxy or None
+
+    def is_tmdb_ready(self) -> bool:
+        """是否具备 TMDB 查询条件（有 api_key）"""
+        return bool(self.tmdb.api_key)

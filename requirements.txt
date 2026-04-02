@@ -1,0 +1,29 @@
+# Metadata2GD 依赖
+# 安装：pip install -r requirements.txt
+
+# ── Google Drive API ──────────────────────────────────
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+google-auth-httplib2>=0.2.0
+google-auth-oauthlib>=1.1.0
+
+# 中文数字转换（一/二/三 <-> 1/2/3）
+cn2an>=0.5.22
+
+# 增强正则（支持 Unicode 属性、lookbehind 不定长等）
+regex>=2023.6.3
+
+# 动漫文件名解析
+anitopy>=2.1.0
+
+# 中文简繁体转换（MetaAnime 用到）
+zhconv>=1.4.3
+
+# 拼音转汉字判断（MetaVideo 用到）
+Pinyin2Hanzi>=0.1.1
+
+# HTTP 请求（TmdbClient 用到）
+requests>=2.31.0
+
+# YAML 配置文件支持（Config 用到）
+pyyaml>=6.0

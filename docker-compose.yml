@@ -1,0 +1,46 @@
+version: "3.8"
+services:
+  Aria2-Pro:
+    container_name: aria2-pro
+    image: p3terx/aria2-pro
+    environment:
+      - PUID=0
+      - PGID=0
+      - UMASK_SET=022
+      - RPC_SECRET=a7226307
+      - RPC_PORT=6800
+      - LISTEN_PORT=6888
+      - DISK_CACHE=128M
+      - IPV6_MODE=true
+      - UPDATE_TRACKERS=true
+      - CUSTOM_TRACKER_URL=
+      - TZ=Asia/Shanghai
+      - SPECIAL_MODE=rclone
+    volumes:
+      - ${PWD}/aria2-config:/config
+      - ${PWD}/aria2-downloads:/downloads
+    network_mode: host
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 1m
+
+
+  # ── Metadata2GD ────────────────────────────────────────────────
+  # host 网络与 aria2-pro 共享，upload.sh 用 localhost:46562 触发
+  metadata2gd:
+    container_name: metadata2gd
+    image: benz1/metadata2gd:latest
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      # Google Drive 认证文件，不打包进镜像
+      - ${PWD}/metadata2gd-config:/app/config
+    network_mode: host
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 1m
+
