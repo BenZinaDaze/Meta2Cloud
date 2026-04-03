@@ -144,3 +144,9 @@ telegram:
   # https://api.telegram.org/bot<Token>/getUpdates
   # 找 "chat": {"id": ...}
   chat_id: ""
+  
+  # 防抖延时（秒）：server.py 收到 /trigger 后等待该时间才真正运行 Pipeline
+  # 等待期间若再次收到触发，计时器重置（相当于"最后一次触发后再等 N 秒"）
+  # 作用：批量入库时多集合并成一条 TG 通知，而不是每集发一次
+  # 推荐：60（1 分钟），set 0 关闭防抖（立即触发，旧行为）
+  debounce_seconds: 60
