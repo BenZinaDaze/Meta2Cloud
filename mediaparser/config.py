@@ -117,12 +117,14 @@ class PipelineConfig:
 class TelegramConfig:
     bot_token: str = ""
     chat_id: str = ""
+    debounce_seconds: int = 0    # 防抖延时（秒），0 = 立即触发
 
     @classmethod
     def from_dict(cls, d: dict) -> "TelegramConfig":
         return cls(
             bot_token=str(d.get("bot_token") or ""),
             chat_id=str(d.get("chat_id") or ""),
+            debounce_seconds=int(d.get("debounce_seconds") or 0),
         )
 
 

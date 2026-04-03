@@ -6,7 +6,7 @@ server.py —— Metadata2GD Webhook 触发服务
 容器内使用，供 aria2/rclone 容器在上传完成后调用。
 
 用法：
-    python server.py              # 监听 0.0.0.0:18888
+    python server.py              # 监听 127.0.0.1:46562
     python server.py --port 9000  # 自定义端口
 """
 
@@ -47,45 +47,72 @@ def send_telegram(token: str, chat_id: str, text: str) -> None:
     except Exception as e:
         logger.warning("Telegram 通知发送失败：%s", e)
 
-# 防止并发重复触发
+# 防抖触发状态
 _lock = threading.Lock()
-_running = False   # pipeline 是否正在运行
-_pending = False   # 运行期间是否收到新触发（运行结束后立即补跑）
+_debounce_timer: threading.Timer | None = None   # 当前等待中的定时器
+_pipeline_running = False                         # pipeline 子进程是否在运行
 
 
-def run_pipeline(extra_info: dict) -> None:
-    global _running, _pending
+def _do_run_pipeline() -> None:
+    """防抖超时后真正执行 pipeline（在独立线程中调用）。"""
+    global _pipeline_running, _debounce_timer
     cfg = Config.load()
     tg_token = cfg.telegram.bot_token
     tg_chat_id = cfg.telegram.chat_id
-    while True:
-        logger.info("Pipeline 启动  info=%s", extra_info)
-        try:
-            result = subprocess.run(
-                [sys.executable, "pipeline.py"],
-                cwd=PIPELINE_DIR,
-                capture_output=False,
-            )
-            if result.returncode == 0:
-                logger.info("Pipeline 完成 ✓")
-                # 详细入库通知由 pipeline.py 内部发出，此处不重复
-            else:
-                logger.error("Pipeline 退出码 %d", result.returncode)
-                send_telegram(tg_token, tg_chat_id, f"❌ <b>Metadata2GD</b>\n整理失败，退出码：<code>{result.returncode}</code>")
-        except Exception as e:
-            logger.error("Pipeline 异常：%s", e)
-            send_telegram(tg_token, tg_chat_id, f"❌ <b>Metadata2GD</b>\n异常：<code>{e}</code>")
 
-        # 检查运行期间是否有新触发
+    with _lock:
+        _debounce_timer = None
+        _pipeline_running = True
+
+    logger.info("防抖超时，Pipeline 启动")
+    try:
+        result = subprocess.run(
+            [sys.executable, "pipeline.py"],
+            cwd=PIPELINE_DIR,
+            capture_output=False,
+        )
+        if result.returncode == 0:
+            logger.info("Pipeline 完成 ✓")
+        else:
+            logger.error("Pipeline 退出码 %d", result.returncode)
+            send_telegram(tg_token, tg_chat_id,
+                          f"❌ <b>Metadata2GD</b>\n整理失败，退出码：<code>{result.returncode}</code>")
+    except Exception as e:
+        logger.error("Pipeline 异常：%s", e)
+        send_telegram(tg_token, tg_chat_id,
+                      f"❌ <b>Metadata2GD</b>\n异常：<code>{e}</code>")
+    finally:
         with _lock:
-            if _pending:
-                _pending = False
-                logger.info("检测到待执行触发，立即补跑 Pipeline...")
-                extra_info = {}
-                continue   # 继续循环，再跑一次
-            _running = False
-            break
+            _pipeline_running = False
 
+
+def schedule_pipeline(debounce: int) -> None:
+    """
+    安排 pipeline 运行。
+
+    debounce > 0：防抖模式 —— 重置/启动计时器，超时后才运行。
+    debounce = 0：立即在新线程运行（与旧行为一致）。
+    """
+    global _debounce_timer
+
+    with _lock:
+        if debounce > 0:
+            # 取消旧计时器（如果有），重置倒计时
+            if _debounce_timer is not None:
+                _debounce_timer.cancel()
+                logger.info("防抖计时器已重置，重新等待 %d 秒...", debounce)
+            else:
+                logger.info("收到首次触发，%d 秒后运行 Pipeline...", debounce)
+            t = threading.Timer(debounce, _do_run_pipeline)
+            t.daemon = True
+            t.start()
+            _debounce_timer = t
+        else:
+            # 无防抖：立即运行（pipeline 运行期间忽略重复触发，与旧逻辑相同）
+            if _pipeline_running:
+                logger.info("Pipeline 正在运行，跳过本次触发")
+                return
+            threading.Thread(target=_do_run_pipeline, daemon=True).start()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -103,7 +130,6 @@ class Handler(BaseHTTPRequestHandler):
             self._respond(404, {"error": "not found"})
 
     def do_POST(self):
-        global _running
         if self.path != "/trigger":
             self._respond(404, {"error": "not found"})
             return
@@ -116,17 +142,12 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             info = {}
 
-        with _lock:
-            if _running:
-                _pending = True
-                logger.info("Pipeline 正在运行，已标记为待执行（不会遗漏）")
-                self._respond(202, {"status": "queued"})
-                return
-            _running = True
+        cfg = Config.load()
+        debounce = cfg.telegram.debounce_seconds
+        logger.info("收到触发请求  path=%s  debounce=%ds", info.get("path", ""), debounce)
+        schedule_pipeline(debounce)
+        self._respond(200, {"status": "scheduled" if debounce > 0 else "triggered"})
 
-        logger.info("收到触发请求  path=%s", info.get("path", ""))
-        threading.Thread(target=run_pipeline, args=(info,), daemon=True).start()
-        self._respond(200, {"status": "triggered"})
 
     def _respond(self, code: int, body: dict) -> None:
         data = json.dumps(body).encode()
@@ -140,7 +161,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     parser = argparse.ArgumentParser(description="Metadata2GD Webhook Server")
     parser.add_argument("--port", type=int, default=46562)
-    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--host", default="127.0.0.1")
     args = parser.parse_args()
 
     server = HTTPServer((args.host, args.port), Handler)

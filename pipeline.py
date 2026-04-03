@@ -78,6 +78,7 @@ class _NotifyItem:
     season_poster_path: str = ""  # 季封面路径（TG 通知优先使用）
     tmdb_id: str = ""
     no_tmdb: bool = False  # True 表示 TMDB 未找到元数据
+    original_name: str = ""  # Drive 原始文件名（用于 no_tmdb 通知）
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -163,8 +164,8 @@ class Pipeline:
             print("  ℹ️  跳过图片下载")
         print("=" * 68)
 
-        print(f"\n📂 扫描文件夹：{scan_folder}")
-        videos = self._client.list_media_files(folder_id=scan_folder)
+        print(f"\n📂 扫描文件夹：{scan_folder}（含子文件夹）")
+        videos = [f for f in self._client.list_all_recursive(folder_id=scan_folder) if f.is_video]
         if not videos:
             print("  （未找到视频文件）")
             return
@@ -226,6 +227,7 @@ class Pipeline:
                     poster_path="",
                     tmdb_id="",
                     no_tmdb=True,
+                    original_name=video.name,
                 ))
                 if not self._cfg.pipeline.move_on_tmdb_miss:
                     result.status = "skipped"
@@ -543,20 +545,13 @@ class Pipeline:
                 poster = poster_map.get(key, "")
 
             if first.no_tmdb:
-                # 无 TMDB 数据：发纯文字警告消息
+                # 无 TMDB 数据：发纯文字警告消息（文件未移动，显示原始文件名）
                 media_icon = "📺" if first.is_tv else "🎬"
-                if first.is_tv and first.episode:
-                    ep_str = f"S{first.season:02d}E{first.episode:02d}"
-                elif first.is_tv:
-                    ep_str = f"S{first.season:02d}"
-                else:
-                    ep_str = ""
-                ep_part = f"  {ep_str}" if ep_str else ""
-                caption = (
-                    f"{media_icon} <b>{first.title}{ep_part}</b>\n"
-                    f"⚠️ 已入库，但 TMDB 未找到元数据\n"
-                    f"文件名可能需要手动修正"
-                )
+                lines = [f"{media_icon} <b>TMDB 未找到元数据，文件未整理</b>"]
+                for it in items:
+                    lines.append(f"• <code>{it.original_name or it.title}</code>")
+                lines.append("\n请检查文件名后手动触发重新整理")
+                caption = "\n".join(lines)
                 self._send_tg_photo(tg.bot_token, tg.chat_id, "", caption)
                 continue
 
