@@ -44,6 +44,10 @@ from mediaparser import MetaInfo, TmdbClient, Config, MediaType
 from mediaparser.release_group import ReleaseGroupsMatcher
 from nfo import NfoGenerator, ImageUploader
 from organizer import MediaOrganizer
+try:
+    from webui.tmdb_cache import TmdbCache as _WebUiCache
+except ImportError:
+    _WebUiCache = None  # type: ignore
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -143,6 +147,43 @@ class Pipeline:
         # Telegram 入库通知收集列表
         self._notify_items: List[_NotifyItem] = []
 
+        # 季详情本地缓存：key=f"{tmdb_id}:{season}" → dict，避免同一季第三次调用 TMDB
+        self._season_detail_cache: dict = {}
+
+        # 写入 WebUI SQLite 缓存（让后端展示时完全命中）
+        self._tmdb_write_cache = None
+        if _WebUiCache is not None:
+            _cache_db = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "data", "tmdb_cache.db"
+            )
+            try:
+                self._tmdb_write_cache = _WebUiCache(_cache_db)
+            except Exception as _e:
+                logger.debug("无法初始化 WebUI TMDB 缓存：%s", _e)
+
+    # ── 缓存工具 ──────────────────────────────────────────
+
+    def _write_cache(self, path: str, data: dict) -> None:
+        """将 TMDB 响应写入 WebUI SQLite 缓存，库不可用时静默跳过。"""
+        if self._tmdb_write_cache is None or not data:
+            return
+        try:
+            self._tmdb_write_cache.set(path, data, language=self._cfg.tmdb.language)
+        except Exception as e:
+            logger.debug("写入 WebUI 缓存失败 %s: %s", path, e)
+
+    def _get_season_detail_cached(self, tmdb_id, season_num: int) -> dict:
+        """获取季详情，命中内地缓存则跳过 API；否则技务后写入 SQLite 缓存和季封面缓存。"""
+        _key = f"{tmdb_id}:{season_num}"
+        if _key not in self._season_detail_cache:
+            sd = (self._tmdb.get_season_detail(tmdb_id, season_num)
+                  if self._tmdb else None) or {}
+            self._season_detail_cache[_key] = sd
+            if sd:
+                self._write_cache(f"/tv/{tmdb_id}/season/{season_num}", sd)
+            self._season_poster_cache.setdefault(_key, sd.get("poster_path") or "")
+        return self._season_detail_cache[_key]
+
     # ── 主入口 ──────────────────────────────────────────────────
 
     def run(self) -> None:
@@ -214,6 +255,9 @@ class Pipeline:
                 if is_tv:
                     tmdb_info["_season"] = season_num
                     tmdb_info["_episode"] = episode_num
+                # 写入 WebUI 缓存，后端展示时直接命中
+                _cache_type = "tv" if is_tv else "movie"
+                self._write_cache(f"/{_cache_type}/{tmdb_id}", tmdb_info)
             else:
                 print("      TMDB：未找到元数据")
                 # 无论是否继续整理，都发 TG 提醒
@@ -344,12 +388,9 @@ class Pipeline:
             season_folder_id = target_folder.id
             if not self._dry_run and season_folder_id not in self._season_nfo_done:
                 try:
-                    season_detail = (self._tmdb.get_season_detail(
+                    season_detail = self._get_season_detail_cached(
                         tmdb_info.get("tmdb_id") or tmdb_info.get("id"), season_num
-                    ) if self._tmdb else None) or {}
-                    # 顺手缓存季封面，供 TG 通知使用
-                    _sp_key = f"{tmdb_info.get('tmdb_id') or tmdb_info.get('id')}:{season_num}"
-                    self._season_poster_cache.setdefault(_sp_key, season_detail.get("poster_path") or "")
+                    )
                     xml = self._nfo_gen.generate_season(season_detail, season_num)
                     self._client.upload_text(xml, "season.nfo", parent_id=season_folder_id,
                                              mime_type="text/xml", overwrite=True)
@@ -394,13 +435,11 @@ class Pipeline:
         if is_tv and tmdb_info and self._img_uploader and target_folder and top_folder_id:
             season_poster_key = f"{top_folder_id}:s{season_num}"
             if season_poster_key not in self._season_poster_done:
-                season_detail_for_img = (self._tmdb.get_season_detail(
-                    tmdb_info.get("tmdb_id") or tmdb_info.get("id"), season_num
-                ) if self._tmdb else None) or {}
-                sp = season_detail_for_img.get("poster_path")
-                # 缓存季封面路径
                 _sp_key = f"{tmdb_info.get('tmdb_id') or tmdb_info.get('id')}:{season_num}"
-                self._season_poster_cache.setdefault(_sp_key, sp or "")
+                season_detail_for_img = self._get_season_detail_cached(
+                    tmdb_info.get("tmdb_id") or tmdb_info.get("id"), season_num
+                )
+                sp = season_detail_for_img.get("poster_path")
                 if sp:
                     f = self._img_uploader.upload_season_poster(sp, season_num, top_folder_id)
                     if f:

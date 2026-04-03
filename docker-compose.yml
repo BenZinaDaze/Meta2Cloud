@@ -28,7 +28,8 @@ services:
 
 
   # ── Metadata2GD ────────────────────────────────────────────────
-  # host 网络与 aria2-pro 共享，upload.sh 用 localhost:46562 触发
+  # host 网络与 aria2-pro 共享，upload.sh 用 localhost:8765/trigger 触发
+  # WebUI 地址：http://localhost:8765
   metadata2gd:
     container_name: metadata2gd
     image: benz1/metadata2gd:latest

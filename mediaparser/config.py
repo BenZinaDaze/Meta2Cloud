@@ -129,6 +129,25 @@ class TelegramConfig:
 
 
 @dataclass
+class WebUIConfig:
+    username: str = "admin"
+    password: str = ""           # 明文密码（配置文件私有，用 hmac.compare_digest 比较）
+    secret_key: str = ""         # JWT 签名密钥，空则自动生成并持久化到 data/.jwt_secret
+    token_expire_hours: int = 24
+    webhook_secret: str = ""     # /trigger 端点 webhook 密钥；空则不校验（仅内网使用时）
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "WebUIConfig":
+        return cls(
+            username=str(d.get("username") or "admin"),
+            password=str(d.get("password") or ""),
+            secret_key=str(d.get("secret_key") or ""),
+            token_expire_hours=int(d.get("token_expire_hours") or 24),
+            webhook_secret=str(d.get("webhook_secret") or ""),
+        )
+
+
+@dataclass
 class Config:
     tmdb: TmdbConfig = field(default_factory=TmdbConfig)
     parser: ParserConfig = field(default_factory=ParserConfig)
@@ -136,6 +155,7 @@ class Config:
     organizer: OrganizerConfig = field(default_factory=OrganizerConfig)
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
+    webui: WebUIConfig = field(default_factory=WebUIConfig)
 
 
     # ── 加载方法 ─────────────────────────────────────────
@@ -176,6 +196,7 @@ class Config:
             organizer=OrganizerConfig.from_dict(d.get("organizer") or {}),
             pipeline=PipelineConfig.from_dict(d.get("pipeline") or {}),
             telegram=TelegramConfig.from_dict(d.get("telegram") or {}),
+            webui=WebUIConfig.from_dict(d.get("webui") or {}),
         )
 
     @staticmethod

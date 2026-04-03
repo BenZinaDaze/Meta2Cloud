@@ -26,6 +26,9 @@
 # SOFTWARE.
 #
 
+# ── Metadata2GD Webhook 密钥（与 config.yaml 中 webui.webhook_secret 保持一致；留空则不校验）
+METADATA2GD_WEBHOOK_SECRET="your_webhook_secret_here"
+
 CHECK_CORE_FILE() {
     CORE_FILE="$(dirname $0)/core"
     if [[ -f "${CORE_FILE}" ]]; then
@@ -92,8 +95,10 @@ LOAD_RCLONE_ENV() {
 
 RUN_METADATA2GD() {
     # host 网络模式下同宿主机，直接用 localhost
-    local WEBHOOK_URL="http://localhost:46562/trigger"
+    local WEBHOOK_URL="http://localhost:8765/trigger"
     local TIMEOUT=10   # 秒，只等 HTTP 响应，pipeline 在容器内异步运行
+
+    local WEBHOOK_SECRET="${METADATA2GD_WEBHOOK_SECRET}"
 
     if [[ "${UPLOAD_SUCCESS}" != "1" ]]; then
         echo -e "$(DATE_TIME) ${INFO} Upload was not successful, skipping Metadata2GD."
@@ -102,11 +107,14 @@ RUN_METADATA2GD() {
 
     echo -e "$(DATE_TIME) ${INFO} Triggering Metadata2GD: ${WEBHOOK_URL}"
     local RESPONSE
-    RESPONSE=$(curl -sf \
-        --max-time "${TIMEOUT}" \
-        -X POST "${WEBHOOK_URL}" \
+    local CURL_ARGS=(-sf --max-time "${TIMEOUT}" -X POST "${WEBHOOK_URL}" \
         -H "Content-Type: application/json" \
-        -d "{\"path\": \"${REMOTE_PATH}\"}" 2>&1)
+        -d "{\"path\": \"${REMOTE_PATH}\"}")
+
+    # 有密钥时加入鉴权 header
+    [[ -n "${WEBHOOK_SECRET}" ]] && CURL_ARGS+=(-H "X-Webhook-Secret: ${WEBHOOK_SECRET}")
+
+    RESPONSE=$(curl "${CURL_ARGS[@]}" 2>&1)
     local EXIT_CODE=$?
 
     if [[ ${EXIT_CODE} -eq 0 ]]; then

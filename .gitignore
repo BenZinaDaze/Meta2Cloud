@@ -1,11 +1,46 @@
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.env
+.venv
 
 # Google Drive 认证（敏感，不入库）
 config/credentials.json
 config/token.json
+config/service_account.json
 config/config.yaml
+# config/config.example.yaml  ← 这个是模板，应当入库
 
-# 运行时日志
+# 运行时数据（SQLite DB、日志）—— 全部放在 data/
+data/
 metadata2gd.log
+
+# ── Web UI 前端（Node.js / Vite）──────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+webui/static/
+
+scripts/upload.sh
+
+
+# 通用 Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# 编辑器 / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+Thumbs.db

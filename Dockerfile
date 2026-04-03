@@ -15,12 +15,19 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY drive/       ./drive/
 COPY mediaparser/ ./mediaparser/
 COPY nfo/         ./nfo/
+COPY webui/       ./webui/
 COPY organizer.py .
 COPY pipeline.py  .
-COPY server.py    .
 
-# Webhook 端口
-EXPOSE 46562
+# 前端构建产物（npm run build 产生 frontend/dist/）
+# 如果未构建则跳过，WebUI 静态服务不可用但 API 正常工作
+COPY frontend/dist/ ./frontend/dist/
 
-# 启动 webhook server（pipeline.py 由 server.py 在后台触发）
-CMD ["python", "server.py", "--port", "46562"]
+# 运行时数据目录（DB 文件由程序在容器内自动创建）
+RUN mkdir -p /app/data
+
+# WebUI + Webhook 统一端口
+EXPOSE 8765
+
+# 单进程启动：WebUI API + Webhook /trigger 均在 8765
+CMD ["uvicorn", "webui.api:app", "--host", "0.0.0.0", "--port", "8765"]
