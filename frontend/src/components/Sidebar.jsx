@@ -23,6 +23,35 @@ const Icons = {
       <polyline points="17 2 12 7 7 2"/>
     </svg>
   ),
+  download: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="7 10 12 15 17 10"/>
+      <line x1="12" y1="15" x2="12" y2="3"/>
+    </svg>
+  ),
+  bolt: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+    </svg>
+  ),
+  queue: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="8" y1="6" x2="21" y2="6"/>
+      <line x1="8" y1="12" x2="21" y2="12"/>
+      <line x1="8" y1="18" x2="21" y2="18"/>
+      <line x1="3" y1="6" x2="3.01" y2="6"/>
+      <line x1="3" y1="12" x2="3.01" y2="12"/>
+      <line x1="3" y1="18" x2="3.01" y2="18"/>
+    </svg>
+  ),
+  archive: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="21 8 21 21 3 21 3 8"/>
+      <rect x="1" y="3" width="22" height="5"/>
+      <line x1="10" y1="12" x2="14" y2="12"/>
+    </svg>
+  ),
   chevron: (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="6 9 12 15 18 9"/>
@@ -37,7 +66,7 @@ const Icons = {
 }
 
 /** 统一导航项——所有顶层和子项共用同一套 margin/padding，保证图标像素级对齐 */
-function NavItem({ icon, label, active, onClick, indent = false, right, bold = false }) {
+function NavItem({ icon, label, active, onClick, indent = false, right, bold = false, meta = null }) {
   return (
     <button
       onClick={onClick}
@@ -62,27 +91,65 @@ function NavItem({ icon, label, active, onClick, indent = false, right, bold = f
       <span className="relative flex-1" style={{ fontSize: indent ? 15 : 16, fontWeight: bold ? 600 : 500 }}>
         {label}
       </span>
-      {right && <span className="relative flex-shrink-0">{right}</span>}
+      <span className="relative flex min-w-[44px] items-center justify-end gap-2">
+        {meta !== null && (
+          <span
+            className="flex-shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+            style={{
+              background: active ? 'rgba(200, 146, 77, 0.18)' : 'rgba(255,255,255,0.05)',
+              color: active ? 'var(--color-accent-hover)' : 'var(--color-muted)',
+            }}
+          >
+            {meta}
+          </span>
+        )}
+        {right && <span className="flex h-4 w-4 items-center justify-center">{right}</span>}
+      </span>
     </button>
   )
 }
 
-export default function Sidebar({ active, onSelect }) {
-  const [expanded, setExpanded] = useState(true)
-  const isExpanded = expanded || active === 'movies' || active === 'tv'
+export default function Sidebar({ active, onSelect, aria2Overview = null }) {
+  const [libraryExpanded, setLibraryExpanded] = useState(true)
+  const [downloadsExpanded, setDownloadsExpanded] = useState(true)
+  const isLibraryExpanded = libraryExpanded || active === 'movies' || active === 'tv'
+  const isDownloadsExpanded = downloadsExpanded || ['downloads-active', 'downloads-waiting', 'downloads-stopped'].includes(active)
+  const activeCount = aria2Overview?.tasks?.active?.length ?? 0
+  const waitingCount = aria2Overview?.tasks?.waiting?.length ?? 0
+  const stoppedCount = aria2Overview?.tasks?.stopped?.length ?? 0
+  const totalDownloadCount = activeCount + waitingCount + stoppedCount
+  const aria2Connected = !!aria2Overview
 
   function handleLibraryClick() {
-    setExpanded(prev => !prev)
+    setLibraryExpanded(prev => !prev)
     onSelect('all')
   }
 
-  const chevron = (
+  function handleDownloadsClick() {
+    setDownloadsExpanded(prev => !prev)
+    onSelect('downloads')
+  }
+
+  const libraryChevron = (
     <span
       className="transition-transform duration-200"
       style={{
         color: 'var(--color-muted)',
         display: 'flex',
-        transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+        transform: isLibraryExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+      }}
+    >
+      {Icons.chevron}
+    </span>
+  )
+
+  const downloadsChevron = (
+    <span
+      className="transition-transform duration-200"
+      style={{
+        color: 'var(--color-muted)',
+        display: 'flex',
+        transform: isDownloadsExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
       }}
     >
       {Icons.chevron}
@@ -114,12 +181,12 @@ export default function Sidebar({ active, onSelect }) {
         active={active === 'all'}
         onClick={handleLibraryClick}
         bold
-        right={chevron}
+        right={libraryChevron}
       />
 
       <div
         className="overflow-hidden transition-all duration-200 ease-in-out"
-        style={{ maxHeight: isExpanded ? '120px' : '0px', opacity: isExpanded ? 1 : 0 }}
+        style={{ maxHeight: isLibraryExpanded ? '120px' : '0px', opacity: isLibraryExpanded ? 1 : 0 }}
       >
         <div className="relative">
           <div className="absolute top-0 bottom-0" style={{ left: 38, width: 1, background: 'rgba(144, 178, 221, 0.16)' }} />
@@ -134,6 +201,46 @@ export default function Sidebar({ active, onSelect }) {
               active={active === key}
               onClick={() => onSelect(key)}
               indent
+            />
+          ))}
+        </div>
+      </div>
+
+      <NavItem
+        icon={Icons.download}
+        label="下载管理"
+        active={active === 'downloads'}
+        onClick={handleDownloadsClick}
+        bold
+        meta={aria2Connected ? totalDownloadCount : null}
+        right={downloadsChevron}
+      />
+
+      <div
+        className="overflow-hidden transition-all duration-200 ease-in-out"
+        style={{ maxHeight: isDownloadsExpanded ? '180px' : '0px', opacity: isDownloadsExpanded ? 1 : 0 }}
+      >
+        <div className="relative">
+          <div className="absolute top-0 bottom-0" style={{ left: 38, width: 1, background: 'rgba(144, 178, 221, 0.16)' }} />
+          {[
+            { key: 'downloads-active', label: '下载中', icon: Icons.bolt },
+            { key: 'downloads-waiting', label: '等待中', icon: Icons.queue },
+            { key: 'downloads-stopped', label: '已停止', icon: Icons.archive },
+          ].map(({ key, label, icon }) => (
+            <NavItem
+              key={key}
+              icon={icon}
+              label={label}
+              active={active === key}
+              onClick={() => onSelect(key)}
+              indent
+              meta={
+                key === 'downloads-active'
+                  ? activeCount
+                  : key === 'downloads-waiting'
+                    ? waitingCount
+                    : stoppedCount
+              }
             />
           ))}
         </div>
@@ -159,7 +266,14 @@ export default function Sidebar({ active, onSelect }) {
             Current mode
           </div>
           <div className="mt-2 text-sm leading-6" style={{ color: 'var(--color-muted)' }}>
-            按电影、剧集和配置分区管理，保持扫描结果与本地收藏一致。
+            把媒体库、下载队列和配置文件放在同一张操作台里，便于统一维护。
+          </div>
+          <div className="mt-3 flex items-center gap-2 text-xs" style={{ color: aria2Connected ? 'var(--color-success)' : 'var(--color-danger)' }}>
+            <span
+              className="inline-block h-2.5 w-2.5 rounded-full"
+              style={{ background: aria2Connected ? 'var(--color-success)' : 'var(--color-danger)' }}
+            />
+            {aria2Connected ? 'Aria2 已连接' : 'Aria2 未连接'}
           </div>
         </div>
       </div>

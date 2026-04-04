@@ -15,10 +15,11 @@ export default function Topbar({ onLogout }) {
     <header
       className="fixed left-5 right-5 top-5 z-50 flex h-16 items-center justify-between rounded-[26px] px-5"
       style={{
-        background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.92) 0%, rgba(11, 21, 35, 0.96) 100%)',
-        border: '1px solid var(--color-border)',
-        boxShadow: 'var(--shadow-soft)',
-        backdropFilter: 'blur(18px)',
+        background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.995) 0%, rgba(10, 19, 32, 1) 100%)',
+        border: '1px solid var(--color-border-strong)',
+        boxShadow: '0 20px 48px rgba(2, 8, 18, 0.58)',
+        backdropFilter: 'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
       }}
     >
       <div className="flex items-center gap-4">

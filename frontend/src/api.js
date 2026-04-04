@@ -43,3 +43,15 @@ export const saveConfig = (data) => api.put('/config', { data })
 
 // ── 媒体库刷新 ──
 export const refreshLibrary = () => api.post('/library/refresh')
+
+// ── Aria2 下载管理 ──
+export const getAria2Overview = () => api.get('/aria2/overview')
+export const getAria2Options = () => api.get('/aria2/options')
+export const saveAria2Options = (data) => api.put('/aria2/options', data)
+export const addAria2Uri = (data) => api.post('/aria2/add-uri', data)
+export const addAria2Torrent = (data) => api.post('/aria2/add-torrent', data)
+export const pauseAria2Tasks = (gids) => api.post('/aria2/tasks/pause', { gids })
+export const unpauseAria2Tasks = (gids) => api.post('/aria2/tasks/unpause', { gids })
+export const removeAria2Tasks = (gids) => api.post('/aria2/tasks/remove', { gids })
+export const retryAria2Tasks = (gids) => api.post('/aria2/tasks/retry', { gids })
+export const purgeAria2Tasks = () => api.post('/aria2/tasks/purge')

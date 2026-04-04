@@ -148,6 +148,25 @@ class WebUIConfig:
 
 
 @dataclass
+class Aria2Config:
+    host: str = "127.0.0.1"
+    port: int = 6800
+    path: str = "/jsonrpc"
+    secret: str = ""
+    secure: bool = False
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Aria2Config":
+        return cls(
+            host=str(d.get("host") or "127.0.0.1"),
+            port=int(d.get("port") or 6800),
+            path=str(d.get("path") or "/jsonrpc"),
+            secret=str(d.get("secret") or ""),
+            secure=bool(d.get("secure", False)),
+        )
+
+
+@dataclass
 class Config:
     tmdb: TmdbConfig = field(default_factory=TmdbConfig)
     parser: ParserConfig = field(default_factory=ParserConfig)
@@ -156,6 +175,7 @@ class Config:
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     webui: WebUIConfig = field(default_factory=WebUIConfig)
+    aria2: Aria2Config = field(default_factory=Aria2Config)
 
 
     # ── 加载方法 ─────────────────────────────────────────
@@ -197,6 +217,7 @@ class Config:
             pipeline=PipelineConfig.from_dict(d.get("pipeline") or {}),
             telegram=TelegramConfig.from_dict(d.get("telegram") or {}),
             webui=WebUIConfig.from_dict(d.get("webui") or {}),
+            aria2=Aria2Config.from_dict(d.get("aria2") or {}),
         )
 
     @staticmethod

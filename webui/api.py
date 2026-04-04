@@ -23,8 +23,10 @@ import re
 import subprocess
 import sys
 import threading
+import base64
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import unquote, urlparse
 
 import hmac
 import secrets
@@ -72,6 +74,17 @@ _ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _CACHE_DB = os.path.join(_ROOT_DIR, "data", "tmdb_cache.db")
 _JWT_SECRET_FILE = os.path.join(_ROOT_DIR, "data", ".jwt_secret")
 _jwt_secret_cache: Optional[str] = None
+_ARIA2_TASK_KEYS = [
+    "gid", "status", "totalLength", "completedLength", "uploadLength",
+    "downloadSpeed", "uploadSpeed", "connections", "numSeeders", "seeder",
+    "errorCode", "errorMessage", "dir", "files", "bittorrent",
+]
+_ARIA2_GLOBAL_OPTION_KEYS = [
+    "dir", "max-concurrent-downloads", "max-overall-download-limit",
+    "max-overall-upload-limit", "split", "max-connection-per-server",
+    "min-split-size", "continue", "max-tries", "retry-wait",
+    "user-agent", "all-proxy", "seed-ratio", "seed-time", "bt-max-peers",
+]
 
 
 # ──────────────────────────────────────────────────────────────
@@ -252,6 +265,146 @@ def get_drive_client() -> DriveClient:
     return _client
 
 
+def _aria2_rpc_url() -> str:
+    cfg = get_config().aria2
+    scheme = "https" if cfg.secure else "http"
+    path = cfg.path if cfg.path.startswith("/") else f"/{cfg.path}"
+    return f"{scheme}://{cfg.host}:{cfg.port}{path}"
+
+
+def _aria2_rpc_call(method: str, params: Optional[List[Any]] = None) -> Any:
+    cfg = get_config().aria2
+    rpc_params = list(params or [])
+    if cfg.secret:
+        rpc_params.insert(0, f"token:{cfg.secret}")
+
+    payload = {
+        "jsonrpc": "2.0",
+        "id": secrets.token_hex(8),
+        "method": f"aria2.{method}",
+        "params": rpc_params,
+    }
+
+    try:
+        resp = _aria2_http.post(_aria2_rpc_url(), json=payload, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException as exc:
+        logger.warning("aria2 RPC 请求失败：%s", exc)
+        raise HTTPException(status_code=502, detail=f"无法连接 aria2 RPC：{exc}") from exc
+    except ValueError as exc:
+        logger.warning("aria2 RPC 返回非 JSON：%s", exc)
+        raise HTTPException(status_code=502, detail="aria2 RPC 返回了无效响应") from exc
+
+    if data.get("error"):
+        message = data["error"].get("message") or "aria2 RPC 调用失败"
+        code = data["error"].get("code")
+        raise HTTPException(status_code=400, detail=f"{message} ({code})" if code else message)
+
+    return data.get("result")
+
+
+def _aria2_guess_name(task: Dict[str, Any]) -> str:
+    info = task.get("bittorrent", {}).get("info", {})
+    torrent_name = info.get("name")
+    if torrent_name:
+        return torrent_name
+
+    files = task.get("files") or []
+    first = files[0] if files else {}
+    path = first.get("path") or ""
+    if path:
+        task_dir = task.get("dir") or ""
+        if task_dir:
+            try:
+                rel_path = os.path.relpath(path, task_dir)
+                first_segment = rel_path.split(os.sep, 1)[0]
+                if first_segment and first_segment not in {".", ".."}:
+                    return first_segment
+            except ValueError:
+                pass
+        return os.path.basename(path)
+
+    uris = first.get("uris") or []
+    uri = next((u.get("uri") for u in uris if u.get("uri")), "")
+    if uri:
+        parsed = urlparse(uri)
+        guess = os.path.basename(parsed.path)
+        if guess:
+            return unquote(guess)
+        return parsed.netloc or uri
+
+    return info.get("name") or task.get("gid") or "Unnamed Task"
+
+
+def _aria2_progress(task: Dict[str, Any]) -> float:
+    total = int(task.get("totalLength") or 0)
+    completed = int(task.get("completedLength") or 0)
+    if total <= 0:
+        return 0.0
+    return round(completed * 100 / total, 1)
+
+
+def _aria2_file_count(task: Dict[str, Any]) -> int:
+    return len(task.get("files") or [])
+
+
+def _aria2_normalize_task(task: Dict[str, Any]) -> Dict[str, Any]:
+    total = int(task.get("totalLength") or 0)
+    completed = int(task.get("completedLength") or 0)
+    upload = int(task.get("uploadLength") or 0)
+    first_file = (task.get("files") or [{}])[0]
+    uris = first_file.get("uris") or []
+    bittorrent = task.get("bittorrent") or {}
+    info = bittorrent.get("info") or {}
+
+    return {
+        "gid": task.get("gid"),
+        "status": task.get("status"),
+        "name": _aria2_guess_name(task),
+        "dir": task.get("dir") or "",
+        "progress": _aria2_progress(task),
+        "totalLength": total,
+        "completedLength": completed,
+        "uploadLength": upload,
+        "downloadSpeed": int(task.get("downloadSpeed") or 0),
+        "uploadSpeed": int(task.get("uploadSpeed") or 0),
+        "connections": int(task.get("connections") or 0),
+        "numSeeders": int(task.get("numSeeders") or 0),
+        "seeder": task.get("seeder") == "true",
+        "errorCode": task.get("errorCode") or "",
+        "errorMessage": task.get("errorMessage") or "",
+        "fileCount": _aria2_file_count(task),
+        "uris": [u.get("uri") for u in uris if u.get("uri")],
+        "bittorrent": {
+            "name": info.get("name") or "",
+            "comment": bittorrent.get("comment") or "",
+            "mode": bittorrent.get("mode") or "",
+        },
+        "files": [
+            {
+                "path": f.get("path") or "",
+                "length": int(f.get("length") or 0),
+                "completedLength": int(f.get("completedLength") or 0),
+                "selected": f.get("selected") != "false",
+                "uris": [u.get("uri") for u in (f.get("uris") or []) if u.get("uri")],
+            }
+            for f in (task.get("files") or [])
+        ],
+    }
+
+
+def _aria2_fetch_task_lists() -> Dict[str, List[Dict[str, Any]]]:
+    active = _aria2_rpc_call("tellActive", [_ARIA2_TASK_KEYS]) or []
+    waiting = _aria2_rpc_call("tellWaiting", [0, 1000, _ARIA2_TASK_KEYS]) or []
+    stopped = _aria2_rpc_call("tellStopped", [0, 1000, _ARIA2_TASK_KEYS]) or []
+    return {
+        "active": [_aria2_normalize_task(t) for t in active],
+        "waiting": [_aria2_normalize_task(t) for t in waiting],
+        "stopped": [_aria2_normalize_task(t) for t in stopped],
+    }
+
+
 # requests Session：最多重试 3 次，仅对网络级错误（SSL/连接超时）自动退避
 _RETRY = Retry(
     total=3,
@@ -263,6 +416,8 @@ _RETRY = Retry(
 _http = requests.Session()
 _http.mount("https://", HTTPAdapter(max_retries=_RETRY))
 _http.mount("http://",  HTTPAdapter(max_retries=_RETRY))
+_aria2_http = requests.Session()
+_aria2_http.trust_env = False
 
 
 def tmdb_get(path: str, extra: Optional[dict] = None) -> Optional[dict]:
@@ -884,6 +1039,57 @@ class ConfigSaveBody(BaseModel):
     data: dict
 
 
+class Aria2AddUriBody(BaseModel):
+    uris: List[str]
+    options: Optional[Dict[str, str]] = None
+    position: Optional[int] = None
+
+
+class Aria2AddTorrentBody(BaseModel):
+    torrent: str
+    uris: Optional[List[str]] = None
+    options: Optional[Dict[str, str]] = None
+    position: Optional[int] = None
+
+
+class Aria2BatchActionBody(BaseModel):
+    gids: List[str]
+
+
+def _aria2_sanitize_options(options: Optional[Dict[str, Any]]) -> Dict[str, str]:
+    sanitized: Dict[str, str] = {}
+    for key, value in (options or {}).items():
+        if value is None:
+            continue
+        sanitized[str(key)] = str(value)
+    return sanitized
+
+
+def _aria2_get_task(gid: str) -> Dict[str, Any]:
+    task = _aria2_rpc_call("tellStatus", [gid, _ARIA2_TASK_KEYS])
+    return _aria2_normalize_task(task)
+
+
+def _aria2_retry_task(gid: str) -> Dict[str, Any]:
+    task = _aria2_rpc_call("tellStatus", [gid, _ARIA2_TASK_KEYS])
+    uris = []
+    for file_item in task.get("files") or []:
+        for uri_item in file_item.get("uris") or []:
+            uri = uri_item.get("uri")
+            if uri and uri not in uris:
+                uris.append(uri)
+
+    if not uris:
+        raise HTTPException(status_code=400, detail="该任务没有可重试的原始 URI")
+
+    options = {}
+    if task.get("dir"):
+        options["dir"] = task["dir"]
+
+    new_gid = _aria2_rpc_call("addUri", [uris, options])
+    return _aria2_get_task(new_gid)
+
+
 @app.get("/api/config")
 async def read_config():
     """读取 config.yaml，返回解析后的结构化 dict"""
@@ -910,6 +1116,119 @@ async def write_config(body: ConfigSaveBody):
     _cfg = None
     logger.info("config.yaml 已更新（结构化）")
     return {"ok": True, "message": "配置已保存"}
+
+
+@app.get("/api/aria2/overview")
+async def aria2_overview():
+    tasks = _aria2_fetch_task_lists()
+    global_stat = _aria2_rpc_call("getGlobalStat") or {}
+    version = _aria2_rpc_call("getVersion") or {}
+
+    return {
+        "summary": {
+            "activeCount": len(tasks["active"]),
+            "waitingCount": len(tasks["waiting"]),
+            "stoppedCount": len(tasks["stopped"]),
+            "downloadSpeed": int(global_stat.get("downloadSpeed") or 0),
+            "uploadSpeed": int(global_stat.get("uploadSpeed") or 0),
+            "numActive": int(global_stat.get("numActive") or 0),
+            "numWaiting": int(global_stat.get("numWaiting") or 0),
+            "numStopped": int(global_stat.get("numStopped") or 0),
+        },
+        "tasks": tasks,
+        "version": {
+            "version": version.get("version") or "",
+            "enabledFeatures": version.get("enabledFeatures") or [],
+        },
+    }
+
+
+@app.get("/api/aria2/options")
+async def aria2_options():
+    global_options = _aria2_rpc_call("getGlobalOption") or {}
+    return {key: global_options.get(key, "") for key in _ARIA2_GLOBAL_OPTION_KEYS}
+
+
+@app.put("/api/aria2/options")
+async def aria2_update_options(body: Dict[str, Any]):
+    options = _aria2_sanitize_options(body)
+    _aria2_rpc_call("changeGlobalOption", [options])
+    return {"ok": True, "options": await aria2_options()}
+
+
+@app.post("/api/aria2/add-uri")
+async def aria2_add_uri(body: Aria2AddUriBody):
+    uris = [u.strip() for u in body.uris if u and u.strip()]
+    if not uris:
+        raise HTTPException(status_code=400, detail="至少需要一个下载链接")
+
+    params: List[Any] = [uris, _aria2_sanitize_options(body.options)]
+    if body.position is not None:
+        params.append(body.position)
+
+    gid = _aria2_rpc_call("addUri", params)
+    return {"ok": True, "task": _aria2_get_task(gid)}
+
+
+@app.post("/api/aria2/add-torrent")
+async def aria2_add_torrent(body: Aria2AddTorrentBody):
+    try:
+        raw = base64.b64decode(body.torrent, validate=True)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Torrent 内容不是有效的 Base64") from exc
+
+    torrent_b64 = base64.b64encode(raw).decode("ascii")
+    params: List[Any] = [
+        torrent_b64,
+        body.uris or [],
+        _aria2_sanitize_options(body.options),
+    ]
+    if body.position is not None:
+        params.append(body.position)
+
+    gid = _aria2_rpc_call("addTorrent", params)
+    return {"ok": True, "task": _aria2_get_task(gid)}
+
+
+@app.post("/api/aria2/tasks/pause")
+async def aria2_pause_tasks(body: Aria2BatchActionBody):
+    for gid in body.gids:
+        _aria2_rpc_call("pause", [gid])
+    return {"ok": True}
+
+
+@app.post("/api/aria2/tasks/unpause")
+async def aria2_unpause_tasks(body: Aria2BatchActionBody):
+    for gid in body.gids:
+        _aria2_rpc_call("unpause", [gid])
+    return {"ok": True}
+
+
+@app.post("/api/aria2/tasks/remove")
+async def aria2_remove_tasks(body: Aria2BatchActionBody):
+    for gid in body.gids:
+        task = _aria2_rpc_call("tellStatus", [gid, ["status"]])
+        method = "removeDownloadResult" if task.get("status") == "complete" else "remove"
+        try:
+            _aria2_rpc_call(method, [gid])
+        except HTTPException:
+            if method != "removeDownloadResult":
+                _aria2_rpc_call("removeDownloadResult", [gid])
+            else:
+                raise
+    return {"ok": True}
+
+
+@app.post("/api/aria2/tasks/retry")
+async def aria2_retry_tasks(body: Aria2BatchActionBody):
+    tasks = [_aria2_retry_task(gid) for gid in body.gids]
+    return {"ok": True, "tasks": tasks}
+
+
+@app.post("/api/aria2/tasks/purge")
+async def aria2_purge_tasks():
+    _aria2_rpc_call("purgeDownloadResult")
+    return {"ok": True}
 
 
 if __name__ == "__main__":

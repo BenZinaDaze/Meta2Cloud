@@ -371,9 +371,9 @@ export default function ConfigPage() {
       {/* 页头 */}
       <div className="flex items-center gap-4 mb-6">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>配置</h1>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>配置文件</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--color-muted)' }}>
-            修改后点击「保存」立即生效
+            维护媒体库、元数据与下载服务相关配置
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -482,7 +482,7 @@ export default function ConfigPage() {
           </Section>
 
           {/* ── 扫描与整理 ── */}
-          <Section title="扫描与整理设置">
+          <Section title="扫描与入库策略">
             <FieldRow label="跳过 TMDB 查询" description="开启后只整理文件夹，不生成 NFO 元数据">
               <Toggle value={cfg?.pipeline?.skip_tmdb} onChange={v => set('pipeline','skip_tmdb',v)} />
             </FieldRow>
@@ -498,7 +498,7 @@ export default function ConfigPage() {
         {/* 右列 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
           {/* ── 解析器 ── */}
-          <Section title="解析器设置">
+          <Section title="文件名识别规则">
             <FieldRow label="自定义识别词" description="每条一条规则，支持 4 种格式">
               <ListField value={cfg?.parser?.custom_words ?? []} onChange={v => set('parser','custom_words',v)} />
               <CustomWordsHelp />
@@ -509,15 +509,33 @@ export default function ConfigPage() {
           </Section>
 
           {/* ── 整理器 ── */}
-          <Section title="整理器设置">
-            <FieldRow label="根目录 ID" description="整理目标的顶层文件夹">
+          <Section title="媒体库目录映射">
+            <FieldRow label="资料馆根目录 ID" description="电影和剧集默认归档到这个顶层文件夹">
               <TextInput value={cfg?.organizer?.root_folder_id} onChange={v => set('organizer','root_folder_id',v)} placeholder="Drive 文件夹 ID" mono />
             </FieldRow>
-            <FieldRow label="电影目录 ID" description="留空则使用根目录">
+            <FieldRow label="电影归档目录 ID" description="留空则直接使用资料馆根目录">
               <TextInput value={cfg?.organizer?.movie_root_id} onChange={v => set('organizer','movie_root_id',v)} placeholder="留空同根目录" mono />
             </FieldRow>
-            <FieldRow label="剧集目录 ID" description="留空则使用根目录">
+            <FieldRow label="剧集归档目录 ID" description="留空则直接使用资料馆根目录">
               <TextInput value={cfg?.organizer?.tv_root_id} onChange={v => set('organizer','tv_root_id',v)} placeholder="留空同根目录" mono />
+            </FieldRow>
+          </Section>
+
+          <Section title="Aria2 下载设置">
+            <FieldRow label="RPC 主机" description="通常是 aria2 服务所在机器的 IP 或域名">
+              <TextInput value={cfg?.aria2?.host} onChange={v => set('aria2','host',v)} placeholder="127.0.0.1" mono />
+            </FieldRow>
+            <FieldRow label="RPC 端口">
+              <NumberInput value={cfg?.aria2?.port} onChange={v => set('aria2','port',v)} min={1} max={65535} />
+            </FieldRow>
+            <FieldRow label="RPC 路径" description="默认 /jsonrpc">
+              <TextInput value={cfg?.aria2?.path} onChange={v => set('aria2','path',v)} placeholder="/jsonrpc" mono />
+            </FieldRow>
+            <FieldRow label="RPC 密钥" description="对应 aria2 的 rpc-secret">
+              <TextInput value={cfg?.aria2?.secret} type="password" onChange={v => set('aria2','secret',v)} placeholder="留空表示无密钥" mono />
+            </FieldRow>
+            <FieldRow label="使用 HTTPS" description="如果 aria2 RPC 通过 HTTPS 暴露则开启">
+              <Toggle value={cfg?.aria2?.secure} onChange={v => set('aria2','secure',v)} />
             </FieldRow>
           </Section>
 

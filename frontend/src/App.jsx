@@ -1,11 +1,12 @@
 import { useState, useCallback, useEffect } from 'react'
-import { setUnauthorizedHandler, getMe, refreshLibrary } from './api'
+import { setUnauthorizedHandler, getMe, refreshLibrary, getAria2Overview } from './api'
 import './index.css'
 import LoginPage from './components/LoginPage'
 import Topbar from './components/Topbar'
 import Sidebar from './components/Sidebar'
 import LibraryPage from './components/LibraryPage'
 import ConfigPage from './components/ConfigPage'
+import DownloadsPage from './components/DownloadsPage'
 import ToastContainer from './components/Toast'
 
 let _toastId = 0
@@ -20,6 +21,14 @@ export default function App() {
   const [toasts, setToasts]         = useState([])
   const [libraryKey, setLibraryKey] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
+  const [aria2Overview, setAria2Overview] = useState(null)
+
+  const downloadQueue = {
+    downloads: 'all',
+    'downloads-active': 'active',
+    'downloads-waiting': 'waiting',
+    'downloads-stopped': 'stopped',
+  }[activeNav]
 
   // ── 验证 token ──────────────────────────────────────
   useEffect(() => {
@@ -40,6 +49,32 @@ export default function App() {
       setToken(null)
     })
   }, [])
+
+  // ── 全局维持 aria2 连接状态 ─────────────────────────
+  useEffect(() => {
+    if (!token) {
+      setAria2Overview(null)
+      return
+    }
+
+    let cancelled = false
+
+    async function loadAria2Overview() {
+      try {
+        const res = await getAria2Overview()
+        if (!cancelled) setAria2Overview(res.data)
+      } catch {
+        if (!cancelled) setAria2Overview(null)
+      }
+    }
+
+    loadAria2Overview()
+    const id = setInterval(loadAria2Overview, 5000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [token])
 
   // ── 登录 / 登出 ────────────────────────────────────
   const handleLogin = useCallback((newToken) => {
@@ -112,17 +147,32 @@ export default function App() {
   return (
     <div className="app-shell">
       <Topbar onLogout={handleLogout} />
-      <Sidebar active={activeNav} onSelect={setActiveNav} />
+      <Sidebar active={activeNav} onSelect={setActiveNav} aria2Overview={aria2Overview} />
       <main
-        className="min-h-dvh pr-5 pb-5"
+        className="fixed right-0 bottom-0 overflow-y-auto pr-5 pb-5"
         style={{
-          paddingLeft: 'calc(18rem + 2.5rem)',
-          paddingTop: '96px',
+          left: 'calc(18rem + 2.5rem)',
+          top: '96px',
         }}
       >
         <div className="flex">
           {activeNav === 'config' ? (
             <ConfigPage />
+          ) : downloadQueue ? (
+            <DownloadsPage
+              queue={downloadQueue}
+              initialOverview={aria2Overview}
+              onChangeQueue={(queue) => {
+                const nextNav = {
+                  all: 'downloads',
+                  active: 'downloads-active',
+                  waiting: 'downloads-waiting',
+                  stopped: 'downloads-stopped',
+                }[queue]
+                setActiveNav(nextNav || 'downloads')
+              }}
+              onToast={addToast}
+            />
           ) : (
             <LibraryPage
               key={libraryKey}
