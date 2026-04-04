@@ -34,7 +34,7 @@ function StatCard({ label, value, sub, action }) {
   )
 }
 
-/** 横向滚动区块（MoviePilot 风格） */
+/** 横向滚动区块 */
 function SectionRow({ title, count, items, onSelect, onViewAll }) {
   return (
     <section className="mb-10">

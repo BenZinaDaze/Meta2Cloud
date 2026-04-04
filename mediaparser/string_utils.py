@@ -1,6 +1,5 @@
 """
 StringUtils —— 仅保留解析器实际用到的字符串工具方法。
-来源：MoviePilot app/utils/string.py（精简版）
 """
 import re
 from typing import Optional, Union

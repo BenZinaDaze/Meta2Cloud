@@ -1,6 +1,5 @@
 """
 MetaAnime —— 动漫文件名解析器。
-来源：MoviePilot app/core/meta/metaanime.py（移除 app.* 依赖）
 """
 import re
 import logging

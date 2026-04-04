@@ -58,6 +58,21 @@ function SeasonBlock({ season }) {
   )
 }
 
+const STATUS_MAP = {
+  'Returning Series': '连载中',
+  'Ended': '已完结',
+  'Canceled': '已取消',
+  'In Production': '制作中',
+  'Planned': '计划中',
+  'Pilot': '试播',
+  'In Limbo': '播出未定',
+}
+
+function formatStatus(status) {
+  if (!status) return status
+  return STATUS_MAP[status] ?? status
+}
+
 export default function DetailModal({ item, onClose }) {
   const [show, setShow] = useState(false)
 
@@ -111,22 +126,28 @@ export default function DetailModal({ item, onClose }) {
             style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.08) 10%, rgba(7, 17, 31, 0.88) 100%)' }} />
         </div>
 
-        <div className="flex gap-4 px-6 relative items-end" style={{ zIndex: 10 }}>
-          <div className="flex-shrink-0" style={{ width: POSTER_W }}>
-            {item.poster_url && (
-              <img
-                src={item.poster_url}
-                alt={item.title}
-                className="rounded-lg shadow-xl w-full"
-                style={{
-                  marginTop: -(POSTER_H / 2 + 16),
-                  border: '2px solid rgba(255,255,255,0.08)',
-                  display: 'block',
-                }}
-              />
-            )}
-          </div>
+        {/* 封面 + 标题信息：统一 flex 容器，横幅下方 */}
+        <div
+          className="flex items-end gap-4 px-6 pt-4"
+          style={{ position: 'relative', zIndex: 10 }}
+        >
+          {/* 小封面 */}
+          {item.poster_url && (
+            <img
+              src={item.poster_url}
+              alt={item.title}
+              className="rounded-lg shadow-xl flex-shrink-0"
+              style={{
+                width: POSTER_W,
+                height: POSTER_H,
+                objectFit: 'cover',
+                border: '2px solid rgba(255,255,255,0.08)',
+                display: 'block',
+              }}
+            />
+          )}
 
+          {/* 文字信息 */}
           <div className="flex-1 min-w-0 pb-3 pr-10">
             <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--color-accent-hover)' }}>
               Metadata detail
@@ -155,7 +176,7 @@ export default function DetailModal({ item, onClose }) {
               {item.status && (
                 <span className="text-xs px-2 py-0.5 rounded-full"
                   style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-accent-hover)', border: '1px solid var(--color-border)' }}>
-                  {item.status}
+                  {formatStatus(item.status)}
                 </span>
               )}
               {isTV && (
@@ -163,6 +184,31 @@ export default function DetailModal({ item, onClose }) {
                   style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}>
                   {item.in_library_episodes}/{item.total_episodes} 集已入库
                 </span>
+              )}
+              {item.tmdb_id && (
+                <a
+                  href={`https://www.themoviedb.org/${isTV ? 'tv' : 'movie'}/${item.tmdb_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs px-2 py-0.5 rounded-full transition-all duration-150"
+                  style={{
+                    background: 'rgba(1, 180, 228, 0.08)',
+                    color: '#01b4e4',
+                    border: '1px solid rgba(1, 180, 228, 0.35)',
+                    textDecoration: 'none',
+                    cursor: 'pointer',
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.background = 'rgba(1, 180, 228, 0.18)'
+                    e.currentTarget.style.borderColor = 'rgba(1, 180, 228, 0.65)'
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.background = 'rgba(1, 180, 228, 0.08)'
+                    e.currentTarget.style.borderColor = 'rgba(1, 180, 228, 0.35)'
+                  }}
+                >
+                  TMDB {item.tmdb_id}
+                </a>
               )}
             </div>
           </div>

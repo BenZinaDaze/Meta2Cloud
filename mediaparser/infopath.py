@@ -1,5 +1,5 @@
 """
-infopath —— 路径解析辅助函数（去掉 MoviePilot 内部依赖）
+infopath —— 路径解析辅助函数（去掉 Metadata2GD 内部依赖）
 """
 import regex as re
 from mediaparser.meta_base import MetaBase

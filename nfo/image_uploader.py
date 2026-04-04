@@ -1,7 +1,7 @@
 """
 nfo/image_uploader.py —— 从 TMDB 下载图片并上传到 Google Drive
 
-支持的图片类型（对齐 Plex / Infuse / MoviePilot 标准）：
+支持的图片类型（对齐 Plex / Infuse 标准）：
     poster.jpg         媒体文件夹根目录（电影或剧名文件夹）
     fanart.jpg         媒体文件夹根目录
     season01-poster.jpg  剧名文件夹根目录（季封面）

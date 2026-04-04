@@ -1,6 +1,5 @@
 """
 StreamingPlatforms —— 流媒体平台简称/全称匹配。
-来源：MoviePilot app/core/meta/streamingplatform.py（完整复制，无外部依赖）
 """
 from typing import Optional, List, Tuple
 

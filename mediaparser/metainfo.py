@@ -1,6 +1,5 @@
 """
 MetaInfo / MetaInfoPath —— 解析入口，对外暴露的主要接口。
-来源：MoviePilot app/core/metainfo.py（移除 app.* 依赖）
 
 用法：
     from mediaparser import MetaInfo, MetaInfoPath

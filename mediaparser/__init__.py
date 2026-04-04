@@ -1,7 +1,7 @@
 """
 mediaparser —— 独立的媒体文件名解析库
 
-从 MoviePilot 项目提取，无数据库/Web 依赖，可直接用于其他程序。
+无数据库/Web 依赖，可直接用于其他程序。
 
 快速使用：
     from mediaparser import MetaInfo, MetaInfoPath
