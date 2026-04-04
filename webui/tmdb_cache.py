@@ -30,9 +30,9 @@ logger = logging.getLogger(__name__)
 # 各类路径的默认 TTL（秒）
 _DEFAULT_TTL = {
     "movie":   7 * 86400,   # 电影详情  7 天
-    "tv":      1 * 86400,   # 剧集详情  1 天
-    "season":  1 * 86400,   # 季详情    1 天
-    "episode": 1 * 86400,   # 集详情    1 天
+    "tv":      6 * 86400,   # 剧集详情  6 天
+    "season":  6 * 86400,   # 季详情    6 天
+    "episode": 6 * 86400,   # 集详情    6 天
     "default": 1 * 86400,
 }
 

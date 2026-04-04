@@ -1321,6 +1321,7 @@ async def parser_test(body: ParserTestBody):
                 language=cfg.tmdb.language,
                 proxy=cfg.tmdb_proxy,
                 timeout=cfg.tmdb.timeout,
+                cache=get_tmdb_cache(),
             )
             tmdb_payload = _serialize_tmdb_result(tmdb_client.recognize(meta))
         except Exception as exc:

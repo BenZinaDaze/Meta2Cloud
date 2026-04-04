@@ -14,7 +14,7 @@ import logging
 import re
 import time
 from typing import Optional, List, Dict, Any
-from urllib.parse import quote
+from urllib.parse import urlencode
 
 import requests
 import zhconv
@@ -43,16 +43,19 @@ class TmdbClient:
         language: str = "zh-CN",
         proxy: Optional[str] = None,
         timeout: int = 10,
+        cache: Optional[Any] = None,
     ):
         """
         :param api_key:  TMDB API Key（v3）
         :param language: 返回语言，默认 zh-CN
         :param proxy:    代理地址，如 "http://127.0.0.1:7890"
         :param timeout:  请求超时秒数
+        :param cache:    可选缓存对象，需要实现 get/is_failed/set/set_failed
         """
         self._api_key = api_key
         self._language = language
         self._timeout = timeout
+        self._cache = cache
         self._session = requests.Session()
         if proxy:
             self._session.proxies = {"http": proxy, "https": proxy}
@@ -347,6 +350,17 @@ class TmdbClient:
         params = {"api_key": self._api_key, "language": self._language}
         if extra_params:
             params.update(extra_params)
+        cache_path = self._build_cache_path(path, extra_params)
+
+        if self._cache is not None:
+            cached = self._cache.get(cache_path, language=self._language)
+            if cached is not None:
+                logger.debug("TMDB 缓存命中：%s", cache_path)
+                return cached
+            if self._cache.is_failed(cache_path, language=self._language):
+                logger.debug("TMDB 负缓存命中，跳过请求：%s", cache_path)
+                return None
+
         url = self.BASE_URL + path
         for attempt in range(3):
             try:
@@ -359,12 +373,28 @@ class TmdbClient:
                 if resp.status_code == 404:
                     return None
                 resp.raise_for_status()
-                return resp.json()
+                data = resp.json()
+                if self._cache is not None:
+                    self._cache.set(cache_path, data, language=self._language)
+                return data
             except requests.RequestException as e:
                 logger.error("TMDB 请求失败 [%s %s]: %s" % (path, attempt + 1, e))
                 if attempt < 2:
                     time.sleep(2)
+        if self._cache is not None:
+            self._cache.set_failed(cache_path, language=self._language)
         return None
+
+    @staticmethod
+    def _build_cache_path(path: str, extra_params: Optional[dict] = None) -> str:
+        if not extra_params:
+            return path
+        # 与 WebUI 的缓存 key 规则保持一致，确保同一份 SQLite 可复用。
+        suffix = urlencode(
+            [(k, v) for k, v in sorted(extra_params.items()) if k != "api_key"],
+            doseq=True,
+        )
+        return f"{path}?{suffix}" if suffix else path
 
     # ── 便利工具 ─────────────────────────────────────────
 

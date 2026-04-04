@@ -116,6 +116,17 @@ class Pipeline:
             dry_run=self._dry_run,
         )
 
+        # 写入 WebUI SQLite 缓存（同时供整理流程和后端读取复用）
+        self._tmdb_write_cache = None
+        if _WebUiCache is not None:
+            _cache_db = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "data", "tmdb_cache.db"
+            )
+            try:
+                self._tmdb_write_cache = _WebUiCache(_cache_db)
+            except Exception as _e:
+                logger.debug("无法初始化 WebUI TMDB 缓存：%s", _e)
+
         self._tmdb: Optional[TmdbClient] = None
         if not self._skip_tmdb and cfg.is_tmdb_ready():
             self._tmdb = TmdbClient(
@@ -123,6 +134,7 @@ class Pipeline:
                 language=cfg.tmdb.language,
                 proxy=cfg.tmdb_proxy,
                 timeout=cfg.tmdb.timeout,
+                cache=self._tmdb_write_cache,
             )
 
         self._nfo_gen = NfoGenerator()
@@ -149,17 +161,6 @@ class Pipeline:
 
         # 季详情本地缓存：key=f"{tmdb_id}:{season}" → dict，避免同一季第三次调用 TMDB
         self._season_detail_cache: dict = {}
-
-        # 写入 WebUI SQLite 缓存（让后端展示时完全命中）
-        self._tmdb_write_cache = None
-        if _WebUiCache is not None:
-            _cache_db = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "data", "tmdb_cache.db"
-            )
-            try:
-                self._tmdb_write_cache = _WebUiCache(_cache_db)
-            except Exception as _e:
-                logger.debug("无法初始化 WebUI TMDB 缓存：%s", _e)
 
     # ── 缓存工具 ──────────────────────────────────────────
 
