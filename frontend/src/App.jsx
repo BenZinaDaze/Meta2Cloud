@@ -23,6 +23,7 @@ export default function App() {
   const [libraryKey, setLibraryKey] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
   const [aria2Overview, setAria2Overview] = useState(null)
+  const [aria2ConnectionStatus, setAria2ConnectionStatus] = useState('connecting')
 
   const downloadQueue = {
     downloads: 'all',
@@ -55,6 +56,7 @@ export default function App() {
   useEffect(() => {
     if (!token) {
       setAria2Overview(null)
+      setAria2ConnectionStatus('connecting')
       return
     }
 
@@ -63,12 +65,19 @@ export default function App() {
     async function loadAria2Overview() {
       try {
         const res = await getAria2Overview()
-        if (!cancelled) setAria2Overview(res.data)
+        if (!cancelled) {
+          setAria2Overview(res.data)
+          setAria2ConnectionStatus('connected')
+        }
       } catch {
-        if (!cancelled) setAria2Overview(null)
+        if (!cancelled) {
+          setAria2Overview(null)
+          setAria2ConnectionStatus('error')
+        }
       }
     }
 
+    setAria2ConnectionStatus('connecting')
     loadAria2Overview()
     const id = setInterval(loadAria2Overview, 5000)
     return () => {
@@ -148,7 +157,12 @@ export default function App() {
   return (
     <div className="app-shell">
       <Topbar onLogout={handleLogout} />
-      <Sidebar active={activeNav} onSelect={setActiveNav} aria2Overview={aria2Overview} />
+      <Sidebar
+        active={activeNav}
+        onSelect={setActiveNav}
+        aria2Overview={aria2Overview}
+        aria2ConnectionStatus={aria2ConnectionStatus}
+      />
       <main
         className="fixed right-0 bottom-0 overflow-y-auto pr-5 pb-5"
         style={{

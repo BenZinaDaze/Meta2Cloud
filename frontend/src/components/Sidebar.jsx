@@ -108,13 +108,13 @@ function NavItem({ icon, label, active, onClick, indent = false, right, bold = f
             {meta}
           </span>
         )}
-        {right && <span className="flex h-4 w-4 items-center justify-center">{right}</span>}
+        {right && <span className="flex items-center justify-center">{right}</span>}
       </span>
     </button>
   )
 }
 
-export default function Sidebar({ active, onSelect, aria2Overview = null }) {
+export default function Sidebar({ active, onSelect, aria2Overview = null, aria2ConnectionStatus = 'connecting' }) {
   const [libraryExpanded, setLibraryExpanded] = useState(true)
   const [downloadsExpanded, setDownloadsExpanded] = useState(true)
   const isLibraryExpanded = libraryExpanded || active === 'movies' || active === 'tv'
@@ -124,6 +124,23 @@ export default function Sidebar({ active, onSelect, aria2Overview = null }) {
   const stoppedCount = aria2Overview?.tasks?.stopped?.length ?? 0
   const totalDownloadCount = activeCount + waitingCount + stoppedCount
   const aria2Connected = !!aria2Overview
+  const connectionState = {
+    connected: {
+      label: '已连接',
+      color: 'var(--color-success)',
+    },
+    connecting: {
+      label: '连接中',
+      color: '#f5c451',
+    },
+    error: {
+      label: '未连接',
+      color: 'var(--color-danger)',
+    },
+  }[aria2ConnectionStatus] || {
+    label: '未连接',
+    color: 'var(--color-danger)',
+  }
 
   function handleLibraryClick() {
     setLibraryExpanded(prev => !prev)
@@ -158,6 +175,16 @@ export default function Sidebar({ active, onSelect, aria2Overview = null }) {
       }}
     >
       {Icons.chevron}
+    </span>
+  )
+
+  const downloadsStatus = (
+    <span className="flex items-center gap-2">
+      <span
+        className="inline-block h-2.5 w-2.5 rounded-full"
+        style={{ background: connectionState.color }}
+      />
+      {downloadsChevron}
     </span>
   )
 
@@ -218,7 +245,7 @@ export default function Sidebar({ active, onSelect, aria2Overview = null }) {
         onClick={handleDownloadsClick}
         bold
         meta={aria2Connected ? totalDownloadCount : null}
-        right={downloadsChevron}
+        right={downloadsStatus}
       />
 
       <div
@@ -266,30 +293,6 @@ export default function Sidebar({ active, onSelect, aria2Overview = null }) {
         onClick={() => onSelect('config')}
         bold
       />
-
-      <div className="mt-auto px-5 pt-6">
-        <div
-          className="rounded-[22px] px-4 py-4"
-          style={{
-            background: 'linear-gradient(180deg, rgba(255,255,255,0.035) 0%, rgba(255,255,255,0.01) 100%)',
-            border: '1px solid var(--color-border)',
-          }}
-        >
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-accent-hover)' }}>
-            Current mode
-          </div>
-          <div className="mt-2 text-sm leading-6" style={{ color: 'var(--color-muted)' }}>
-            把媒体库、下载队列和配置文件放在同一张操作台里，便于统一维护。
-          </div>
-          <div className="mt-3 flex items-center gap-2 text-xs" style={{ color: aria2Connected ? 'var(--color-success)' : 'var(--color-danger)' }}>
-            <span
-              className="inline-block h-2.5 w-2.5 rounded-full"
-              style={{ background: aria2Connected ? 'var(--color-success)' : 'var(--color-danger)' }}
-            />
-            {aria2Connected ? 'Aria2 已连接' : 'Aria2 未连接'}
-          </div>
-        </div>
-      </div>
     </aside>
   )
 }
