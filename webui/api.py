@@ -989,10 +989,12 @@ async def auth_middleware(request: Request, call_next):
     return await call_next(request)
 
 
-# 挂载静态文件（前端构建产物：frontend/dist/）
+# 挂载静态文件（前端构建产物：frontend/dist/assets/）
+# Vite 默认将 JS/CSS 输出到 dist/assets，index.html 中引用 /assets/xxx
 _STATIC_DIR = os.path.join(_ROOT_DIR, "frontend", "dist")
-if os.path.exists(_STATIC_DIR):
-    app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+_ASSETS_DIR = os.path.join(_STATIC_DIR, "assets")
+if os.path.exists(_ASSETS_DIR):
+    app.mount("/assets", StaticFiles(directory=_ASSETS_DIR), name="assets")
 
 
 # ──────────────────────────────────────────────────────────────
@@ -1040,6 +1042,14 @@ async def auth_me(request: Request):
 async def auth_logout():
     """(保护) 登出接口（前端清除 token 即可，后端无态）。"""
     return {"ok": True}
+
+
+@app.get("/favicon.svg")
+async def serve_favicon():
+    favicon_path = os.path.join(_STATIC_DIR, "favicon.svg")
+    if os.path.exists(favicon_path):
+        return FileResponse(favicon_path, media_type="image/svg+xml")
+    return JSONResponse({"detail": "not found"}, status_code=404)
 
 
 @app.get("/")
