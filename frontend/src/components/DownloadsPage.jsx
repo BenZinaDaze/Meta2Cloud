@@ -9,6 +9,7 @@ import {
   retryAria2Tasks,
   unpauseAria2Tasks,
 } from '../api'
+import ParseTestModal from './ParseTestModal'
 
 function formatBytes(bytes) {
   const value = Number(bytes) || 0
@@ -21,6 +22,12 @@ function formatBytes(bytes) {
 
 function formatSpeed(bytes) {
   return `${formatBytes(bytes)}/s`
+}
+
+function getFileName(path) {
+  if (!path) return ''
+  const normalized = String(path).replaceAll('\\', '/')
+  return normalized.split('/').filter(Boolean).pop() || normalized
 }
 
 function statusLabel(status) {
@@ -138,7 +145,7 @@ function ConfirmModal({ open, title, message, confirmLabel, onConfirm, onCancel,
   )
 }
 
-function TaskDetailModal({ task, onClose, onPause, onResume, onRemove, onRetry, pendingAction }) {
+function TaskDetailModal({ task, onClose, onPause, onResume, onRemove, onRetry, pendingAction, onParseFile }) {
   if (!task) return null
 
   const errored = task.status === 'error'
@@ -235,7 +242,29 @@ function TaskDetailModal({ task, onClose, onPause, onResume, onRemove, onRetry, 
                 {task.files.map((file, index) => (
                   <div key={`${file.path}-${index}`} className="rounded-2xl px-4 py-3"
                     style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)' }}>
-                    <div className="break-all text-sm" style={{ color: 'var(--color-text)' }}>{file.path || `文件 ${index + 1}`}</div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 break-all text-sm" style={{ color: 'var(--color-text)' }}>
+                        {getFileName(file.path) || `文件 ${index + 1}`}
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onParseFile?.(getFileName(file.path) || `文件 ${index + 1}`)
+                        }}
+                        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-all hover:opacity-80"
+                        style={{
+                          background: 'rgba(255,255,255,0.04)',
+                          border: '1px solid var(--color-border)',
+                          color: 'var(--color-accent-hover)',
+                        }}
+                        title="解析此文件"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="11" cy="11" r="7" />
+                          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                        </svg>
+                      </button>
+                    </div>
                     <div className="mt-2 flex flex-wrap gap-4 text-xs" style={{ color: 'var(--color-muted)' }}>
                       <span>{formatBytes(file.completedLength)} / {formatBytes(file.length)}</span>
                       <span>{file.selected ? '已选择' : '未选择'}</span>
@@ -397,6 +426,7 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [selectedTask, setSelectedTask] = useState(null)
+  const [parseTestFile, setParseTestFile] = useState(null)
   const [pendingActions, setPendingActions] = useState({})
   const [confirmRemoveGid, setConfirmRemoveGid] = useState(null)
   const showDashboard = queue === 'all'
@@ -646,6 +676,7 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
         onResume={(gid) => withAction(() => unpauseAria2Tasks([gid]), '任务已继续', gid, 'resume', { status: 'active' }, 'active')}
         onRemove={handleRemoveTask}
         onRetry={(gid) => withAction(() => retryAria2Tasks([gid]), '任务已重新加入队列', gid, 'retry')}
+        onParseFile={setParseTestFile}
       />
 
       <ConfirmModal
@@ -657,6 +688,13 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
         onCancel={() => setConfirmRemoveGid(null)}
         onConfirm={confirmRemoveTask}
       />
+
+      {parseTestFile ? (
+        <ParseTestModal
+          initialFilename={parseTestFile}
+          onClose={() => setParseTestFile(null)}
+        />
+      ) : null}
     </div>
   )
 }

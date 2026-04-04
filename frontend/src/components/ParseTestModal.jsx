@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { testParse } from '../api'
 
-export default function ParseTestModal({ onClose }) {
+export default function ParseTestModal({ onClose, initialFilename = '' }) {
   const [show, setShow] = useState(false)
-  const [filename, setFilename] = useState('')
+  const [filename, setFilename] = useState(initialFilename)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState(null)
@@ -19,6 +19,12 @@ export default function ParseTestModal({ onClose }) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [handleClose])
+
+  useEffect(() => {
+    if (initialFilename) {
+      setFilename(initialFilename)
+    }
+  }, [initialFilename])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -37,6 +43,35 @@ export default function ParseTestModal({ onClose }) {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (!initialFilename?.trim()) return
+
+    let cancelled = false
+
+    async function runInitialParse() {
+      const value = initialFilename.trim()
+      setLoading(true)
+      setError('')
+      try {
+        const res = await testParse(value)
+        if (!cancelled) {
+          setFilename(value)
+          setResult(res.data)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setResult(null)
+          setError(err?.response?.data?.detail || err.message || '解析失败')
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    runInitialParse()
+    return () => { cancelled = true }
+  }, [initialFilename])
 
   return (
     <div
