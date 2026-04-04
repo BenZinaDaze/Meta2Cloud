@@ -3,8 +3,13 @@
 mediaparser 完整测试：文件名解析 + TMDB 元数据获取
 配置从项目根目录的 config.yaml 读取。
 """
+
+import os
 import sys
-sys.path.insert(0, "/home/benz1/Code/github/Metadata2GD")
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
 from mediaparser import MetaInfo, TmdbClient, Config
 from mediaparser.release_group import ReleaseGroupsMatcher
@@ -29,7 +34,7 @@ for title, expected in TEST_CASES:
         release_group_matcher=rg_matcher,
     )
     ok = expected.lower() in (meta.name or "").lower()
-    status = "✓" if ok else "✗"
+    status = "OK" if ok else "FAIL"
     print(f"{status} {title[:55]:<55}")
     print(f"   名称={meta.name!r}  类型={meta.type.value}  "
           f"季={meta.season!r}  集={meta.episode!r}  "
@@ -57,7 +62,7 @@ else:
     print("=" * 70)
     for title in TMDB_TESTS:
         meta = MetaInfo(title, isfile=True, custom_words=cfg.parser.custom_words)
-        print(f"\n→ 查询：{meta.name!r}（{meta.type.value}，年份={meta.year}）")
+        print(f"\n> 查询：{meta.name!r}（{meta.type.value}，年份={meta.year}）")
         info = tmdb.recognize(meta)
         if info:
             name = info.get("title") or info.get("name", "")
@@ -67,14 +72,14 @@ else:
             genres = [g["name"] for g in (info.get("genres") or [])]
             vote = info.get("vote_average")
             poster = TmdbClient.image_url(info.get("poster_path"))
-            print(f"  ✓ {name} ({orig})")
+            print(f"  OK {name} ({orig})")
             print(f"    TMDB ID : {tmdbid}")
             print(f"    风格    : {', '.join(genres)}")
             print(f"    评分    : {vote}")
             print(f"    简介    : {overview}...")
             print(f"    海报    : {poster}")
         else:
-            print("  ✗ 未找到")
+            print("  FAIL 未找到")
     print()
     print("=" * 70)
 
@@ -98,11 +103,11 @@ else:
     for title in TMDB_TESTS:
         meta = MetaInfo(title, isfile=True, custom_words=cfg.parser.custom_words)
         season_num = int(meta.season_seq) if meta.season_seq else 1
-        print(f"\n→ {meta.name!r}  S{season_num:02d}")
+        print(f"\n> {meta.name!r}  S{season_num:02d}")
 
         info = tmdb2.recognize(meta)
         if not info:
-            print("  ✗ TMDB 未找到，跳过")
+            print("  FAIL TMDB 未找到，跳过")
             continue
 
         tmdb_id = info.get("tmdb_id") or info.get("id")
@@ -118,7 +123,7 @@ else:
 
         print(f"  整剧封面 : {show_poster}")
         print(f"  季  封面 : {season_poster}")
-        print(f"  TG 推送  : {notify_poster}  ← {'季封面 ✓' if season_poster_path else '整剧封面（无季封面）'}")
+        print(f"  TG 推送  : {notify_poster}  <- {'季封面 OK' if season_poster_path else '整剧封面（无季封面）'}")
 
     print()
     print("=" * 70)

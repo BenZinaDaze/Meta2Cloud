@@ -481,8 +481,8 @@ export default function ConfigPage() {
             </FieldRow>
           </Section>
 
-          {/* ── 流水线 ── */}
-          <Section title="流水线设置">
+          {/* ── 扫描与整理 ── */}
+          <Section title="扫描与整理设置">
             <FieldRow label="跳过 TMDB 查询" description="开启后只整理文件夹，不生成 NFO 元数据">
               <Toggle value={cfg?.pipeline?.skip_tmdb} onChange={v => set('pipeline','skip_tmdb',v)} />
             </FieldRow>

@@ -12,12 +12,15 @@ test_organizer.py —— MediaOrganizer 集成测试
   python test_organizer.py --real    # 真实创建，需要配置好 Drive 认证
 """
 
-import sys
-import os
+
 import logging
 import argparse
+import os
+import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
 from organizer import MediaOrganizer
 from drive import DriveClient

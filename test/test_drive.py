@@ -26,11 +26,12 @@ test_drive.py —— Google Drive 模块独立测试
   2. 修改下方 CONFIG 字典，填入 FOLDER_ID（目标文件夹的 Drive ID）
 """
 
-import sys
 import os
+import sys
 
-# 允许从项目根目录直接运行
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
 from drive import DriveClient
 from googleapiclient.errors import HttpError
@@ -51,7 +52,7 @@ CONFIG = {
 
     # 测试用的文件夹 ID（在 Drive 地址栏 URL 中找，格式类似 1AbCdEfGhIjKlMnOpQrStUvWxYz）
     # "root" 表示根目录（Service Account 场景下此项必须填具体 ID）
-    "test_folder_id": "15MrQz5ukLAAYOXzseE1s9CmFBGDvVA4x",
+    "test_folder_id": "1tNw83e50Q0BJ9mDE5CmR9ZaeU4qcvq3V",
 }
 # ═══════════════════════════════════════════════════════
 

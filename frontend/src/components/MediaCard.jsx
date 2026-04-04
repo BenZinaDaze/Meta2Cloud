@@ -1,5 +1,5 @@
 // 圆形进度条
-function RingProgress({ value, max, size = 34, stroke = 3.5 }) {
+function RingProgress({ value, max, size = 18, stroke = 2.4 }) {
   const pct = max > 0 ? value / max : 0
   const r = (size - stroke) / 2
   const circ = 2 * Math.PI * r
@@ -30,57 +30,55 @@ export default function MediaCard({ item, onClick, compact = false }) {
   return (
     <div
       onClick={() => onClick?.(item)}
-      className="group relative flex flex-col rounded-xl overflow-hidden cursor-pointer transition-all duration-200 hover:scale-[1.03] hover:shadow-2xl"
-      style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
+      className="group relative flex cursor-pointer flex-col overflow-hidden rounded-[22px] transition-all duration-200 hover:-translate-y-1"
+      style={{
+        background: 'linear-gradient(180deg, rgba(20, 37, 59, 0.96) 0%, rgba(13, 26, 44, 0.98) 100%)',
+        border: '1px solid var(--color-border)',
+        boxShadow: '0 18px 38px rgba(3, 11, 22, 0.22)',
+      }}
     >
-      {/* 海报区 */}
       <div className="relative aspect-[2/3] overflow-hidden bg-gray-800">
         {item.poster_url ? (
           <img
             src={item.poster_url}
             alt={item.title}
-            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             loading="lazy"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-4xl"
+          <div className="flex h-full w-full items-center justify-center text-4xl"
             style={{ background: 'var(--color-surface)' }}>
             {isTV ? '📺' : '🎬'}
           </div>
         )}
 
-        {/* 评分徽章 */}
         {item.rating > 0 && (
-          <div className="absolute top-2 right-2 text-xs font-bold px-1.5 py-0.5 rounded"
-            style={{ background: 'rgba(0,0,0,0.75)', color: 'var(--color-warning)' }}>
+          <div className="absolute right-3 top-3 rounded-full px-2 py-1 text-[11px] font-bold"
+            style={{ background: 'rgba(4, 11, 21, 0.84)', color: 'var(--color-warning)', border: '1px solid rgba(255,255,255,0.08)' }}>
             ★ {item.rating}
           </div>
         )}
 
-        {/* 类型徽章（左上） */}
-        <div className="absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded font-medium"
-          style={{ background: 'rgba(0,0,0,0.65)', color: 'var(--color-muted)' }}>
+        <div className="absolute left-3 top-3 rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.14em]"
+          style={{ background: 'rgba(4, 11, 21, 0.84)', color: 'var(--color-muted)', border: '1px solid rgba(255,255,255,0.08)' }}>
           {isTV ? 'TV' : '电影'}
         </div>
 
-        {/* TV 进度环 */}
         {isTV && pct !== null && (
-          <div className="absolute bottom-2 right-2 flex items-center gap-1"
-            style={{ background: 'rgba(0,0,0,0.75)', borderRadius: 20, padding: '2px 5px' }}>
+          <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 rounded-full"
+            style={{ background: 'rgba(4, 11, 21, 0.78)', padding: '2px 4px', border: '1px solid rgba(255,255,255,0.06)' }}>
             <RingProgress value={item.in_library_episodes} max={item.total_episodes} />
-            <span className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>{pct}%</span>
+            <span className="text-[10px] font-semibold tabular-nums" style={{ color: 'var(--color-text)' }}>{pct}%</span>
           </div>
         )}
 
-        {/* hover 渐变遮罩 */}
         <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-          style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 50%)' }} />
+          style={{ background: 'linear-gradient(to top, rgba(3, 9, 17, 0.72) 0%, transparent 56%)' }} />
       </div>
 
-      {/* 信息区 ── 固定高度，保证网格对齐 */}
       <div
-        className="px-3 pt-2.5 pb-2.5 flex flex-col"
-        style={{ height: compact ? 58 : 80, overflow: 'hidden' }}
+        className="flex flex-col px-3.5 pt-3 pb-3.5"
+        style={{ height: compact ? 64 : 92, overflow: 'hidden' }}
       >
         <p
           className={`text-sm font-semibold leading-snug ${compact ? 'line-clamp-1' : 'line-clamp-2'}`}
@@ -88,9 +86,9 @@ export default function MediaCard({ item, onClick, compact = false }) {
         >
           {item.title}
         </p>
-        <div className="flex items-center gap-1.5 mt-auto flex-nowrap">
+        <div className="mt-auto flex flex-nowrap items-center gap-1.5">
           {item.year && (
-            <span className="text-xs shrink-0" style={{ color: 'var(--color-muted)' }}>{item.year}</span>
+            <span className="shrink-0 text-xs tabular-nums" style={{ color: 'var(--color-muted)' }}>{item.year}</span>
           )}
           {item.year && !compact && isTV && (
             <span className="text-xs shrink-0" style={{ color: 'var(--color-border)' }}>·</span>

@@ -87,8 +87,13 @@ export default function App() {
   // ── 鉴权检查中 ──────────────────────────────────
   if (checkingAuth) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--color-bg)' }}>
-        <div style={{ color: 'var(--color-muted)', fontSize: 14 }}>正在验证…</div>
+      <div className="app-shell flex min-h-dvh items-center justify-center px-6">
+        <div
+          className="panel-surface rounded-[28px] px-8 py-6 text-sm"
+          style={{ color: 'var(--color-muted)' }}
+        >
+          正在验证身份信息…
+        </div>
       </div>
     )
   }
@@ -105,11 +110,17 @@ export default function App() {
 
   // ── 已登录 → 主界面 ──────────────────────────────
   return (
-    <div className="min-h-screen" style={{ background: 'var(--color-bg)' }}>
+    <div className="app-shell">
       <Topbar onLogout={handleLogout} />
       <Sidebar active={activeNav} onSelect={setActiveNav} />
-      <main className="pl-72 pt-14 min-h-screen" style={{ background: 'var(--color-bg)' }}>
-        <div className="px-10 py-8 flex">
+      <main
+        className="min-h-dvh pr-5 pb-5"
+        style={{
+          paddingLeft: 'calc(18rem + 2.5rem)',
+          paddingTop: '96px',
+        }}
+      >
+        <div className="flex">
           {activeNav === 'config' ? (
             <ConfigPage />
           ) : (

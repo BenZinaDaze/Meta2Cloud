@@ -9,7 +9,7 @@ import { useEffect, useRef } from 'react'
 export default function ToastContainer({ toasts, onRemove }) {
   return (
     <div
-      className="fixed top-4 right-4 flex flex-col gap-2 z-[9999]"
+      className="fixed right-5 top-24 z-[9999] flex flex-col gap-2"
       style={{ minWidth: 280, maxWidth: 380 }}
     >
       {toasts.map(t => (
@@ -28,21 +28,22 @@ function ToastItem({ toast, onRemove }) {
   }, [toast.id, onRemove])
 
   const colors = {
-    success: { bg: '#1a3a2a', border: '#2d6a4f', icon: '✅' },
-    error:   { bg: '#3a1a1a', border: '#7a2828', icon: '❌' },
-    info:    { bg: '#1a2a3a', border: '#2d4a6f', icon: 'ℹ️' },
-    loading: { bg: '#2a2a1a', border: '#6a6a28', icon: '⏳' },
+    success: { bg: 'rgba(17, 48, 36, 0.94)', border: 'rgba(94, 211, 154, 0.24)', icon: '✅' },
+    error:   { bg: 'rgba(61, 24, 22, 0.95)', border: 'rgba(239, 125, 117, 0.28)', icon: '❌' },
+    info:    { bg: 'rgba(16, 34, 54, 0.95)', border: 'rgba(122, 165, 219, 0.28)', icon: 'ℹ️' },
+    loading: { bg: 'rgba(55, 42, 15, 0.95)', border: 'rgba(240, 196, 107, 0.28)', icon: '⏳' },
   }
   const c = colors[toast.type] || colors.info
 
   return (
     <div
-      className="flex items-start gap-3 px-4 py-3 rounded-xl shadow-2xl"
+      className="flex items-start gap-3 rounded-2xl px-4 py-3"
       style={{
         background: c.bg,
         border: `1px solid ${c.border}`,
         animation: 'slideInRight 0.2s ease-out',
-        backdropFilter: 'blur(8px)',
+        backdropFilter: 'blur(14px)',
+        boxShadow: 'var(--shadow-soft)',
       }}
     >
       <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>{c.icon}</span>

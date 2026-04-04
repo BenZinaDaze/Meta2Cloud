@@ -27,58 +27,58 @@ export default function LoginPage({ onLogin }) {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center p-4"
+      className="flex min-h-dvh items-center justify-center p-4"
       style={{
-        background: 'radial-gradient(ellipse 80% 60% at 50% 0%, rgba(99,102,241,0.18) 0%, transparent 70%), var(--color-bg)',
+        background:
+          'radial-gradient(circle at 20% 15%, rgba(64,111,178,0.22) 0%, transparent 28%), radial-gradient(circle at 85% 12%, rgba(200,146,77,0.16) 0%, transparent 24%), linear-gradient(180deg, rgba(8,19,33,1) 0%, rgba(7,17,31,1) 100%)',
       }}
     >
-      {/* 背景装饰圆 */}
       <div style={{
         position: 'fixed', inset: 0, pointerEvents: 'none', overflow: 'hidden',
       }}>
         <div style={{
           position: 'absolute', top: '-120px', left: '50%', transform: 'translateX(-50%)',
           width: 600, height: 600, borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(99,102,241,0.12) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(64,111,178,0.16) 0%, transparent 70%)',
         }} />
         <div style={{
           position: 'absolute', bottom: '-80px', right: '-80px',
           width: 300, height: 300, borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(139,92,246,0.10) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(200,146,77,0.10) 0%, transparent 70%)',
         }} />
       </div>
 
-      {/* 登录卡片 */}
       <div
         style={{
-          width: '100%', maxWidth: 400, position: 'relative',
-          background: 'rgba(30,31,46,0.80)',
+          width: '100%', maxWidth: 456, position: 'relative',
+          background: 'linear-gradient(180deg, rgba(17,31,50,0.9) 0%, rgba(10,20,34,0.96) 100%)',
           backdropFilter: 'blur(24px)',
           border: '1px solid rgba(255,255,255,0.08)',
-          borderRadius: 20,
-          boxShadow: '0 32px 64px rgba(0,0,0,0.6), 0 0 0 1px rgba(99,102,241,0.1)',
+          borderRadius: 28,
+          boxShadow: 'var(--shadow-strong)',
           overflow: 'hidden',
         }}
       >
-        {/* 顶部渐变条 */}
         <div style={{
           height: 3,
-          background: 'linear-gradient(90deg, var(--color-accent) 0%, #8b5cf6 50%, #ec4899 100%)',
+          background: 'linear-gradient(90deg, rgba(64,111,178,1) 0%, var(--color-accent) 100%)',
         }} />
 
-        <div style={{ padding: '36px 32px 32px' }}>
-          {/* Logo */}
-          <div className="flex items-center gap-3 mb-8">
+        <div style={{ padding: '40px 36px 34px' }}>
+          <div className="mb-9 flex items-center gap-4">
             <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-base flex-shrink-0"
+              className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl text-base font-bold text-white"
               style={{
-                background: 'linear-gradient(135deg, var(--color-accent) 0%, #7c3aed 100%)',
-                boxShadow: '0 4px 16px rgba(99,102,241,0.4)',
+                background: 'linear-gradient(135deg, var(--color-accent) 0%, #a56d2c 100%)',
+                boxShadow: '0 12px 28px rgba(200,146,77,0.28)',
               }}
             >
               M
             </div>
             <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.24em]" style={{ color: 'var(--color-muted)' }}>
+                Archive access
+              </div>
               <div className="font-bold text-lg tracking-tight" style={{ color: 'var(--color-text)' }}>
                 Metadata<span style={{ color: 'var(--color-accent)' }}>2GD</span>
               </div>
@@ -88,17 +88,14 @@ export default function LoginPage({ onLogin }) {
             </div>
           </div>
 
-          {/* 标题 */}
-          <h1 className="text-xl font-semibold mb-1" style={{ color: 'var(--color-text)' }}>
+          <h1 className="mb-2 text-[30px] font-semibold leading-tight" style={{ color: 'var(--color-text)' }}>
             欢迎回来
           </h1>
-          <p className="text-sm mb-7" style={{ color: 'var(--color-muted)' }}>
-            请输入您的账号信息继续
+          <p className="mb-8 text-sm leading-7" style={{ color: 'var(--color-muted)' }}>
+            进入你的媒体档案馆，继续管理电影、剧集和扫描配置。
           </p>
 
-          {/* 表单 */}
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* 用户名 */}
             <div>
               <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--color-muted)' }}>
                 用户名
@@ -123,7 +120,7 @@ export default function LoginPage({ onLogin }) {
                   disabled={loading}
                   className="w-full text-sm rounded-xl outline-none transition-all"
                   style={{
-                    background: 'rgba(255,255,255,0.04)',
+                    background: 'rgba(255,255,255,0.035)',
                     border: '1px solid rgba(255,255,255,0.1)',
                     color: 'var(--color-text)',
                     padding: '11px 12px 11px 38px',
@@ -135,7 +132,6 @@ export default function LoginPage({ onLogin }) {
               </div>
             </div>
 
-            {/* 密码 */}
             <div>
               <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--color-muted)' }}>
                 密码
@@ -159,7 +155,7 @@ export default function LoginPage({ onLogin }) {
                   disabled={loading}
                   className="w-full text-sm rounded-xl outline-none transition-all"
                   style={{
-                    background: 'rgba(255,255,255,0.04)',
+                    background: 'rgba(255,255,255,0.035)',
                     border: '1px solid rgba(255,255,255,0.1)',
                     color: 'var(--color-text)',
                     padding: '11px 40px 11px 38px',
@@ -194,7 +190,6 @@ export default function LoginPage({ onLogin }) {
               </div>
             </div>
 
-            {/* 错误提示 */}
             {error && (
               <div
                 className="flex items-center gap-2 text-xs px-3 py-2.5 rounded-lg"
@@ -207,7 +202,6 @@ export default function LoginPage({ onLogin }) {
               </div>
             )}
 
-            {/* 登录按钮 */}
             <button
               type="submit"
               disabled={loading || !username.trim() || !password}
@@ -215,14 +209,14 @@ export default function LoginPage({ onLogin }) {
               style={{
                 marginTop: 8,
                 background: loading || !username.trim() || !password
-                  ? 'rgba(99,102,241,0.3)'
-                  : 'linear-gradient(135deg, var(--color-accent) 0%, #7c3aed 100%)',
+                  ? 'rgba(200,146,77,0.2)'
+                  : 'linear-gradient(135deg, var(--color-accent) 0%, #a56d2c 100%)',
                 color: loading || !username.trim() || !password ? 'rgba(255,255,255,0.4)' : '#fff',
                 border: 'none',
                 cursor: loading || !username.trim() || !password ? 'not-allowed' : 'pointer',
                 boxShadow: loading || !username.trim() || !password
                   ? 'none'
-                  : '0 4px 20px rgba(99,102,241,0.4)',
+                  : '0 16px 32px rgba(200,146,77,0.25)',
                 transform: loading || !username.trim() || !password ? 'none' : undefined,
               }}
             >
@@ -239,7 +233,6 @@ export default function LoginPage({ onLogin }) {
             </button>
           </form>
 
-          {/* 底部提示 */}
           <p className="text-center text-xs mt-6" style={{ color: 'var(--color-muted)' }}>
             账号密码在 <code style={{ color: 'var(--color-accent)', fontSize: 11 }}>config/config.yaml</code> 中配置
           </p>

@@ -16,19 +16,19 @@ function relativeTime(isoStr) {
 
 function StatCard({ label, value, sub, action }) {
   return (
-    <div className="relative flex flex-col justify-center gap-1 px-5 rounded-xl"
+    <div className="relative flex min-h-[132px] flex-col justify-between gap-3 rounded-[24px] px-5 py-5"
       style={{
-        background: 'var(--color-surface-2)',
+        background: 'linear-gradient(180deg, rgba(20, 37, 59, 0.96) 0%, rgba(14, 28, 46, 0.98) 100%)',
         border: '1px solid var(--color-border)',
-        minHeight: 88,
-        paddingTop: 16,
-        paddingBottom: 16,
+        boxShadow: 'var(--shadow-soft)',
       }}>
-      <span className="text-xs" style={{ color: 'var(--color-muted)' }}>{label}</span>
-      <span className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>{value}</span>
-      {sub && <span className="text-xs" style={{ color: 'var(--color-muted)' }}>{sub}</span>}
+      <div className="space-y-2">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-muted-soft)' }}>{label}</span>
+        <span className="block text-3xl font-bold tabular-nums" style={{ color: 'var(--color-text)' }}>{value}</span>
+        {sub && <span className="block text-xs leading-5" style={{ color: 'var(--color-muted)' }}>{sub}</span>}
+      </div>
       {action && (
-        <div className="absolute right-4 top-1/2 -translate-y-1/2">{action}</div>
+        <div className="absolute right-5 top-1/2 -translate-y-1/2">{action}</div>
       )}
     </div>
   )
@@ -37,20 +37,18 @@ function StatCard({ label, value, sub, action }) {
 /** 横向滚动区块（MoviePilot 风格） */
 function SectionRow({ title, count, items, onSelect, onViewAll }) {
   return (
-    <section className="mb-8">
-      {/* 区块标题栏 */}
-      <div className="flex items-center gap-3 mb-4">
-        <h2 className="text-base font-bold flex-shrink-0" style={{ color: 'var(--color-text)' }}>{title}</h2>
-        <span className="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
-          style={{ background: 'var(--color-surface-2)', color: 'var(--color-muted)' }}>
+    <section className="mb-10">
+      <div className="mb-5 flex items-center gap-3">
+        <h2 className="shrink-0 text-[22px] font-bold" style={{ color: 'var(--color-text)' }}>{title}</h2>
+        <span className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em]"
+          style={{ background: 'rgba(255,255,255,0.03)', color: 'var(--color-muted)' }}>
           {count}
         </span>
-        {/* 延伸分割线 */}
-        <div className="flex-1 h-px" style={{ background: 'var(--color-border)' }} />
+        <div className="h-px flex-1" style={{ background: 'linear-gradient(90deg, rgba(144, 178, 221, 0.2) 0%, rgba(144, 178, 221, 0.02) 100%)' }} />
         <button
           onClick={onViewAll}
-          className="flex-shrink-0 flex items-center gap-1 text-xs px-3 py-1 rounded-full transition-all duration-150 hover:opacity-80"
-          style={{ background: 'var(--color-surface-2)', color: 'var(--color-accent)', border: '1px solid var(--color-border)' }}
+          className="flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-150 hover:opacity-80"
+          style={{ background: 'rgba(255,255,255,0.03)', color: 'var(--color-accent-hover)', border: '1px solid var(--color-border)' }}
         >
           查看全部
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -59,9 +57,8 @@ function SectionRow({ title, count, items, onSelect, onViewAll }) {
         </button>
       </div>
 
-      {/* 横向滚动行 */}
       <div
-        className="flex gap-3 overflow-x-auto pb-3"
+        className="flex gap-4 overflow-x-auto pb-3"
         style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--color-border) transparent' }}
       >
         {items.map(item => (
@@ -119,8 +116,6 @@ export default function LibraryPage({ filter, onChangeFilter, onRefresh, refresh
   const [, setTick]             = useState(0)
 
   useEffect(() => {
-    setLoading(true)
-    setError(null)
     getLibrary()
       .then(res => setData(res.data))
       .catch(err => setError(err.message))
@@ -161,10 +156,22 @@ export default function LibraryPage({ filter, onChangeFilter, onRefresh, refresh
 
   return (
     <div className="flex-1">
-      {/* 顶栏：标题 + 搜索 */}
-      <div className="flex items-center gap-4 mb-5">
-        <h1 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>{pageTitle}</h1>
-        <div className="ml-auto relative">
+      <section
+        className="panel-surface rounded-[32px] px-7 py-7"
+        style={{ minHeight: 'calc(100dvh - 128px)' }}
+      >
+        <div className="mb-7 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.24em]" style={{ color: 'var(--color-accent-hover)' }}>
+              Cinematic catalog
+            </div>
+            <h1 className="text-[34px] font-bold leading-tight" style={{ color: 'var(--color-text)' }}>{pageTitle}</h1>
+            <p className="mt-3 text-sm leading-7" style={{ color: 'var(--color-muted)' }}>
+              以更清晰的方式浏览你在 Drive 中维护的电影与剧集元数据，快速检索、刷新并查看季集完整度。
+            </p>
+          </div>
+
+          <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-muted)' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -175,24 +182,21 @@ export default function LibraryPage({ filter, onChangeFilter, onRefresh, refresh
             placeholder="搜索标题..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="pl-9 pr-4 py-2 text-sm rounded-full outline-none w-56 transition-all"
+            className="w-full rounded-full py-3 pl-10 pr-4 text-sm outline-none transition-all sm:w-72"
             style={{
-              background: 'var(--color-surface-2)',
+              background: 'rgba(255,255,255,0.03)',
               border: '1px solid var(--color-border)',
               color: 'var(--color-text)',
             }}
           />
         </div>
-      </div>
+        </div>
 
-      {/* 统计卡片 */}
-      {stats && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-3 mb-8">
-          {/* 全部 / 电影视图：显示电影数 */}
+        {stats && (
+          <div className="mb-10 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {filter !== 'tv' && (
             <StatCard label="电影总数" value={stats.movies} />
           )}
-          {/* 全部 / 电视剧视图：显示剧集数 */}
           {filter !== 'movies' && (
             <StatCard label="电视剧总数" value={stats.tv} />
           )}
@@ -209,13 +213,15 @@ export default function LibraryPage({ filter, onChangeFilter, onRefresh, refresh
                 title="刷新媒体库"
                 className="flex items-center justify-center rounded-full transition-all duration-150"
                 style={{
-                  width: 70,
-                  height: 70,
-                  background: refreshing ? 'rgba(180,40,40,0.3)' : 'rgba(220,38,38,0.85)',
+                  width: 74,
+                  height: 74,
+                  background: refreshing
+                    ? 'rgba(200, 146, 77, 0.16)'
+                    : 'linear-gradient(135deg, var(--color-accent) 0%, #b37533 100%)',
                   color: '#fff',
                   cursor: refreshing ? 'not-allowed' : 'pointer',
                   border: 'none',
-                  boxShadow: refreshing ? 'none' : '0 2px 12px rgba(220,38,38,0.45)',
+                  boxShadow: refreshing ? 'none' : '0 16px 36px rgba(200, 146, 77, 0.24)',
                 }}
               >
                 <svg
@@ -230,11 +236,10 @@ export default function LibraryPage({ filter, onChangeFilter, onRefresh, refresh
             }
           />
         </div>
-      )}
+        )}
 
-      {/* 加载中 */}
-      {loading && (
-        <div className="flex flex-col gap-8">
+        {loading && (
+          <div className="flex flex-col gap-8">
           <div>
             <div className="h-5 w-24 rounded mb-4" style={{ background: 'var(--color-surface-2)' }} />
             <LoadingRow />
@@ -244,21 +249,19 @@ export default function LibraryPage({ filter, onChangeFilter, onRefresh, refresh
             <LoadingRow />
           </div>
         </div>
-      )}
+        )}
 
-      {/* 错误 */}
-      {error && (
-        <div className="flex flex-col items-center justify-center py-32 gap-4">
+        {error && (
+          <div className="flex flex-col items-center justify-center gap-4 py-32">
           <span style={{ fontSize: 120, lineHeight: 1 }}>⚠️</span>
           <p className="text-xl font-medium" style={{ color: 'var(--color-danger)' }}>加载失败：{error}</p>
           <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
             请确认 FastAPI 后端已在 localhost:38765 运行
           </p>
         </div>
-      )}
+        )}
 
-      {/* 搜索结果（搜索时覆盖所有其他视图） */}
-      {!loading && !error && search.trim() && (
+        {!loading && !error && search.trim() && (
         filteredItems?.length > 0 ? (
           <>
             <p className="text-sm mb-3" style={{ color: 'var(--color-muted)' }}>
@@ -273,13 +276,12 @@ export default function LibraryPage({ filter, onChangeFilter, onRefresh, refresh
             <p className="text-sm" style={{ color: 'var(--color-muted)', opacity: 0.6 }}>试试其他关键词</p>
           </div>
         )
-      )}
+        )}
 
-      {/* 全部视图：分区横向滚动（MoviePilot 风格） */}
-      {!loading && !error && !search.trim() && filter === 'all' && data && (
+        {!loading && !error && !search.trim() && filter === 'all' && data && (
         <>
           {data.movies.length === 0 && data.tv_shows.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-32 gap-4">
+            <div className="flex flex-col items-center justify-center gap-4 py-32">
               <span style={{ fontSize: 120, lineHeight: 1 }}>📭</span>
               <p className="text-xl font-medium" style={{ color: 'var(--color-muted)' }}>媒体库为空</p>
               <p className="text-sm" style={{ color: 'var(--color-muted)', opacity: 0.6 }}>点击右上角「刷新媒体库」扫描 Drive</p>
@@ -303,19 +305,19 @@ export default function LibraryPage({ filter, onChangeFilter, onRefresh, refresh
             </>
           )}
         </>
-      )}
+        )}
 
-      {/* 单类型视图：网格 */}
-      {!loading && !error && !search.trim() && filter !== 'all' && (
+        {!loading && !error && !search.trim() && filter !== 'all' && (
         singleList.length > 0 ? (
           <MediaGrid items={singleList} onSelect={setSelected} />
         ) : (
-          <div className="flex flex-col items-center justify-center py-32 gap-4">
+          <div className="flex flex-col items-center justify-center gap-4 py-32">
             <span style={{ fontSize: 120, lineHeight: 1 }}>📭</span>
             <p className="text-xl font-medium" style={{ color: 'var(--color-muted)' }}>暂无{pageTitle}</p>
           </div>
         )
-      )}
+        )}
+      </section>
 
       {selected && (
         <DetailModal item={selected} onClose={() => setSelected(null)} />

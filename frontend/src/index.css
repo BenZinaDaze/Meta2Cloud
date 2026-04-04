@@ -1,53 +1,166 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Noto+Serif+SC:wght@500;700&display=swap');
 @import "tailwindcss";
 
 @layer base {
   :root {
-    --color-bg: #0f1117;
-    --color-surface: #1a1d27;
-    --color-surface-2: #22263a;
-    --color-border: #2d3148;
-    --color-accent: #6c63ff;
-    --color-accent-hover: #8b85ff;
-    --color-text: #e4e6f0;
-    --color-muted: #8b8fa8;
-    --color-success: #4ade80;
-    --color-warning: #facc15;
-    --color-danger: #f87171;
+    --color-bg: #07111f;
+    --color-bg-rgb: 7, 17, 31;
+    --color-surface: #0f1b2d;
+    --color-surface-2: #14253b;
+    --color-surface-3: #1b3250;
+    --color-border: rgba(144, 178, 221, 0.18);
+    --color-border-strong: rgba(167, 198, 235, 0.32);
+    --color-accent: #c8924d;
+    --color-accent-hover: #ddb06f;
+    --color-accent-soft: rgba(200, 146, 77, 0.14);
+    --color-text: #edf3fb;
+    --color-muted: #91a6c2;
+    --color-muted-soft: #6b829f;
+    --color-success: #5ed39a;
+    --color-warning: #f0c46b;
+    --color-danger: #ef7d75;
+    --shadow-soft: 0 18px 45px rgba(3, 10, 19, 0.35);
+    --shadow-strong: 0 32px 80px rgba(2, 8, 18, 0.52);
   }
 
   * {
     box-sizing: border-box;
   }
 
+  html {
+    background: var(--color-bg);
+  }
+
   body {
-    background-color: var(--color-bg);
-    color: var(--color-text);
-    font-family: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
     margin: 0;
+    min-height: 100vh;
+    color: var(--color-text);
+    font-family: 'Manrope', 'PingFang SC', 'Noto Sans SC', sans-serif;
+    background:
+      radial-gradient(circle at top left, rgba(64, 111, 178, 0.22), transparent 30%),
+      radial-gradient(circle at 80% 0%, rgba(200, 146, 77, 0.16), transparent 26%),
+      linear-gradient(180deg, #081321 0%, #07111f 45%, #091524 100%);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: radial-gradient(circle at center, black 35%, transparent 90%);
+    opacity: 0.38;
+  }
+
+  h1, h2, h3 {
+    margin: 0;
+    font-family: 'Noto Serif SC', serif;
+    font-weight: 700;
+    text-wrap: balance;
+  }
+
+  p {
+    margin: 0;
+    text-wrap: pretty;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-muted-soft);
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid rgba(200, 146, 77, 0.7);
+    outline-offset: 2px;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  ::selection {
+    background: rgba(200, 146, 77, 0.28);
+    color: var(--color-text);
   }
 
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 9px;
+    height: 9px;
   }
+
   ::-webkit-scrollbar-track {
     background: transparent;
   }
+
   ::-webkit-scrollbar-thumb {
-    background: var(--color-border);
-    border-radius: 3px;
+    background: rgba(144, 178, 221, 0.24);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
   }
+
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--color-muted);
+    background: rgba(200, 146, 77, 0.36);
+    background-clip: padding-box;
+  }
+}
+
+@layer components {
+  .app-shell {
+    min-height: 100dvh;
+    position: relative;
+  }
+
+  .app-shell::after {
+    content: '';
+    position: fixed;
+    inset: auto 0 0;
+    height: 180px;
+    pointer-events: none;
+    background: linear-gradient(180deg, transparent 0%, rgba(var(--color-bg-rgb), 0.7) 65%, rgba(var(--color-bg-rgb), 0.96) 100%);
+  }
+
+  .panel-surface {
+    background: linear-gradient(180deg, rgba(20, 37, 59, 0.96) 0%, rgba(12, 24, 40, 0.98) 100%);
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(18px);
   }
 }
 
 @keyframes slideInRight {
-  from { transform: translateX(110%); opacity: 0; }
-  to   { transform: translateX(0);    opacity: 1; }
+  from {
+    transform: translateX(110%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }

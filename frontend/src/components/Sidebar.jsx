@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 
 // SVG 图标（MD 风格线条图标）
 const Icons = {
@@ -41,30 +41,27 @@ function NavItem({ icon, label, active, onClick, indent = false, right, bold = f
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-3 font-medium transition-all duration-150 text-left relative overflow-hidden group"
+      className="group relative flex items-center gap-3 overflow-hidden text-left font-medium transition-all duration-150"
       style={{
-        padding: indent ? '11px 18px 11px 52px' : '12px 18px',
-        margin: '2px 10px',
+        padding: indent ? '12px 18px 12px 54px' : '13px 18px',
+        margin: '4px 12px',
         width: 'calc(100% - 20px)',
-        borderRadius: 28,
-        background: active ? 'color-mix(in srgb, var(--color-accent) 18%, transparent)' : 'transparent',
-        color: active ? 'var(--color-accent)' : (bold ? 'var(--color-text)' : 'var(--color-muted)'),
+        borderRadius: 20,
+        background: active ? 'linear-gradient(90deg, rgba(200, 146, 77, 0.16) 0%, rgba(200, 146, 77, 0.04) 100%)' : 'transparent',
+        border: active ? '1px solid rgba(200, 146, 77, 0.22)' : '1px solid transparent',
+        color: active ? 'var(--color-accent-hover)' : (bold ? 'var(--color-text)' : 'var(--color-muted)'),
       }}
     >
-      {/* Hover 涟漪层 */}
       <span
-        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150 rounded-[28px]"
-        style={{ background: active ? 'color-mix(in srgb, var(--color-accent) 8%, transparent)' : 'rgba(255,255,255,0.04)' }}
+        className="absolute inset-0 rounded-[20px] opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+        style={{ background: active ? 'rgba(200, 146, 77, 0.06)' : 'rgba(255,255,255,0.035)' }}
       />
-      {/* 图标 */}
       <span className="relative flex-shrink-0" style={{ color: active ? 'var(--color-accent)' : 'inherit' }}>
         {icon}
       </span>
-      {/* 文字 */}
       <span className="relative flex-1" style={{ fontSize: indent ? 15 : 16, fontWeight: bold ? 600 : 500 }}>
         {label}
       </span>
-      {/* 右侧插槽（折叠箭头等） */}
       {right && <span className="relative flex-shrink-0">{right}</span>}
     </button>
   )
@@ -72,10 +69,7 @@ function NavItem({ icon, label, active, onClick, indent = false, right, bold = f
 
 export default function Sidebar({ active, onSelect }) {
   const [expanded, setExpanded] = useState(true)
-
-  useEffect(() => {
-    if (active === 'movies' || active === 'tv') setExpanded(true)
-  }, [active])
+  const isExpanded = expanded || active === 'movies' || active === 'tv'
 
   function handleLibraryClick() {
     setExpanded(prev => !prev)
@@ -88,7 +82,7 @@ export default function Sidebar({ active, onSelect }) {
       style={{
         color: 'var(--color-muted)',
         display: 'flex',
-        transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+        transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
       }}
     >
       {Icons.chevron}
@@ -97,10 +91,23 @@ export default function Sidebar({ active, onSelect }) {
 
   return (
     <aside
-      className="fixed top-14 left-0 bottom-0 w-72 flex flex-col pt-4 pb-4"
-      style={{ background: 'var(--color-surface)', borderRight: '1px solid var(--color-border)' }}
+      className="fixed bottom-5 left-5 top-[96px] flex w-72 flex-col rounded-[30px] pt-5 pb-5"
+      style={{
+        background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.95) 0%, rgba(10, 19, 32, 0.98) 100%)',
+        border: '1px solid var(--color-border)',
+        boxShadow: 'var(--shadow-soft)',
+        backdropFilter: 'blur(18px)',
+      }}
     >
-      {/* 媒体库（父项）—— 与 NavItem 完全相同的 margin/padding */}
+      <div className="px-6 pb-4">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.24em]" style={{ color: 'var(--color-muted-soft)' }}>
+          Navigation
+        </div>
+        <div className="mt-2 text-xl font-semibold" style={{ color: 'var(--color-text)' }}>
+          影视资料馆
+        </div>
+      </div>
+
       <NavItem
         icon={Icons.library}
         label="媒体库"
@@ -110,14 +117,12 @@ export default function Sidebar({ active, onSelect }) {
         right={chevron}
       />
 
-      {/* 子项：电影 / 电视剧 */}
       <div
         className="overflow-hidden transition-all duration-200 ease-in-out"
-        style={{ maxHeight: expanded ? '120px' : '0px', opacity: expanded ? 1 : 0 }}
+        style={{ maxHeight: isExpanded ? '120px' : '0px', opacity: isExpanded ? 1 : 0 }}
       >
         <div className="relative">
-          {/* 连接线 */}
-          <div className="absolute top-0 bottom-0" style={{ left: 34, width: 1, background: 'var(--color-border)' }} />
+          <div className="absolute top-0 bottom-0" style={{ left: 38, width: 1, background: 'rgba(144, 178, 221, 0.16)' }} />
           {[
             { key: 'movies', label: '电影',   icon: Icons.movie },
             { key: 'tv',     label: '电视剧', icon: Icons.tv },
@@ -134,7 +139,6 @@ export default function Sidebar({ active, onSelect }) {
         </div>
       </div>
 
-      {/* 配置文件（与媒体库同级）—— 完全相同的 NavItem 样式 */}
       <NavItem
         icon={Icons.settings}
         label="配置文件"
@@ -142,6 +146,23 @@ export default function Sidebar({ active, onSelect }) {
         onClick={() => onSelect('config')}
         bold
       />
+
+      <div className="mt-auto px-5 pt-6">
+        <div
+          className="rounded-[22px] px-4 py-4"
+          style={{
+            background: 'linear-gradient(180deg, rgba(255,255,255,0.035) 0%, rgba(255,255,255,0.01) 100%)',
+            border: '1px solid var(--color-border)',
+          }}
+        >
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-accent-hover)' }}>
+            Current mode
+          </div>
+          <div className="mt-2 text-sm leading-6" style={{ color: 'var(--color-muted)' }}>
+            按电影、剧集和配置分区管理，保持扫描结果与本地收藏一致。
+          </div>
+        </div>
+      </div>
     </aside>
   )
 }

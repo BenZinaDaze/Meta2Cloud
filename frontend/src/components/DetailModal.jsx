@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 function EpisodePill({ ep }) {
   const color = ep.in_library
@@ -61,17 +61,17 @@ function SeasonBlock({ season }) {
 export default function DetailModal({ item, onClose }) {
   const [show, setShow] = useState(false)
 
+  const handleClose = useCallback(() => {
+    setShow(false)
+    setTimeout(onClose, 200)
+  }, [onClose])
+
   useEffect(() => {
     requestAnimationFrame(() => setShow(true))
     const onKey = (e) => e.key === 'Escape' && handleClose()
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
-
-  function handleClose() {
-    setShow(false)
-    setTimeout(onClose, 200)
-  }
+  }, [handleClose])
 
   if (!item) return null
   const isTV = item.media_type === 'tv'
@@ -83,42 +83,35 @@ export default function DetailModal({ item, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-start justify-center p-4 pt-16 overflow-y-auto"
+      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto p-4 pt-20"
       style={{
-        background: 'rgba(0,0,0,0.8)',
-        backdropFilter: 'blur(4px)',
+        background: 'rgba(2, 8, 18, 0.78)',
+        backdropFilter: 'blur(10px)',
         opacity: show ? 1 : 0,
         transition: 'opacity 0.2s',
       }}
       onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
       <div
-        className="relative w-full max-w-3xl rounded-2xl shadow-2xl"
+        className="relative w-full max-w-3xl overflow-hidden rounded-[30px]"
         style={{
-          background: 'var(--color-surface)',
+          background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.98) 0%, rgba(11, 22, 37, 0.98) 100%)',
           border: '1px solid var(--color-border)',
           transform: show ? 'translateY(0)' : 'translateY(20px)',
           transition: 'transform 0.2s',
-          overflow: 'hidden',  /* keep rounded corners */
+          boxShadow: 'var(--shadow-strong)',
         }}
       >
-        {/* ── 1: Backdrop ── */}
         <div className="relative overflow-hidden" style={{ height: BACKDROP_H }}>
           {item.backdrop_url
             ? <img src={item.backdrop_url} alt="" className="absolute inset-0 w-full h-full object-cover" />
             : <div className="absolute inset-0" style={{ background: 'var(--color-surface-2)' }} />
           }
-          {/* 渐变 */}
           <div className="absolute inset-0"
-            style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.1) 40%, var(--color-surface) 100%)' }} />
+            style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.08) 10%, rgba(7, 17, 31, 0.88) 100%)' }} />
         </div>
 
-        {/* ── 2: 海报 + 标题行 ──
-              flex 行加 relative z-10，使其作为定位元素绘制在 backdrop（position:relative）之上
-              左栏 = 海报（负 margin 上穿 backdrop）
-              右栏 = 标题（始终在 backdrop 下方，不会被裁）                              */}
         <div className="flex gap-4 px-6 relative items-end" style={{ zIndex: 10 }}>
-          {/* 左栏：海报 */}
           <div className="flex-shrink-0" style={{ width: POSTER_W }}>
             {item.poster_url && (
               <img
@@ -127,45 +120,47 @@ export default function DetailModal({ item, onClose }) {
                 className="rounded-lg shadow-xl w-full"
                 style={{
                   marginTop: -(POSTER_H / 2 + 16),
-                  border: '2px solid var(--color-border)',
+                  border: '2px solid rgba(255,255,255,0.08)',
                   display: 'block',
                 }}
               />
             )}
           </div>
 
-          {/* 右栏：标题区 — pb-3 底部留白与海报底部对齐，pr-10 给关闭按钮留空间 */}
           <div className="flex-1 min-w-0 pb-3 pr-10">
-            <h2 className="text-lg font-bold leading-snug mb-1" style={{ color: 'var(--color-text)' }}>
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--color-accent-hover)' }}>
+              Metadata detail
+            </div>
+            <h2 className="mb-1 text-[28px] font-bold leading-snug" style={{ color: 'var(--color-text)' }}>
               {item.title}
             </h2>
             {item.original_title && item.original_title !== item.title && (
-              <p className="text-sm mb-2 leading-snug" style={{ color: 'var(--color-muted)' }}>
+              <p className="mb-3 text-sm leading-snug" style={{ color: 'var(--color-muted)' }}>
                 {item.original_title}
               </p>
             )}
             <div className="flex flex-wrap gap-1.5">
               {item.year && (
                 <span className="text-xs px-2 py-0.5 rounded-full"
-                  style={{ background: 'var(--color-surface-2)', color: 'var(--color-muted)' }}>
+                  style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }}>
                   {item.year}
                 </span>
               )}
               {item.rating > 0 && (
                 <span className="text-xs px-2 py-0.5 rounded-full"
-                  style={{ background: 'var(--color-surface-2)', color: 'var(--color-warning)' }}>
+                  style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-warning)', border: '1px solid var(--color-border)' }}>
                   ★ {item.rating}
                 </span>
               )}
               {item.status && (
                 <span className="text-xs px-2 py-0.5 rounded-full"
-                  style={{ background: 'var(--color-surface-2)', color: 'var(--color-accent)' }}>
+                  style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-accent-hover)', border: '1px solid var(--color-border)' }}>
                   {item.status}
                 </span>
               )}
               {isTV && (
                 <span className="text-xs px-2 py-0.5 rounded-full"
-                  style={{ background: 'var(--color-surface-2)', color: 'var(--color-text)' }}>
+                  style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}>
                   {item.in_library_episodes}/{item.total_episodes} 集已入库
                 </span>
               )}
@@ -173,10 +168,9 @@ export default function DetailModal({ item, onClose }) {
           </div>
         </div>
 
-        {/* ── 3: 主体内容 ── */}
         <div className="px-6 pb-6 mt-2">
           {item.overview && (
-            <p className="text-sm leading-relaxed mb-4" style={{ color: 'var(--color-muted)' }}>
+            <p className="mb-5 text-sm leading-7" style={{ color: 'var(--color-muted)' }}>
               {item.overview}
             </p>
           )}
@@ -205,11 +199,10 @@ export default function DetailModal({ item, onClose }) {
           )}
         </div>
 
-        {/* 关闭按钮 */}
         <button
           onClick={handleClose}
-          className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center text-sm transition-colors hover:bg-black/40"
-          style={{ background: 'rgba(0,0,0,0.45)', color: 'var(--color-text)' }}
+          className="absolute right-4 top-4 flex size-9 items-center justify-center rounded-full text-sm transition-colors hover:bg-black/40"
+          style={{ background: 'rgba(0,0,0,0.45)', color: 'var(--color-text)', border: '1px solid rgba(255,255,255,0.08)' }}
         >
           ✕
         </button>
