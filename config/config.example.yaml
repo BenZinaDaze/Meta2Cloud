@@ -155,7 +155,7 @@ organizer:
   # 例：剧集文件夹 ID
   tv_root_id: ""
 
-  # 目录结构说明（与 MoviePilot / Plex / Infuse 默认格式一致）：
+  # 目录结构说明（与 Plex / Infuse 默认格式一致）：
   #   电影：{root}/片名 (年份)/
   #   剧集：{root}/剧名 (年份)/Season N/
 

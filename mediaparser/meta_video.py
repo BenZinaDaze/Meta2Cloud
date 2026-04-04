@@ -1,6 +1,5 @@
 """
 MetaVideo —— 普通影视文件名/种子名解析器。
-来源：MoviePilot app/core/meta/metavideo.py（移除 app.* 依赖）
 """
 import re
 from typing import Optional

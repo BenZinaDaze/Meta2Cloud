@@ -1,6 +1,5 @@
 """
 ReleaseGroupsMatcher —— 识别字幕组/发布组。
-来源：MoviePilot app/core/meta/releasegroup.py
 改动：移除数据库依赖，改为通过构造函数传入自定义组列表。
 """
 import regex as re

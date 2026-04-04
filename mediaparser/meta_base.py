@@ -1,6 +1,5 @@
 """
 MetaBase —— 媒体元数据基类，存放所有解析结果字段及副标题中文格式解析。
-来源：MoviePilot app/core/meta/metabase.py（移除 app.log / app.schemas 依赖）
 """
 import logging
 import traceback

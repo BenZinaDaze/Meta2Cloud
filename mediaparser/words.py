@@ -1,6 +1,5 @@
 """
 WordsMatcher —— 自定义识别词预处理（屏蔽词/替换词/集偏移）。
-来源：MoviePilot app/core/meta/words.py（移除数据库依赖）
 
 用法：
     # 不带自定义词
@@ -121,7 +120,7 @@ class WordsMatcher:
 def is_anime(title: str) -> bool:
     """
     判断是否为动漫格式（简单规则：带方括号形如 [字幕组] Title [编号]...）
-    与 MoviePilot app/core/metainfo.py 中 is_anime() 逻辑一致。
+    与 Metadata2GD app/core/metainfo.py 中 is_anime() 逻辑一致。
     """
     if not title:
         return False

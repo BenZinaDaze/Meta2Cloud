@@ -1,5 +1,5 @@
 """
-nfo/generator.py —— Plex / Infuse / Kodi 兼容 NFO 生成器（对齐 MoviePilot 标准）
+nfo/generator.py —— Plex / Infuse / Kodi 兼容 NFO 生成器
 
 NFO 格式：XBMC/Kodi XML，Plex Local Media Assets 和 Infuse 均支持。
 
@@ -9,7 +9,7 @@ NFO 格式：XBMC/Kodi XML，Plex Local Media Assets 和 Infuse 均支持。
     整剧  → <tvshow>          放在剧名文件夹根目录（tvshow.nfo）
     季    → <season>          放在 Season 子文件夹（season.nfo）
 
-相比初版的提升（对齐 MoviePilot TmdbScraper）：
+相比初版的提升：
     ✓ 全面切换 minidom 构建，<plot>/<outline>/<overview> 使用 CDATA
     ✓ 新增 <premiered>（首播/上映日期）
     ✓ 新增 <outline>（与 <plot> 相同，Kodi 系媒体服兼容）
@@ -298,7 +298,7 @@ class NfoGenerator:
         tvdb = ext_ids.get("tvdb_id") or ""
 
         if ep_tmdb_id:
-            # 单集使用单集 ID（对齐 MoviePilot 行为）
+            # 单集使用单集 ID
             self._add(doc, root, "tmdbid", str(ep_tmdb_id))
             uid = doc.createElement("uniqueid")
             uid.setAttribute("type", "tmdb")

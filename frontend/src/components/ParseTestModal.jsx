@@ -1,6 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
 import { testParse } from '../api'
 
+const STATUS_MAP = {
+  'Returning Series': '连载中',
+  'Ended': '已完结',
+  'Canceled': '已取消',
+  'In Production': '制作中',
+  'Planned': '计划中',
+  'Pilot': '试播',
+  'In Limbo': '播出未定',
+}
+
+function formatStatus(status) {
+  if (!status) return status
+  return STATUS_MAP[status] ?? status
+}
+
 export default function ParseTestModal({ onClose, initialFilename = '' }) {
   const [show, setShow] = useState(false)
   const [filename, setFilename] = useState(initialFilename)
@@ -116,11 +131,11 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
                 background: 'rgba(255,255,255,0.03)',
                 border: '1px solid var(--color-border)',
                 color: 'var(--color-text)',
-                resize: 'vertical',
+                resize: 'none',
               }}
             />
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center gap-3">
               <button
                 type="submit"
                 disabled={!filename.trim() || loading}
@@ -134,9 +149,6 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
               >
                 {loading ? '解析中…' : '开始解析'}
               </button>
-              <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
-                支持直接输入文件名，也支持带目录路径的字符串。
-              </span>
             </div>
           </form>
 
@@ -244,20 +256,49 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
                           </div>
                         ) : null}
                         <div className="mt-3 flex flex-wrap gap-2">
-                          {[
-                            result.tmdb.year,
-                            result.tmdb.rating ? `★ ${result.tmdb.rating}` : '',
-                            result.tmdb.status,
-                            result.tmdb.tmdb_id ? `TMDB ${result.tmdb.tmdb_id}` : '',
-                          ].filter(Boolean).map((item) => (
-                            <span
-                              key={item}
-                              className="rounded-full px-2 py-1 text-xs"
-                              style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--color-text)', border: '1px solid rgba(255,255,255,0.08)' }}
-                            >
-                              {item}
+                          {result.tmdb.year && (
+                            <span className="rounded-full px-2 py-1 text-xs"
+                              style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-muted)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                              {result.tmdb.year}
                             </span>
-                          ))}
+                          )}
+                          {result.tmdb.rating > 0 && (
+                            <span className="rounded-full px-2 py-1 text-xs"
+                              style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-warning)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                              ★ {result.tmdb.rating}
+                            </span>
+                          )}
+                          {result.tmdb.status && (
+                            <span className="rounded-full px-2 py-1 text-xs"
+                              style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-accent-hover)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                              {formatStatus(result.tmdb.status)}
+                            </span>
+                          )}
+                          {result.tmdb.tmdb_id && (
+                            <a
+                              href={`https://www.themoviedb.org/${result.tmdb.media_type === 'tv' ? 'tv' : 'movie'}/${result.tmdb.tmdb_id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="rounded-full px-2 py-1 text-xs transition-all duration-150"
+                              style={{
+                                background: 'rgba(1, 180, 228, 0.08)',
+                                color: '#01b4e4',
+                                border: '1px solid rgba(1, 180, 228, 0.35)',
+                                textDecoration: 'none',
+                                cursor: 'pointer',
+                              }}
+                              onMouseEnter={e => {
+                                e.currentTarget.style.background = 'rgba(1, 180, 228, 0.18)'
+                                e.currentTarget.style.borderColor = 'rgba(1, 180, 228, 0.65)'
+                              }}
+                              onMouseLeave={e => {
+                                e.currentTarget.style.background = 'rgba(1, 180, 228, 0.08)'
+                                e.currentTarget.style.borderColor = 'rgba(1, 180, 228, 0.35)'
+                              }}
+                            >
+                              TMDB {result.tmdb.tmdb_id}
+                            </a>
+                          )}
                         </div>
                         {result.tmdb.overview ? (
                           <div
@@ -282,7 +323,6 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
                       ['首播/上映', result.tmdb.release_date || '-'],
                       ['季 / 集', `${result.season || '-'} / ${result.episode || '-'}`],
                       ['媒体类型', result.tmdb.media_type_label || '-'],
-                      ['TMDB 编号', result.tmdb.tmdb_id || '-'],
                     ].map(([label, value]) => (
                       <div key={label} className="rounded-2xl px-3 py-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
                         <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-muted)' }}>
@@ -293,6 +333,14 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
                         </div>
                       </div>
                     ))}
+                    <div className="rounded-2xl px-3 py-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-muted)' }}>
+                        TMDB 编号
+                      </div>
+                      <div className="mt-1 break-all text-sm" style={{ color: 'var(--color-text)' }}>
+                        {String(result.tmdb.tmdb_id || '-')}
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
