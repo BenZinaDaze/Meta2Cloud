@@ -399,7 +399,7 @@ def _read_drive_file_content(client: DriveClient, file_id: str) -> Optional[str]
     try:
         svc = client._svc
         request = svc.files().get_media(fileId=file_id)
-        content = request.execute()
+        content = client._execute(request)
         if isinstance(content, bytes):
             return content.decode("utf-8", errors="ignore")
         return str(content)

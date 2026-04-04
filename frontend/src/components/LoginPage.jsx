@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { login } from '../api'
+import BrandMark from './BrandMark'
 
 export default function LoginPage({ onLogin }) {
   const [username, setUsername] = useState('')
@@ -67,13 +68,12 @@ export default function LoginPage({ onLogin }) {
         <div style={{ padding: '40px 36px 34px' }}>
           <div className="mb-9 flex items-center gap-4">
             <div
-              className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl text-base font-bold text-white"
+              className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl"
               style={{
-                background: 'linear-gradient(135deg, var(--color-accent) 0%, #a56d2c 100%)',
-                boxShadow: '0 12px 28px rgba(200,146,77,0.28)',
+                boxShadow: '0 12px 28px rgba(200,146,77,0.24)',
               }}
             >
-              M
+              <BrandMark className="h-11 w-11" compact />
             </div>
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-[0.24em]" style={{ color: 'var(--color-muted)' }}>
