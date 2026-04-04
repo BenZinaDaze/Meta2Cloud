@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { logout } from '../api'
+import BrandMark from './BrandMark'
 
 export default function Topbar({ onLogout }) {
   const [confirming, setConfirming] = useState(false)
@@ -22,13 +23,12 @@ export default function Topbar({ onLogout }) {
     >
       <div className="flex items-center gap-4">
         <div
-          className="flex size-10 items-center justify-center rounded-2xl text-sm font-bold text-white"
+          className="flex size-10 items-center justify-center rounded-2xl"
           style={{
-            background: 'linear-gradient(135deg, var(--color-accent) 0%, #a56d2c 100%)',
-            boxShadow: '0 10px 24px rgba(200, 146, 77, 0.28)',
+            boxShadow: '0 10px 24px rgba(200, 146, 77, 0.22)',
           }}
         >
-          M
+          <BrandMark className="size-10" compact />
         </div>
         <div>
           <div className="text-[10px] font-semibold uppercase tracking-[0.24em]" style={{ color: 'var(--color-muted)' }}>

@@ -19,9 +19,13 @@ drive/client.py —— Google Drive 文件操作封装
 
 import io
 import os
+import socket
+import ssl
+import time
 from dataclasses import dataclass, field
 from typing import Iterator, List, Optional
 
+import httplib2
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
 
@@ -94,6 +98,24 @@ class DriveClient:
         """
         self._svc = service
 
+    def _execute(self, request, *, num_retries: int = 3, max_attempts: int = 3):
+        """
+        执行 Drive 请求，并对底层 TLS/连接抖动做额外重试。
+
+        googleapiclient 自身会按 num_retries 处理部分瞬时错误，但像
+        `ssl.SSLError: DECRYPTION_FAILED_OR_BAD_RECORD_MAC` 这类传输层异常
+        仍可能直接冒泡，这里补一层退避重试，避免一次坏连接导致整次扫描失败。
+        """
+        delay = 1.0
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return request.execute(num_retries=num_retries)
+            except (ssl.SSLError, socket.timeout, TimeoutError, ConnectionError, httplib2.HttpLib2Error):
+                if attempt >= max_attempts:
+                    raise
+                time.sleep(delay)
+                delay *= 2
+
     # ── 构造函数 ──────────────────────────────────────────────────────────────
 
     @classmethod
@@ -150,14 +172,14 @@ class DriveClient:
 
         while True:
             resp = (
-                self._svc.files()
-                .list(
-                    q=q,
-                    fields=f"nextPageToken, files({_FILE_FIELDS})",
-                    pageSize=min(page_size, 1000),
-                    pageToken=page_token,
+                self._execute(
+                    self._svc.files().list(
+                        q=q,
+                        fields=f"nextPageToken, files({_FILE_FIELDS})",
+                        pageSize=min(page_size, 1000),
+                        pageToken=page_token,
+                    )
                 )
-                .execute()
             )
             for raw in resp.get("files", []):
                 results.append(DriveFile._from_raw(raw))
@@ -221,9 +243,9 @@ class DriveClient:
         异常：googleapiclient.errors.HttpError（404 时文件不存在）
         """
         raw = (
-            self._svc.files()
-            .get(fileId=file_id, fields=_FILE_FIELDS)
-            .execute()
+            self._execute(
+                self._svc.files().get(fileId=file_id, fields=_FILE_FIELDS)
+            )
         )
         return DriveFile._from_raw(raw)
 
@@ -244,13 +266,13 @@ class DriveClient:
             q_parts.append(f"'{folder_id}' in parents")
 
         resp = (
-            self._svc.files()
-            .list(
-                q=" and ".join(q_parts),
-                fields=f"files({_FILE_FIELDS})",
-                pageSize=1,
+            self._execute(
+                self._svc.files().list(
+                    q=" and ".join(q_parts),
+                    fields=f"files({_FILE_FIELDS})",
+                    pageSize=1,
+                )
             )
-            .execute()
         )
         files = resp.get("files", [])
         return DriveFile._from_raw(files[0]) if files else None
