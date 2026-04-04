@@ -75,10 +75,10 @@ TMDB_IMG_BASE = "https://image.tmdb.org/t/p/w500"
 TMDB_IMG_ORIG = "https://image.tmdb.org/t/p/original"
 
 _ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_CACHE_DB = os.path.join(_ROOT_DIR, "data", "tmdb_cache.db")
-_APP_LOG_DIR = os.path.join(_ROOT_DIR, "data", "logs")
-_LEGACY_APP_LOG_DB = os.path.join(_ROOT_DIR, "data", "app_logs.jsonl")
-_JWT_SECRET_FILE = os.path.join(_ROOT_DIR, "data", ".jwt_secret")
+_CACHE_DB = os.path.join(_ROOT_DIR, "config", "data", "tmdb_cache.db")
+_APP_LOG_DIR = os.path.join(_ROOT_DIR, "config", "data", "logs")
+_LEGACY_APP_LOG_DB = os.path.join(_ROOT_DIR, "config", "data", "app_logs.jsonl")
+_JWT_SECRET_FILE = os.path.join(_ROOT_DIR, "config", "data", ".jwt_secret")
 _jwt_secret_cache: Optional[str] = None
 _log_store = LogStore(_APP_LOG_DIR, retention_days=7, legacy_path=_LEGACY_APP_LOG_DB)
 _ARIA2_TASK_KEYS = [
@@ -128,7 +128,7 @@ def _infer_pipeline_log_level(line: str) -> str:
 # ──────────────────────────────────────────────────────────────
 
 def _get_jwt_secret() -> str:
-    """JWT 密钥：配置文件 > data/.jwt_secret > 自动生成并持久化"""
+    """JWT 密钥：配置文件 > config/data/.jwt_secret > 自动生成并持久化"""
     global _jwt_secret_cache
     if _jwt_secret_cache:
         return _jwt_secret_cache

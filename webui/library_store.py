@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS library_snapshot (
 """
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_DB_PATH = os.path.join(_ROOT, "data", "library.db")
+_DB_PATH = os.path.join(_ROOT, "config", "data", "library.db")
 
 
 class LibraryStore:
