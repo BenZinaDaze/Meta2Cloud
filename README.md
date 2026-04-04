@@ -144,7 +144,7 @@ Web UI 基于 React + Vite 构建，提供以下页面：
 | **剧集详情** | 按季展示每集入库状态，区分已入库（✅）与未入库 |
 | **配置** | 查看当前配置项（只读），手动刷新媒体库快照 |
 
-媒体库数据来自本地 SQLite 快照（`data/library.db`），无需每次访问都扫描 Drive。点击「刷新媒体库」时才重新扫描 Drive 并更新快照。
+媒体库数据来自本地 SQLite 快照（`config/data/library.db`），无需每次访问都扫描 Drive。点击「刷新媒体库」时才重新扫描 Drive 并更新快照。
 
 ---
 
@@ -157,7 +157,7 @@ Web UI 基于 React + Vite 构建，提供以下页面：
 webui:
   username: "admin"          # 登录用户名，默认 admin
   password: ""               # 登录密码（必填，留空将无法登录）
-  secret_key: ""             # JWT 签名密钥；留空则自动生成并保存到 data/.jwt_secret
+secret_key: ""             # JWT 签名密钥；留空则自动生成并保存到 config/data/.jwt_secret
                              # 生产环境建议指定固定值，避免重启后 Token 失效
   token_expire_hours: 24     # JWT Token 有效期（小时）
   webhook_secret: ""         # /trigger 端点密钥；留空则不校验（仅内网部署时可留空）
@@ -441,7 +441,8 @@ Metadata2GD/
 │  ├─ build.sh              # 镜像构建脚本
 │  ├─ backfill_nfo.py       # 补录 NFO 工具
 │  └─ fix_existing.py       # 修复已有文件命名工具
-├─ data/                    # 运行时数据（自动创建，不提交 git）
+├─ config/
+│  └─ data/                 # 运行时数据（自动创建，不提交 git）
 │  ├─ library.db            # 媒体库快照
 │  ├─ tmdb_cache.db         # TMDB 缓存
 │  └─ .jwt_secret           # 自动生成的 JWT 密钥

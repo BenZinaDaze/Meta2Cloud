@@ -8,7 +8,7 @@ webui:
   # 登录密码（必填，留空则任何人都可以访问——非常不安全）
   password: ""
 
-  # JWT 签名密钥（留空则自动生成并保存到 data/.jwt_secret）
+  # JWT 签名密钥（留空则自动生成并保存到 config/data/.jwt_secret）
   # 生产环境可指定固定密钥，确保重启后现有 token 仍有效
   secret_key: ""
 
@@ -20,7 +20,7 @@ webui:
   webhook_secret: ""
 
   # 日志保留天数
-  # 日志按天写入 data/logs/YYYY-MM-DD.jsonl，超过保留天数的旧文件会自动清理
+  # 日志按天写入 config/data/logs/YYYY-MM-DD.jsonl，超过保留天数的旧文件会自动清理
   log_retention_days: 7
 
 # ─────────────────────────────────────────────────────────

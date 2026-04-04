@@ -1,3 +1,16 @@
+FROM node:22-bookworm-slim AS frontend-builder
+
+WORKDIR /frontend
+
+# 先复制依赖文件，利用 Docker 层缓存
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+# 复制前端源码并构建
+COPY frontend/ ./
+RUN npm run build
+
+
 FROM python:3.11-slim
 
 # 系统依赖（requests 需要 CA 证书）
@@ -8,7 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # 先复制依赖文件，利用 Docker 层缓存
-COPY requirements.txt .
+COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 复制源代码（config/ 目录通过 volume 挂载，不打包进镜像）
@@ -16,12 +29,11 @@ COPY drive/       ./drive/
 COPY mediaparser/ ./mediaparser/
 COPY nfo/         ./nfo/
 COPY webui/       ./webui/
-COPY organizer.py .
-COPY pipeline.py  .
+COPY organizer.py ./
+COPY pipeline.py  ./
 
-# 前端构建产物（npm run build 产生 frontend/dist/）
-# 如果未构建则跳过，WebUI 静态服务不可用但 API 正常工作
-COPY frontend/dist/ ./frontend/dist/
+# 复制前端构建产物
+COPY --from=frontend-builder /frontend/dist ./frontend/dist
 
 # 运行时数据目录（DB 文件由程序在容器内自动创建）
 RUN mkdir -p /app/data

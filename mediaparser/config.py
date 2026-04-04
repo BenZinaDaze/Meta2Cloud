@@ -132,7 +132,7 @@ class TelegramConfig:
 class WebUIConfig:
     username: str = "admin"
     password: str = ""           # 明文密码（配置文件私有，用 hmac.compare_digest 比较）
-    secret_key: str = ""         # JWT 签名密钥，空则自动生成并持久化到 data/.jwt_secret
+    secret_key: str = ""         # JWT 签名密钥，空则自动生成并持久化到 config/data/.jwt_secret
     token_expire_hours: int = 24
     webhook_secret: str = ""     # /trigger 端点 webhook 密钥；空则不校验（仅内网使用时）
     log_retention_days: int = 7  # 日志保留天数，按天滚动存储
