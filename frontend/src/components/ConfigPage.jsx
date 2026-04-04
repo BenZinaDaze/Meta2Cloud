@@ -438,6 +438,9 @@ export default function ConfigPage() {
             <FieldRow label="Webhook 密钥" description="/trigger 端点校验密钥，空则不校验（仅内网时留空）">
               <TextInput value={cfg?.webui?.webhook_secret} type="password" onChange={v => set('webui','webhook_secret',v)} placeholder="留空则不校验" mono />
             </FieldRow>
+            <FieldRow label="日志保留天数" description="日志按天分文件保存，超过这个天数会自动清理">
+              <NumberInput value={cfg?.webui?.log_retention_days} onChange={v => set('webui','log_retention_days',v)} min={1} max={365} />
+            </FieldRow>
           </Section>
 
           {/* ── TMDB ── */}

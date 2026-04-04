@@ -7,6 +7,7 @@ import Sidebar from './components/Sidebar'
 import LibraryPage from './components/LibraryPage'
 import ConfigPage from './components/ConfigPage'
 import DownloadsPage from './components/DownloadsPage'
+import LogsPage from './components/LogsPage'
 import ToastContainer from './components/Toast'
 
 let _toastId = 0
@@ -158,6 +159,8 @@ export default function App() {
         <div className="flex">
           {activeNav === 'config' ? (
             <ConfigPage />
+          ) : activeNav === 'logs' ? (
+            <LogsPage />
           ) : downloadQueue ? (
             <DownloadsPage
               queue={downloadQueue}

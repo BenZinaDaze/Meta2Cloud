@@ -24,6 +24,7 @@ import subprocess
 import sys
 import threading
 import base64
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import unquote, urlparse
@@ -53,6 +54,7 @@ from drive.client import DriveClient
 from mediaparser import Config
 from webui.tmdb_cache import TmdbCache
 from webui.library_store import get_library_store
+from webui.log_store import LogStore
 
 logging.basicConfig(
     level=logging.INFO,
@@ -72,8 +74,11 @@ TMDB_IMG_ORIG = "https://image.tmdb.org/t/p/original"
 
 _ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _CACHE_DB = os.path.join(_ROOT_DIR, "data", "tmdb_cache.db")
+_APP_LOG_DIR = os.path.join(_ROOT_DIR, "data", "logs")
+_LEGACY_APP_LOG_DB = os.path.join(_ROOT_DIR, "data", "app_logs.jsonl")
 _JWT_SECRET_FILE = os.path.join(_ROOT_DIR, "data", ".jwt_secret")
 _jwt_secret_cache: Optional[str] = None
+_log_store = LogStore(_APP_LOG_DIR, retention_days=7, legacy_path=_LEGACY_APP_LOG_DB)
 _ARIA2_TASK_KEYS = [
     "gid", "status", "totalLength", "completedLength", "uploadLength",
     "downloadSpeed", "uploadSpeed", "connections", "numSeeders", "seeder",
@@ -85,6 +90,35 @@ _ARIA2_GLOBAL_OPTION_KEYS = [
     "min-split-size", "continue", "max-tries", "retry-wait",
     "user-agent", "all-proxy", "seed-ratio", "seed-time", "bt-max-peers",
 ]
+
+
+def _app_log(
+    category: str,
+    event: str,
+    message: str,
+    *,
+    level: str = "INFO",
+    details: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    _log_store.set_retention_days(get_config().webui.log_retention_days)
+    return _log_store.write(
+        category=category,
+        event=event,
+        level=level,
+        message=message,
+        details=details,
+    )
+
+
+def _infer_pipeline_log_level(line: str) -> str:
+    text = line.lower()
+    if "❌" in line or "失败" in line or "异常" in line or "error" in text:
+        return "ERROR"
+    if "⚠" in line or "warning" in text or "跳过" in line:
+        return "WARNING"
+    if "✓" in line or "完成" in line or "已上传" in line or "移动：" in line:
+        return "SUCCESS"
+    return "INFO"
 
 
 # ──────────────────────────────────────────────────────────────
@@ -167,11 +201,20 @@ def send_telegram(token: str, chat_id: str, text: str) -> None:
 
 def _do_refresh_library() -> dict:
     """同步刷新快照核心逻辑，可在线程或协程中调用。"""
+    _app_log("library", "refresh_scan_start", "开始刷新媒体库快照")
     client   = get_drive_client()
     cfg      = get_config()
     movies   = scan_movies(client, cfg)
     tv_shows = scan_tv_shows(client, cfg)
-    return get_library_store().save_snapshot(movies, tv_shows)
+    diff = get_library_store().save_snapshot(movies, tv_shows)
+    _app_log(
+        "library",
+        "refresh_scan_finish",
+        "媒体库快照刷新完成",
+        level="SUCCESS",
+        details=diff,
+    )
+    return diff
 
 
 def _do_run_pipeline() -> None:
@@ -180,32 +223,76 @@ def _do_run_pipeline() -> None:
     cfg_obj    = Config.load()
     tg_token   = cfg_obj.telegram.bot_token
     tg_chat_id = cfg_obj.telegram.chat_id
+    run_id = uuid.uuid4().hex[:12]
 
     with _pl_lock:
         _debounce_timer  = None
         _pipeline_running = True
 
-    logger.info("防抖超时，Pipeline 启动")
+    _app_log("pipeline", "pipeline_start", "整理流程启动", details={"runId": run_id})
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             [sys.executable, "pipeline.py"],
             cwd=_ROOT_DIR,
-            capture_output=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
-        if result.returncode == 0:
-            logger.info("Pipeline 完成 ✓")
+        assert process.stdout is not None
+        for line in process.stdout:
+            line = line.rstrip()
+            if not line:
+                continue
+            _app_log(
+                "pipeline",
+                "pipeline_output",
+                line,
+                level=_infer_pipeline_log_level(line),
+                details={"runId": run_id},
+            )
+
+        returncode = process.wait()
+        if returncode == 0:
+            _app_log(
+                "pipeline",
+                "pipeline_finish",
+                "整理流程完成",
+                level="SUCCESS",
+                details={"runId": run_id, "returncode": returncode},
+            )
             try:
-                diff = _do_refresh_library()
-                logger.info("媒体库已自动刷新 ✓  +%d / -%d",
-                            diff.get("added", 0), diff.get("removed", 0))
+                _do_refresh_library()
             except Exception as re_exc:
                 logger.warning("媒体库刷新异常：%s", re_exc)
+                _app_log(
+                    "pipeline",
+                    "pipeline_refresh_failed",
+                    "整理完成后刷新媒体库失败",
+                    level="ERROR",
+                    details={"runId": run_id, "error": str(re_exc)},
+                )
         else:
-            logger.error("Pipeline 退出码 %d", result.returncode)
+            logger.error("Pipeline 退出码 %d", returncode)
+            _app_log(
+                "pipeline",
+                "pipeline_finish",
+                "整理流程失败退出",
+                level="ERROR",
+                details={"runId": run_id, "returncode": returncode},
+            )
             send_telegram(tg_token, tg_chat_id,
-                          f"❌ <b>Metadata2GD</b>\n整理失败，退出码：<code>{result.returncode}</code>")
+                          f"❌ <b>Metadata2GD</b>\n整理失败，退出码：<code>{returncode}</code>")
     except Exception as exc:
         logger.error("Pipeline 异常：%s", exc)
+        _app_log(
+            "pipeline",
+            "pipeline_exception",
+            "整理流程执行异常",
+            level="ERROR",
+            details={"runId": run_id, "error": str(exc)},
+        )
         send_telegram(tg_token, tg_chat_id,
                       f"❌ <b>Metadata2GD</b>\n异常：<code>{exc}</code>")
     finally:
@@ -220,17 +307,28 @@ def schedule_pipeline(debounce: int) -> None:
         if debounce > 0:
             if _debounce_timer is not None:
                 _debounce_timer.cancel()
-                logger.info("防抖计时器已重置，重新等待 %d 秒...", debounce)
+                _app_log(
+                    "pipeline",
+                    "pipeline_schedule_reset",
+                    "整理流程防抖计时器已重置",
+                    details={"debounceSeconds": debounce},
+                )
             else:
-                logger.info("收到首次触发，%d 秒后运行 Pipeline...", debounce)
+                _app_log(
+                    "pipeline",
+                    "pipeline_schedule",
+                    "整理流程已进入防抖等待",
+                    details={"debounceSeconds": debounce},
+                )
             t = threading.Timer(debounce, _do_run_pipeline)
             t.daemon = True
             t.start()
             _debounce_timer = t
         else:
             if _pipeline_running:
-                logger.info("Pipeline 正在运行，跳过本次触发")
+                _app_log("pipeline", "pipeline_skip_running", "整理流程已在运行，跳过本次触发", level="WARNING")
                 return
+            _app_log("pipeline", "pipeline_schedule", "整理流程立即执行", details={"debounceSeconds": 0})
             threading.Thread(target=_do_run_pipeline, daemon=True).start()
 
 
@@ -291,14 +389,35 @@ def _aria2_rpc_call(method: str, params: Optional[List[Any]] = None) -> Any:
         data = resp.json()
     except requests.RequestException as exc:
         logger.warning("aria2 RPC 请求失败：%s", exc)
+        _app_log(
+            "download",
+            "aria2_rpc_error",
+            f"aria2 RPC 请求失败：{method}",
+            level="ERROR",
+            details={"method": method, "error": str(exc)},
+        )
         raise HTTPException(status_code=502, detail=f"无法连接 aria2 RPC：{exc}") from exc
     except ValueError as exc:
         logger.warning("aria2 RPC 返回非 JSON：%s", exc)
+        _app_log(
+            "download",
+            "aria2_rpc_invalid_json",
+            f"aria2 RPC 返回无效 JSON：{method}",
+            level="ERROR",
+            details={"method": method, "error": str(exc)},
+        )
         raise HTTPException(status_code=502, detail="aria2 RPC 返回了无效响应") from exc
 
     if data.get("error"):
         message = data["error"].get("message") or "aria2 RPC 调用失败"
         code = data["error"].get("code")
+        _app_log(
+            "download",
+            "aria2_rpc_api_error",
+            f"aria2 RPC 调用失败：{method}",
+            level="ERROR",
+            details={"method": method, "message": message, "code": code},
+        )
         raise HTTPException(status_code=400, detail=f"{message} ({code})" if code else message)
 
     return data.get("result")
@@ -902,6 +1021,13 @@ async def refresh_library():
         return diff
     except Exception as e:
         logger.exception("刷新媒体库失败")
+        _app_log(
+            "library",
+            "refresh_failed",
+            "媒体库刷新失败",
+            level="ERROR",
+            details={"error": str(e)},
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -930,7 +1056,15 @@ async def trigger_pipeline(request: Request):
     except Exception:
         pass
     debounce = cfg_obj.telegram.debounce_seconds
-    logger.info("收到触发请求  path=%s  debounce=%ds", body.get("path", ""), debounce)
+    _app_log(
+        "pipeline",
+        "webhook_trigger",
+        "收到整理触发请求",
+        details={
+            "path": body.get("path", ""),
+            "debounceSeconds": debounce,
+        },
+    )
     schedule_pipeline(debounce)
     return {"status": "scheduled" if debounce > 0 else "triggered"}
 
@@ -1114,8 +1248,21 @@ async def write_config(body: ConfigSaveBody):
     # 使全局 Config 缓存失效
     global _cfg
     _cfg = None
-    logger.info("config.yaml 已更新（结构化）")
+    _app_log("system", "config_updated", "配置文件已更新", level="SUCCESS")
     return {"ok": True, "message": "配置已保存"}
+
+
+@app.get("/api/logs")
+async def get_logs(
+    limit: int = Query(200, ge=1, le=1000),
+    category: Optional[str] = None,
+    level: Optional[str] = None,
+):
+    _log_store.set_retention_days(get_config().webui.log_retention_days)
+    return {
+        "items": _log_store.read(limit=limit, category=category, level=level),
+        "summary": _log_store.summary(),
+    }
 
 
 @app.get("/api/aria2/overview")
@@ -1153,6 +1300,13 @@ async def aria2_options():
 async def aria2_update_options(body: Dict[str, Any]):
     options = _aria2_sanitize_options(body)
     _aria2_rpc_call("changeGlobalOption", [options])
+    _app_log(
+        "download",
+        "options_updated",
+        "下载器全局配置已更新",
+        level="SUCCESS",
+        details={"keys": sorted(options.keys())},
+    )
     return {"ok": True, "options": await aria2_options()}
 
 
@@ -1167,7 +1321,15 @@ async def aria2_add_uri(body: Aria2AddUriBody):
         params.append(body.position)
 
     gid = _aria2_rpc_call("addUri", params)
-    return {"ok": True, "task": _aria2_get_task(gid)}
+    task = _aria2_get_task(gid)
+    _app_log(
+        "download",
+        "task_added_uri",
+        "已添加链接下载任务",
+        level="SUCCESS",
+        details={"gid": gid, "uriCount": len(uris), "name": task.get("name")},
+    )
+    return {"ok": True, "task": task}
 
 
 @app.post("/api/aria2/add-torrent")
@@ -1187,13 +1349,28 @@ async def aria2_add_torrent(body: Aria2AddTorrentBody):
         params.append(body.position)
 
     gid = _aria2_rpc_call("addTorrent", params)
-    return {"ok": True, "task": _aria2_get_task(gid)}
+    task = _aria2_get_task(gid)
+    _app_log(
+        "download",
+        "task_added_torrent",
+        "已添加种子下载任务",
+        level="SUCCESS",
+        details={"gid": gid, "name": task.get("name")},
+    )
+    return {"ok": True, "task": task}
 
 
 @app.post("/api/aria2/tasks/pause")
 async def aria2_pause_tasks(body: Aria2BatchActionBody):
     for gid in body.gids:
         _aria2_rpc_call("pause", [gid])
+    _app_log(
+        "download",
+        "tasks_paused",
+        "下载任务已暂停",
+        level="SUCCESS",
+        details={"gids": body.gids, "count": len(body.gids)},
+    )
     return {"ok": True}
 
 
@@ -1201,6 +1378,13 @@ async def aria2_pause_tasks(body: Aria2BatchActionBody):
 async def aria2_unpause_tasks(body: Aria2BatchActionBody):
     for gid in body.gids:
         _aria2_rpc_call("unpause", [gid])
+    _app_log(
+        "download",
+        "tasks_unpaused",
+        "下载任务已恢复",
+        level="SUCCESS",
+        details={"gids": body.gids, "count": len(body.gids)},
+    )
     return {"ok": True}
 
 
@@ -1216,18 +1400,33 @@ async def aria2_remove_tasks(body: Aria2BatchActionBody):
                 _aria2_rpc_call("removeDownloadResult", [gid])
             else:
                 raise
+    _app_log(
+        "download",
+        "tasks_removed",
+        "下载任务已移除",
+        level="SUCCESS",
+        details={"gids": body.gids, "count": len(body.gids)},
+    )
     return {"ok": True}
 
 
 @app.post("/api/aria2/tasks/retry")
 async def aria2_retry_tasks(body: Aria2BatchActionBody):
     tasks = [_aria2_retry_task(gid) for gid in body.gids]
+    _app_log(
+        "download",
+        "tasks_retried",
+        "下载任务已重试",
+        level="SUCCESS",
+        details={"sourceGids": body.gids, "newGids": [task.get("gid") for task in tasks]},
+    )
     return {"ok": True, "tasks": tasks}
 
 
 @app.post("/api/aria2/tasks/purge")
 async def aria2_purge_tasks():
     _aria2_rpc_call("purgeDownloadResult")
+    _app_log("download", "tasks_purged", "已清空已完成/已停止下载记录", level="SUCCESS")
     return {"ok": True}
 
 
