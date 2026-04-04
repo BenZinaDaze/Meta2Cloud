@@ -7,7 +7,7 @@ on:
   pull_request:
     branches:
       - main          # PR 到 main 时只构建验证，不推送
-  workflow_dispatch:  # 允许手动触发
+  workflow_dispatch:  # 允许手动触发（自动推送最新 tag + latest）
 
 env:
   DOCKERHUB_IMAGE: benz1/metadata2gd
@@ -20,6 +20,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 获取完整历史，确保能读取所有 tag
+
+      # 手动触发时自动获取最新 v* tag
+      - name: Resolve version
+        id: resolve
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          LATEST=$(git tag --sort=-version:refname | grep -E '^v' | head -n1)
+          echo "version=${LATEST}" >> $GITHUB_OUTPUT
 
       # 设置 QEMU（用于多平台交叉编译，支持 arm64 等）
       - name: Set up QEMU
@@ -38,17 +48,17 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # 自动生成镜像标签
-      # - tag v1.2.3 push → :v1.2.3、:1.2、:latest
-      # - PR             → 仅构建，不推送
-      # - 手动触发       → 构建并推送 :latest
+      # - tag v1.2.3 push → :v1.2.3、:latest
+      # - 手动触发     → :v1.2.3（最新 tag）、:latest
+      # - PR           → 仅构建，不推送
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.DOCKERHUB_IMAGE }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=tag
+            type=raw,value=${{ steps.resolve.outputs.version }},enable=${{ github.event_name == 'workflow_dispatch' && steps.resolve.outputs.version != '' }}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
 
       # 构建并推送
