@@ -82,7 +82,6 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
         opacity: show ? 1 : 0,
         transition: 'opacity 0.2s',
       }}
-      onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
       <div
         className="relative w-full max-w-4xl overflow-hidden rounded-[30px]"
