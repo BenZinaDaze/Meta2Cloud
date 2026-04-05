@@ -127,20 +127,48 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
   
   const currentVersion = import.meta.env.VITE_APP_VERSION || 'v4.03'
 
+  // Compare format conceptually: supports v4.04 vs v4.1, AND v4.1.1 vs v4.1.2
+  // We treat the "Major.Minor" as a float, and any subsequent ".Patch" as integers
+  const compareVer = (v1, v2) => {
+    const parse = v => {
+      const parts = (v || '').replace(/[^\d.]/g, '').split('.');
+      const major = parts[0] || '0';
+      const minor = parts.length > 1 ? parts[1] : '';
+      const floatPart = parseFloat(`${major}${minor ? '.' + minor : ''}`);
+      const patches = parts.slice(2).map(Number);
+      return { floatPart, patches };
+    };
+
+    const p1 = parse(v1);
+    const p2 = parse(v2);
+    
+    if (p1.floatPart !== p2.floatPart) {
+      return p1.floatPart - p2.floatPart;
+    }
+    
+    const len = Math.max(p1.patches.length, p2.patches.length);
+    for (let i = 0; i < len; i++) {
+      const n1 = p1.patches[i] || 0;
+      const n2 = p2.patches[i] || 0;
+      if (n1 !== n2) return n1 - n2;
+    }
+    return 0;
+  };
+
   useEffect(() => {
     fetch('https://api.github.com/repos/BenZinaDaze/Metadata2GD/tags')
       .then(res => res.json())
       .then(tags => {
         if (tags && tags.length > 0) {
-          setLatestVersion(tags[0].name)
+          // Sort tags by version descending, so the highest version is first
+          const sortedTags = tags.sort((a, b) => compareVer(b.name, a.name))
+          setLatestVersion(sortedTags[0].name)
         }
       })
       .catch(() => {})
   }, [])
 
-  // Compare format like v4.03 and v4.04
-  const parseVer = v => parseFloat((v || '').replace(/[^\d.]/g, '')) || 0
-  const hasUpdate = latestVersion && currentVersion !== 'dev' && parseVer(latestVersion) > parseVer(currentVersion)
+  const hasUpdate = latestVersion && currentVersion !== 'dev' && compareVer(latestVersion, currentVersion) > 0
 
   const isLibraryExpanded = libraryExpanded || active === 'movies' || active === 'tv'
   const isDownloadsExpanded = downloadsExpanded || ['downloads-active', 'downloads-waiting', 'downloads-stopped'].includes(active)
