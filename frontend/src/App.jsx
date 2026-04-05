@@ -9,6 +9,7 @@ import ConfigPage from './components/ConfigPage'
 import DownloadsPage from './components/DownloadsPage'
 import LogsPage from './components/LogsPage'
 import ScraperSearch from './components/ScraperSearch'
+import { clearResultsCache } from './components/ScraperResultsView'
 import ParseTestModal from './components/ParseTestModal'
 import ToastContainer from './components/Toast'
 
@@ -333,6 +334,7 @@ export default function App() {
               refreshing={refreshing}
               onToast={addToast}
               onGlobalSearch={(item) => {
+                clearResultsCache(item.title || item.original_title || item.name)
                 setInitialSearchItem(item)
                 setActiveNav('scraper-search')
               }}

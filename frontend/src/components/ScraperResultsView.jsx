@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { searchMedia, getEpisodes, addAria2Uri } from '../api'
 
 let _resultsCache = {}
+export function clearResultsCache(key) { delete _resultsCache[key] }
 
 export default function ScraperResultsView({ item, onBack, onToast }) {
   const searchKey = item.title || item.original_title || item.name
@@ -31,6 +32,7 @@ export default function ScraperResultsView({ item, onBack, onToast }) {
     return Object.entries(groups).sort((a, b) => b[1].length - a[1].length)
   }, [episodesList])
 
+  // 同步状态到缓存（用于切页面后返回时恢复）
   useEffect(() => {
     _resultsCache[searchKey] = { searchState, errorMsg, episodesList }
   }, [searchKey, searchState, errorMsg, episodesList])

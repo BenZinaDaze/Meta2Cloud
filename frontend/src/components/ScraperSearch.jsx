@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { tmdbSearchMulti } from '../api'
 import ScraperDetailModal from './ScraperDetailModal'
-import ScraperResultsView from './ScraperResultsView'
+import ScraperResultsView, { clearResultsCache } from './ScraperResultsView'
 import MediaCard from './MediaCard'
 
 // Module-level cache to preserve state across remounts
@@ -55,7 +55,7 @@ export default function ScraperSearch({ onToast, initialSearchItem, onClearIniti
         >
           <ScraperResultsView 
             key={searchModeItem.id || searchModeItem.tmdb_id || searchModeItem.title}
-            item={searchModeItem} 
+            item={searchModeItem}
             onBack={() => {
               setSelectedMedia(searchModeItem)
               setSearchModeItem(null)
@@ -143,6 +143,7 @@ export default function ScraperSearch({ onToast, initialSearchItem, onClearIniti
             onClose={() => setSelectedMedia(null)} 
             onToast={onToast} 
             onSearchResources={(item) => {
+              clearResultsCache(item.title || item.original_title || item.name)
               setSearchModeItem(item)
               setSelectedMedia(null)
             }}
