@@ -34,6 +34,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY drive/       ./drive/
 COPY mediaparser/ ./mediaparser/
 COPY nfo/         ./nfo/
+COPY scraper/     ./scraper/
 COPY webui/       ./webui/
 COPY organizer.py ./
 COPY pipeline.py  ./
