@@ -61,6 +61,17 @@ jobs:
             type=raw,value=${{ steps.resolve.outputs.version }},enable=${{ github.event_name == 'workflow_dispatch' && steps.resolve.outputs.version != '' }}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
 
+      - name: Set Build Arguments
+        id: build_args
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "APP_VERSION=${{ steps.resolve.outputs.version }}" >> $GITHUB_ENV
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "APP_VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
+          else
+            echo "APP_VERSION=dev" >> $GITHUB_ENV
+          fi
+
       # 构建并推送
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -70,6 +81,8 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_VERSION=${{ env.APP_VERSION }}
           # 使用 GitHub Actions 缓存加速构建
           cache-from: type=gha
           cache-to: type=gha,mode=max

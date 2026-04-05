@@ -1,5 +1,8 @@
 FROM node:22-bookworm-slim AS frontend-builder
 
+ARG APP_VERSION=dev
+
+
 WORKDIR /frontend
 
 # 先复制依赖文件，利用 Docker 层缓存
@@ -8,10 +11,13 @@ RUN npm ci
 
 # 复制前端源码并构建
 COPY frontend/ ./
-RUN npm run build
+RUN VITE_APP_VERSION=${APP_VERSION} npm run build
 
 
 FROM python:3.11-slim
+
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
 
 # 系统依赖（requests 需要 CA 证书）
 RUN apt-get update && apt-get install -y --no-install-recommends \

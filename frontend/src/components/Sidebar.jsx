@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 // SVG 图标（MD 风格线条图标）
 const Icons = {
@@ -117,6 +117,25 @@ function NavItem({ icon, label, active, onClick, indent = false, right, bold = f
 export default function Sidebar({ active, onSelect, aria2Overview = null, aria2ConnectionStatus = 'connecting', mobileOpen = false, onMobileClose }) {
   const [libraryExpanded, setLibraryExpanded] = useState(true)
   const [downloadsExpanded, setDownloadsExpanded] = useState(true)
+  const [latestVersion, setLatestVersion] = useState(null)
+  
+  const currentVersion = import.meta.env.VITE_APP_VERSION || 'v4.03'
+
+  useEffect(() => {
+    fetch('https://api.github.com/repos/BenZinaDaze/Metadata2GD/tags')
+      .then(res => res.json())
+      .then(tags => {
+        if (tags && tags.length > 0) {
+          setLatestVersion(tags[0].name)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  // Compare format like v4.03 and v4.04
+  const parseVer = v => parseFloat((v || '').replace(/[^\d.]/g, '')) || 0
+  const hasUpdate = latestVersion && currentVersion !== 'dev' && parseVer(latestVersion) > parseVer(currentVersion)
+
   const isLibraryExpanded = libraryExpanded || active === 'movies' || active === 'tv'
   const isDownloadsExpanded = downloadsExpanded || ['downloads-active', 'downloads-waiting', 'downloads-stopped'].includes(active)
   const activeCount = aria2Overview?.tasks?.active?.length ?? 0
@@ -298,6 +317,34 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
         onClick={() => onSelect('config')}
         bold
       />
+
+      <div className="flex-1 min-h-[40px]" />
+
+      <a
+        href="https://github.com/BenZinaDaze/Metadata2GD"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mx-5 mb-2 mt-auto flex items-center justify-between rounded-[18px] px-4 py-3 transition-colors duration-150 hover:bg-white/5"
+        style={{ border: '1px solid var(--color-border)', textDecoration: 'none' }}
+        title="View Repository on GitHub"
+      >
+        <div className="flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style={{ color: 'var(--color-muted)' }}>
+            <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.45-1.15-1.11-1.46-1.11-1.46-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"/>
+          </svg>
+          <span className="text-[13px] font-semibold" style={{ color: 'var(--color-muted)' }}>GitHub</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {hasUpdate && (
+            <span className="animate-pulse flex items-center justify-center rounded-md px-1.5 py-0.5 text-[10px] font-bold shadow-sm" style={{ background: 'var(--color-accent)', color: 'var(--color-primary-text)' }}>
+              可更新 {latestVersion}
+            </span>
+          )}
+          <span className="rounded-md px-1.5 py-0.5 text-[10px] font-bold" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }}>
+            {currentVersion}
+          </span>
+        </div>
+      </a>
     </aside>
   )
 }
