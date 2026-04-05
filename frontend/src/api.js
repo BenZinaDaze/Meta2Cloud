@@ -46,6 +46,7 @@ export const testParse = (filename) => api.post('/parser/test', { filename })
 export const refreshLibrary = () => api.post('/library/refresh')
 export const getLogs = (params) => api.get('/logs', { params })
 export const getPipelineStatus = () => api.get('/pipeline/status')
+export const triggerPipeline = () => api.post('/pipeline/trigger')
 
 // ── Aria2 下载管理 ──
 export const getAria2Overview = () => api.get('/aria2/overview')

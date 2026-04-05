@@ -197,7 +197,7 @@ class Pipeline:
             sys.exit(1)
 
         print("=" * 68)
-        print("  Metadata2GD 流水线")
+        print("  Metadata2GD 开始整理")
         if self._dry_run:
             print("  ⚠️  DRY-RUN 模式 — 不会操作 Drive")
         if self._skip_tmdb or not self._tmdb:

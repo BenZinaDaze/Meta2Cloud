@@ -265,6 +265,7 @@ export default function App() {
         onLogout={handleLogout}
         onOpenParseTest={() => setShowParseTest(true)}
         onToggleSidebar={() => setMobileSidebarOpen(o => !o)}
+        onToast={addToast}
       />
       <Sidebar
         active={activeNav}

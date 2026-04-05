@@ -169,7 +169,7 @@ pipeline:
   # TMDB 找不到元数据时是否仍然移动文件
   # True  = 找不到也继续移动（不生成 NFO）
   # False = 找不到则跳过该文件
-  move_on_tmdb_miss: true
+  move_on_tmdb_miss: false
 
   # dry_run 模式（True = 只打印计划，不实际操作 Drive）
   # 命令行 --dry-run 参数优先级更高

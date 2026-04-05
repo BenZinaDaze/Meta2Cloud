@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { logout } from '../api'
+import { logout, triggerPipeline } from '../api'
 import BrandMark from './BrandMark'
 
-export default function Topbar({ onLogout, onOpenParseTest, onToggleSidebar }) {
+export default function Topbar({ onLogout, onOpenParseTest, onToggleSidebar, onToast }) {
   const [confirming, setConfirming] = useState(false)
 
   async function handleLogout() {
@@ -36,9 +36,9 @@ export default function Topbar({ onLogout, onOpenParseTest, onToggleSidebar }) {
           aria-label="打开侧边栏"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <line x1="3" y1="6" x2="21" y2="6"/>
-            <line x1="3" y1="12" x2="21" y2="12"/>
-            <line x1="3" y1="18" x2="21" y2="18"/>
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="18" x2="21" y2="18" />
           </svg>
         </button>
 
@@ -70,6 +70,29 @@ export default function Topbar({ onLogout, onOpenParseTest, onToggleSidebar }) {
           Curated Library
         </div>
         <button
+          onClick={async () => {
+            try {
+              await triggerPipeline()
+              onToast?.('success', '已发送整理指令', '后台整理将立即启动')
+            } catch (e) {
+              onToast?.('error', '触发失败', e?.response?.data?.detail || e.message)
+            }
+          }}
+          className="flex items-center gap-1.5 rounded-full px-2.5 py-2 text-xs font-semibold transition-all duration-150 sm:px-4"
+          style={{
+            color: 'var(--color-accent-hover)',
+            background: 'linear-gradient(135deg, rgba(200, 146, 77, 0.16) 0%, rgba(200, 146, 77, 0.05) 100%)',
+            border: '1px solid rgba(200, 146, 77, 0.3)',
+          }}
+          title="触发整理"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+          </svg>
+          <span className="hidden sm:inline">一键整理</span>
+        </button>
+
+        <button
           onClick={onOpenParseTest}
           className="flex items-center gap-1.5 rounded-full px-2.5 py-2 text-xs font-semibold transition-all duration-150 sm:px-4"
           style={{
@@ -80,9 +103,9 @@ export default function Topbar({ onLogout, onOpenParseTest, onToggleSidebar }) {
           title="解析测试"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M4 7h16"/>
-            <path d="M7 12h10"/>
-            <path d="M10 17h4"/>
+            <path d="M4 7h16" />
+            <path d="M7 12h10" />
+            <path d="M10 17h4" />
           </svg>
           <span className="hidden sm:inline">解析测试</span>
         </button>
@@ -98,9 +121,9 @@ export default function Topbar({ onLogout, onOpenParseTest, onToggleSidebar }) {
             title="退出登录"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-              <polyline points="16 17 21 12 16 7"/>
-              <line x1="21" y1="12" x2="9" y2="12"/>
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
             </svg>
             <span className="hidden sm:inline">{confirming ? '再次点击确认' : '退出登录'}</span>
           </button>

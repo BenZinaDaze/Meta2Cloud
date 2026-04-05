@@ -309,12 +309,7 @@ def schedule_pipeline(debounce: int) -> None:
         if debounce > 0:
             if _debounce_timer is not None:
                 _debounce_timer.cancel()
-                _app_log(
-                    "pipeline",
-                    "pipeline_schedule_reset",
-                    "整理流程防抖计时器已重置",
-                    details={"debounceSeconds": debounce},
-                )
+                logger.info("整理流程防抖计时器已重置 | 防抖：%d 秒", debounce)
             else:
                 _app_log(
                     "pipeline",
@@ -573,10 +568,45 @@ def _aria2_fetch_task_lists() -> Dict[str, List[Dict[str, Any]]]:
     active = _aria2_rpc_call("tellActive", [_ARIA2_TASK_KEYS]) or []
     waiting = _aria2_rpc_call("tellWaiting", [0, 1000, _ARIA2_TASK_KEYS]) or []
     stopped = _aria2_rpc_call("tellStopped", [0, 1000, _ARIA2_TASK_KEYS]) or []
+    
+    normalized_stopped = []
+    metadata_gids_to_remove = []
+    
+    for t in stopped:
+        norm_t = _aria2_normalize_task(t)
+        if norm_t.get("status") == "complete" and "[METADATA]" in norm_t.get("name", ""):
+            metadata_gids_to_remove.append(norm_t["gid"])
+        else:
+            normalized_stopped.append(norm_t)
+            
+    if metadata_gids_to_remove:
+        try:
+            for gid in metadata_gids_to_remove:
+                _aria2_rpc_call("removeDownloadResult", [gid])
+            logger.info("自动清理了 %d 个已完成的 [METADATA] 任务", len(metadata_gids_to_remove))
+            _app_log(
+                "download",
+                "metadata_purged",
+                f"已自动从队列中横扫清理并移除了 {len(metadata_gids_to_remove)} 个已完成的 [METADATA] 任务",
+                level="INFO",
+                details={"count": len(metadata_gids_to_remove), "gids": metadata_gids_to_remove}
+            )
+        except Exception as e:
+            logger.warning("自动清理 [METADATA] 任务失败：%s", e)
+            _app_log(
+                "download",
+                "metadata_purge_failed",
+                f"尝试清理已完成的 [METADATA] 任务失败: {e}",
+                level="WARNING",
+                details={"error": str(e)}
+            )
+
+    # 翻转 active 和 waiting 列表，使得新添加的任务出现在前端顶部（aria2 默认加在尾部）
+    # stopped 列表 aria2 原生就是按“最近停止”逆序的，所以保持原状即可
     return {
-        "active": [_aria2_normalize_task(t) for t in active],
-        "waiting": [_aria2_normalize_task(t) for t in waiting],
-        "stopped": [_aria2_normalize_task(t) for t in stopped],
+        "active": [_aria2_normalize_task(t) for t in active][::-1],
+        "waiting": [_aria2_normalize_task(t) for t in waiting][::-1],
+        "stopped": normalized_stopped,
     }
 
 
@@ -1131,15 +1161,10 @@ async def trigger_pipeline(request: Request):
     except Exception:
         pass
     debounce = cfg_obj.telegram.debounce_seconds
-    _app_log(
-        "pipeline",
-        "webhook_trigger",
-        "收到整理触发请求",
-        details={
-            "path": body.get("path", ""),
-            "debounceSeconds": debounce,
-        },
-    )
+    
+    # 仅在控制台输出，不发往前端日志（防刷屏）
+    logger.info("收到整理触发请求 | 来源：webhook，防抖：%s 秒", debounce)
+    
     schedule_pipeline(debounce)
     return {"status": "scheduled" if debounce > 0 else "triggered"}
 
@@ -1151,6 +1176,13 @@ async def pipeline_status():
         "running":  _pipeline_running,
         "debounce": _debounce_timer is not None,
     }
+
+
+@app.post("/api/pipeline/trigger")
+async def trigger_pipeline():
+    """（需登录）手动触发 pipeline。"""
+    schedule_pipeline(0)
+    return {"status": "triggered"}
 
 
 @app.get("/api/library/movies", response_model=List[MediaItem])

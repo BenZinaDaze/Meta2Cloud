@@ -101,14 +101,14 @@ class OrganizerConfig:
 @dataclass
 class PipelineConfig:
     skip_tmdb: bool = False
-    move_on_tmdb_miss: bool = True
+    move_on_tmdb_miss: bool = False
     dry_run: bool = False
 
     @classmethod
     def from_dict(cls, d: dict) -> "PipelineConfig":
         return cls(
             skip_tmdb=bool(d.get("skip_tmdb", False)),
-            move_on_tmdb_miss=bool(d.get("move_on_tmdb_miss", True)),
+            move_on_tmdb_miss=bool(d.get("move_on_tmdb_miss", False)),
             dry_run=bool(d.get("dry_run", False)),
         )
 

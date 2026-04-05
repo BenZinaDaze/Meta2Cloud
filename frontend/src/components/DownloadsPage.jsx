@@ -298,7 +298,7 @@ function TaskDetailModal({ task, onClose, onPause, onResume, onRemove, onRetry, 
   )
 }
 
-function TaskCard({ task, onPause, onResume, onRemove, onRetry, onOpen, pendingAction }) {
+function TaskCard({ task, onPause, onResume, onRemove, onRetry, onOpen, pendingAction, selected, onToggleSelect }) {
   const errored = task.status === 'error'
   const pausable = task.status === 'active' || task.status === 'waiting'
   const resumable = task.status === 'paused'
@@ -317,8 +317,32 @@ function TaskCard({ task, onPause, onResume, onRemove, onRetry, onOpen, pendingA
       }}
     >
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
+        <div className="min-w-0 flex-1 flex items-start gap-2 sm:gap-4">
+          {/* 增大点击感应区（增加 padding，设置相对位置并阻止冒泡）保证选中不会误触详情 */}
+          <div 
+            className="flex-shrink-0 cursor-pointer p-3 -ml-3 -mt-2.5 transition-opacity hover:opacity-80" 
+            onClick={e => { e.stopPropagation(); onToggleSelect(task.gid) }}
+          >
+            <div 
+              className="flex items-center justify-center rounded-md transition-colors"
+              style={{
+                width: 20,
+                height: 20,
+                background: selected ? 'var(--color-accent)' : 'rgba(255,255,255,0.06)',
+                border: selected ? 'none' : '1px solid var(--color-border)',
+                color: '#fff',
+                boxShadow: selected ? '0 0 10px rgba(200,146,77,0.3)' : 'none',
+              }}
+            >
+              {selected && (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="size-3.5">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+              )}
+            </div>
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
             <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em]"
               style={{
                 background: errored ? 'rgba(239, 125, 117, 0.12)' : 'rgba(200, 146, 77, 0.12)',
@@ -365,6 +389,7 @@ function TaskCard({ task, onPause, onResume, onRemove, onRetry, onOpen, pendingA
               {task.errorMessage}
             </div>
           )}
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2 xl:max-w-[220px] xl:justify-end">
@@ -430,7 +455,9 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
   const [selectedTask, setSelectedTask] = useState(null)
   const [parseTestFile, setParseTestFile] = useState(null)
   const [pendingActions, setPendingActions] = useState({})
-  const [confirmRemoveGid, setConfirmRemoveGid] = useState(null)
+  const [confirmRemoveGids, setConfirmRemoveGids] = useState(null)
+  const [selectedGids, setSelectedGids] = useState(new Set())
+  const [searchQuery, setSearchQuery] = useState('')
   const showDashboard = queue === 'all'
 
   useEffect(() => {
@@ -530,11 +557,18 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
 
   const tasks = useMemo(() => {
     if (!overview?.tasks) return []
-    if (queue === 'active') return overview.tasks.active
-    if (queue === 'waiting') return overview.tasks.waiting
-    if (queue === 'stopped') return overview.tasks.stopped
-    return [...overview.tasks.active, ...overview.tasks.waiting, ...overview.tasks.stopped]
-  }, [overview, queue])
+    let list = []
+    if (queue === 'active') list = overview.tasks.active
+    else if (queue === 'waiting') list = overview.tasks.waiting
+    else if (queue === 'stopped') list = overview.tasks.stopped
+    else list = [...overview.tasks.active, ...overview.tasks.waiting, ...overview.tasks.stopped]
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      list = list.filter(t => t.name?.toLowerCase().includes(q) || t.gid.toLowerCase().includes(q))
+    }
+    return list
+  }, [overview, queue, searchQuery])
 
   useEffect(() => {
     if (!selectedTask || !overview?.tasks) return
@@ -573,14 +607,39 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
     }
   }
 
+  function handleToggleSelect(gid) {
+    setSelectedGids(prev => {
+      const next = new Set(prev)
+      if (next.has(gid)) next.delete(gid)
+      else next.add(gid)
+      return next
+    })
+  }
+
+  function handleSelectAllGroup() {
+    if (selectedGids.size === tasks.length && tasks.length > 0) {
+      setSelectedGids(new Set())
+    } else {
+      setSelectedGids(new Set(tasks.map(t => t.gid)))
+    }
+  }
+
   function handleRemoveTask(gid) {
-    setConfirmRemoveGid(gid)
+    setConfirmRemoveGids([gid])
+  }
+
+  function handleRemoveSelected() {
+    if (!selectedGids.size) return
+    setConfirmRemoveGids(Array.from(selectedGids))
   }
 
   async function confirmRemoveTask() {
-    if (!confirmRemoveGid) return
-    await withAction(() => removeAria2Tasks([confirmRemoveGid]), '任务已移除', confirmRemoveGid, 'remove')
-    setConfirmRemoveGid(null)
+    if (!confirmRemoveGids?.length) return
+    const isSingle = confirmRemoveGids.length === 1
+    const gid = isSingle ? confirmRemoveGids[0] : null
+    await withAction(() => removeAria2Tasks(confirmRemoveGids), isSingle ? '任务已移除' : `已移除 ${confirmRemoveGids.length} 个任务`, gid, 'remove')
+    setConfirmRemoveGids(null)
+    setSelectedGids(new Set())
   }
 
   async function handleSubmitUri() {
@@ -590,9 +649,9 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
       return
     }
     await withAction(async () => {
-      await addAria2Uri({ uris })
+      await Promise.all(uris.map(uri => addAria2Uri({ uris: [uri] })))
       setUriInput('')
-    }, '已添加下载任务')
+    }, `已添加下载任务`)
   }
 
   async function handleTorrentChange(event) {
@@ -612,6 +671,37 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
 
   const summary = overview?.summary
 
+  const hasSelection = selectedGids.size > 0
+  const selectedTasks = tasks.filter(t => selectedGids.has(t.gid))
+  const canPauseSelected = selectedTasks.some(t => t.status === 'active' || t.status === 'waiting')
+  const canResumeSelected = selectedTasks.some(t => t.status === 'paused')
+
+  function handlePauseAction() {
+    let gids = []
+    if (hasSelection) {
+      gids = selectedTasks.filter(t => t.status === 'active' || t.status === 'waiting').map(t => t.gid)
+    } else {
+      const activeGids = overview?.tasks?.active?.map(t => t.gid) || []
+      const waitingGids = overview?.tasks?.waiting?.filter(t => t.status === 'waiting').map(t => t.gid) || []
+      gids = [...activeGids, ...waitingGids]
+    }
+    if (!gids.length) return
+    withAction(() => pauseAria2Tasks(gids), `已暂停 ${gids.length} 个任务`)
+    setSelectedGids(new Set())
+  }
+
+  function handleResumeAction() {
+    let gids = []
+    if (hasSelection) {
+      gids = selectedTasks.filter(t => t.status === 'paused').map(t => t.gid)
+    } else {
+      gids = overview?.tasks?.waiting?.filter(t => t.status === 'paused').map(t => t.gid) || []
+    }
+    if (!gids.length) return
+    withAction(() => unpauseAria2Tasks(gids), `已继续 ${gids.length} 个任务`)
+    setSelectedGids(new Set())
+  }
+
   return (
     <div className="flex-1">
       <section className="panel-surface rounded-[32px] px-7 py-7" style={{ minHeight: 'calc(100dvh - 128px)' }}>
@@ -627,7 +717,44 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
 
           <div className="flex flex-wrap items-center gap-2">
             <ToolButton onClick={() => loadAll()} disabled={busy}>刷新</ToolButton>
-            {showDashboard ? (
+            {hasSelection ? (
+              <label className="flex items-center gap-2.5 cursor-pointer text-sm font-medium mr-2 select-none hover:opacity-80 transition-opacity" style={{ color: 'var(--color-text)' }}>
+                <div 
+                  className="flex items-center justify-center rounded-md transition-colors"
+                  style={{
+                    width: 20,
+                    height: 20,
+                    background: (selectedGids.size === tasks.length && tasks.length > 0) ? 'var(--color-accent)' : 'rgba(255,255,255,0.06)',
+                    border: (selectedGids.size === tasks.length && tasks.length > 0) ? 'none' : '1px solid var(--color-border)',
+                    color: '#fff',
+                    boxShadow: (selectedGids.size === tasks.length && tasks.length > 0) ? '0 0 10px rgba(200,146,77,0.3)' : 'none',
+                  }}
+                >
+                  {(selectedGids.size === tasks.length && tasks.length > 0) && (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="size-3.5">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                  )}
+                </div>
+                <input 
+                  type="checkbox"
+                  checked={selectedGids.size === tasks.length && tasks.length > 0}
+                  onChange={handleSelectAllGroup}
+                  className="hidden"
+                />
+                本页全选
+              </label>
+            ) : null}
+            {(!hasSelection && ['all', 'active'].includes(queue) && (overview?.tasks?.active?.length > 0 || overview?.tasks?.waiting?.some(t => t.status === 'waiting'))) || (hasSelection && canPauseSelected) ? (
+              <ToolButton onClick={handlePauseAction} disabled={busy}>{hasSelection ? '暂停选中' : '全部暂停'}</ToolButton>
+            ) : null}
+            {(!hasSelection && ['all', 'waiting'].includes(queue) && overview?.tasks?.waiting?.some(t => t.status === 'paused')) || (hasSelection && canResumeSelected) ? (
+              <ToolButton onClick={handleResumeAction} disabled={busy}>{hasSelection ? '继续选中' : '全部继续'}</ToolButton>
+            ) : null}
+            {hasSelection ? (
+              <ToolButton danger onClick={handleRemoveSelected} disabled={busy}>删除选中</ToolButton>
+            ) : null}
+            {!hasSelection && showDashboard ? (
               <ToolButton danger onClick={() => withAction(() => purgeAria2Tasks(), '已清理已完成任务')} disabled={busy}>
                 清理已完成
               </ToolButton>
@@ -644,11 +771,28 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
           </div>
         ) : null}
 
-        <div className="mb-6 flex flex-wrap gap-2">
-          <QueueTab active={queue === 'all'} label="全部" count={(overview?.tasks?.active?.length || 0) + (overview?.tasks?.waiting?.length || 0) + (overview?.tasks?.stopped?.length || 0)} onClick={() => onChangeQueue?.('all')} />
-          <QueueTab active={queue === 'active'} label="下载中" count={overview?.tasks?.active?.length || 0} onClick={() => onChangeQueue?.('active')} />
-          <QueueTab active={queue === 'waiting'} label="等待中" count={overview?.tasks?.waiting?.length || 0} onClick={() => onChangeQueue?.('waiting')} />
-          <QueueTab active={queue === 'stopped'} label="已停止" count={overview?.tasks?.stopped?.length || 0} onClick={() => onChangeQueue?.('stopped')} />
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap gap-2">
+            <QueueTab active={queue === 'all'} label="全部" count={(overview?.tasks?.active?.length || 0) + (overview?.tasks?.waiting?.length || 0) + (overview?.tasks?.stopped?.length || 0)} onClick={() => onChangeQueue?.('all')} />
+            <QueueTab active={queue === 'active'} label="下载中" count={overview?.tasks?.active?.length || 0} onClick={() => onChangeQueue?.('active')} />
+            <QueueTab active={queue === 'waiting'} label="等待中" count={overview?.tasks?.waiting?.length || 0} onClick={() => onChangeQueue?.('waiting')} />
+            <QueueTab active={queue === 'stopped'} label="已停止" count={overview?.tasks?.stopped?.length || 0} onClick={() => onChangeQueue?.('stopped')} />
+          </div>
+          
+          <div className="w-full flex-1 sm:max-w-xs">
+            <input
+              type="text"
+              placeholder="搜索任务名称 或 GID..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="w-full rounded-full px-4 py-2 text-sm outline-none transition-colors border"
+              style={{
+                background: 'rgba(255,255,255,0.03)',
+                borderColor: searchQuery ? 'var(--color-accent)' : 'var(--color-border)',
+                color: 'var(--color-text)'
+              }}
+            />
+          </div>
         </div>
 
         {showDashboard ? (
@@ -686,6 +830,8 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
                 <TaskCard
                   key={task.gid}
                   task={task}
+                  selected={selectedGids.has(task.gid)}
+                  onToggleSelect={handleToggleSelect}
                   onOpen={setSelectedTask}
                   pendingAction={pendingActions[task.gid]}
                   onPause={(gid) => withAction(() => pauseAria2Tasks([gid]), '任务已暂停', gid, 'pause', { status: 'paused' }, 'waiting')}
@@ -711,12 +857,12 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
       />
 
       <ConfirmModal
-        open={!!confirmRemoveGid}
-        title="移除下载任务"
+        open={!!confirmRemoveGids}
+        title={confirmRemoveGids?.length > 1 ? `移除 ${confirmRemoveGids.length} 个下载任务` : "移除下载任务"}
         message="已完成任务会从列表清除，未完成任务会停止下载。确认后将立即执行。"
         confirmLabel="确认移除"
-        loading={confirmRemoveGid ? pendingActions[confirmRemoveGid] === 'remove' : false}
-        onCancel={() => setConfirmRemoveGid(null)}
+        loading={confirmRemoveGids?.length === 1 ? pendingActions[confirmRemoveGids[0]] === 'remove' : false}
+        onCancel={() => setConfirmRemoveGids(null)}
         onConfirm={confirmRemoveTask}
       />
 
