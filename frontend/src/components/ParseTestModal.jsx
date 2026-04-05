@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { testParse } from '../api'
 
 const STATUS_MAP = {
@@ -88,9 +89,9 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
     return () => { cancelled = true }
   }, [initialFilename])
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto p-4 pt-24"
+      className="fixed inset-0 z-[140] flex items-start justify-center overflow-y-auto p-4 pt-24"
       style={{
         background: 'rgba(2, 8, 18, 0.78)',
         backdropFilter: 'blur(10px)',
@@ -356,6 +357,7 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
           ✕
         </button>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
