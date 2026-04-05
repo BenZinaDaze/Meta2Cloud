@@ -81,7 +81,7 @@ function SearchField({ value, onChange }) {
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder="搜索日志"
-      className="min-w-[280px] rounded-full px-4 py-2 text-sm outline-none"
+      className="w-full flex-1 rounded-full px-4 py-2 text-sm outline-none sm:min-w-[240px]"
       style={{
         background: 'rgba(255,255,255,0.03)',
         border: '1px solid var(--color-border)',

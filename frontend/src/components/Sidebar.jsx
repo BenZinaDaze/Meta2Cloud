@@ -114,7 +114,7 @@ function NavItem({ icon, label, active, onClick, indent = false, right, bold = f
   )
 }
 
-export default function Sidebar({ active, onSelect, aria2Overview = null, aria2ConnectionStatus = 'connecting' }) {
+export default function Sidebar({ active, onSelect, aria2Overview = null, aria2ConnectionStatus = 'connecting', mobileOpen = false, onMobileClose }) {
   const [libraryExpanded, setLibraryExpanded] = useState(true)
   const [downloadsExpanded, setDownloadsExpanded] = useState(true)
   const isLibraryExpanded = libraryExpanded || active === 'movies' || active === 'tv'
@@ -190,13 +190,18 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
 
   return (
     <aside
-      className="fixed bottom-5 left-5 top-[96px] flex w-72 flex-col rounded-[30px] pt-5 pb-5"
+      className="fixed bottom-0 left-0 top-0 flex w-[17rem] flex-col overflow-y-auto pt-5 pb-5 lg:bottom-5 lg:left-5 lg:top-[96px] lg:w-72 lg:rounded-[30px]"
       style={{
         background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.95) 0%, rgba(10, 19, 32, 0.98) 100%)',
         border: '1px solid var(--color-border)',
         boxShadow: 'var(--shadow-soft)',
         backdropFilter: 'blur(18px)',
+        zIndex: 40,
+        // 移动端：根据 mobileOpen 状态滑入/滑出
+        transform: mobileOpen ? 'translateX(0)' : 'translateX(-110%)',
+        transition: 'transform 0.28s cubic-bezier(0.32, 0, 0.12, 1)',
       }}
+      // 桌面端始终可见（lg+，通过 CSS 覆盖 transform）
     >
       <div className="px-6 pb-4">
         <div className="text-[10px] font-semibold uppercase tracking-[0.24em]" style={{ color: 'var(--color-muted-soft)' }}>

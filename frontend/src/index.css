@@ -141,6 +141,51 @@
     box-shadow: var(--shadow-soft);
     backdrop-filter: blur(18px);
   }
+
+  /* 移动端触摸滚动优化 */
+  main, .overflow-y-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 桌面端侧边栏始终可见（覆盖JS控制的transform抽屉动画） */
+  @media (min-width: 1024px) {
+    aside[class*="fixed"] {
+      transform: translateX(0) !important;
+      transition: none !important;
+    }
+  }
+
+  /* 配置页面：小屏单列，大屏双列 */
+  .config-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  @media (min-width: 768px) {
+    .config-grid {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+  }
+
+  /* 主内容区 top 响应式：移动端配合小 Topbar，桌面端配合大 Topbar */
+  .main-scrollable {
+    top: 72px;
+  }
+
+  @media (min-width: 640px) {
+    .main-scrollable {
+      top: 96px;
+    }
+  }
+
+  /* 桌面端主内容区底部填充覆盖（无底部导航） */
+  @media (min-width: 1024px) {
+    .main-pad {
+      padding-bottom: 1.25rem !important;
+    }
+  }
 }
 
 @keyframes slideInRight {

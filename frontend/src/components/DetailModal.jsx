@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 function EpisodePill({ ep }) {
   const color = ep.in_library
@@ -96,9 +97,9 @@ export default function DetailModal({ item, onClose }) {
   const POSTER_H = 144  // 2:3 ratio
   const BACKDROP_H = 160 // h-40
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto p-4 pt-20"
+      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto p-4 pt-28"
       style={{
         background: 'rgba(2, 8, 18, 0.78)',
         backdropFilter: 'blur(10px)',
@@ -253,6 +254,7 @@ export default function DetailModal({ item, onClose }) {
           ✕
         </button>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

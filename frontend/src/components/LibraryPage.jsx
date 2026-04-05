@@ -16,19 +16,26 @@ function relativeTime(isoStr) {
 
 function StatCard({ label, value, sub, action }) {
   return (
-    <div className="relative flex min-h-[132px] flex-col justify-between gap-3 rounded-[24px] px-5 py-5"
+    <div
+      className="flex items-center justify-between gap-2 rounded-[20px] px-4 py-3 sm:rounded-[24px] sm:px-5 sm:py-5"
       style={{
         background: 'linear-gradient(180deg, rgba(20, 37, 59, 0.96) 0%, rgba(14, 28, 46, 0.98) 100%)',
         border: '1px solid var(--color-border)',
         boxShadow: 'var(--shadow-soft)',
-      }}>
-      <div className="space-y-2">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-muted-soft)' }}>{label}</span>
-        <span className="block text-3xl font-bold tabular-nums" style={{ color: 'var(--color-text)' }}>{value}</span>
-        {sub && <span className="block text-xs leading-5" style={{ color: 'var(--color-muted)' }}>{sub}</span>}
+      }}
+    >
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.18em] sm:text-[11px]" style={{ color: 'var(--color-muted-soft)' }}>{label}</span>
+        <span
+          className={`block font-bold tabular-nums leading-tight ${
+            action ? 'text-base sm:text-2xl' : 'text-xl sm:text-3xl'
+          }`}
+          style={{ color: 'var(--color-text)' }}
+        >{value}</span>
+        {sub && <span className="block text-[10px] leading-4 opacity-60" style={{ color: 'var(--color-muted)' }}>{sub}</span>}
       </div>
       {action && (
-        <div className="absolute right-5 top-1/2 -translate-y-1/2">{action}</div>
+        <div className="ml-2 flex-shrink-0">{action}</div>
       )}
     </div>
   )
@@ -157,16 +164,16 @@ export default function LibraryPage({ filter, onChangeFilter, onRefresh, refresh
   return (
     <div className="flex-1">
       <section
-        className="panel-surface rounded-[32px] px-7 py-7"
+        className="panel-surface rounded-[24px] px-4 py-4 sm:rounded-[32px] sm:px-7 sm:py-7"
         style={{ minHeight: 'calc(100dvh - 128px)' }}
       >
-        <div className="mb-7 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="mb-4 flex flex-col gap-3 sm:mb-7 sm:gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl">
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.24em]" style={{ color: 'var(--color-accent-hover)' }}>
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.24em] sm:mb-2 sm:text-[11px]" style={{ color: 'var(--color-accent-hover)' }}>
               Cinematic catalog
             </div>
-            <h1 className="text-[34px] font-bold leading-tight" style={{ color: 'var(--color-text)' }}>{pageTitle}</h1>
-            <p className="mt-3 text-sm leading-7" style={{ color: 'var(--color-muted)' }}>
+            <h1 className="text-2xl font-bold leading-tight sm:text-[34px]" style={{ color: 'var(--color-text)' }}>{pageTitle}</h1>
+            <p className="mt-2 hidden text-sm leading-7 sm:block" style={{ color: 'var(--color-muted)' }}>
               以更清晰的方式浏览你在 Drive 中维护的电影与剧集元数据，快速检索、刷新并查看季集完整度。
             </p>
           </div>
@@ -192,51 +199,60 @@ export default function LibraryPage({ filter, onChangeFilter, onRefresh, refresh
         </div>
         </div>
 
-        {stats && (
-          <div className="mb-10 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {filter !== 'tv' && (
-            <StatCard label="电影总数" value={stats.movies} />
-          )}
-          {filter !== 'movies' && (
-            <StatCard label="电视剧总数" value={stats.tv} />
-          )}
-          <StatCard
-            label="媒体库最后刷新"
-            value={relativeTime(data?.scanned_at)}
-            sub={data?.scanned_at
-              ? new Date(data.scanned_at).toLocaleString('zh-CN', { hour12: false })
-              : undefined}
-            action={
-              <button
-                onClick={onRefresh}
-                disabled={refreshing}
-                title="刷新媒体库"
-                className="flex items-center justify-center rounded-full transition-all duration-150"
-                style={{
-                  width: 74,
-                  height: 74,
-                  background: refreshing
-                    ? 'rgba(200, 146, 77, 0.16)'
-                    : 'linear-gradient(135deg, var(--color-accent) 0%, #b37533 100%)',
-                  color: '#fff',
-                  cursor: refreshing ? 'not-allowed' : 'pointer',
-                  border: 'none',
-                  boxShadow: refreshing ? 'none' : '0 16px 36px rgba(200, 146, 77, 0.24)',
-                }}
+        {stats && (() => {
+          const showMovie = filter !== 'tv'
+          const showTv    = filter !== 'movies'
+          // 窄屏：两个计数卡各占 1 列，刷新卡在 'all' 时占满 2 列，否则占 1 列
+          const refreshColSpan = (showMovie && showTv) ? 'col-span-2 sm:col-span-1' : 'col-span-1'
+
+          const refreshBtn = (
+            <button
+              onClick={onRefresh}
+              disabled={refreshing}
+              title="刷新媒体库"
+              className="flex items-center justify-center rounded-full transition-all duration-150"
+              style={{
+                width: 38,
+                height: 38,
+                background: refreshing
+                  ? 'rgba(200, 146, 77, 0.16)'
+                  : 'linear-gradient(135deg, var(--color-accent) 0%, #b37533 100%)',
+                color: '#fff',
+                cursor: refreshing ? 'not-allowed' : 'pointer',
+                border: 'none',
+                boxShadow: refreshing ? 'none' : '0 6px 16px rgba(200, 146, 77, 0.3)',
+                flexShrink: 0,
+              }}
+            >
+              <svg
+                width="17" height="17" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }}
               >
-                <svg
-                  width="32" height="32" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                  style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }}
-                >
-                  <polyline points="23 4 23 10 17 10"/>
-                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-                </svg>
-              </button>
-            }
-          />
-        </div>
-        )}
+                <polyline points="23 4 23 10 17 10"/>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+              </svg>
+            </button>
+          )
+
+          return (
+            <div className="mb-5 grid grid-cols-2 gap-2 sm:mb-10 sm:grid-cols-3 sm:gap-4">
+              {showMovie && <StatCard label="电影总数" value={stats.movies} />}
+              {showTv    && <StatCard label="电视剧总数" value={stats.tv} />}
+              <div className={refreshColSpan}>
+                <StatCard
+                  label="最后刷新"
+                  value={relativeTime(data?.scanned_at)}
+                  sub={data?.scanned_at
+                    ? new Date(data.scanned_at).toLocaleString('zh-CN', { hour12: false })
+                    : undefined}
+                  action={refreshBtn}
+                />
+              </div>
+            </div>
+          )
+        })()}
+
 
         {loading && (
           <div className="flex flex-col gap-8">

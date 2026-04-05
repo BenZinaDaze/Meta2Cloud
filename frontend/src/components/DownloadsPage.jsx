@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   addAria2Torrent,
   addAria2Uri,
@@ -38,6 +39,7 @@ function statusLabel(status) {
     complete: '已完成',
     error: '失败',
     removed: '已移除',
+    stopped: '已停止',
   }[status] || status
 }
 
@@ -75,7 +77,7 @@ function ToolButton({ children, onClick, danger = false, disabled = false, loadi
       <span className="inline-flex items-center gap-1.5">
         {loading ? (
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}>
-            <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+            <path d="M21 12a9 9 0 1 1-6.219-8.56" />
           </svg>
         ) : null}
         {children}
@@ -112,9 +114,10 @@ function DetailRow({ label, value }) {
 function ConfirmModal({ open, title, message, confirmLabel, onConfirm, onCancel, loading = false }) {
   if (!open) return null
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[130] flex items-center justify-center bg-[rgba(3,10,19,0.66)] px-5"
+      className="fixed inset-0 z-[130] flex items-center justify-center px-5"
+      style={{ background: 'rgba(2,8,18,0.78)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}
       onClick={loading ? undefined : onCancel}
     >
       <div
@@ -141,7 +144,8 @@ function ConfirmModal({ open, title, message, confirmLabel, onConfirm, onCancel,
           </ToolButton>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
@@ -155,87 +159,92 @@ function TaskDetailModal({ task, onClose, onPause, onResume, onRemove, onRetry, 
   const showResume = pendingAction ? pendingAction === 'resume' : resumable
   const showRetry = pendingAction ? pendingAction === 'retry' : errored
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[120] flex items-center justify-center bg-[rgba(3,10,19,0.62)] px-5 pb-5 pt-24"
+      className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto p-4 pt-20 sm:pt-24"
+      style={{ background: 'rgba(2,8,18,0.78)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}
       onClick={onClose}
     >
       <div
-        className="panel-surface flex max-h-[calc(100dvh-116px)] w-full max-w-[1180px] flex-col rounded-[32px] p-6"
+        className="relative w-full max-w-[1180px] overflow-hidden rounded-[24px] sm:rounded-[32px]"
+        style={{
+          background: 'linear-gradient(180deg, rgba(15,27,45,0.98) 0%, rgba(11,22,37,0.98) 100%)',
+          border: '1px solid var(--color-border)',
+          boxShadow: 'var(--shadow-strong)',
+        }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-5 flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="mb-2 flex items-center gap-2">
-              <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em]"
+        {/* 关闭按钮（绝对定位，同 ParseTestModal 风格） */}
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 flex size-9 items-center justify-center rounded-full text-sm transition-colors hover:bg-black/40"
+          style={{ background: 'rgba(0,0,0,0.45)', color: 'var(--color-text)', border: '1px solid rgba(255,255,255,0.08)' }}
+        >✕</button>
+
+        {/* 内容区（普通流式，overlay 负责整体滚动） */}
+        <div className="px-5 py-5 sm:px-6 sm:py-6">
+          {/* 标题 */}
+          <div className="mb-3 pr-10">
+            <div className="mb-1.5 flex flex-wrap items-center gap-2">
+              <span className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.14em]"
                 style={{
-                  background: errored ? 'rgba(239, 125, 117, 0.12)' : 'rgba(200, 146, 77, 0.12)',
+                  background: errored ? 'rgba(239,125,117,0.12)' : 'rgba(200,146,77,0.12)',
                   color: errored ? 'var(--color-danger)' : 'var(--color-accent-hover)',
                 }}>
                 {statusLabel(task.status)}
               </span>
               <span className="text-xs font-mono" style={{ color: 'var(--color-muted-soft)' }}>{task.gid}</span>
             </div>
-            <h2 className="text-[28px] leading-tight" style={{ color: 'var(--color-text)' }}>{task.name}</h2>
-            <p className="mt-2 text-sm" style={{ color: 'var(--color-muted)' }}>{task.dir || '未指定目录'}</p>
+            <h2 className="text-base font-semibold leading-snug sm:text-xl" style={{ color: 'var(--color-text)' }}>{task.name}</h2>
+            <p className="mt-0.5 text-xs" style={{ color: 'var(--color-muted)' }}>{task.dir || '未指定目录'}</p>
           </div>
 
-          <button
-            onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-full text-lg"
-            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }}
-          >
-            ×
-          </button>
-        </div>
-
-        <div className="mb-5 flex flex-wrap gap-2">
-          {showPause && <ToolButton onClick={() => onPause(task.gid)} loading={pendingAction === 'pause'}>{pendingAction === 'pause' ? '暂停中…' : '暂停'}</ToolButton>}
-          {showResume && <ToolButton onClick={() => onResume(task.gid)} loading={pendingAction === 'resume'}>{pendingAction === 'resume' ? '继续中…' : '继续'}</ToolButton>}
-          {showRetry && <ToolButton onClick={() => onRetry(task.gid)} loading={pendingAction === 'retry'}>{pendingAction === 'retry' ? '重试中…' : '重试'}</ToolButton>}
-          <ToolButton danger onClick={() => onRemove(task.gid)} loading={pendingAction === 'remove'}>{pendingAction === 'remove' ? '移除中…' : '移除'}</ToolButton>
-        </div>
-
-        <div className="mb-5">
-          <div className="mb-2 flex items-center justify-between text-xs" style={{ color: 'var(--color-muted)' }}>
-            <span>{formatBytes(task.completedLength)} / {formatBytes(task.totalLength)}</span>
-            <span>{task.progress.toFixed(1)}%</span>
+          {/* 操作按钮 */}
+          <div className="mb-4 flex flex-wrap gap-2">
+            {showPause  && <ToolButton onClick={() => onPause(task.gid)}  loading={pendingAction === 'pause'} >{pendingAction === 'pause'  ? '暂停中…' : '暂停'}</ToolButton>}
+            {showResume && <ToolButton onClick={() => onResume(task.gid)} loading={pendingAction === 'resume'}>{pendingAction === 'resume' ? '继续中…' : '继续'}</ToolButton>}
+            {showRetry  && <ToolButton onClick={() => onRetry(task.gid)}  loading={pendingAction === 'retry'} >{pendingAction === 'retry'  ? '重试中…' : '重试'}</ToolButton>}
+            <ToolButton danger onClick={() => onRemove(task.gid)} loading={pendingAction === 'remove'}>{pendingAction === 'remove' ? '移除中…' : '移除'}</ToolButton>
           </div>
-          <div className="h-2 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
-            <div
-              className="h-full rounded-full"
-              style={{
+
+          {/* 进度条 */}
+          <div className="mb-5">
+            <div className="mb-1.5 flex justify-between text-xs" style={{ color: 'var(--color-muted)' }}>
+              <span>{formatBytes(task.completedLength)} / {formatBytes(task.totalLength)}</span>
+              <span>{task.progress.toFixed(1)}%</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
+              <div className="h-full rounded-full" style={{
                 width: `${Math.max(task.progress, task.status === 'complete' ? 100 : 0)}%`,
                 background: errored
-                  ? 'linear-gradient(90deg, rgba(239,125,117,0.9) 0%, rgba(239,125,117,0.65) 100%)'
-                  : 'linear-gradient(90deg, var(--color-accent) 0%, #dfb36f 100%)',
-              }}
-            />
+                  ? 'linear-gradient(90deg,rgba(239,125,117,.9),rgba(239,125,117,.65))'
+                  : 'linear-gradient(90deg,var(--color-accent),#dfb36f)',
+              }} />
+            </div>
           </div>
-        </div>
 
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <DetailRow label="下载速度" value={formatSpeed(task.downloadSpeed)} />
-          <DetailRow label="上传速度" value={formatSpeed(task.uploadSpeed)} />
-          <DetailRow label="连接数" value={String(task.connections)} />
-          <DetailRow label="文件数" value={String(task.fileCount)} />
-          <DetailRow label="做种数" value={String(task.numSeeders)} />
-          <DetailRow label="已上传" value={formatBytes(task.uploadLength)} />
-          {task.bittorrent?.mode ? <DetailRow label="种子模式" value={task.bittorrent.mode} /> : null}
-          {task.bittorrent?.comment ? <DetailRow label="种子备注" value={task.bittorrent.comment} /> : null}
-        </div>
-
-        {task.errorMessage && (
-          <div className="mt-5 rounded-2xl px-4 py-3 text-sm"
-            style={{ background: 'rgba(239,125,117,0.08)', border: '1px solid rgba(239,125,117,0.2)', color: 'var(--color-danger)' }}>
-            {task.errorMessage}
+          {/* 详情网格 */}
+          <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
+            <DetailRow label="下载速度" value={formatSpeed(task.downloadSpeed)} />
+            <DetailRow label="上传速度" value={formatSpeed(task.uploadSpeed)} />
+            <DetailRow label="连接数"   value={String(task.connections)} />
+            <DetailRow label="文件数"   value={String(task.fileCount)} />
+            <DetailRow label="做种数"   value={String(task.numSeeders)} />
+            <DetailRow label="已上传"   value={formatBytes(task.uploadLength)} />
+            {task.bittorrent?.mode    ? <DetailRow label="种子模式" value={task.bittorrent.mode}    /> : null}
+            {task.bittorrent?.comment ? <DetailRow label="种子备注" value={task.bittorrent.comment} /> : null}
           </div>
-        )}
 
-        <div className="mt-5 min-h-0 flex-1 overflow-y-auto pr-1">
+          {task.errorMessage && (
+            <div className="mb-5 rounded-2xl px-4 py-3 text-sm"
+              style={{ background: 'rgba(239,125,117,0.08)', border: '1px solid rgba(239,125,117,0.2)', color: 'var(--color-danger)' }}>
+              {task.errorMessage}
+            </div>
+          )}
+
           {task.files?.length ? (
             <section className="mb-5">
-              <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--color-accent-hover)' }}>
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--color-accent-hover)' }}>
                 文件列表
               </div>
               <div className="space-y-2">
@@ -247,21 +256,13 @@ function TaskDetailModal({ task, onClose, onPause, onResume, onRemove, onRetry, 
                         {getFileName(file.path) || `文件 ${index + 1}`}
                       </div>
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onParseFile?.(getFileName(file.path) || `文件 ${index + 1}`)
-                        }}
+                        onClick={(e) => { e.stopPropagation(); onParseFile?.(getFileName(file.path) || `文件 ${index + 1}`) }}
                         className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-all hover:opacity-80"
-                        style={{
-                          background: 'rgba(255,255,255,0.04)',
-                          border: '1px solid var(--color-border)',
-                          color: 'var(--color-accent-hover)',
-                        }}
+                        style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--color-border)', color: 'var(--color-accent-hover)' }}
                         title="解析此文件"
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <circle cx="11" cy="11" r="7" />
-                          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                          <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
                         </svg>
                       </button>
                     </div>
@@ -277,7 +278,7 @@ function TaskDetailModal({ task, onClose, onPause, onResume, onRemove, onRetry, 
 
           {task.uris?.length ? (
             <section>
-              <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--color-accent-hover)' }}>
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--color-accent-hover)' }}>
                 来源链接
               </div>
               <div className="space-y-2">
@@ -292,7 +293,8 @@ function TaskDetailModal({ task, onClose, onPause, onResume, onRemove, onRetry, 
           ) : null}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 

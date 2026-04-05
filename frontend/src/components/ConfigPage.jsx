@@ -19,9 +19,9 @@ function Section({ title, children }) {
 
 function FieldRow({ label, description, children }) {
   return (
-    <div className="flex items-start gap-6 px-5 py-4"
+    <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-start sm:gap-6"
       style={{ borderBottom: '1px solid var(--color-border)' }}>
-      <div className="flex-shrink-0" style={{ width: 200 }}>
+      <div className="flex-shrink-0 sm:w-48">
         <div className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{label}</div>
         {description && (
           <div className="text-xs mt-0.5" style={{ color: 'var(--color-muted)', lineHeight: 1.5 }}>
@@ -369,7 +369,7 @@ export default function ConfigPage() {
   return (
     <div className="flex-1 flex flex-col min-w-0" style={{ maxWidth: 1440 }}>
       {/* 页头 */}
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex flex-wrap items-center gap-4 mb-6">
         <div>
           <h1 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>配置文件</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--color-muted)' }}>
@@ -415,13 +415,8 @@ export default function ConfigPage() {
         </div>
       )}
 
-      {/* ── 所有区块：两列网格 ── */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(2, 1fr)',
-        gap: 24,
-        alignItems: 'start',
-      }}>
+      {/* ── 所有区块：两列网格（小屏单列） ── */}
+      <div className="config-grid">
         {/* 左列 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
           {/* ── WebUI 认证 ── */}
