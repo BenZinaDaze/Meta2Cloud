@@ -79,7 +79,7 @@ function NavItem({ icon, label, active, onClick, indent = false, right, bold = f
       style={{
         padding: indent ? '12px 18px 12px 54px' : '13px 18px',
         margin: '4px 12px',
-        width: 'calc(100% - 20px)',
+        width: 'calc(100% - 24px)', // Fix: 100% minus 12px*2 margin
         borderRadius: 20,
         background: active ? 'linear-gradient(90deg, rgba(200, 146, 77, 0.16) 0%, rgba(200, 146, 77, 0.04) 100%)' : 'transparent',
         border: active ? '1px solid rgba(200, 146, 77, 0.22)' : '1px solid transparent',
@@ -209,7 +209,7 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
 
   return (
     <aside
-      className="fixed bottom-0 left-0 top-0 flex w-[17rem] flex-col overflow-y-auto pt-5 pb-5 lg:bottom-5 lg:left-5 lg:top-[96px] lg:w-72 lg:rounded-[30px]"
+      className="fixed bottom-0 left-0 top-0 flex w-[17rem] flex-col overflow-x-hidden overflow-y-auto pt-5 pb-5 lg:bottom-5 lg:left-5 lg:top-[96px] lg:w-72 lg:rounded-[30px]"
       style={{
         background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.95) 0%, rgba(10, 19, 32, 0.98) 100%)',
         border: '1px solid var(--color-border)',
