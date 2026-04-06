@@ -1773,6 +1773,10 @@ async def scraper_get_episodes(site: str, media_id: str, subgroup_id: str = None
         return {"ok": True, "episodes": [e.model_dump() for e in episodes]}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        # 网络超时、Mikan RSS 错误、XML 解析失败等：返回空列表而不是 500
+        logging.getLogger("scraper").warning(f"get_episodes failed for {site}/{media_id}/{subgroup_id}: {e}")
+        return {"ok": False, "episodes": [], "error": str(e)}
 
 
 if __name__ == "__main__":
