@@ -386,6 +386,38 @@ def _serialize_meta(meta: Any) -> Dict[str, Any]:
     return payload
 
 
+def _extract_alternative_names_with_lang(info: Dict[str, Any]) -> List[Dict[str, str]]:
+    """从 TMDB 原始数据提取带语言标记的别名列表，格式为 [{"name": .., "iso_639_1": ..}]。
+    优先收录 alternative_titles，再收录 translations，均携带语言/地区码。
+    """
+    seen: set = set()
+    result: List[Dict[str, str]] = []
+
+    # 从 alternative_titles 提取（有 iso_3166_1 地区码）
+    alt_titles_root = info.get("alternative_titles") or {}
+    alt_titles = alt_titles_root.get("titles") or alt_titles_root.get("results") or []
+    for t in alt_titles:
+        name = t.get("title") or ""
+        iso_3166 = t.get("iso_3166_1") or ""
+        # 简单地区码 → 语言映射：CN/TW/HK/SG → zh，JP → ja
+        lang_map = {"CN": "zh", "TW": "zh", "HK": "zh", "SG": "zh", "JP": "ja", "US": "en", "GB": "en"}
+        iso_639 = lang_map.get(iso_3166.upper(), iso_3166.lower()[:2] if iso_3166 else "")
+        if name and name not in seen:
+            seen.add(name)
+            result.append({"name": name, "iso_639_1": iso_639})
+
+    # 从 translations 提取（有标准 iso_639_1 语言码）
+    for tr in (info.get("translations") or {}).get("translations") or []:
+        iso_639 = tr.get("iso_639_1") or ""
+        data = tr.get("data") or {}
+        name = data.get("title") or data.get("name") or ""
+        if name and name not in seen:
+            seen.add(name)
+            result.append({"name": name, "iso_639_1": iso_639})
+
+    return result
+
+
 def _serialize_tmdb_result(info: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if not info:
         return None
@@ -410,6 +442,7 @@ def _serialize_tmdb_result(info: Optional[Dict[str, Any]]) -> Optional[Dict[str,
         "status": info.get("status") or "",
         "genres": [genre.get("name") for genre in (info.get("genres") or []) if genre.get("name")],
         "names": info.get("names") or [],
+        "alternative_names": _extract_alternative_names_with_lang(info),
         "directors": [person.get("name") for person in (info.get("directors") or []) if person.get("name")],
         "actors": [person.get("name") for person in (info.get("actors") or []) if person.get("name")][:8],
         "season_count": info.get("number_of_seasons"),

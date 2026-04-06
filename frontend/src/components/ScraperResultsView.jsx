@@ -13,6 +13,7 @@ export default function ScraperResultsView({ item, onBack, onToast }) {
   const [groupedEpisodes, setGroupedEpisodes] = useState(() => _resultsCache[searchKey]?.groupedEpisodes ?? [])
   const [collapsedGroups, setCollapsedGroups] = useState(new Set())
   const [showTop, setShowTop] = useState(false)
+  const [usedSearchKey, setUsedSearchKey] = useState(null)  // 实际命中的搜索词（如使用了别名则不为 null）
   const scrollRef = useRef(null)
 
   const MIKAN_BASE = 'https://mikan.tangbai.cc'
@@ -29,15 +30,55 @@ export default function ScraperResultsView({ item, onBack, onToast }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  /**
+   * 构建候补搜索关键词列表：先中文别名，再日文别名。
+   * 去除与主 key 重复的项，并对同语言去重（保留唯一）。
+   */
+  const buildFallbackKeys = (primaryKey) => {
+    const altNames = item.alternative_names || []  // [{name, iso_639_1}]
+    const seen = new Set([primaryKey])
+    const zhKeys = []
+    const jaKeys = []
+    for (const { name, iso_639_1 } of altNames) {
+      if (!name || seen.has(name)) continue
+      seen.add(name)
+      if (iso_639_1 === 'zh') zhKeys.push(name)
+      else if (iso_639_1 === 'ja') jaKeys.push(name)
+    }
+    return { zhKeys, jaKeys }
+  }
+
   const startSearch = async () => {
     if (!item) return
     setSearchState('searching')
     setErrorMsg('')
     setGroupedEpisodes([])
     try {
-      const key = item.title || item.original_title || item.name
-      const res = await searchMedia(key)
-      const aggregates = res.data.results || []
+      const primaryKey = item.title || item.original_title || item.name
+      const { zhKeys, jaKeys } = buildFallbackKeys(primaryKey)
+
+      // 按优先级依次尝试搜索，找到结果立刻使用
+      let aggregates = []
+      let usedKey = primaryKey
+      const keysToTry = [
+        { key: primaryKey, label: '主标题' },
+        ...zhKeys.map(k => ({ key: k, label: '中文别名' })),
+        ...jaKeys.map(k => ({ key: k, label: '日文别名' })),
+      ]
+
+      for (const { key, label } of keysToTry) {
+        const res = await searchMedia(key)
+        const candidates = res.data.results || []
+        if (candidates.length > 0) {
+          aggregates = candidates
+          usedKey = key
+          if (key !== primaryKey) {
+            console.info(`[ScraperSearch] 主标题「${primaryKey}」无结果，改用${label}「${key}」找到 ${candidates.length} 项`)
+            setUsedSearchKey(key)
+          }
+          break
+        }
+      }
 
       if (aggregates.length === 0) {
         setSearchState('error')
@@ -172,7 +213,15 @@ export default function ScraperResultsView({ item, onBack, onToast }) {
           </button>
           <div className="flex-1 min-w-0">
             <h2 className="text-xl sm:text-2xl font-bold truncate text-white">{searchKey}</h2>
-            <div className="text-xs sm:text-sm text-white/50 mt-1">资源检索结果</div>
+            <div className="text-xs sm:text-sm text-white/50 mt-1 flex items-center gap-2 flex-wrap">
+              资源检索结果
+              {usedSearchKey && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/15 text-amber-300/80 border border-amber-500/20">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  以别名「{usedSearchKey}」检索
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
