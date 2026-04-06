@@ -27,65 +27,70 @@ class MikanSpider(BaseSpider):
         media_items = []
         seen_ids = set()
 
-        subgroups = []
-        for sub_a in soup.select('a[data-subgroupid]'):
-            sub_id = sub_a.get('data-subgroupid', '').strip()
-            sub_name = sub_a.get_text(strip=True)
-            if sub_id and sub_name and sub_name != "显示全部" and sub_name != "顯示全部":
-                subgroups.append((sub_id, sub_name))
-
-        unique_subgroups = []
-        seen_subs = set()
-        for s in subgroups:
-            if s[0] not in seen_subs:
-                seen_subs.add(s[0])
-                unique_subgroups.append(s)
-
-        # Mikan search groups episodes under a banner holding the Bangumi's title and link.
-        # Often links to bangumi look like <a href="/Home/Bangumi/3141" ...>Title</a>
         for a_tag in soup.select('a[href^="/Home/Bangumi/"]'):
             href = a_tag.get('href')
             title = a_tag.get_text(strip=True)
             if not title:
-                # sometimes they put an image inside the a_tag, or use title attribute
                 title = a_tag.get('title', '').strip()
-            
             if not title:
                 continue
 
-            # Extract bgm_id from /Home/Bangumi/ID
             match = re.search(r'/Home/Bangumi/(\d+)', href)
-            if match:
-                bgm_id = match.group(1)
-                if bgm_id not in seen_ids:
-                    seen_ids.add(bgm_id)
-                    
-                    # 1. Add the all-inclusive bangumi item
-                    media_items.append(
-                        MediaItem(
-                            media_id=bgm_id,
-                            name=f"{title} (全部)",
-                            url=urljoin(self.BASE_URL, href),
-                            cover_image=None, 
-                            site=self.site_id
-                        )
-                    )
-                    
-                    # 2. Add each subgroup for this bangumi
-                    for sub_id, sub_name in unique_subgroups:
-                        media_items.append(
-                            MediaItem(
-                                media_id=bgm_id,
-                                name=f"{title} [{sub_name}]",
-                                url=urljoin(self.BASE_URL, href),
-                                cover_image=None,
-                                site=self.site_id,
-                                subgroup_id=sub_id,
-                                subgroup_name=sub_name
-                            )
-                        )
+            if not match:
+                continue
+
+            bgm_id = match.group(1)
+            if bgm_id in seen_ids:
+                continue
+            seen_ids.add(bgm_id)
+
+            # 先加"全部"条目
+            media_items.append(MediaItem(
+                media_id=bgm_id,
+                name=f"{title} (全部)",
+                url=urljoin(self.BASE_URL, href),
+                cover_image=None,
+                site=self.site_id
+            ))
+
+            # 去番剧详情页爬取该番专属的字幕组列表
+            for sub_id, sub_name in self._get_subgroups(bgm_id):
+                media_items.append(MediaItem(
+                    media_id=bgm_id,
+                    name=f"{title} [{sub_name}]",
+                    url=urljoin(self.BASE_URL, href),
+                    cover_image=None,
+                    site=self.site_id,
+                    subgroup_id=sub_id,
+                    subgroup_name=sub_name
+                ))
 
         return media_items
+
+    def _get_subgroups(self, bgm_id: str) -> list:
+        """从番剧详情页 /Home/Bangumi/{bgm_id} 获取该番完整的字幕组列表
+        详情页字幕组链接形如 <a href="/Home/PublishGroup/981">樱桃花字幕组</a>
+        PublishGroup ID 即为 subgroup_id，与 RSS URL 中的 subgroupid 参数一致
+        """
+        detail_url = f"{self.BASE_URL}/Home/Bangumi/{bgm_id}"
+        try:
+            res = requests.get(detail_url, headers=self.HEADERS, timeout=15)
+            res.raise_for_status()
+            soup = BeautifulSoup(res.text, "lxml")
+
+            subgroups = []
+            seen_subs = set()
+            for a in soup.select('a.subgroup-name[data-anchor]'):
+                data_anchor = a.get('data-anchor', '')
+                sub_id = data_anchor.lstrip('#')
+                sub_name = a.get_text(strip=True)
+                if sub_id and sub_name and sub_id not in seen_subs:
+                    seen_subs.add(sub_id)
+                    subgroups.append((sub_id, sub_name))
+            return subgroups
+        except Exception:
+            return []
+
 
     def get_episodes(self, media_id: str, subgroup_id: str = None) -> List[MagnetItem]:
         rss_url = f"{self.BASE_URL}/RSS/Bangumi?bangumiId={media_id}"
