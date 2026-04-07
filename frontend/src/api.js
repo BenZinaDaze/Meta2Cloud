@@ -40,6 +40,7 @@ export const tmdbGetEpisodes = (id, season) => api.get(`/tmdb/tv/${id}/season/${
 // ── Scraper ──
 export const tmdbSearchMulti = (keyword) => api.get('/tmdb/search_multi', { params: { keyword } })
 export const tmdbGetDetail = (media_type, tmdb_id) => api.get('/tmdb/detail', { params: { media_type, tmdb_id } })
+export const tmdbGetAlternativeNames = (media_type, tmdb_id) => api.get('/tmdb/alternative_names', { params: { media_type, tmdb_id } })
 export const searchMedia = (keyword) => api.get('/scraper/search_media', { params: { keyword } })
 export const getEpisodes = (site, media_id, subgroup_id) => api.get('/scraper/get_episodes', { params: { site, media_id, subgroup_id } })
 

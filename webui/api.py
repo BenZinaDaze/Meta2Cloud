@@ -1812,6 +1812,45 @@ async def scraper_get_episodes(site: str, media_id: str, subgroup_id: str = None
         return {"ok": False, "episodes": [], "error": str(e)}
 
 
+
+@app.get("/api/tmdb/alternative_names")
+async def tmdb_alternative_names(tmdb_id: int, media_type: str):
+    """专用：通过 TMDB ID 直接获取别名列表，不走本地库快照。
+    用于资源爬虫搜索时的别名 fallback。TmdbClient 内置缓存，重复调用不会重复请求。
+    """
+    try:
+        from mediaparser.tmdb import TmdbClient
+        cfg = get_config()
+        if not cfg.tmdb or not cfg.tmdb.api_key:
+            raise ValueError("TMDB API Key 未配置")
+        tmdb_client = TmdbClient(
+            api_key=cfg.tmdb.api_key,
+            language=cfg.tmdb.language,
+            proxy=cfg.tmdb_proxy,
+            timeout=cfg.tmdb.timeout,
+            cache=get_tmdb_cache(),
+        )
+        media_path = "movie" if media_type == "movie" else "tv"
+        data = tmdb_client._get(f"/{media_path}/{tmdb_id}/alternative_titles", use_cache=False)
+        if not data:
+            return {"ok": True, "alternative_names": []}
+        raw_titles = data.get("titles") or data.get("results") or []
+        lang_map = {"CN": "zh", "TW": "zh", "HK": "zh", "SG": "zh", "JP": "ja", "US": "en", "GB": "en"}
+        seen: set = set()
+        result = []
+        for t in raw_titles:
+            name = t.get("title") or ""
+            iso_3166 = (t.get("iso_3166_1") or "").upper()
+            iso_639 = lang_map.get(iso_3166, iso_3166.lower()[:2] if iso_3166 else "")
+            if name and name not in seen:
+                seen.add(name)
+                result.append({"name": name, "iso_639_1": iso_639})
+        return {"ok": True, "alternative_names": result}
+    except Exception as e:
+        logger.error("TMDB 别名获取失败: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("webui.api:app", host="0.0.0.0", port=38765, reload=True)

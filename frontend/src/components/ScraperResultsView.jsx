@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { searchMedia, getEpisodes, addAria2Uri } from '../api'
+import { searchMedia, getEpisodes, addAria2Uri, tmdbGetAlternativeNames } from '../api'
 
 let _resultsCache = {}
 export function clearResultsCache(key) { delete _resultsCache[key] }
@@ -14,6 +14,7 @@ export default function ScraperResultsView({ item, onBack, onToast }) {
   const [collapsedGroups, setCollapsedGroups] = useState(new Set())
   const [showTop, setShowTop] = useState(false)
   const [usedSearchKey, setUsedSearchKey] = useState(null)  // 实际命中的搜索词（如使用了别名则不为 null）
+  const [currentSearchKey, setCurrentSearchKey] = useState(null)  // 当前正在尝试的搜索词
   const scrollRef = useRef(null)
 
   const MIKAN_BASE = 'https://mikan.tangbai.cc'
@@ -31,21 +32,37 @@ export default function ScraperResultsView({ item, onBack, onToast }) {
   }, [])
 
   /**
-   * 构建候补搜索关键词列表：先中文别名，再日文别名。
-   * 去除与主 key 重复的项，并对同语言去重（保留唯一）。
+   * 构建候补搜索关键词列表：zh别名 → ja别名 → 其他语言别名。
+   * 收录全部别名（不限语言），避免因 TMDB 语言码映射不准确而遗漏。
+   * 去除与主 key 重复的项，各语言内去重（保留唯一）。
    */
-  const buildFallbackKeys = (primaryKey) => {
-    const altNames = item.alternative_names || []  // [{name, iso_639_1}]
+  const buildFallbackKeys = (altNames, primaryKey) => {
     const seen = new Set([primaryKey])
     const zhKeys = []
     const jaKeys = []
-    for (const { name, iso_639_1 } of altNames) {
+    const otherKeys = []
+    for (const { name, iso_639_1 } of (altNames || [])) {
       if (!name || seen.has(name)) continue
       seen.add(name)
       if (iso_639_1 === 'zh') zhKeys.push(name)
       else if (iso_639_1 === 'ja') jaKeys.push(name)
+      else otherKeys.push(name)
     }
-    return { zhKeys, jaKeys }
+    return { zhKeys, jaKeys, otherKeys }
+  }
+
+  /**
+   * 用别名搜索返回结果时，过滤掉与当前作品无关的条目。
+   * 策略：只保留名字与已知名称存在包含关系的条目。
+   */
+  const filterByKnownNames = (candidates, knownNames) => {
+    const normalize = (s) => s.toLowerCase().replace(/\s+/g, ' ').trim()
+    const normalizedKnown = knownNames.map(normalize).filter(Boolean)
+    if (normalizedKnown.length === 0) return candidates
+    return candidates.filter(agg => {
+      const aggName = normalize(agg.name)
+      return normalizedKnown.some(k => aggName.includes(k) || k.includes(aggName))
+    })
   }
 
   const startSearch = async () => {
@@ -55,28 +72,61 @@ export default function ScraperResultsView({ item, onBack, onToast }) {
     setGroupedEpisodes([])
     try {
       const primaryKey = item.title || item.original_title || item.name
-      const { zhKeys, jaKeys } = buildFallbackKeys(primaryKey)
 
-      // 按优先级依次尝试搜索，找到结果立刻使用
+      // 第一步：先用主标题搜索
       let aggregates = []
-      let usedKey = primaryKey
-      const keysToTry = [
-        { key: primaryKey, label: '主标题' },
-        ...zhKeys.map(k => ({ key: k, label: '中文别名' })),
-        ...jaKeys.map(k => ({ key: k, label: '日文别名' })),
-      ]
+      setCurrentSearchKey(primaryKey)
+      const primaryRes = await searchMedia(primaryKey)
+      const primaryCandidates = primaryRes.data.results || []
+      if (primaryCandidates.length > 0) {
+        aggregates = primaryCandidates
+      }
 
-      for (const { key, label } of keysToTry) {
-        const res = await searchMedia(key)
-        const candidates = res.data.results || []
-        if (candidates.length > 0) {
-          aggregates = candidates
-          usedKey = key
-          if (key !== primaryKey) {
-            console.info(`[ScraperSearch] 主标题「${primaryKey}」无结果，改用${label}「${key}」找到 ${candidates.length} 项`)
-            setUsedSearchKey(key)
+      // 第二步：主标题无结果时，才请求 TMDB 别名并尝试
+      if (aggregates.length === 0 && item.tmdb_id) {
+        let altNames = item.alternative_names || []
+
+        // 库内条目的 alternative_names 为空，需单独从 TMDB 获取
+        if (altNames.length === 0) {
+          try {
+            const res = await tmdbGetAlternativeNames(item.media_type, item.tmdb_id)
+            altNames = res.data?.alternative_names || []
+            console.info(`[ScraperSearch] 主标题无结果，从 TMDB 获取别名，共 ${altNames.length} 条`)
+          } catch (e) {
+            console.warn('[ScraperSearch] 获取别名失败', e)
           }
-          break
+        }
+
+        if (altNames.length > 0) {
+          const { zhKeys, jaKeys, otherKeys } = buildFallbackKeys(altNames, primaryKey)
+
+          // 收集已知名字用于别名搜索结果过滤
+          const allKnownNames = [
+            item.title, item.original_title, item.name,
+            ...altNames.map(a => a.name),
+          ].filter(Boolean)
+
+          const aliasKeys = [
+            ...zhKeys.map(k => ({ key: k, label: '中文别名' })),
+            ...jaKeys.map(k => ({ key: k, label: '日文别名' })),
+            ...otherKeys.map(k => ({ key: k, label: '其他别名' })),
+          ]
+
+          for (const { key, label } of aliasKeys) {
+            setCurrentSearchKey(key)
+            const res = await searchMedia(key)
+            const rawCandidates = res.data.results || []
+            const candidates = filterByKnownNames(rawCandidates, allKnownNames)
+            if (candidates.length > 0) {
+              aggregates = candidates
+              console.info(`[ScraperSearch] 改用${label}「${key}」找到 ${candidates.length} 项（过滤前 ${rawCandidates.length} 项）`)
+              setUsedSearchKey(key)
+              break
+            }
+            if (rawCandidates.length > 0) {
+              console.info(`[ScraperSearch] ${label}「${key}」有 ${rawCandidates.length} 项但过滤后全为无关作品，继续`)
+            }
+          }
         }
       }
 
@@ -227,11 +277,18 @@ export default function ScraperResultsView({ item, onBack, onToast }) {
 
         <div className="flex flex-col w-full">
           {searchState === 'searching' && (
-            <div className="flex flex-col items-center justify-center py-12 gap-4 text-white/50">
+            <div className="flex flex-col items-center justify-center py-12 gap-3 text-white/50">
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-spin text-[#c8924d]">
                 <line x1="12" y1="2" x2="12" y2="6" /><line x1="12" y1="18" x2="12" y2="22" /><line x1="4.93" y1="4.93" x2="7.76" y2="7.76" /><line x1="16.24" y1="16.24" x2="19.07" y2="19.07" /><line x1="2" y1="12" x2="6" y2="12" /><line x1="18" y1="12" x2="22" y2="12" /><line x1="4.93" y1="19.07" x2="7.76" y2="16.24" /><line x1="16.24" y1="7.76" x2="19.07" y2="4.93" />
               </svg>
-              资源检索中...
+              <div className="flex flex-col items-center gap-1">
+                <span className="text-sm">
+                  以「<span className="text-white/80 font-medium">{currentSearchKey || searchKey}</span>」检索中...
+                </span>
+                {currentSearchKey && currentSearchKey !== searchKey && (
+                  <span className="text-xs text-white/30">主标题无结果，尝试别名</span>
+                )}
+              </div>
             </div>
           )}
 
