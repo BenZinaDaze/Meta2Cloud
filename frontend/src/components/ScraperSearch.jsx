@@ -9,7 +9,7 @@ let _cachedQuery = ''
 let _cachedResults = []
 let _cachedSearchModeItem = null
 
-export default function ScraperSearch({ onToast, initialSearchItem, onClearInitialSearchItem }) {
+export default function ScraperSearch({ onToast, initialSearchItem, onClearInitialSearchItem, initialQuery, onClearInitialQuery }) {
   const [query, setQuery] = useState(_cachedQuery)
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState(_cachedResults)
@@ -30,6 +30,25 @@ export default function ScraperSearch({ onToast, initialSearchItem, onClearIniti
       onClearInitialSearchItem?.()
     }
   }, [initialSearchItem, onClearInitialSearchItem])
+
+  useEffect(() => {
+    if (initialQuery) {
+      // Clear caches so stale results don't flash
+      _cachedResults = []
+      _cachedSearchModeItem = null
+      _cachedQuery = initialQuery
+      setSearchModeItem(null)
+      setQuery(initialQuery)
+      setLoading(true)
+      setError(null)
+      setResults([])
+      tmdbSearchMulti(initialQuery)
+        .then(res => setResults(res.data.results || []))
+        .catch(err => setError(err?.response?.data?.detail || err.message))
+        .finally(() => setLoading(false))
+      onClearInitialQuery?.()
+    }
+  }, [initialQuery, onClearInitialQuery])
 
   const handleSearch = async (e) => {
     e.preventDefault()
