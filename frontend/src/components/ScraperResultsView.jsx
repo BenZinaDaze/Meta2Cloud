@@ -15,6 +15,7 @@ export default function ScraperResultsView({ item, onBack, onToast }) {
   const [showTop, setShowTop] = useState(false)
   const [usedSearchKey, setUsedSearchKey] = useState(null)  // 实际命中的搜索词（如使用了别名则不为 null）
   const [currentSearchKey, setCurrentSearchKey] = useState(null)  // 当前正在尝试的搜索词
+  const [activeMediaTitle, setActiveMediaTitle] = useState(null)
   const scrollRef = useRef(null)
 
   const MIKAN_BASE = 'https://mikan.tangbai.cc'
@@ -144,9 +145,13 @@ export default function ScraperResultsView({ item, onBack, onToast }) {
         const rssUrl = src?.site === 'mikan'
           ? `${MIKAN_BASE}/RSS/Bangumi?bangumiId=${src.media_id}&subgroupid=${src.subgroup_id}`
           : null
-        const nameMatch = agg.name.match(/\[(.+?)\]\s*$/)
-        const name = nameMatch ? nameMatch[1] : agg.name
-        return { name, rssUrl, src, episodes: [], loading: true }
+        
+        const match = agg.name.match(/^(.*?)\s*\[(.+?)\]\s*$/)
+        const mediaTitle = match ? match[1].trim() : agg.name
+        const name = match ? match[2].trim() : agg.name
+        const uniqueKey = `${mediaTitle}-${name}`
+
+        return { name, mediaTitle, uniqueKey, rssUrl, src, episodes: [], loading: true }
       })
       setGroupedEpisodes(initialGroups)
       setSearchState('done')  // 先切到 done，让占位 UI 立即渲染
@@ -297,129 +302,173 @@ export default function ScraperResultsView({ item, onBack, onToast }) {
 
           {searchState === 'done' && (
             <div className="w-full pb-8">
-              <div className="mb-6 pt-2 pb-4" style={{ borderBottom: '1px solid var(--color-border)' }}>
-                <h3 className="text-base font-bold mb-3" style={{ color: 'var(--color-text)' }}>
-                  匹配到的下载渠道 ({groupedEpisodes.reduce((s, g) => s + g.episodes.length, 0)})
-                </h3>
-                {groupedEpisodes.length > 0 && (
-                  <div className="flex flex-wrap gap-2 pb-1">
-                    {groupedEpisodes.map(({ name, episodes }) => (
-                      <button
-                        key={name}
-                        onClick={() => {
-                          const el = document.getElementById(`fansub-${encodeURIComponent(name)}`)
-                          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                        }}
-                        className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all border border-white/10 text-white/70 hover:text-white hover:border-white/30 hover:bg-white/10 shrink-0"
-                        style={{ background: 'rgba(255,255,255,0.03)' }}
-                      >
-                        {name} <span className="opacity-50 ml-0.5">({episodes.length})</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              {(() => {
+                const groupedByMedia = new Map();
+                groupedEpisodes.forEach((item, index) => {
+                  if (!groupedByMedia.has(item.mediaTitle)) {
+                    groupedByMedia.set(item.mediaTitle, []);
+                  }
+                  groupedByMedia.get(item.mediaTitle).push({ ...item, originalIndex: index });
+                });
+                const mediaGroups = Array.from(groupedByMedia.entries());
 
-              {groupedEpisodes.length === 0 ? (
-                <div className="text-center py-16 text-white/40 flex flex-col items-center gap-3">
-                  <span style={{ fontSize: 64, lineHeight: 1 }}>📭</span>
-                  <p>没有获取到有效的剧集种子/磁力项。</p>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-8">
-                  {groupedEpisodes.map(({ name, rssUrl, episodes, loading }, index) => {
-                    const isExpanded = !collapsedGroups.has(name)
-                    const toggle = () => setCollapsedGroups(prev => {
-                      const next = new Set(prev)
-                      next.has(name) ? next.delete(name) : next.add(name)
-                      return next
-                    })
-                    return (
-                      <div key={name} id={`fansub-${encodeURIComponent(name)}`} className="flex flex-col scroll-mt-24">
-                        {/* 标题行：整行可点击展开/折叠 */}
-                        <button
-                          onClick={toggle}
-                          className="flex items-center gap-3 w-full text-left py-2 group"
-                        >
-                          <div className={`w-1.5 rounded-full shrink-0 bg-[linear-gradient(135deg,#e3b778,#c8924d)] transition-all duration-300 ${isExpanded ? 'h-6 shadow-[0_2px_8px_rgba(200,146,77,0.4)] opacity-100' : 'h-3 shadow-none opacity-40'}`} />
-                          <h4 className="text-lg sm:text-xl font-bold text-white/95 flex-1">
-                            {name}
-                            {loading
-                              ? <span className="text-sm font-normal text-white/30 ml-2">加载中...</span>
-                              : <span className="text-sm font-medium text-white/40 ml-2">({episodes.length})</span>
-                            }
-                          </h4>
-                          {rssUrl && (
-                            <span
-                              role="button"
-                              onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(rssUrl).then(() => onToast?.('success', '已复制 RSS 链接', rssUrl)).catch(err => onToast?.('error', '复制失败', err.message)) }}
-                              title="复制该字幕组的 RSS 订阅链接"
-                              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all border border-orange-400/30 text-orange-300/80 hover:text-orange-200 hover:border-orange-400/60 hover:bg-orange-400/10 shrink-0"
-                            >
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M4 11a9 9 0 0 1 9 9" /><path d="M4 4a16 16 0 0 1 16 16" /><circle cx="5" cy="19" r="1" />
-                              </svg>
-                              复制 RSS
-                            </span>
-                          )}
-                          <span
-                            role="button"
-                            onClick={e => { e.stopPropagation(); refreshGroup(index) }}
-                            title="刷新该字幕组的资源列表"
-                            className="flex items-center justify-center w-6 h-6 rounded-md text-white/30 hover:text-white/70 hover:bg-white/10 transition-all shrink-0"
-                          >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
-                              className={loading ? 'animate-spin' : ''}>
-                              <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
-                              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-                            </svg>
-                          </span>
-                          <svg
-                            width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                            className={`shrink-0 text-white/30 group-hover:text-white/60 transition-all duration-200 ${isExpanded ? 'rotate-180' : ''}`}
-                          >
-                            <polyline points="6 9 12 15 18 9" />
-                          </svg>
-                        </button>
-                        {/* 箭头已有 rotate-180 → 折叠时朝下，展开时朝上 */}
-                        {/* 内容区：loading 始终展示骨架；否则用 grid-rows 动画平滑展开/折叠 */}
-                        {loading ? (
-                          <div className="flex flex-col gap-2 mt-1 pb-4">
-                            {[1, 2, 3].map(i => (
-                              <div key={i} className="h-16 rounded-2xl border border-white/5 bg-white/5 animate-pulse" />
-                            ))}
-                          </div>
-                        ) : (
-                          <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-                            <div className="overflow-hidden">
-                              <div className="flex flex-col gap-3 mt-1 pb-4">
-                                {episodes.length === 0 ? (
-                                  <div className="text-sm text-white/30 px-2 py-3">该字幕组暂无资源</div>
-                                ) : episodes.map((ep, idx) => (
-                                  <div key={idx} className="flex flex-col md:flex-row gap-4 p-5 rounded-2xl border border-white/5 bg-white/5 hover:bg-white/10 transition-colors">
-                                    <div className="flex-1 min-w-0">
-                                      <div className="font-semibold text-white/95 break-all leading-relaxed text-sm md:text-base mb-2">{ep.title}</div>
-                                      <div className="flex flex-wrap gap-2 text-xs font-medium">
-                                        <span className="rounded bg-blue-500/20 text-blue-300 px-2 py-0.5">{ep._site.toUpperCase()}</span>
-                                        {ep.file_size_mb && <span className="rounded bg-white/10 text-white/60 px-2 py-0.5">{ep.file_size_mb} MB</span>}
-                                        {ep.publish_time && <span className="rounded bg-white/10 text-white/60 px-2 py-0.5">{ep.publish_time}</span>}
-                                      </div>
-                                    </div>
-                                    <div className="flex md:flex-col items-center justify-end gap-2 shrink-0">
-                                      <button onClick={() => handleDownload(ep)} className="px-5 py-2 md:py-1.5 bg-[linear-gradient(135deg,#e3b778,#c8924d)] rounded-xl text-[#0A1320] font-bold text-sm w-full md:w-auto hover:opacity-90 transition-opacity">推送下载</button>
-                                      <button onClick={() => handleCopy(ep)} className="px-5 py-2 md:py-1.5 bg-white/10 rounded-xl text-white font-bold text-sm w-full md:w-auto hover:bg-white/20 transition-colors">复制链接</button>
-                                    </div>
-                                  </div>
+                const currentActiveMedia = activeMediaTitle && groupedByMedia.has(activeMediaTitle)
+                  ? activeMediaTitle
+                  : (mediaGroups[0]?.[0] || null);
+
+                return (
+                  <>
+                    <div className="mb-6 pt-2 pb-4" style={{ borderBottom: '1px solid var(--color-border)' }}>
+                      <h3 className="text-base font-bold mb-3" style={{ color: 'var(--color-text)' }}>
+                        匹配到的相关番剧内容 ({mediaGroups.length}部)
+                      </h3>
+                      {mediaGroups.length > 0 && (
+                        <div className="flex flex-wrap gap-2 pb-1">
+                          {mediaGroups.map(([mediaTitle, subgroups]) => {
+                            const count = subgroups.reduce((s, g) => s + g.episodes.length, 0);
+                            const isActive = mediaTitle === currentActiveMedia;
+                            return (
+                              <button
+                                key={mediaTitle}
+                                onClick={() => setActiveMediaTitle(mediaTitle)}
+                                className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border shrink-0 ${
+                                  isActive
+                                    ? 'bg-[linear-gradient(135deg,#e3b778,#c8924d)] border-[#e3b778] text-[#0A1320] shadow-[0_2px_8px_rgba(200,146,77,0.3)]'
+                                    : 'border-white/10 text-white/70 hover:text-white hover:border-white/30 hover:bg-white/10 bg-[rgba(255,255,255,0.03)]'
+                                }`}
+                              >
+                                {mediaTitle || '未分类源'} <span className={`ml-1 ${isActive ? 'opacity-80' : 'opacity-50'}`}>({count}源)</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {groupedEpisodes.length === 0 ? (
+                      <div className="text-center py-16 text-white/40 flex flex-col items-center gap-3">
+                        <span style={{ fontSize: 64, lineHeight: 1 }}>📭</span>
+                        <p>没有获取到有效的剧集种子/磁力项。</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-10">
+                        {mediaGroups.filter(([mediaTitle]) => mediaTitle === currentActiveMedia).map(([mediaTitle, subgroups]) => (
+                          <div key={mediaTitle} className="flex flex-col gap-4">
+                            {subgroups.length > 0 && (
+                              <div className="flex flex-wrap gap-2 pb-2">
+                                {subgroups.map(({ name, episodes, uniqueKey }) => (
+                                  <button
+                                    key={uniqueKey}
+                                    onClick={() => {
+                                      const el = document.getElementById(`fansub-${encodeURIComponent(uniqueKey)}`)
+                                      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                                    }}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all border border-white/10 text-white/70 hover:text-white hover:border-white/30 hover:bg-white/10 shrink-0"
+                                    style={{ background: 'rgba(255,255,255,0.03)' }}
+                                  >
+                                    {name} <span className="opacity-50 ml-0.5">({episodes.length})</span>
+                                  </button>
                                 ))}
                               </div>
+                            )}
+                            <div className="flex flex-col gap-6">
+                              {subgroups.map((subItem) => {
+                                const { name, rssUrl, episodes, loading, originalIndex, uniqueKey } = subItem;
+                                const isExpanded = !collapsedGroups.has(uniqueKey)
+                                const toggle = () => setCollapsedGroups(prev => {
+                                  const next = new Set(prev)
+                                  next.has(uniqueKey) ? next.delete(uniqueKey) : next.add(uniqueKey)
+                                  return next
+                                })
+                                return (
+                                  <div key={uniqueKey} id={`fansub-${encodeURIComponent(uniqueKey)}`} className="flex flex-col">
+                                    <button
+                                      onClick={toggle}
+                                      className="flex items-center gap-3 w-full text-left py-2 group"
+                                    >
+                                      <div className={`w-1.5 rounded-full shrink-0 bg-[linear-gradient(135deg,#e3b778,#c8924d)] transition-all duration-300 ${isExpanded ? 'h-6 shadow-[0_2px_8px_rgba(200,146,77,0.4)] opacity-100' : 'h-3 shadow-none opacity-40'}`} />
+                                      <h4 className="text-lg font-bold text-white/90 flex-1">
+                                        {name}
+                                        {loading
+                                          ? <span className="text-sm font-normal text-white/30 ml-2">加载中...</span>
+                                          : <span className="text-sm font-medium text-white/40 ml-2">({episodes.length})</span>
+                                        }
+                                      </h4>
+                                      {rssUrl && (
+                                        <span
+                                          role="button"
+                                          onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(rssUrl).then(() => onToast?.('success', '已复制 RSS 链接', rssUrl)).catch(err => onToast?.('error', '复制失败', err.message)) }}
+                                          title="复制该字幕组的 RSS 订阅链接"
+                                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all border border-orange-400/30 text-orange-300/80 hover:text-orange-200 hover:border-orange-400/60 hover:bg-orange-400/10 shrink-0"
+                                        >
+                                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M4 11a9 9 0 0 1 9 9" /><path d="M4 4a16 16 0 0 1 16 16" /><circle cx="5" cy="19" r="1" />
+                                          </svg>
+                                          复制 RSS
+                                        </span>
+                                      )}
+                                      <span
+                                        role="button"
+                                        onClick={e => { e.stopPropagation(); refreshGroup(originalIndex) }}
+                                        title="刷新该字幕组的资源列表"
+                                        className="flex items-center justify-center w-6 h-6 rounded-md text-white/30 hover:text-white/70 hover:bg-white/10 transition-all shrink-0"
+                                      >
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+                                          className={loading ? 'animate-spin' : ''}>
+                                          <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                                          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                                        </svg>
+                                      </span>
+                                      <svg
+                                        width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                                        className={`shrink-0 text-white/30 group-hover:text-white/60 transition-all duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                                      >
+                                        <polyline points="6 9 12 15 18 9" />
+                                      </svg>
+                                    </button>
+                                    {loading ? (
+                                      <div className="flex flex-col gap-2 mt-1 pb-4">
+                                        {[1, 2, 3].map(i => (
+                                          <div key={i} className="h-16 rounded-2xl border border-white/5 bg-white/5 animate-pulse" />
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+                                        <div className="overflow-hidden">
+                                          <div className="flex flex-col gap-3 mt-1 pb-4">
+                                            {episodes.length === 0 ? (
+                                              <div className="text-sm text-white/30 px-2 py-3">该字幕组暂无资源</div>
+                                            ) : episodes.map((ep, idx) => (
+                                              <div key={idx} className="flex flex-col md:flex-row gap-4 p-5 rounded-2xl border border-white/5 bg-white/5 hover:bg-white/10 transition-colors">
+                                                <div className="flex-1 min-w-0">
+                                                  <div className="font-semibold text-white/95 break-all leading-relaxed text-sm md:text-base mb-2">{ep.title}</div>
+                                                  <div className="flex flex-wrap gap-2 text-xs font-medium">
+                                                    <span className="rounded bg-blue-500/20 text-blue-300 px-2 py-0.5">{ep._site.toUpperCase()}</span>
+                                                    {ep.file_size_mb && <span className="rounded bg-white/10 text-white/60 px-2 py-0.5">{ep.file_size_mb} MB</span>}
+                                                    {ep.publish_time && <span className="rounded bg-white/10 text-white/60 px-2 py-0.5">{ep.publish_time}</span>}
+                                                  </div>
+                                                </div>
+                                                <div className="flex md:flex-col items-center justify-end gap-2 shrink-0">
+                                                  <button onClick={() => handleDownload(ep)} className="px-5 py-2 md:py-1.5 bg-[linear-gradient(135deg,#e3b778,#c8924d)] rounded-xl text-[#0A1320] font-bold text-sm w-full md:w-auto hover:opacity-90 transition-opacity">推送下载</button>
+                                                  <button onClick={() => handleCopy(ep)} className="px-5 py-2 md:py-1.5 bg-white/10 rounded-xl text-white font-bold text-sm w-full md:w-auto hover:bg-white/20 transition-colors">复制链接</button>
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })}
                             </div>
                           </div>
-                        )}
+                        ))}
                       </div>
-                    )
-                  })}
-                </div>
-              )}
+                    )}
+                  </>
+                );
+              })()}
             </div>
           )}
         </div>
