@@ -82,19 +82,16 @@ export default function ScraperResultsView({ item, onBack, onToast }) {
         aggregates = primaryCandidates
       }
 
-      // 第二步：主标题无结果时，才请求 TMDB 别名并尝试
+      // 第二步：主标题无结果时，调专用接口取最新别名（不走缓存）并尝试
+      // 不复用 item.alternative_names，因为它来自有效期 6 天的 TMDB detail 缓存，可能过期
       if (aggregates.length === 0 && item.tmdb_id) {
-        let altNames = item.alternative_names || []
-
-        // 库内条目的 alternative_names 为空，需单独从 TMDB 获取
-        if (altNames.length === 0) {
-          try {
-            const res = await tmdbGetAlternativeNames(item.media_type, item.tmdb_id)
-            altNames = res.data?.alternative_names || []
-            console.info(`[ScraperSearch] 主标题无结果，从 TMDB 获取别名，共 ${altNames.length} 条`)
-          } catch (e) {
-            console.warn('[ScraperSearch] 获取别名失败', e)
-          }
+        let altNames = []
+        try {
+          const res = await tmdbGetAlternativeNames(item.media_type, item.tmdb_id)
+          altNames = res.data?.alternative_names || []
+          console.info(`[ScraperSearch] 主标题无结果，从 TMDB 获取最新别名，共 ${altNames.length} 条`)
+        } catch (e) {
+          console.warn('[ScraperSearch] 获取别名失败', e)
         }
 
         if (altNames.length > 0) {
