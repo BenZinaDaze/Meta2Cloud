@@ -11,6 +11,7 @@ import LogsPage from './components/LogsPage'
 import ScraperSearch from './components/ScraperSearch'
 import { clearResultsCache } from './components/ScraperResultsView'
 import ParseTestModal from './components/ParseTestModal'
+import CalendarPage from './components/CalendarPage'
 import ToastContainer from './components/Toast'
 
 let _toastId = 0
@@ -122,6 +123,7 @@ export default function App() {
   const [showParseTest, setShowParseTest] = useState(false)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [initialSearchItem, setInitialSearchItem] = useState(null)
+  const [initialQuery, setInitialQuery] = useState(null)
 
   const downloadQueue = {
     downloads: 'all',
@@ -302,11 +304,21 @@ export default function App() {
         >
           {activeNav === 'config' ? (
             <ConfigPage />
+          ) : activeNav === 'calendar' ? (
+            <CalendarPage
+              onSearch={(anime) => {
+                const name = anime.name_cn || anime.name
+                setInitialQuery(name)
+                setActiveNav('scraper-search')
+              }}
+            />
           ) : activeNav === 'scraper-search' ? (
             <ScraperSearch 
               onToast={addToast} 
               initialSearchItem={initialSearchItem}
               onClearInitialSearchItem={() => setInitialSearchItem(null)}
+              initialQuery={initialQuery}
+              onClearInitialQuery={() => setInitialQuery(null)}
             />
           ) : activeNav === 'logs' ? (
             <LogsPage />
