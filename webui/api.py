@@ -353,13 +353,10 @@ def get_drive_client() -> DriveClient:
     if _client is None:
         cfg = get_config()
         drive_cfg = cfg.drive
-        if drive_cfg.auth_mode == "service_account":
-            _client = DriveClient.from_service_account(drive_cfg.service_account_json)
-        else:
-            _client = DriveClient.from_oauth(
-                credentials_path=drive_cfg.credentials_json,
-                token_path=drive_cfg.token_json,
-            )
+        _client = DriveClient.from_oauth(
+            credentials_path=drive_cfg.credentials_json,
+            token_path=drive_cfg.token_json,
+        )
     return _client
 
 

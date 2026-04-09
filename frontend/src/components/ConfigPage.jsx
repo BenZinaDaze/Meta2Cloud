@@ -457,22 +457,11 @@ export default function ConfigPage() {
 
           {/* ── Google Drive ── */}
           <Section title="Google Drive 设置">
-            <FieldRow label="认证方式">
-              <SelectInput value={cfg?.drive?.auth_mode}
-                onChange={v => set('drive','auth_mode',v)}
-                options={[
-                  { value: 'oauth2',           label: 'OAuth2（个人账号）' },
-                  { value: 'service_account',  label: 'Service Account（服务器）' },
-                ]} />
-            </FieldRow>
             <FieldRow label="OAuth2 凭据路径" description="credentials.json 文件路径">
               <TextInput value={cfg?.drive?.credentials_json} onChange={v => set('drive','credentials_json',v)} placeholder="config/credentials.json" mono />
             </FieldRow>
             <FieldRow label="OAuth2 Token 路径" description="首次授权后自动生成">
               <TextInput value={cfg?.drive?.token_json} onChange={v => set('drive','token_json',v)} placeholder="config/token.json" mono />
-            </FieldRow>
-            <FieldRow label="Service Account JSON" description="auth_mode = service_account 时使用">
-              <TextInput value={cfg?.drive?.service_account_json} onChange={v => set('drive','service_account_json',v)} placeholder="config/service_account.json" mono />
             </FieldRow>
             <FieldRow label="扫描目录 ID" description="Drive 目标文件夹 ID">
               <TextInput value={cfg?.drive?.scan_folder_id} onChange={v => set('drive','scan_folder_id',v)} placeholder="1AbCdEfGhIjKlMn..." mono />

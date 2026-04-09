@@ -185,14 +185,10 @@ def main():
 
     # 2. 需要 Drive 的测试
     try:
-        mode = CONFIG["auth_mode"]
-        if mode == "oauth2":
-            client = DriveClient.from_oauth(
-                credentials_path=CONFIG["credentials_json"],
-                token_path=CONFIG["token_json"],
-            )
-        else:
-            client = DriveClient.from_service_account(CONFIG["service_account_json"])
+        client = DriveClient.from_oauth(
+            credentials_path=CONFIG["credentials_json"],
+            token_path=CONFIG["token_json"],
+        )
 
         results["dry_run"] = test_dry_run(client)
 

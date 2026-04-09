@@ -54,15 +54,13 @@
 ```
 metadata2gd-config/
 ├─ config.yaml          # 主配置文件（从 config/config.example.yaml 复制后修改）
-├─ credentials.json     # Google OAuth2 凭据（auth_mode = oauth2 时）
-├─ token.json           # OAuth2 Token（首次运行后自动生成）
-└─ service_account.json # Service Account JSON（auth_mode = service_account 时）
+├─ credentials.json     # Google OAuth2 凭据
+└─ token.json           # OAuth2 Token（首次运行后自动生成）
 ```
 
 **获取 Google Drive API 凭据：**
 - 进入 [Google Cloud Console](https://console.cloud.google.com/) → API 和服务 → 凭据
 - 创建 **OAuth2 客户端 ID**（桌面应用）并下载 → 保存为 `credentials.json`
-- 或创建**服务账号**并下载 JSON 密钥 → 保存为 `service_account.json`（记得将 Drive 目标文件夹共享给服务账号邮箱）
 
 ### 2. 首次 OAuth2 授权（仅 oauth2 模式）
 
@@ -188,10 +186,8 @@ parser:
 
 # ── Google Drive ───────────────────────────────────
 drive:
-  auth_mode: "oauth2"               # "oauth2" 或 "service_account"
   credentials_json: "config/credentials.json"
   token_json: "config/token.json"
-  service_account_json: "config/service_account.json"
   scan_folder_id: ""                # 扫描的源文件夹 ID（必填）
 
 # ── 整理器 ─────────────────────────────────────────

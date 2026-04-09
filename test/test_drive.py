@@ -15,14 +15,9 @@ test_drive.py —— Google Drive 模块独立测试
   ✓ 彻底删除（delete_file）
 
 使用前准备：
-  1. 在 Google Cloud Console 选择一种认证方式：
-     方式A（Service Account）：
-       - 创建服务账号，下载 JSON Key → 改名为 service_account.json
-       - 把要操作的 Drive 文件夹共享给服务账号邮箱
-     方式B（OAuth2）：
-       - 创建 OAuth2 Client ID（桌面应用），下载 JSON → 改名为 credentials.json
-       - 首次运行会弹出浏览器授权
-
+  1. 从 Google Cloud Console 创建 OAuth2 Client ID（桌面应用）
+     下载 JSON 文件 → 改名存为 config/credentials.json
+     首次运行会自动弹出浏览器授权
   2. 修改下方 CONFIG 字典，填入 FOLDER_ID（目标文件夹的 Drive ID）
 """
 
@@ -40,18 +35,11 @@ from googleapiclient.errors import HttpError
 #  ▶ 修改这里的配置
 # ═══════════════════════════════════════════════════════
 CONFIG = {
-    # 认证方式："service_account" 或 "oauth2"
-    "auth_mode": "oauth2",
-
-    # Service Account JSON 路径（auth_mode = service_account 时使用）
-    "service_account_json": "config/service_account.json",
-
-    # OAuth2 凭据文件路径（auth_mode = oauth2 时使用）
+    # OAuth2 凭据文件路径
     "credentials_json": "config/credentials.json",
     "token_json": "config/token.json",
 
     # 测试用的文件夹 ID（在 Drive 地址栏 URL 中找，格式类似 1AbCdEfGhIjKlMnOpQrStUvWxYz）
-    # "root" 表示根目录（Service Account 场景下此项必须填具体 ID）
     "test_folder_id": "1tNw83e50Q0BJ9mDE5CmR9ZaeU4qcvq3V",
 }
 # ═══════════════════════════════════════════════════════
@@ -64,16 +52,10 @@ def sep(title: str):
 
 
 def build_client() -> DriveClient:
-    mode = CONFIG["auth_mode"]
-    if mode == "service_account":
-        return DriveClient.from_service_account(CONFIG["service_account_json"])
-    elif mode == "oauth2":
-        return DriveClient.from_oauth(
-            credentials_path=CONFIG["credentials_json"],
-            token_path=CONFIG["token_json"],
-        )
-    else:
-        raise ValueError(f"未知认证模式：{mode}，应为 'service_account' 或 'oauth2'")
+    return DriveClient.from_oauth(
+        credentials_path=CONFIG["credentials_json"],
+        token_path=CONFIG["token_json"],
+    )
 
 
 def test_about(client: DriveClient):
@@ -197,8 +179,7 @@ def test_upload_and_ops(client: DriveClient):
 
 def main():
     print("=" * 60)
-    print("  Google Drive 模块测试")
-    print("  认证方式：" + CONFIG["auth_mode"])
+    print("  Google Drive 模块测试（OAuth2 认证）")
     print("=" * 60)
 
     try:

@@ -114,26 +114,16 @@ parser:
 # Google Drive 设置
 # ─────────────────────────────────────────────────────────
 drive:
-  # 认证方式："oauth2" 或 "service_account"
-  # oauth2          适合个人账号，首次运行弹浏览器授权
-  # service_account 适合服务器自动化，不需要用户交互
-  auth_mode: "oauth2"
-
-  # OAuth2 凭据文件路径（auth_mode = oauth2 时使用）
+  # OAuth2 凭据文件路径
   # 从 Google Cloud Console → API → 凭据 → 创建 OAuth2 Client ID(桌面应用) 下载
   credentials_json: "config/credentials.json"
 
   # OAuth2 Token 缓存路径（首次授权后自动生成，下次直接复用）
   token_json: "config/token.json"
 
-  # Service Account JSON 路径（auth_mode = service_account 时使用）
-  # 从 Google Cloud Console → IAM → 服务账号 → 创建密钥(JSON) 下载
-  service_account_json: "config/service_account.json"
-
   # 扫描的目标 Drive 文件夹 ID
   # 在 Drive 网页版打开文件夹，URL 末尾即为 ID
   # 示例：https://drive.google.com/drive/folders/1AbCdEfGhIjKlMn → ID = 1AbCdEfGhIjKlMn
-  # Service Account 场景下不能用 "root"，必须填具体 ID（并把文件夹共享给服务账号邮箱）
   scan_folder_id: ""
 
 # ─────────────────────────────────────────────────────────

@@ -87,7 +87,6 @@ class DriveClient:
     Google Drive CRUD 客户端
 
     推荐通过类方法构造：
-        client = DriveClient.from_service_account("config/service_account.json")
         client = DriveClient.from_oauth("config/credentials.json")
     """
 
@@ -117,12 +116,6 @@ class DriveClient:
                 delay *= 2
 
     # ── 构造函数 ──────────────────────────────────────────────────────────────
-
-    @classmethod
-    def from_service_account(cls, json_path: str) -> "DriveClient":
-        """从 Service Account JSON 文件构造客户端（推荐自动化场景）"""
-        from drive.auth import DriveAuth
-        return cls(DriveAuth.from_service_account(json_path))
 
     @classmethod
     def from_oauth(

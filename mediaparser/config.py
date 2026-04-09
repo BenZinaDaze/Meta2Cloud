@@ -66,19 +66,15 @@ class ParserConfig:
 
 @dataclass
 class DriveConfig:
-    auth_mode: str = "oauth2"
     credentials_json: str = "config/credentials.json"
     token_json: str = "config/token.json"
-    service_account_json: str = "config/service_account.json"
     scan_folder_id: str = ""
 
     @classmethod
     def from_dict(cls, d: dict) -> "DriveConfig":
         return cls(
-            auth_mode=str(d.get("auth_mode") or "oauth2"),
             credentials_json=str(d.get("credentials_json") or "config/credentials.json"),
             token_json=str(d.get("token_json") or "config/token.json"),
-            service_account_json=str(d.get("service_account_json") or "config/service_account.json"),
             scan_folder_id=str(d.get("scan_folder_id") or ""),
         )
 

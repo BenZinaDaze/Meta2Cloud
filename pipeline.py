@@ -727,13 +727,10 @@ def main():
 
     drive_cfg = cfg.drive
     try:
-        if drive_cfg.auth_mode == "service_account":
-            client = DriveClient.from_service_account(drive_cfg.service_account_json)
-        else:
-            client = DriveClient.from_oauth(
-                credentials_path=drive_cfg.credentials_json,
-                token_path=drive_cfg.token_json,
-            )
+        client = DriveClient.from_oauth(
+            credentials_path=drive_cfg.credentials_json,
+            token_path=drive_cfg.token_json,
+        )
     except FileNotFoundError as e:
         print(f"❌  认证文件不存在：{e}")
         sys.exit(1)

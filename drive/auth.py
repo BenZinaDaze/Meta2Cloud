@@ -1,55 +1,21 @@
 """
-drive/auth.py —— Google Drive 认证
-
-支持两种方式：
-  1. Service Account  适合服务器/CI 自动化，无需用户交互
-  2. OAuth2           适合个人账号，首次运行弹浏览器授权
+drive/auth.py —— Google Drive OAuth2 认证
 """
 
 import os
 from typing import Optional
 
-from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-# 只需要读写自己的 Drive 文件
-SCOPES_FULL = ["https://www.googleapis.com/auth/drive"]
-# 只能读写本应用创建的文件（权限更小，更安全）
-SCOPES_FILE = ["https://www.googleapis.com/auth/drive.file"]
+# Drive 所需权限
+SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 
 class DriveAuth:
-    """Google Drive 认证工厂，返回 googleapiclient 的 Resource 对象"""
-
-    @staticmethod
-    def from_service_account(
-        json_path: str,
-        scopes: Optional[list] = None,
-    ):
-        """
-        Service Account 认证（推荐用于自动化）
-
-        参数：
-            json_path : service_account.json 路径
-            scopes    : 默认 SCOPES_FULL
-
-        前提：
-            在 Google Cloud Console 创建服务账号，下载 JSON Key，
-            并在 Google Drive 将目标文件夹共享给服务账号邮箱。
-        """
-        if not os.path.exists(json_path):
-            raise FileNotFoundError(
-                f"Service Account 文件不存在：{json_path}\n"
-                "请到 Google Cloud Console → IAM → 服务账号 → 创建密钥(JSON)"
-            )
-        scopes = scopes or SCOPES_FULL
-        creds = service_account.Credentials.from_service_account_file(
-            json_path, scopes=scopes
-        )
-        return build("drive", "v3", credentials=creds)
+    """Google Drive OAuth2 认证，返回 googleapiclient 的 Resource 对象"""
 
     @staticmethod
     def from_oauth(
@@ -63,11 +29,10 @@ class DriveAuth:
         参数：
             credentials_path : 从 Google Cloud Console 下载的 OAuth2 JSON
             token_path       : 本地缓存 token，首次运行后自动生成
-            scopes           : 默认 SCOPES_FULL
 
         首次使用会弹出浏览器授权页面。
         """
-        scopes = scopes or SCOPES_FULL
+        scopes = scopes or SCOPES
         creds: Optional[Credentials] = None
 
         # 读取已有 token
