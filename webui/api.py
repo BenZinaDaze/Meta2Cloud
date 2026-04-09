@@ -1403,7 +1403,31 @@ def _do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str,
     else:
         raise ValueError(f"不支持的 media_type: {media_type}")
 
-    return {"ok": len(errors) == 0, "uploaded": uploaded, "errors": errors, "tmdb_id": tmdb_id}
+    updates = {
+        "tmdb_id": tmdb_id,
+        "title": info.get("name") if media_type == "tv" else info.get("title"),
+        "original_title": info.get("original_name") if media_type == "tv" else info.get("original_title"),
+        "overview": info.get("overview") or "",
+        "rating": round(info.get("vote_average") or 0, 1),
+    }
+
+    # TMDB_IMG_BASE = "https://image.tmdb.org/t/p/w500"
+    # TMDB_IMG_ORIG = "https://image.tmdb.org/t/p/original"
+    if info.get("poster_path"):
+        updates["poster_url"] = f"https://image.tmdb.org/t/p/w500{info['poster_path']}"
+    if info.get("backdrop_path"):
+        updates["backdrop_url"] = f"https://image.tmdb.org/t/p/original{info['backdrop_path']}"
+
+    if media_type == "tv":
+        updates["year"] = (info.get("first_air_date") or "")[:4]
+        updates["status"] = info.get("status") or ""
+        if info.get("number_of_episodes") is not None:
+            updates["total_episodes"] = info.get("number_of_episodes")
+    else:
+        updates["year"] = (info.get("release_date") or "")[:4]
+
+    # 保留 tmdb_id 是为了兼容外部逻辑，但核心更新内容放在 updates
+    return {"ok": len(errors) == 0, "uploaded": uploaded, "errors": errors, "tmdb_id": tmdb_id, "updates": updates}
 
 
 @app.post("/api/library/refresh-item")
@@ -1431,13 +1455,16 @@ async def refresh_item(body: RefreshItemRequest):
                 "errors": result["errors"],
             },
         )
-        # 刷新成功后，就地更新库缓存中该条目的 tmdb_id，无需全量重扫
-        new_tmdb_id = result.get("tmdb_id", body.tmdb_id)
-        if new_tmdb_id and body.drive_folder_id:
+        # 刷新成功后，就地更新库缓存中该条目的详情，无需全量重扫
+        updates = result.get("updates", {})
+        if not updates and result.get("tmdb_id"):
+            updates = {"tmdb_id": result.get("tmdb_id")}
+            
+        if updates and body.drive_folder_id:
             try:
                 get_library_store().patch_item(
                     body.drive_folder_id,
-                    {"tmdb_id": new_tmdb_id},
+                    updates,
                 )
             except Exception as _pe:
                 logger.warning("patch_item 失败（不影响刷新结果）: %s", _pe)
