@@ -68,15 +68,15 @@ function TextInput({ value, onChange, placeholder, type = 'text', mono = false }
           {show ? (
             /* eye-off */
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-              <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-              <line x1="1" y1="1" x2="23" y2="23"/>
+              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+              <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+              <line x1="1" y1="1" x2="23" y2="23" />
             </svg>
           ) : (
             /* eye */
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-              <circle cx="12" cy="12" r="3"/>
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
             </svg>
           )}
         </button>
@@ -188,7 +188,7 @@ function ListField({ value = [], onChange }) {
             style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: 'none' }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
         </div>
@@ -234,7 +234,7 @@ function CustomWordsHelp() {
       syntax: '关键词',
       examples: [
         { rule: '国语配音', effect: '「某剧 国语配音 S01E01.mkv」→「某剧 S01E01.mkv」' },
-        { rule: '港剧',     effect: '「港剧 名侦探 01.mp4」→「名侦探 01.mp4」' },
+        { rule: '港剧', effect: '「港剧 名侦探 01.mp4」→「名侦探 01.mp4」' },
       ],
     },
     {
@@ -242,8 +242,8 @@ function CustomWordsHelp() {
       desc: '把旧词替换成新词，支持正则表达式',
       syntax: '旧词 => 新词',
       examples: [
-        { rule: '港剧 => ',           effect: '替换为空 = 屏蔽' },
-        { rule: 'OVA => SP',          effect: '「OVA 01」→「SP 01」' },
+        { rule: '港剧 => ', effect: '替换为空 = 屏蔽' },
+        { rule: 'OVA => SP', effect: '「OVA 01」→「SP 01」' },
         { rule: '第(\\d+)话 => E\\1', effect: '「第12话」→「E12」（正则捕获组）' },
       ],
     },
@@ -252,8 +252,8 @@ function CustomWordsHelp() {
       desc: '用前后缀夹住集号数字，修正集号偏差',
       syntax: '前缀 <> 后缀 >> EP+偏移量',
       examples: [
-        { rule: '第 <> 话 >> EP+0',   effect: '「第12话」→ E12（无偏移）' },
-        { rule: '第 <> 集 >> EP-1',   effect: '「第2集」→ E01（集号减1）' },
+        { rule: '第 <> 话 >> EP+0', effect: '「第12话」→ E12（无偏移）' },
+        { rule: '第 <> 集 >> EP-1', effect: '「第2集」→ E01（集号减1）' },
         { rule: 'Ep <> End >> EP+12', effect: '「Ep01End」→ E13（集号加12）' },
       ],
     },
@@ -277,7 +277,7 @@ function CustomWordsHelp() {
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
           style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>
-          <polyline points="9 18 15 12 9 6"/>
+          <polyline points="9 18 15 12 9 6" />
         </svg>
         {open ? '收起格式说明' : '查看格式说明'}
       </button>
@@ -318,12 +318,12 @@ function CustomWordsHelp() {
 // ─── 主页面 ──────────────────────────────────────────────
 
 export default function ConfigPage() {
-  const [cfg, setCfg]         = useState(null)
+  const [cfg, setCfg] = useState(null)
   const [original, setOriginal] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving]   = useState(false)
-  const [error, setError]     = useState(null)
-  const [saved, setSaved]     = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+  const [saved, setSaved] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -359,7 +359,7 @@ export default function ConfigPage() {
 
   if (loading) return (
     <div className="flex-1 space-y-4">
-      {[1,2,3].map(i => (
+      {[1, 2, 3].map(i => (
         <div key={i} className="rounded-xl animate-pulse h-32"
           style={{ background: 'var(--color-surface-2)' }} />
       ))}
@@ -400,8 +400,8 @@ export default function ConfigPage() {
             }}>
             {saving && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
               style={{ animation: 'spin 1s linear infinite' }}>
-              <polyline points="23 4 23 10 17 10"/>
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
             </svg>}
             {saving ? '保存中…' : '保存'}
           </button>
@@ -422,19 +422,19 @@ export default function ConfigPage() {
           {/* ── WebUI 认证 ── */}
           <Section title="WebUI 认证">
             <FieldRow label="用户名" description="登录账号，默认 admin">
-              <TextInput value={cfg?.webui?.username} onChange={v => set('webui','username',v)} placeholder="admin" />
+              <TextInput value={cfg?.webui?.username} onChange={v => set('webui', 'username', v)} placeholder="admin" />
             </FieldRow>
             <FieldRow label="密码" description="留空则允许任何人访问（不推荐）">
-              <TextInput value={cfg?.webui?.password} type="password" onChange={v => set('webui','password',v)} placeholder="设置一个强密码" />
+              <TextInput value={cfg?.webui?.password} type="password" onChange={v => set('webui', 'password', v)} placeholder="设置一个强密码" />
             </FieldRow>
             <FieldRow label="Token 有效期（小时）" description="默认 24 小时，重启服务不影响有效 token">
-              <NumberInput value={cfg?.webui?.token_expire_hours} onChange={v => set('webui','token_expire_hours',v)} min={1} max={8760} />
+              <NumberInput value={cfg?.webui?.token_expire_hours} onChange={v => set('webui', 'token_expire_hours', v)} min={1} max={8760} />
             </FieldRow>
             <FieldRow label="Webhook 密钥" description="/trigger 端点校验密钥，空则不校验（仅内网时留空）">
-              <TextInput value={cfg?.webui?.webhook_secret} type="password" onChange={v => set('webui','webhook_secret',v)} placeholder="留空则不校验" mono />
+              <TextInput value={cfg?.webui?.webhook_secret} type="password" onChange={v => set('webui', 'webhook_secret', v)} placeholder="留空则不校验" mono />
             </FieldRow>
             <FieldRow label="日志保留天数" description="日志按天分文件保存，超过这个天数会自动清理">
-              <NumberInput value={cfg?.webui?.log_retention_days} onChange={v => set('webui','log_retention_days',v)} min={1} max={365} />
+              <NumberInput value={cfg?.webui?.log_retention_days} onChange={v => set('webui', 'log_retention_days', v)} min={1} max={365} />
             </FieldRow>
           </Section>
 
@@ -442,42 +442,42 @@ export default function ConfigPage() {
           <Section title="TMDB 设置">
             <FieldRow label="API Key" description="TMDB v3 API Key，必填">
               <TextInput value={cfg?.tmdb?.api_key} type="password"
-                onChange={v => set('tmdb','api_key',v)} placeholder="0ec3b170d4c..." mono />
+                onChange={v => set('tmdb', 'api_key', v)} placeholder="0ec3b170d4c..." mono />
             </FieldRow>
             <FieldRow label="返回语言" description="如 zh-CN、en-US、ja-JP">
-              <TextInput value={cfg?.tmdb?.language} onChange={v => set('tmdb','language',v)} placeholder="zh-CN" />
+              <TextInput value={cfg?.tmdb?.language} onChange={v => set('tmdb', 'language', v)} placeholder="zh-CN" />
             </FieldRow>
             <FieldRow label="HTTP 代理" description="可选，如 http://127.0.0.1:7890">
-              <TextInput value={cfg?.tmdb?.proxy} onChange={v => set('tmdb','proxy',v)} placeholder="留空则不使用代理" mono />
+              <TextInput value={cfg?.tmdb?.proxy} onChange={v => set('tmdb', 'proxy', v)} placeholder="留空则不使用代理" mono />
             </FieldRow>
             <FieldRow label="请求超时（秒）">
-              <NumberInput value={cfg?.tmdb?.timeout} onChange={v => set('tmdb','timeout',v)} min={1} max={120} />
+              <NumberInput value={cfg?.tmdb?.timeout} onChange={v => set('tmdb', 'timeout', v)} min={1} max={120} />
             </FieldRow>
           </Section>
 
           {/* ── Google Drive ── */}
           <Section title="Google Drive 设置">
             <FieldRow label="OAuth2 凭据路径" description="credentials.json 文件路径">
-              <TextInput value={cfg?.drive?.credentials_json} onChange={v => set('drive','credentials_json',v)} placeholder="config/credentials.json" mono />
+              <TextInput value={cfg?.drive?.credentials_json} onChange={v => set('drive', 'credentials_json', v)} placeholder="config/credentials.json" mono />
             </FieldRow>
             <FieldRow label="OAuth2 Token 路径" description="首次授权后自动生成">
-              <TextInput value={cfg?.drive?.token_json} onChange={v => set('drive','token_json',v)} placeholder="config/token.json" mono />
+              <TextInput value={cfg?.drive?.token_json} onChange={v => set('drive', 'token_json', v)} placeholder="config/token.json" mono />
             </FieldRow>
             <FieldRow label="扫描目录 ID" description="Drive 目标文件夹 ID">
-              <TextInput value={cfg?.drive?.scan_folder_id} onChange={v => set('drive','scan_folder_id',v)} placeholder="1AbCdEfGhIjKlMn..." mono />
+              <TextInput value={cfg?.drive?.scan_folder_id} onChange={v => set('drive', 'scan_folder_id', v)} placeholder="1AbCdEfGhIjKlMn..." mono />
             </FieldRow>
           </Section>
 
           {/* ── 扫描与整理 ── */}
           <Section title="扫描与入库策略">
             <FieldRow label="跳过 TMDB 查询" description="开启后只整理文件夹，不生成 NFO 元数据">
-              <Toggle value={cfg?.pipeline?.skip_tmdb} onChange={v => set('pipeline','skip_tmdb',v)} />
+              <Toggle value={cfg?.pipeline?.skip_tmdb} onChange={v => set('pipeline', 'skip_tmdb', v)} />
             </FieldRow>
             <FieldRow label="TMDB 未找到时仍移动" description="关闭则找不到元数据时跳过该文件">
-              <Toggle value={cfg?.pipeline?.move_on_tmdb_miss} onChange={v => set('pipeline','move_on_tmdb_miss',v)} />
+              <Toggle value={cfg?.pipeline?.move_on_tmdb_miss} onChange={v => set('pipeline', 'move_on_tmdb_miss', v)} />
             </FieldRow>
             <FieldRow label="Dry Run 模式" description="只打印计划，不实际操作 Drive">
-              <Toggle value={cfg?.pipeline?.dry_run} onChange={v => set('pipeline','dry_run',v)} />
+              <Toggle value={cfg?.pipeline?.dry_run} onChange={v => set('pipeline', 'dry_run', v)} />
             </FieldRow>
           </Section>
         </div>
@@ -487,55 +487,55 @@ export default function ConfigPage() {
           {/* ── 解析器 ── */}
           <Section title="文件名识别规则">
             <FieldRow label="自定义识别词" description="每条一条规则，支持 4 种格式">
-              <ListField value={cfg?.parser?.custom_words ?? []} onChange={v => set('parser','custom_words',v)} />
+              <ListField value={cfg?.parser?.custom_words ?? []} onChange={v => set('parser', 'custom_words', v)} />
               <CustomWordsHelp />
             </FieldRow>
             <FieldRow label="自定义字幕组" description="补充内置列表没有的字幕组名称">
-              <ListField value={cfg?.parser?.custom_release_groups ?? []} onChange={v => set('parser','custom_release_groups',v)} />
+              <ListField value={cfg?.parser?.custom_release_groups ?? []} onChange={v => set('parser', 'custom_release_groups', v)} />
             </FieldRow>
           </Section>
 
           {/* ── 整理器 ── */}
           <Section title="媒体库目录映射">
-            <FieldRow label="资料馆根目录 ID" description="电影和剧集默认归档到这个顶层文件夹">
-              <TextInput value={cfg?.organizer?.root_folder_id} onChange={v => set('organizer','root_folder_id',v)} placeholder="Drive 文件夹 ID" mono />
+            <FieldRow label="媒体库根目录 ID" description="电影和剧集默认归档到这个顶层文件夹">
+              <TextInput value={cfg?.organizer?.root_folder_id} onChange={v => set('organizer', 'root_folder_id', v)} placeholder="Drive 文件夹 ID" mono />
             </FieldRow>
             <FieldRow label="电影归档目录 ID" description="留空则直接使用资料馆根目录">
-              <TextInput value={cfg?.organizer?.movie_root_id} onChange={v => set('organizer','movie_root_id',v)} placeholder="留空同根目录" mono />
+              <TextInput value={cfg?.organizer?.movie_root_id} onChange={v => set('organizer', 'movie_root_id', v)} placeholder="留空同根目录" mono />
             </FieldRow>
             <FieldRow label="剧集归档目录 ID" description="留空则直接使用资料馆根目录">
-              <TextInput value={cfg?.organizer?.tv_root_id} onChange={v => set('organizer','tv_root_id',v)} placeholder="留空同根目录" mono />
+              <TextInput value={cfg?.organizer?.tv_root_id} onChange={v => set('organizer', 'tv_root_id', v)} placeholder="留空同根目录" mono />
             </FieldRow>
           </Section>
 
           <Section title="Aria2 下载设置">
             <FieldRow label="RPC 主机" description="通常是 aria2 服务所在机器的 IP 或域名">
-              <TextInput value={cfg?.aria2?.host} onChange={v => set('aria2','host',v)} placeholder="127.0.0.1" mono />
+              <TextInput value={cfg?.aria2?.host} onChange={v => set('aria2', 'host', v)} placeholder="127.0.0.1" mono />
             </FieldRow>
             <FieldRow label="RPC 端口">
-              <NumberInput value={cfg?.aria2?.port} onChange={v => set('aria2','port',v)} min={1} max={65535} />
+              <NumberInput value={cfg?.aria2?.port} onChange={v => set('aria2', 'port', v)} min={1} max={65535} />
             </FieldRow>
             <FieldRow label="RPC 路径" description="默认 /jsonrpc">
-              <TextInput value={cfg?.aria2?.path} onChange={v => set('aria2','path',v)} placeholder="/jsonrpc" mono />
+              <TextInput value={cfg?.aria2?.path} onChange={v => set('aria2', 'path', v)} placeholder="/jsonrpc" mono />
             </FieldRow>
             <FieldRow label="RPC 密钥" description="对应 aria2 的 rpc-secret">
-              <TextInput value={cfg?.aria2?.secret} type="password" onChange={v => set('aria2','secret',v)} placeholder="留空表示无密钥" mono />
+              <TextInput value={cfg?.aria2?.secret} type="password" onChange={v => set('aria2', 'secret', v)} placeholder="留空表示无密钥" mono />
             </FieldRow>
             <FieldRow label="使用 HTTPS" description="如果 aria2 RPC 通过 HTTPS 暴露则开启">
-              <Toggle value={cfg?.aria2?.secure} onChange={v => set('aria2','secure',v)} />
+              <Toggle value={cfg?.aria2?.secure} onChange={v => set('aria2', 'secure', v)} />
             </FieldRow>
           </Section>
 
           {/* ── Telegram ── */}
           <Section title="Telegram 通知">
             <FieldRow label="Bot Token" description="从 @BotFather 获取">
-              <TextInput value={cfg?.telegram?.bot_token} type="password" onChange={v => set('telegram','bot_token',v)} placeholder="123456:ABC..." mono />
+              <TextInput value={cfg?.telegram?.bot_token} type="password" onChange={v => set('telegram', 'bot_token', v)} placeholder="123456:ABC..." mono />
             </FieldRow>
             <FieldRow label="Chat ID" description="接收通知的账号或群组 ID">
-              <TextInput value={cfg?.telegram?.chat_id} onChange={v => set('telegram','chat_id',v)} placeholder="371338215" mono />
+              <TextInput value={cfg?.telegram?.chat_id} onChange={v => set('telegram', 'chat_id', v)} placeholder="371338215" mono />
             </FieldRow>
             <FieldRow label="防抖延时（秒）" description="批量入库时合并通知，0 = 立即触发">
-              <NumberInput value={cfg?.telegram?.debounce_seconds} onChange={v => set('telegram','debounce_seconds',v)} min={0} max={600} />
+              <NumberInput value={cfg?.telegram?.debounce_seconds} onChange={v => set('telegram', 'debounce_seconds', v)} min={0} max={600} />
             </FieldRow>
           </Section>
 

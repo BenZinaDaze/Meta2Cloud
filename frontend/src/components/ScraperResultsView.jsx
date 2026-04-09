@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { searchMedia, getEpisodes, addAria2Uri, tmdbGetAlternativeNames } from '../api'
-
-let _resultsCache = {}
-export function clearResultsCache(key) { delete _resultsCache[key] }
+import _resultsCache, { clearResultsCache } from '../utils/resultsCache'
+export { clearResultsCache }
 
 export default function ScraperResultsView({ item, onBack, onToast }) {
   const searchKey = item.title || item.original_title || item.name

@@ -3,13 +3,15 @@
 webui/api.py —— Metadata2GD 媒体库 Web UI 后端
 
 提供以下 REST API:
-  GET /api/library          - 获取完整媒体库（电影 + 电视剧）
-  GET /api/library/movies   - 只获取电影列表
-  GET /api/library/tv       - 只获取电视剧列表
-  GET /api/tv/{tmdb_id}     - 获取单部剧集详情（含季集入库状态）
-  GET /api/stats            - 获取统计信息
-  GET /api/cache/stats      - 查看 TMDB 缓存使用情况
-  POST /api/cache/evict     - 手动清理过期缓存
+  GET /api/library                - 获取完整媒体库（电影 + 电视剧）
+  GET /api/library/movies         - 只获取电影列表
+  GET /api/library/tv             - 只获取电视剧列表
+  POST /api/library/refresh       - 重新扫描 Drive 并更新快照
+  POST /api/library/refresh-item  - 刷新单个媒体项的 NFO 和封面到 Drive
+  GET /api/tv/{tmdb_id}           - 获取单部剧集详情（含季集入库状态）
+  GET /api/stats                  - 获取统计信息
+  GET /api/cache/stats            - 查看 TMDB 缓存使用情况
+  POST /api/cache/evict           - 手动清理过期缓存
 
 运行方式:
   conda run -n myself uvicorn webui.api:app --host 0.0.0.0 --port 38765 --reload
@@ -54,6 +56,7 @@ sys.path.insert(0, _ROOT)
 from drive.client import DriveClient
 from mediaparser import Config, MetaInfo, MetaInfoPath, TmdbClient
 from mediaparser.release_group import ReleaseGroupsMatcher
+from nfo import NfoGenerator, ImageUploader
 from webui.tmdb_cache import TmdbCache
 from webui.library_store import get_library_store
 from webui.log_store import LogStore
@@ -1195,6 +1198,265 @@ async def refresh_library():
 
 
 # ──────────────────────────────────────────────────────────────
+# 单条目元数据刷新（NFO + 封面 → Drive）
+# ──────────────────────────────────────────────────────────────
+
+class RefreshItemRequest(BaseModel):
+    tmdb_id: int
+    media_type: str          # "movie" | "tv"
+    drive_folder_id: str     # Drive 文件夹 ID（电影文件夹 or 剧名文件夹）
+    title: Optional[str] = None   # 供 tmdb_id=0 时按名称搜索
+    year: Optional[str] = None    # 供 tmdb_id=0 时按年份辅助搜索
+
+
+def _do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str,
+                     title: Optional[str] = None, year: Optional[str] = None) -> dict:
+    """
+    重新从 TMDB 获取详情，生成 NFO 并将封面/背景图上传覆盖到 Drive。
+    直接复用 NfoGenerator 和 ImageUploader。
+    tmdb_id=0 时自动用 title+year 搜索 TMDB。
+    """
+    # ── tmdb_id=0：按名称搜索 ────────────────────────────
+    if not tmdb_id or tmdb_id <= 0:
+        if not title:
+            raise ValueError("该媒体项没有 TMDB ID 且未提供标题，无法搜索")
+        cfg = get_config()
+        if not cfg.is_tmdb_ready():
+            raise ValueError("TMDB API Key 未配置，无法搜索")
+        from mediaparser.types import MediaType as MType
+        mtype = MType.TV if media_type == "tv" else MType.MOVIE
+        tmdb_client = TmdbClient(
+            api_key=cfg.tmdb.api_key,
+            language=cfg.tmdb.language,
+            proxy=cfg.tmdb_proxy,
+            timeout=cfg.tmdb.timeout,
+        )
+        logger.info("tmdb_id=0，尝试按名称搜索：%r (%s) [%s]", title, year, media_type)
+        found = tmdb_client._search_by_name(title, year, mtype)
+        if not found:
+            raise ValueError(f"TMDB 搜索无结果：{title!r}（{media_type}），请先手动确认 TMDB ID")
+        tmdb_id = found.get("tmdb_id") or found.get("id")
+        logger.info("按名称找到 tmdb_id=%s：%s", tmdb_id, found.get('name') or found.get('title'))
+
+    client = get_drive_client()
+    gen    = NfoGenerator()
+    uploader = ImageUploader(client, overwrite=True)
+
+    uploaded: list[str] = []
+    errors:   list[str] = []
+
+    def _fetch_with_credits(path: str, extra_keys: str) -> dict:
+        """先尝试 append_to_response，失败时回退到基础缓存路径。"""
+        info = tmdb_get(path, {"append_to_response": extra_keys})
+        if not info:
+            logger.info("append_to_response 失败，回退到基础缓存：%s", path)
+            info = tmdb_get(path)
+        if not info:
+            return {}
+        # credits 未随正文返回时，尝试单独补充
+        if not info.get("credits"):
+            credits = tmdb_get(f"{path}/credits")
+            if credits:
+                info["credits"] = credits
+        return info
+
+    if media_type == "movie":
+        # ── 电影 ────────────────────────────────────────────
+        info = _fetch_with_credits(f"/movie/{tmdb_id}", "credits,external_ids,release_dates")
+        if not info:
+            raise ValueError(f"TMDB 未找到电影 tmdb_id={tmdb_id}，请稍候重试")
+
+        info["tmdb_id"] = tmdb_id
+        credits = info.get("credits") or {}
+        info["directors"] = [
+            {"id": p["id"], "name": p["name"], "profile_path": p.get("profile_path")}
+            for p in (credits.get("crew") or [])
+            if p.get("job") == "Director"
+        ]
+        info["actors"] = [
+            {"id": p["id"], "name": p["name"],
+             "character": p.get("character"), "profile_path": p.get("profile_path")}
+            for p in (credits.get("cast") or [])[:20]
+        ]
+
+        # 查找文件夹内现有视频文件，生成同名 NFO
+        try:
+            folder_files = client.list_files(folder_id=drive_folder_id, page_size=50)
+            video_files = [f for f in folder_files if f.is_video]
+        except Exception as e:
+            logger.warning("列出文件夹内容失败，将跳过视频同名 NFO: %s", e)
+            video_files = []
+
+        if video_files:
+            for vf in video_files:
+                nfo_name = gen.nfo_name_for(vf.name)
+                try:
+                    xml = gen.generate(info, media_type=None)
+                    client.upload_text(xml, nfo_name,
+                                       parent_id=drive_folder_id,
+                                       mime_type="text/xml", overwrite=True)
+                    uploaded.append(nfo_name)
+                    logger.info("已上传 %s", nfo_name)
+                except Exception as e:
+                    errors.append(f"{nfo_name}: {e}")
+                    logger.warning("上传 NFO 失败: %s - %s", nfo_name, e)
+        else:
+            # 无视频文件时，退而上传 movie.nfo
+            try:
+                xml = gen.generate(info, media_type=None)
+                client.upload_text(xml, "movie.nfo",
+                                   parent_id=drive_folder_id,
+                                   mime_type="text/xml", overwrite=True)
+                uploaded.append("movie.nfo")
+            except Exception as e:
+                errors.append(f"movie.nfo: {e}")
+
+        if info.get("poster_path"):
+            try:
+                uploader.upload_poster(info["poster_path"], drive_folder_id)
+                uploaded.append("poster.jpg")
+            except Exception as e:
+                errors.append(f"poster.jpg: {e}")
+        if info.get("backdrop_path"):
+            try:
+                uploader.upload_fanart(info["backdrop_path"], drive_folder_id)
+                uploaded.append("fanart.jpg")
+            except Exception as e:
+                errors.append(f"fanart.jpg: {e}")
+
+    elif media_type == "tv":
+        # ── 电视剧 ──────────────────────────────────────────
+        info = _fetch_with_credits(f"/tv/{tmdb_id}", "credits,external_ids,content_ratings")
+        if not info:
+            raise ValueError(f"TMDB 未找到剧集 tmdb_id={tmdb_id}，请稍候重试")
+
+        info["tmdb_id"] = tmdb_id
+        credits = info.get("credits") or {}
+        info["directors"] = [
+            {"id": p["id"], "name": p["name"], "profile_path": p.get("profile_path")}
+            for p in (credits.get("crew") or [])
+            if p.get("job") in ("Director", "Executive Producer")
+        ][:5]
+        info["actors"] = [
+            {"id": p["id"], "name": p["name"],
+             "character": p.get("character"), "profile_path": p.get("profile_path")}
+            for p in (credits.get("cast") or [])[:20]
+        ]
+
+        try:
+            xml = gen.generate_tvshow(info)
+            client.upload_text(xml, "tvshow.nfo",
+                               parent_id=drive_folder_id,
+                               mime_type="text/xml", overwrite=True)
+            uploaded.append("tvshow.nfo")
+        except Exception as e:
+            errors.append(f"tvshow.nfo: {e}")
+
+        if info.get("poster_path"):
+            try:
+                uploader.upload_poster(info["poster_path"], drive_folder_id)
+                uploaded.append("poster.jpg")
+            except Exception as e:
+                errors.append(f"poster.jpg: {e}")
+        if info.get("backdrop_path"):
+            try:
+                uploader.upload_fanart(info["backdrop_path"], drive_folder_id)
+                uploaded.append("fanart.jpg")
+            except Exception as e:
+                errors.append(f"fanart.jpg: {e}")
+
+        # 遍历季：season.nfo + 季封面
+        try:
+            season_folders = [
+                f for f in client.list_files(folder_id=drive_folder_id, page_size=200)
+                if f.is_folder and re.match(r"Season\s*\d+", f.name, re.IGNORECASE)
+            ]
+        except Exception as e:
+            logger.warning("列出季文件夹失败，跳过季 NFO: %s", e)
+            season_folders = []
+
+        for season_folder in season_folders:
+            m = re.search(r"(\d+)", season_folder.name)
+            if not m:
+                continue
+            s_num = int(m.group(1))
+            season_detail = tmdb_get(f"/tv/{tmdb_id}/season/{s_num}")
+            if not season_detail:
+                logger.info("跳过 Season %d（TMDB 无数据）", s_num)
+                continue
+            try:
+                xml = gen.generate_season(season_detail, s_num)
+                client.upload_text(xml, "season.nfo",
+                                   parent_id=season_folder.id,
+                                   mime_type="text/xml", overwrite=True)
+                uploaded.append(f"Season {s_num}/season.nfo")
+            except Exception as e:
+                errors.append(f"Season {s_num}/season.nfo: {e}")
+            if season_detail.get("poster_path"):
+                try:
+                    uploader.upload_season_poster(
+                        season_detail["poster_path"], s_num, drive_folder_id
+                    )
+                    uploaded.append(f"season{s_num:02d}-poster.jpg")
+                except Exception as e:
+                    errors.append(f"season{s_num:02d}-poster.jpg: {e}")
+    else:
+        raise ValueError(f"不支持的 media_type: {media_type}")
+
+    return {"ok": len(errors) == 0, "uploaded": uploaded, "errors": errors, "tmdb_id": tmdb_id}
+
+
+@app.post("/api/library/refresh-item")
+async def refresh_item(body: RefreshItemRequest):
+    """（需登录）刷新单个媒体项：重新从 TMDB 获取元数据，生成并上传 NFO + 封面到 Drive。"""
+    if not body.drive_folder_id:
+        raise HTTPException(status_code=400, detail="drive_folder_id 不能为空")
+    try:
+        import asyncio
+        result = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: _do_refresh_item(body.tmdb_id, body.media_type, body.drive_folder_id,
+                                     title=body.title, year=body.year)
+        )
+        _app_log(
+            "library",
+            "refresh_item",
+            f"已刷新元数据：tmdb_id={body.tmdb_id} ({body.media_type})",
+            level="SUCCESS" if result["ok"] else "WARNING",
+            details={
+                "tmdb_id": body.tmdb_id,
+                "media_type": body.media_type,
+                "drive_folder_id": body.drive_folder_id,
+                "uploaded": result["uploaded"],
+                "errors": result["errors"],
+            },
+        )
+        # 刷新成功后，就地更新库缓存中该条目的 tmdb_id，无需全量重扫
+        new_tmdb_id = result.get("tmdb_id", body.tmdb_id)
+        if new_tmdb_id and body.drive_folder_id:
+            try:
+                get_library_store().patch_item(
+                    body.drive_folder_id,
+                    {"tmdb_id": new_tmdb_id},
+                )
+            except Exception as _pe:
+                logger.warning("patch_item 失败（不影响刷新结果）: %s", _pe)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.exception("刷新单条目失败")
+        _app_log(
+            "library",
+            "refresh_item_failed",
+            f"刷新元数据失败：{e}",
+            level="ERROR",
+            details={"tmdb_id": body.tmdb_id, "error": str(e)},
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────────────────────
 # Webhook 触发（原 server.py 功能，合并入此）
 # ──────────────────────────────────────────────────────────────
 
@@ -1630,6 +1892,7 @@ async def aria2_unpause_tasks(body: Aria2BatchActionBody):
         details={"gids": body.gids, "count": len(body.gids)},
     )
     return {"ok": True}
+
 
 
 @app.post("/api/aria2/tasks/remove")

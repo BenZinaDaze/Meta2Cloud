@@ -74,7 +74,7 @@ function formatStatus(status) {
   return STATUS_MAP[status] ?? status
 }
 
-export default function DetailModal({ item, onClose, footerSlot, loadingSlot, headerRightSlot }) {
+export default function DetailModal({ item, onClose, footerSlot, loadingSlot, headerRightSlot, titleActionSlot }) {
   const [show, setShow] = useState(false)
 
   const handleClose = useCallback(() => {
@@ -154,9 +154,11 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
             <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--color-accent-hover)' }}>
               Metadata detail
             </div>
-            <h2 className="mb-1 text-[28px] font-bold leading-snug" style={{ color: 'var(--color-text)' }}>
-              {item.title}
-            </h2>
+            <div className="mb-1">
+              <h2 className="text-[28px] font-bold leading-snug" style={{ color: 'var(--color-text)' }}>
+                {item.title}
+              </h2>
+            </div>
             {item.original_title && item.original_title !== item.title && (
               <p className="mb-3 text-sm leading-snug" style={{ color: 'var(--color-muted)' }}>
                 {item.original_title}
@@ -218,6 +220,7 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
                   TMDB {item.tmdb_id}
                 </a>
               )}
+              {titleActionSlot}
             </div>
           </div>
           
