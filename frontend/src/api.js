@@ -54,6 +54,9 @@ export const testParse = (filename) => api.post('/parser/test', { filename })
 
 // ── 媒体库刷新 ──
 export const refreshLibrary = () => api.post('/library/refresh')
+export const refreshMediaItem = (tmdb_id, media_type, drive_folder_id, title, year) =>
+  api.post('/library/refresh-item', { tmdb_id, media_type, drive_folder_id, title, year })
+
 export const getLogs = (params) => api.get('/logs', { params })
 export const getPipelineStatus = () => api.get('/pipeline/status')
 export const triggerPipeline = () => api.post('/pipeline/trigger')

@@ -135,6 +135,47 @@ class LibraryStore:
             "scanned_at": now,
         }
 
+    def patch_item(self, drive_folder_id: str, updates: dict) -> bool:
+        """
+        按 drive_folder_id 定位最新快照中的某个条目并就地更新指定字段。
+        updates: 要更新的键值对，例如 {"tmdb_id": 12345, "poster_path": "/abc.jpg"}
+        返回 True 表示找到并更新了条目，False 表示未找到。
+        """
+        row = self._conn.execute(
+            "SELECT id, movies_json, tv_json FROM library_snapshot ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return False
+        snap_id, movies_json, tv_json = row
+        movies   = json.loads(movies_json)
+        tv_shows = json.loads(tv_json)
+
+        found = False
+        for item in movies:
+            if item.get("drive_folder_id") == drive_folder_id:
+                item.update(updates)
+                found = True
+                break
+        if not found:
+            for item in tv_shows:
+                if item.get("drive_folder_id") == drive_folder_id:
+                    item.update(updates)
+                    found = True
+                    break
+
+        if found:
+            self._conn.execute(
+                "UPDATE library_snapshot SET movies_json=?, tv_json=? WHERE id=?",
+                (json.dumps(movies, ensure_ascii=False),
+                 json.dumps(tv_shows, ensure_ascii=False),
+                 snap_id),
+            )
+            self._conn.commit()
+            logger.info("已就地更新库条目 drive_folder_id=%s", drive_folder_id)
+        else:
+            logger.warning("patch_item: 未找到 drive_folder_id=%s", drive_folder_id)
+        return found
+
     def close(self):
         self._conn.close()
 
