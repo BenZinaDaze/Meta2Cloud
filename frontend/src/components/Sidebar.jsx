@@ -195,6 +195,10 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
       label: '已连接',
       color: 'var(--color-success)',
     },
+    disabled: {
+      label: '已禁用',
+      color: 'var(--color-muted)',
+    },
     connecting: {
       label: '连接中',
       color: '#f5c451',

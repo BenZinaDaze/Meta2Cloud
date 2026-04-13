@@ -5,15 +5,39 @@
 
 echo "🚀 Starting metadata2gd complete development environment..."
 
-# 捕捉中断信号 (Ctrl+C) 或退出时，杀死当前进程组下的所有子进程 (kill 0)
-trap "kill 0" SIGINT SIGTERM EXIT
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PYTHON_CMD="python"
+BACKEND_PID=""
+
+# 优先使用项目虚拟环境，避免误用系统 Python 导致缺少 uvicorn/fastapi 依赖
+if [ -x "$PROJECT_ROOT/.venv/bin/python" ]; then
+  PYTHON_CMD="$PROJECT_ROOT/.venv/bin/python"
+fi
+
+cleanup() {
+  if [ -n "$BACKEND_PID" ] && kill -0 "$BACKEND_PID" >/dev/null 2>&1; then
+    kill "$BACKEND_PID" >/dev/null 2>&1 || true
+  fi
+}
+
+# 捕捉中断信号或退出，关闭后台 uvicorn 进程
+trap cleanup SIGINT SIGTERM EXIT
+
+if ! "$PYTHON_CMD" -c "import uvicorn" >/dev/null 2>&1; then
+  echo "❌ Backend dependencies are missing for: $PYTHON_CMD"
+  echo "   Please create/use a virtualenv and install requirements first:"
+  echo "   cd $PROJECT_ROOT && python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt"
+  exit 1
+fi
 
 # 1. 启动后端 (Uvicorn)
 echo "============================================================"
 echo "=> [Backend] Starting FastAPI Server on port 38765..."
 echo "============================================================"
 # 这里使用 python -m uvicorn，以防 uvicorn 不在系统 PATH 中
-python -m uvicorn webui.api:app --host 0.0.0.0 --port 38765 --reload &
+"$PYTHON_CMD" -m uvicorn webui.api:app --host 0.0.0.0 --port 38765 --reload &
+BACKEND_PID=$!
 
 # 稍微等待半秒以免前端的日志先刷掉后端的启动日志
 sleep 0.5 
@@ -22,4 +46,4 @@ sleep 0.5
 echo "============================================================"
 echo "=> [Frontend] Starting Vite Dev Server..."
 echo "============================================================"
-cd frontend && npm run dev
+cd "$PROJECT_ROOT/frontend" && npm run dev

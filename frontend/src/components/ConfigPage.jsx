@@ -1,5 +1,16 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getConfig, saveConfig } from '../api'
+import { getConfig, saveConfig, getDriveOauthStatus, testDriveConnection } from '../api'
+
+function normalizeConfig(data) {
+  const next = structuredClone(data || {})
+  const aria2 = { ...(next.aria2 || {}) }
+  if (aria2.enabled === undefined) {
+    aria2.enabled = aria2.auto_connect !== false
+  }
+  delete aria2.auto_connect
+  next.aria2 = aria2
+  return next
+}
 
 // ─── 通用字段组件 ────────────────────────────────────────
 
@@ -317,21 +328,42 @@ function CustomWordsHelp() {
 
 // ─── 主页面 ──────────────────────────────────────────────
 
-export default function ConfigPage() {
+export default function ConfigPage({ onAria2EnabledChange = null }) {
   const [cfg, setCfg] = useState(null)
   const [original, setOriginal] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [saved, setSaved] = useState(false)
+  const [driveOauth, setDriveOauth] = useState(null)
+  const [driveOauthMessage, setDriveOauthMessage] = useState(null)
+  const [driveTestBusy, setDriveTestBusy] = useState(false)
+
+  const loadDriveOauthStatus = useCallback(async () => {
+    try {
+      const res = await getDriveOauthStatus()
+      setDriveOauth(res.data)
+    } catch (e) {
+      setDriveOauth(null)
+      setDriveOauthMessage({
+        type: 'error',
+        text: e?.response?.data?.detail || e.message || '读取 Google Drive 授权状态失败',
+      })
+    }
+  }, [])
 
   useEffect(() => {
     setLoading(true)
     getConfig()
-      .then(r => { setCfg(r.data); setOriginal(r.data) })
+      .then(r => {
+        const normalized = normalizeConfig(r.data)
+        setCfg(normalized)
+        setOriginal(normalized)
+      })
       .catch(e => setError(e?.response?.data?.detail || e.message))
       .finally(() => setLoading(false))
-  }, [])
+    loadDriveOauthStatus()
+  }, [loadDriveOauthStatus])
 
   const isDirty = JSON.stringify(cfg) !== JSON.stringify(original)
 
@@ -346,14 +378,39 @@ export default function ConfigPage() {
   async function handleSave() {
     setSaving(true); setError(null); setSaved(false)
     try {
-      await saveConfig(cfg)
-      setOriginal(cfg)
+      const normalized = normalizeConfig(cfg)
+      await saveConfig(normalized)
+      setCfg(normalized)
+      setOriginal(normalized)
+      onAria2EnabledChange?.(normalized?.aria2?.enabled !== false)
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (e) {
       setError(e?.response?.data?.detail || e.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleDriveTest() {
+    setDriveTestBusy(true)
+    setDriveOauthMessage(null)
+    try {
+      const res = await testDriveConnection()
+      const data = res?.data || {}
+      const identity = data.email || data.display_name || '当前账号'
+      setDriveOauthMessage({
+        type: 'success',
+        text: `连接成功：${identity}`,
+      })
+      loadDriveOauthStatus()
+    } catch (e) {
+      setDriveOauthMessage({
+        type: 'error',
+        text: e?.response?.data?.detail || e.message || 'Drive 连接测试失败',
+      })
+    } finally {
+      setDriveTestBusy(false)
     }
   }
 
@@ -463,6 +520,54 @@ export default function ConfigPage() {
             <FieldRow label="OAuth2 Token 路径" description="首次授权后自动生成">
               <TextInput value={cfg?.drive?.token_json} onChange={v => set('drive', 'token_json', v)} placeholder="config/token.json" mono />
             </FieldRow>
+            <FieldRow label="授权状态" description="显示当前 Google Drive OAuth 状态">
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs px-2 py-1 rounded-full"
+                    style={{
+                      background: driveOauth?.authorized ? 'rgba(34,197,94,0.15)' : 'rgba(148,163,184,0.14)',
+                      color: driveOauth?.authorized ? '#22c55e' : 'var(--color-muted)',
+                    }}>
+                    {driveOauth?.authorized ? '已授权' : '未授权'}
+                  </span>
+                  <button
+                    onClick={handleDriveTest}
+                    disabled={driveTestBusy || driveOauth?.credentials_exists === false}
+                    className="text-xs px-3 py-1 rounded-full transition-all disabled:opacity-40"
+                    style={{
+                      background: 'linear-gradient(135deg, var(--color-accent) 0%, #b37533 100%)',
+                      border: 'none',
+                      color: '#fff',
+                    }}
+                  >
+                    {driveTestBusy ? '测试中…' : '测试 Drive 连接'}
+                  </button>
+                  {driveOauth?.credentials_exists === false && (
+                    <span className="text-xs px-2 py-1 rounded-full"
+                      style={{ background: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>
+                      未找到 credentials.json
+                    </span>
+                  )}
+                  {driveOauth?.token_exists && !driveOauth?.authorized && (
+                    <span className="text-xs px-2 py-1 rounded-full"
+                      style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>
+                      token 存在但当前不可用
+                    </span>
+                  )}
+                </div>
+
+                {driveOauthMessage && (
+                  <div className="px-3 py-2 rounded-lg text-xs"
+                    style={{
+                      background: driveOauthMessage.type === 'success' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.1)',
+                      border: `1px solid ${driveOauthMessage.type === 'success' ? 'rgba(34,197,94,0.28)' : 'rgba(239,68,68,0.25)'}`,
+                      color: driveOauthMessage.type === 'success' ? '#22c55e' : '#ef4444',
+                    }}>
+                    {driveOauthMessage.text}
+                  </div>
+                )}
+              </div>
+            </FieldRow>
             <FieldRow label="扫描目录 ID" description="Drive 目标文件夹 ID">
               <TextInput value={cfg?.drive?.scan_folder_id} onChange={v => set('drive', 'scan_folder_id', v)} placeholder="1AbCdEfGhIjKlMn..." mono />
             </FieldRow>
@@ -509,6 +614,9 @@ export default function ConfigPage() {
           </Section>
 
           <Section title="Aria2 下载设置">
+            <FieldRow label="启用 Aria2" description="关闭后禁用整个 Aria2 集成，前端不会连接 RPC，也不会提供下载管理操作">
+              <Toggle value={cfg?.aria2?.enabled !== false} onChange={v => set('aria2', 'enabled', v)} />
+            </FieldRow>
             <FieldRow label="RPC 主机" description="通常是 aria2 服务所在机器的 IP 或域名">
               <TextInput value={cfg?.aria2?.host} onChange={v => set('aria2', 'host', v)} placeholder="127.0.0.1" mono />
             </FieldRow>

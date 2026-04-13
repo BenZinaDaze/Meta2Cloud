@@ -9,6 +9,7 @@ dist/
 build/
 .env
 .venv
+doc/
 
 # Google Drive 认证（敏感，不入库）
 config/credentials.json
@@ -44,3 +45,5 @@ yarn-error.log*
 *.swp
 *.swo
 Thumbs.db
+
+.codex

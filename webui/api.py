@@ -30,7 +30,7 @@ import uuid
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote
 
 import hmac
 import secrets
@@ -43,6 +43,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from google.oauth2.credentials import Credentials
 from pydantic import BaseModel
 try:
     import jwt as _pyjwt
@@ -54,6 +55,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 
 from drive.client import DriveClient
+from drive.auth import SCOPES as DRIVE_SCOPES
 from mediaparser import Config, MetaInfo, MetaInfoPath, TmdbClient
 from mediaparser.release_group import ReleaseGroupsMatcher
 from nfo import NfoGenerator, ImageUploader
@@ -479,7 +481,13 @@ def _aria2_rpc_url() -> str:
     return f"{scheme}://{cfg.host}:{cfg.port}{path}"
 
 
+def _ensure_aria2_enabled() -> None:
+    if not get_config().aria2.enabled:
+        raise HTTPException(status_code=503, detail="Aria2 集成未启用")
+
+
 def _aria2_rpc_call(method: str, params: Optional[List[Any]] = None) -> Any:
+    _ensure_aria2_enabled()
     cfg = get_config().aria2
     rpc_params = list(params or [])
     if cfg.secret:
@@ -1651,6 +1659,47 @@ class Aria2BatchActionBody(BaseModel):
     gids: List[str]
 
 
+def _resolve_config_path(path_str: str) -> str:
+    path = Path(path_str)
+    if not path.is_absolute():
+        path = Path(_ROOT_DIR) / path
+    return str(path)
+
+
+def _drive_oauth_status_payload() -> Dict[str, Any]:
+    cfg = get_config().drive
+    credentials_path = _resolve_config_path(cfg.credentials_json)
+    token_path = _resolve_config_path(cfg.token_json)
+
+    credentials_exists = os.path.exists(credentials_path)
+    token_exists = os.path.exists(token_path)
+    authorized = False
+    token_valid = False
+    token_expired = False
+    token_refreshable = False
+
+    if token_exists:
+        try:
+            creds = Credentials.from_authorized_user_file(token_path, DRIVE_SCOPES)
+            token_valid = bool(creds.valid)
+            token_expired = bool(creds.expired)
+            token_refreshable = bool(creds.refresh_token)
+            authorized = token_valid or token_refreshable
+        except Exception:
+            authorized = False
+
+    return {
+        "credentials_path": cfg.credentials_json,
+        "token_path": cfg.token_json,
+        "credentials_exists": credentials_exists,
+        "token_exists": token_exists,
+        "authorized": authorized,
+        "token_valid": token_valid,
+        "token_expired": token_expired,
+        "token_refreshable": token_refreshable,
+    }
+
+
 def _aria2_sanitize_options(options: Optional[Dict[str, Any]]) -> Dict[str, str]:
     sanitized: Dict[str, str] = {}
     for key, value in (options or {}).items():
@@ -1783,6 +1832,33 @@ async def write_config(body: ConfigSaveBody):
     _cfg = None
     _app_log("system", "config_updated", "配置文件已更新", level="SUCCESS")
     return {"ok": True, "message": "配置已保存"}
+
+
+@app.get("/api/drive/oauth/status")
+async def drive_oauth_status():
+    return _drive_oauth_status_payload()
+
+
+@app.post("/api/drive/test")
+async def drive_test_connection():
+    try:
+        global _client
+        _client = None
+        client = get_drive_client()
+        about = client.about() or {}
+        user = about.get("user") or {}
+        quota = about.get("storageQuota") or {}
+        return {
+            "ok": True,
+            "email": user.get("emailAddress") or "",
+            "display_name": user.get("displayName") or "",
+            "limit": quota.get("limit"),
+            "usage": quota.get("usage"),
+            "usage_in_drive": quota.get("usageInDrive"),
+        }
+    except Exception as exc:
+        logger.exception("Google Drive 连接测试失败")
+        raise HTTPException(status_code=400, detail=f"Drive 连接测试失败：{exc}") from exc
 
 
 @app.get("/api/logs")

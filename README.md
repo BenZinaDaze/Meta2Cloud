@@ -202,6 +202,15 @@ pipeline:
   move_on_tmdb_miss: false  # TMDB 找不到时是否仍然移动文件 (默认 false 保证安全)
   dry_run: false            # true = 只打印计划，不实际操作 Drive
 
+# ── Aria2 ──────────────────────────────────────────
+aria2:
+  enabled: true         # false = 禁用整个 Aria2 集成（前后端都不会连接 RPC）
+  host: "127.0.0.1"     # Aria2 RPC 主机
+  port: 6800            # Aria2 RPC 端口
+  path: "/jsonrpc"      # JSON-RPC 路径
+  secret: ""            # rpc-secret，留空表示无密钥
+  secure: false         # true = 使用 HTTPS
+
 # ── Telegram ───────────────────────────────────────
 telegram:
   bot_token: ""
@@ -319,6 +328,8 @@ Season 01：
 ### 整体流程
 
 ```
+
+> 如果你不需要下载中心功能，可在 `config.yaml` 中设置 `aria2.enabled: false`，前端将不再连接 Aria2，后端也会拒绝所有 `/api/aria2/*` 请求。
 Aria2 下载完成
   → Rclone 上传到 Drive（upload.sh）
     → POST /trigger 通知 metadata2gd

@@ -12,6 +12,14 @@ import {
 } from '../api'
 import ParseTestModal from './ParseTestModal'
 
+function getAria2ErrorMessage(error) {
+  const detail = error?.response?.data?.detail || error?.message || '下载中心加载失败'
+  if (detail === 'Aria2 集成未启用') {
+    return 'Aria2 已在服务端配置中禁用。请前往配置页启用后再使用下载中心。'
+  }
+  return detail
+}
+
 function formatBytes(bytes) {
   const value = Number(bytes) || 0
   if (value <= 0) return '0 B'
@@ -445,7 +453,7 @@ function ActionPanel({ uriInput, setUriInput, onSubmitUri, onTorrentChange, torr
   )
 }
 
-export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, initialOverview = null }) {
+export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, initialOverview = null, aria2Enabled = true }) {
   const [overview, setOverview] = useState(initialOverview)
   const [uriInput, setUriInput] = useState('')
   const [torrentName, setTorrentName] = useState('')
@@ -465,8 +473,11 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
       setOverview(initialOverview)
       setError(null)
       setLoading(false)
+    } else if (!aria2Enabled) {
+      setOverview(null)
+      setLoading(false)
     }
-  }, [initialOverview])
+  }, [initialOverview, aria2Enabled])
 
   function applyOptimisticTaskUpdate(gid, patch, targetBucket = null) {
     setOverview((prev) => {
@@ -514,7 +525,7 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
       setOverview(overviewRes.data)
       setError(null)
     } catch (e) {
-      setError(e?.response?.data?.detail || e.message)
+      setError(getAria2ErrorMessage(e))
     } finally {
       if (!silent) setLoading(false)
     }
@@ -524,6 +535,11 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
   const errorCount = useRef(0)
 
   useEffect(() => {
+    if (!aria2Enabled) {
+      setLoading(false)
+      return
+    }
+
     let cancelled = false
 
     async function poll(silent = false) {
@@ -536,7 +552,7 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
         errorCount.current = 0          // 成功后重置退避计数器
       } catch (e) {
         if (cancelled) return
-        setError(e?.response?.data?.detail || e.message)
+        setError(getAria2ErrorMessage(e))
         errorCount.current += 1
       } finally {
         if (cancelled) return
@@ -553,7 +569,7 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
       cancelled = true
       if (pollTimer.current) clearTimeout(pollTimer.current)
     }
-  }, [])
+  }, [aria2Enabled])
 
   const tasks = useMemo(() => {
     if (!overview?.tasks) return []
@@ -594,7 +610,7 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
       await loadAll(true)
       onToast?.('success', '下载管理', successMessage)
     } catch (e) {
-      onToast?.('error', '下载管理', e?.response?.data?.detail || e.message)
+      onToast?.('error', '下载管理', getAria2ErrorMessage(e))
     } finally {
       if (gid) {
         setPendingActions((prev) => {
@@ -716,7 +732,7 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <ToolButton onClick={() => loadAll()} disabled={busy}>刷新</ToolButton>
+            <ToolButton onClick={() => loadAll()} disabled={busy || !aria2Enabled}>刷新</ToolButton>
             {hasSelection ? (
               <label className="flex items-center gap-2.5 cursor-pointer text-sm font-medium mr-2 select-none hover:opacity-80 transition-opacity" style={{ color: 'var(--color-text)' }}>
                 <div 
@@ -808,6 +824,13 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
         {loading && !overview && (
           <div className="py-20 text-center text-sm" style={{ color: 'var(--color-muted)' }}>
             正在连接 aria2…
+          </div>
+        )}
+
+        {!loading && !error && !overview && !aria2Enabled && (
+          <div className="mt-6 rounded-[24px] px-5 py-5 text-sm"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }}>
+            Aria2 集成已关闭。请在配置页启用后再使用下载中心。
           </div>
         )}
 

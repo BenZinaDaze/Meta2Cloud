@@ -147,6 +147,7 @@ class WebUIConfig:
 
 @dataclass
 class Aria2Config:
+    enabled: bool = True
     host: str = "127.0.0.1"
     port: int = 6800
     path: str = "/jsonrpc"
@@ -156,6 +157,7 @@ class Aria2Config:
     @classmethod
     def from_dict(cls, d: dict) -> "Aria2Config":
         return cls(
+            enabled=bool(d.get("enabled", d.get("auto_connect", True))),
             host=str(d.get("host") or "127.0.0.1"),
             port=int(d.get("port") or 6800),
             path=str(d.get("path") or "/jsonrpc"),

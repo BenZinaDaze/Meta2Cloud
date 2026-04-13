@@ -51,6 +51,8 @@ export const getTvDetail = (tmdbId) => api.get(`/tv/${tmdbId}`)
 export const getConfig  = () => api.get('/config')
 export const saveConfig = (data) => api.put('/config', { data })
 export const testParse = (filename) => api.post('/parser/test', { filename })
+export const getDriveOauthStatus = () => api.get('/drive/oauth/status')
+export const testDriveConnection = () => api.post('/drive/test')
 
 // ── 媒体库刷新 ──
 export const refreshLibrary = () => api.post('/library/refresh')

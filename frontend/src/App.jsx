@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { setUnauthorizedHandler, getMe, refreshLibrary, getAria2Overview } from './api'
+import { setUnauthorizedHandler, getMe, refreshLibrary, getAria2Overview, getConfig } from './api'
 import './index.css'
 import LoginPage from './components/LoginPage'
 import Topbar from './components/Topbar'
@@ -120,6 +120,7 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false)
   const [aria2Overview, setAria2Overview] = useState(null)
   const [aria2ConnectionStatus, setAria2ConnectionStatus] = useState('connecting')
+  const [aria2Enabled, setAria2Enabled] = useState(true)
   const [showParseTest, setShowParseTest] = useState(false)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [initialSearchItem, setInitialSearchItem] = useState(null)
@@ -144,6 +145,31 @@ export default function App() {
       })
   }, [token])
 
+  useEffect(() => {
+    if (!token) {
+      setAria2Enabled(true)
+      return
+    }
+
+    let cancelled = false
+
+    getConfig()
+      .then((res) => {
+        if (!cancelled) {
+          setAria2Enabled(res?.data?.aria2?.enabled !== false && res?.data?.aria2?.auto_connect !== false)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAria2Enabled(true)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
   // ── 注册 401 全局处理 ────────────────────────────────
   useEffect(() => {
     setUnauthorizedHandler(() => {
@@ -160,6 +186,12 @@ export default function App() {
     if (!token) {
       setAria2Overview(null)
       setAria2ConnectionStatus('connecting')
+      return
+    }
+
+    if (!aria2Enabled) {
+      setAria2Overview(null)
+      setAria2ConnectionStatus('disabled')
       return
     }
 
@@ -194,7 +226,7 @@ export default function App() {
       cancelled = true
       if (aria2PollTimer.current) clearTimeout(aria2PollTimer.current)
     }
-  }, [token])
+  }, [token, aria2Enabled])
 
   // ── 登录 / 登出 ────────────────────────────────────
   const handleLogin = useCallback((newToken) => {
@@ -303,7 +335,7 @@ export default function App() {
           style={{ paddingBottom: 'calc(4.5rem + env(safe-area-inset-bottom))' }}
         >
           {activeNav === 'config' ? (
-            <ConfigPage />
+            <ConfigPage onAria2EnabledChange={setAria2Enabled} />
           ) : activeNav === 'calendar' ? (
             <CalendarPage
               onSearch={(anime) => {
@@ -326,6 +358,7 @@ export default function App() {
             <DownloadsPage
               queue={downloadQueue}
               initialOverview={aria2Overview}
+              aria2Enabled={aria2Enabled}
               onChangeQueue={(queue) => {
                 const nextNav = {
                   all: 'downloads',
