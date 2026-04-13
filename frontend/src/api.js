@@ -53,6 +53,19 @@ export const saveConfig = (data) => api.put('/config', { data })
 export const testParse = (filename) => api.post('/parser/test', { filename })
 export const getDriveOauthStatus = () => api.get('/drive/oauth/status')
 export const testDriveConnection = () => api.post('/drive/test')
+export const getU115OauthStatus = () => api.get('/u115/oauth/status')
+export const createU115OauthSession = (data, config) => api.post('/u115/oauth/create', data, config)
+export const pollU115OauthStatus = (config) => api.get('/u115/oauth/poll', {
+  params: { ts: Date.now() },
+  ...(config || {}),
+})
+export const exchangeU115OauthToken = (data, config) => api.post('/u115/oauth/exchange', data, config)
+export const testU115Connection = () => api.post('/u115/test')
+export const fetchU115QrCode = (config) => api.get('/u115/oauth/qrcode', { responseType: 'blob', ...(config || {}) })
+export const getU115OfflineOverview = () => api.get('/u115/offline/overview')
+export const addU115OfflineUrls = (data) => api.post('/u115/offline/add-urls', data)
+export const deleteU115OfflineTasks = (data) => api.post('/u115/offline/tasks/delete', data)
+export const clearU115OfflineTasks = (data) => api.post('/u115/offline/tasks/clear', data)
 
 // ── 媒体库刷新 ──
 export const refreshLibrary = () => api.post('/library/refresh')

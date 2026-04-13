@@ -26,6 +26,7 @@ import subprocess
 import sys
 import threading
 import base64
+import json
 import uuid
 from dataclasses import asdict
 from pathlib import Path
@@ -40,8 +41,9 @@ from datetime import datetime, timezone, timedelta
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from google.oauth2.credentials import Credentials
 from pydantic import BaseModel
@@ -59,6 +61,7 @@ from drive.auth import SCOPES as DRIVE_SCOPES
 from mediaparser import Config, MetaInfo, MetaInfoPath, TmdbClient
 from mediaparser.release_group import ReleaseGroupsMatcher
 from nfo import NfoGenerator, ImageUploader
+import u115pan
 from webui.tmdb_cache import TmdbCache
 from webui.library_store import get_library_store
 from webui.log_store import LogStore
@@ -1659,11 +1662,181 @@ class Aria2BatchActionBody(BaseModel):
     gids: List[str]
 
 
+class U115CreateSessionBody(BaseModel):
+    client_id: Optional[str] = None
+    token_json: Optional[str] = None
+
+
+class U115ExchangeBody(BaseModel):
+    client_id: Optional[str] = None
+    token_json: Optional[str] = None
+
+
+class U115OfflineAddUrlsBody(BaseModel):
+    urls: str
+    wp_path_id: Optional[str] = None
+
+
+class U115OfflineDeleteBody(BaseModel):
+    info_hashes: List[str]
+    del_source_file: int = 0
+
+
+class U115OfflineClearBody(BaseModel):
+    flag: int = 0
+
+
 def _resolve_config_path(path_str: str) -> str:
     path = Path(path_str)
     if not path.is_absolute():
         path = Path(_ROOT_DIR) / path
     return str(path)
+
+
+def _u115_client() -> u115pan.Pan115Client:
+    cfg = get_config().u115
+    return u115pan.Pan115Client.from_token_file(
+        client_id=cfg.client_id,
+        token_path=_resolve_config_path(cfg.token_json),
+    )
+
+
+def _u115_offline_client() -> u115pan.OfflineClient:
+    return u115pan.OfflineClient(_u115_client())
+
+
+def _serialize_u115_offline_task(task: u115pan.OfflineTask) -> Dict[str, Any]:
+    return {
+        "info_hash": task.info_hash,
+        "name": task.name,
+        "status": task.status,
+        "percent_done": task.percent_done,
+        "size": task.size,
+        "add_time": task.add_time,
+        "last_update": task.last_update,
+        "file_id": task.file_id,
+        "delete_file_id": task.delete_file_id,
+        "url": task.url,
+        "wp_path_id": task.wp_path_id,
+        "is_finished": task.is_finished,
+        "is_downloading": task.is_downloading,
+        "is_failed": task.is_failed,
+    }
+
+
+def _serialize_u115_offline_quota(quota: u115pan.OfflineQuotaInfo) -> Dict[str, Any]:
+    return {
+        "count": quota.count,
+        "used": quota.used,
+        "surplus": quota.surplus,
+        "packages": [
+            {
+                "name": item.name,
+                "count": item.count,
+                "used": item.used,
+                "surplus": item.surplus,
+                "expire_info": [
+                    {
+                        "surplus": exp.surplus,
+                        "expire_time": exp.expire_time,
+                    }
+                    for exp in item.expire_info
+                ],
+            }
+            for item in quota.packages
+        ],
+    }
+
+
+def _save_u115_device_session(session: u115pan.DeviceCodeSession, session_path: str) -> None:
+    path = Path(session_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "qrcode": session.qrcode,
+                "uid": session.uid,
+                "time_value": session.time_value,
+                "sign": session.sign,
+                "code_verifier": session.code_verifier,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _load_u115_device_session(session_path: str) -> u115pan.DeviceCodeSession:
+    path = Path(session_path)
+    if not path.exists():
+        raise FileNotFoundError(f"115 扫码会话文件不存在：{path}")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return u115pan.DeviceCodeSession(
+        qrcode=str(data["qrcode"]),
+        uid=str(data["uid"]),
+        time_value=str(data["time_value"]),
+        sign=str(data["sign"]),
+        code_verifier=str(data["code_verifier"]),
+    )
+
+
+def _u115_oauth_status_payload() -> Dict[str, Any]:
+    cfg = get_config().u115
+    token_path = _resolve_config_path(cfg.token_json)
+    session_path = _resolve_config_path(cfg.session_json)
+
+    token_exists = os.path.exists(token_path)
+    session_exists = os.path.exists(session_path)
+    token_valid = False
+    token_expired = False
+    expires_at = None
+    refresh_time = None
+    authorized = False
+    refreshed = False
+
+    if token_exists:
+        try:
+            token = u115pan.load_token(token_path)
+            if token:
+                refresh_time = token.refresh_time
+                expires_at = token.expires_at
+                token_expired = token.is_expired(skew_seconds=0)
+                if token_expired:
+                    try:
+                        client = u115pan.Pan115Client.from_token_file(
+                            client_id=cfg.client_id,
+                            token_path=token_path,
+                        )
+                        token = client.refresh_token()
+                        refreshed = True
+                        refresh_time = token.refresh_time
+                        expires_at = token.expires_at
+                        token_expired = False
+                        token_valid = True
+                        authorized = True
+                    except Exception:
+                        token_valid = False
+                        authorized = False
+                else:
+                    token_valid = True
+                    authorized = True
+        except Exception:
+            authorized = False
+
+    return {
+        "client_id": cfg.client_id,
+        "token_path": cfg.token_json,
+        "session_path": cfg.session_json,
+        "token_exists": token_exists,
+        "session_exists": session_exists,
+        "authorized": authorized,
+        "token_valid": token_valid,
+        "token_expired": token_expired,
+        "refresh_time": refresh_time,
+        "expires_at": expires_at,
+        "refreshed": refreshed,
+    }
 
 
 def _drive_oauth_status_payload() -> Dict[str, Any]:
@@ -1861,12 +2034,260 @@ async def drive_test_connection():
         raise HTTPException(status_code=400, detail=f"Drive 连接测试失败：{exc}") from exc
 
 
+@app.get("/api/u115/oauth/status")
+async def u115_oauth_status():
+    return _u115_oauth_status_payload()
+
+
+@app.post("/api/u115/oauth/create")
+async def u115_oauth_create(body: Optional[U115CreateSessionBody] = None):
+    return await run_in_threadpool(_u115_oauth_create_sync, body)
+
+
+def _u115_oauth_create_sync(body: Optional[U115CreateSessionBody] = None):
+    cfg = get_config().u115
+    client_id = (body.client_id if body and body.client_id else cfg.client_id).strip()
+    token_json = (body.token_json if body and body.token_json else cfg.token_json).strip()
+    session_json = cfg.session_json.strip()
+    if not client_id:
+        raise HTTPException(status_code=400, detail="u115.client_id 不能为空")
+
+    client = u115pan.Pan115Client.from_token_file(
+        client_id=client_id,
+        token_path=_resolve_config_path(token_json),
+    )
+    try:
+        session = client.create_device_code()
+        _save_u115_device_session(session, _resolve_config_path(session_json))
+        return {
+            "ok": True,
+            "qrcode": session.qrcode,
+            "uid": session.uid,
+            "session_path": session_json,
+            "status": _u115_oauth_status_payload(),
+        }
+    except Exception as exc:
+        logger.exception("115 创建扫码会话失败")
+        raise HTTPException(status_code=400, detail=f"115 创建扫码会话失败：{exc}") from exc
+
+
+@app.get("/api/u115/oauth/qrcode")
+async def u115_oauth_qrcode():
+    return await run_in_threadpool(_u115_oauth_qrcode_sync)
+
+
+def _u115_oauth_qrcode_sync():
+    cfg = get_config().u115
+    try:
+        session = _load_u115_device_session(_resolve_config_path(cfg.session_json))
+        result = subprocess.run(
+            ["qrencode", "-t", "PNG", "-o", "-", session.qrcode],
+            check=True,
+            capture_output=True,
+        )
+        return Response(content=result.stdout, media_type="image/png")
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("115 二维码代理失败")
+        raise HTTPException(status_code=400, detail=f"115 二维码代理失败：{exc}") from exc
+
+
+@app.get("/api/u115/oauth/poll")
+async def u115_oauth_poll():
+    return await run_in_threadpool(_u115_oauth_poll_sync)
+
+
+def _u115_oauth_poll_sync():
+    cfg = get_config().u115
+    try:
+        client = _u115_client()
+        session_path = _resolve_config_path(cfg.session_json)
+        session = _load_u115_device_session(session_path)
+        status = client.get_qrcode_status(session)
+        exchange_error = None
+
+        # 实际使用中，115 的扫码状态有时会停留在“已扫码，待手机确认”，
+        # 但 deviceCodeToToken 已经可以成功换 token。这里在已扫码后顺手探测一次，
+        # 避免前端一直卡在等待确认。
+        if not status.confirmed and int(status.status) >= 1:
+            try:
+                client.exchange_device_token(session)
+                if os.path.exists(session_path):
+                    os.remove(session_path)
+                return {
+                    "ok": True,
+                    "status": status.status,
+                    "message": "已确认并完成授权",
+                    "confirmed": True,
+                    "authorized": True,
+                    "raw": status.raw,
+                }
+            except Exception as exc:
+                exchange_error = str(exc)
+
+        return {
+            "ok": True,
+            "status": status.status,
+            "message": status.message,
+            "confirmed": status.confirmed,
+            "raw": status.raw,
+            "exchange_error": exchange_error,
+        }
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("115 查询扫码状态失败")
+        raise HTTPException(status_code=400, detail=f"115 查询扫码状态失败：{exc}") from exc
+
+
+@app.post("/api/u115/oauth/exchange")
+async def u115_oauth_exchange(body: Optional[U115ExchangeBody] = None):
+    return await run_in_threadpool(_u115_oauth_exchange_sync, body)
+
+
+def _u115_oauth_exchange_sync(body: Optional[U115ExchangeBody] = None):
+    cfg = get_config().u115
+    client_id = (body.client_id if body and body.client_id else cfg.client_id).strip()
+    token_json = (body.token_json if body and body.token_json else cfg.token_json).strip()
+    session_json = cfg.session_json.strip()
+    if not client_id:
+        raise HTTPException(status_code=400, detail="u115.client_id 不能为空")
+
+    client = u115pan.Pan115Client.from_token_file(
+        client_id=client_id,
+        token_path=_resolve_config_path(token_json),
+    )
+    try:
+        resolved_session_path = _resolve_config_path(session_json)
+        session = _load_u115_device_session(resolved_session_path)
+        token = client.exchange_device_token(session)
+        try:
+            os.remove(resolved_session_path)
+        except FileNotFoundError:
+            pass
+        return {
+            "ok": True,
+            "expires_in": token.expires_in,
+            "refresh_time": token.refresh_time,
+            "token_path": token_json,
+            "status": _u115_oauth_status_payload(),
+        }
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("115 换取 token 失败")
+        raise HTTPException(status_code=400, detail=f"115 换取 token 失败：{exc}") from exc
+
+
+@app.post("/api/u115/test")
+async def u115_test_connection():
+    return await run_in_threadpool(_u115_test_connection_sync)
+
+
+def _u115_test_connection_sync():
+    try:
+        client = _u115_client()
+        space = client.get_space_info()
+        return {
+            "ok": True,
+            "total_space": space.total_size,
+            "remain_space": space.remain_size,
+        }
+    except Exception as exc:
+        logger.exception("115 连接测试失败")
+        raise HTTPException(status_code=400, detail=f"115 连接测试失败：{exc}") from exc
+
+
+@app.get("/api/u115/offline/overview")
+async def u115_offline_overview():
+    return await run_in_threadpool(_u115_offline_overview_sync)
+
+
+def _u115_offline_overview_sync():
+    try:
+        offline = _u115_offline_client()
+        quota = offline.get_quota_info()
+        tasks = offline.get_all_tasks()
+        tasks.sort(key=lambda item: ((item.last_update or item.add_time or 0), item.add_time or 0), reverse=True)
+        return {
+            "ok": True,
+            "quota": _serialize_u115_offline_quota(quota),
+            "tasks": [_serialize_u115_offline_task(task) for task in tasks],
+        }
+    except Exception as exc:
+        logger.exception("115 云下载概览获取失败")
+        raise HTTPException(status_code=400, detail=f"115 云下载概览获取失败：{exc}") from exc
+
+
+@app.post("/api/u115/offline/add-urls")
+async def u115_offline_add_urls(body: U115OfflineAddUrlsBody):
+    return await run_in_threadpool(_u115_offline_add_urls_sync, body)
+
+
+def _u115_offline_add_urls_sync(body: U115OfflineAddUrlsBody):
+    url_lines = [line.strip() for line in body.urls.splitlines() if line.strip()]
+    if not url_lines:
+        raise HTTPException(status_code=400, detail="请至少输入一个下载链接")
+
+    try:
+        offline = _u115_offline_client()
+        results = offline.add_task_urls(url_lines, wp_path_id=body.wp_path_id or None)
+        return {
+            "ok": True,
+            "count": len(results),
+            "results": [asdict(item) for item in results],
+        }
+    except Exception as exc:
+        logger.exception("115 云下载添加链接失败")
+        raise HTTPException(status_code=400, detail=f"115 云下载添加链接失败：{exc}") from exc
+
+
+@app.post("/api/u115/offline/tasks/delete")
+async def u115_offline_delete_tasks(body: U115OfflineDeleteBody):
+    return await run_in_threadpool(_u115_offline_delete_tasks_sync, body)
+
+
+def _u115_offline_delete_tasks_sync(body: U115OfflineDeleteBody):
+    info_hashes = [item.strip() for item in body.info_hashes if item and item.strip()]
+    if not info_hashes:
+        raise HTTPException(status_code=400, detail="请至少选择一个云下载任务")
+
+    try:
+        offline = _u115_offline_client()
+        for info_hash in info_hashes:
+            offline.del_task(info_hash, del_source_file=body.del_source_file)
+        return {"ok": True, "deleted": len(info_hashes)}
+    except Exception as exc:
+        logger.exception("115 云下载删除任务失败")
+        raise HTTPException(status_code=400, detail=f"115 云下载删除任务失败：{exc}") from exc
+
+
+@app.post("/api/u115/offline/tasks/clear")
+async def u115_offline_clear_tasks(body: U115OfflineClearBody):
+    return await run_in_threadpool(_u115_offline_clear_tasks_sync, body)
+
+
+def _u115_offline_clear_tasks_sync(body: U115OfflineClearBody):
+    try:
+        offline = _u115_offline_client()
+        offline.clear_tasks(body.flag)
+        return {"ok": True, "flag": body.flag}
+    except Exception as exc:
+        logger.exception("115 云下载清空任务失败")
+        raise HTTPException(status_code=400, detail=f"115 云下载清空任务失败：{exc}") from exc
+
+
 @app.get("/api/logs")
 async def get_logs(
     limit: int = Query(200, ge=1, le=1000),
     category: Optional[str] = None,
     level: Optional[str] = None,
 ):
+    return await run_in_threadpool(_logs_payload, limit, category, level)
+
+
+def _logs_payload(limit: int, category: Optional[str], level: Optional[str]):
     _log_store.set_retention_days(get_config().webui.log_retention_days)
     return {
         "items": _log_store.read(limit=limit, category=category, level=level),
@@ -1876,9 +2297,7 @@ async def get_logs(
 
 @app.get("/api/aria2/overview")
 async def aria2_overview():
-    tasks = _aria2_fetch_task_lists()
-    global_stat = _aria2_rpc_call("getGlobalStat") or {}
-    version = _aria2_rpc_call("getVersion") or {}
+    tasks, global_stat, version = await run_in_threadpool(_aria2_overview_payload)
 
     return {
         "summary": {
@@ -1897,6 +2316,13 @@ async def aria2_overview():
             "enabledFeatures": version.get("enabledFeatures") or [],
         },
     }
+
+
+def _aria2_overview_payload():
+    tasks = _aria2_fetch_task_lists()
+    global_stat = _aria2_rpc_call("getGlobalStat") or {}
+    version = _aria2_rpc_call("getVersion") or {}
+    return tasks, global_stat, version
 
 
 @app.get("/api/aria2/options")

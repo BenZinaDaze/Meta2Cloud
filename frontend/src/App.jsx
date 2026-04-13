@@ -13,6 +13,7 @@ import { clearResultsCache } from './components/ScraperResultsView'
 import ParseTestModal from './components/ParseTestModal'
 import CalendarPage from './components/CalendarPage'
 import ToastContainer from './components/Toast'
+import U115OfflinePage from './components/U115OfflinePage'
 
 let _toastId = 0
 
@@ -354,6 +355,8 @@ export default function App() {
             />
           ) : activeNav === 'logs' ? (
             <LogsPage />
+          ) : activeNav === 'u115-offline' ? (
+            <U115OfflinePage onToast={addToast} />
           ) : downloadQueue ? (
             <DownloadsPage
               queue={downloadQueue}

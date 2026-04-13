@@ -36,6 +36,13 @@ const Icons = {
       <line x1="12" y1="15" x2="12" y2="3"/>
     </svg>
   ),
+  cloudDownload: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.25"/>
+      <path d="M12 12v9"/>
+      <path d="m8 17 4 4 4-4"/>
+    </svg>
+  ),
   bolt: (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
@@ -133,7 +140,7 @@ function NavItem({ icon, label, active, onClick, indent = false, right, bold = f
   )
 }
 
-export default function Sidebar({ active, onSelect, aria2Overview = null, aria2ConnectionStatus = 'connecting', mobileOpen = false, onMobileClose }) {
+export default function Sidebar({ active, onSelect, aria2Overview = null, aria2ConnectionStatus = 'connecting', mobileOpen = false }) {
   const [libraryExpanded, setLibraryExpanded] = useState(true)
   const [downloadsExpanded, setDownloadsExpanded] = useState(true)
   const [latestVersion, setLatestVersion] = useState(null)
@@ -369,6 +376,14 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
           ))}
         </div>
       </div>
+
+      <NavItem
+        icon={Icons.cloudDownload}
+        label="云下载"
+        active={active === 'u115-offline'}
+        onClick={() => onSelect('u115-offline')}
+        bold
+      />
 
       <NavItem
         icon={Icons.activity}

@@ -1,5 +1,16 @@
-import { useState, useEffect, useCallback } from 'react'
-import { getConfig, saveConfig, getDriveOauthStatus, testDriveConnection } from '../api'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import {
+  getConfig,
+  saveConfig,
+  getDriveOauthStatus,
+  testDriveConnection,
+  getU115OauthStatus,
+  createU115OauthSession,
+  pollU115OauthStatus,
+  exchangeU115OauthToken,
+  testU115Connection,
+  fetchU115QrCode,
+} from '../api'
 
 function normalizeConfig(data) {
   const next = structuredClone(data || {})
@@ -165,6 +176,20 @@ function SelectInput({ value, onChange, options }) {
       ))}
     </select>
   )
+}
+
+function formatStorageSize(bytes) {
+  const value = Number(bytes)
+  if (!Number.isFinite(value) || value < 0) return '-'
+
+  const GB = 1024 ** 3
+  const TB = 1024 ** 4
+  const threshold = 5 * TB
+
+  if (value < threshold) {
+    return `${(value / GB).toFixed(2)} GB`
+  }
+  return `${(value / TB).toFixed(2)} TB`
 }
 
 /** 列表字段：每行一条，显示为 tag + 删除按钮 + 输入框添加 */
@@ -338,6 +363,39 @@ export default function ConfigPage({ onAria2EnabledChange = null }) {
   const [driveOauth, setDriveOauth] = useState(null)
   const [driveOauthMessage, setDriveOauthMessage] = useState(null)
   const [driveTestBusy, setDriveTestBusy] = useState(false)
+  const [u115Oauth, setU115Oauth] = useState(null)
+  const [u115OauthMessage, setU115OauthMessage] = useState(null)
+  const [u115QrUrl, setU115QrUrl] = useState('')
+  const [u115QrPreviewUrl, setU115QrPreviewUrl] = useState('')
+  const [u115AuthBusy, setU115AuthBusy] = useState(false)
+  const [u115TestBusy, setU115TestBusy] = useState(false)
+  const [u115Polling, setU115Polling] = useState(false)
+  const [u115StatusLoading, setU115StatusLoading] = useState(true)
+  const mountedRef = useRef(true)
+  const u115CreateAbortRef = useRef(null)
+  const u115QrFetchAbortRef = useRef(null)
+  const u115PollAbortRef = useRef(null)
+  const u115ExchangeAbortRef = useRef(null)
+  const u115LastQrPreviewUrlRef = useRef('')
+
+  const cancelU115AuthFlow = useCallback(() => {
+    if (u115CreateAbortRef.current) {
+      u115CreateAbortRef.current.abort()
+      u115CreateAbortRef.current = null
+    }
+    if (u115QrFetchAbortRef.current) {
+      u115QrFetchAbortRef.current.abort()
+      u115QrFetchAbortRef.current = null
+    }
+    if (u115PollAbortRef.current) {
+      u115PollAbortRef.current.abort()
+      u115PollAbortRef.current = null
+    }
+    if (u115ExchangeAbortRef.current) {
+      u115ExchangeAbortRef.current.abort()
+      u115ExchangeAbortRef.current = null
+    }
+  }, [])
 
   const loadDriveOauthStatus = useCallback(async () => {
     try {
@@ -352,6 +410,22 @@ export default function ConfigPage({ onAria2EnabledChange = null }) {
     }
   }, [])
 
+  const loadU115OauthStatus = useCallback(async () => {
+    setU115StatusLoading(true)
+    try {
+      const res = await getU115OauthStatus()
+      setU115Oauth(res.data)
+    } catch (e) {
+      setU115Oauth(null)
+      setU115OauthMessage({
+        type: 'error',
+        text: e?.response?.data?.detail || e.message || '读取 115 授权状态失败',
+      })
+    } finally {
+      setU115StatusLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     setLoading(true)
     getConfig()
@@ -363,7 +437,8 @@ export default function ConfigPage({ onAria2EnabledChange = null }) {
       .catch(e => setError(e?.response?.data?.detail || e.message))
       .finally(() => setLoading(false))
     loadDriveOauthStatus()
-  }, [loadDriveOauthStatus])
+    loadU115OauthStatus()
+  }, [loadDriveOauthStatus, loadU115OauthStatus])
 
   const isDirty = JSON.stringify(cfg) !== JSON.stringify(original)
 
@@ -413,6 +488,182 @@ export default function ConfigPage({ onAria2EnabledChange = null }) {
       setDriveTestBusy(false)
     }
   }
+
+  async function handleU115CreateQr() {
+    setU115AuthBusy(true)
+    setU115Polling(false)
+    setU115OauthMessage(null)
+    cancelU115AuthFlow()
+    try {
+      const createController = new AbortController()
+      u115CreateAbortRef.current = createController
+      const res = await createU115OauthSession({
+        client_id: cfg?.u115?.client_id,
+        token_json: cfg?.u115?.token_json,
+      }, { signal: createController.signal })
+      u115CreateAbortRef.current = null
+      if (!mountedRef.current) return
+      setU115QrUrl(res?.data?.qrcode || '')
+      try {
+        const controller = new AbortController()
+        u115QrFetchAbortRef.current = controller
+        const qrRes = await fetchU115QrCode({ signal: controller.signal })
+        if (!mountedRef.current) return
+        const objectUrl = URL.createObjectURL(qrRes.data)
+        setU115QrPreviewUrl(objectUrl)
+      } catch {
+        setU115QrPreviewUrl('')
+      } finally {
+        u115QrFetchAbortRef.current = null
+      }
+      setU115Polling(true)
+      setU115OauthMessage({
+        type: 'success',
+        text: '115 扫码会话已创建，请使用 App 扫码并确认，系统会自动轮询。',
+      })
+      loadU115OauthStatus()
+    } catch (e) {
+      if (e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') return
+      setU115Polling(false)
+      setU115OauthMessage({
+        type: 'error',
+        text: e?.response?.data?.detail || e.message || '创建 115 扫码会话失败',
+      })
+    } finally {
+      setU115AuthBusy(false)
+    }
+  }
+
+  const exchangeU115AfterConfirm = useCallback(async () => {
+    setU115OauthMessage(null)
+    try {
+      const exchangeController = new AbortController()
+      u115ExchangeAbortRef.current = exchangeController
+      await exchangeU115OauthToken({
+        client_id: cfg?.u115?.client_id,
+        token_json: cfg?.u115?.token_json,
+      }, { signal: exchangeController.signal })
+      u115ExchangeAbortRef.current = null
+      if (!mountedRef.current) return
+      setU115OauthMessage({
+        type: 'success',
+        text: '115 授权成功，token 已写入本地。',
+      })
+      setU115QrUrl('')
+      setU115QrPreviewUrl('')
+      setU115Polling(false)
+      loadU115OauthStatus()
+    } catch (e) {
+      if (e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') return
+      setU115Polling(false)
+      setU115OauthMessage({
+        type: 'error',
+        text: e?.response?.data?.detail || e.message || '115 换取 Token 失败',
+      })
+    }
+  }, [cfg?.u115?.client_id, cfg?.u115?.token_json, loadU115OauthStatus])
+
+  async function handleU115Test() {
+    setU115TestBusy(true)
+    setU115OauthMessage(null)
+    try {
+      const res = await testU115Connection()
+      const data = res?.data || {}
+      setU115OauthMessage({
+        type: 'success',
+        text: `连接成功：剩余空间 ${formatStorageSize(data.remain_space)} / 总空间 ${formatStorageSize(data.total_space)}`,
+      })
+      loadU115OauthStatus()
+    } catch (e) {
+      setU115OauthMessage({
+        type: 'error',
+        text: e?.response?.data?.detail || e.message || '115 连接测试失败',
+      })
+    } finally {
+      setU115TestBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!u115Polling || !u115QrUrl) return
+
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      try {
+        const controller = new AbortController()
+        u115PollAbortRef.current = controller
+        const res = await pollU115OauthStatus({ signal: controller.signal })
+        if (cancelled) return
+        const data = res?.data || {}
+        if (data.confirmed) {
+          setU115OauthMessage({
+            type: 'success',
+            text: '已扫码并确认，正在换取 Token…',
+          })
+          await exchangeU115AfterConfirm()
+          return
+        }
+
+        setU115OauthMessage({
+          type: data.exchange_error ? 'error' : 'success',
+          text: data.exchange_error
+            ? `115 已扫码，但换取 Token 失败：${data.exchange_error}`
+            : (
+              data.status >= 1
+                ? (data.message || '已扫码，等待手机确认…')
+                : `等待扫码：${data.message || data.status}`
+            ),
+        })
+      } catch (e) {
+        if (cancelled) return
+        if (e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') return
+        setU115Polling(false)
+        setU115OauthMessage({
+          type: 'error',
+          text: e?.response?.data?.detail || e.message || '查询 115 扫码状态失败',
+        })
+      } finally {
+        u115PollAbortRef.current = null
+      }
+    }, 2000)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+      if (u115PollAbortRef.current) {
+        u115PollAbortRef.current.abort()
+        u115PollAbortRef.current = null
+      }
+    }
+  }, [u115Polling, u115QrUrl, exchangeU115AfterConfirm])
+
+  useEffect(() => {
+    const previousUrl = u115LastQrPreviewUrlRef.current
+    u115LastQrPreviewUrlRef.current = u115QrPreviewUrl
+
+    if (previousUrl && previousUrl !== u115QrPreviewUrl) {
+      URL.revokeObjectURL(previousUrl)
+    }
+  }, [u115QrPreviewUrl])
+
+  useEffect(() => {
+    mountedRef.current = true
+    const handlePageHide = () => {
+      cancelU115AuthFlow()
+    }
+    window.addEventListener('pagehide', handlePageHide)
+    window.addEventListener('beforeunload', handlePageHide)
+    return () => {
+      mountedRef.current = false
+      window.removeEventListener('pagehide', handlePageHide)
+      window.removeEventListener('beforeunload', handlePageHide)
+      cancelU115AuthFlow()
+      if (u115LastQrPreviewUrlRef.current) {
+        URL.revokeObjectURL(u115LastQrPreviewUrlRef.current)
+        u115LastQrPreviewUrlRef.current = ''
+      }
+    }
+  }, [cancelU115AuthFlow])
 
   if (loading) return (
     <div className="flex-1 space-y-4">
@@ -570,6 +821,80 @@ export default function ConfigPage({ onAria2EnabledChange = null }) {
             </FieldRow>
             <FieldRow label="扫描目录 ID" description="Drive 目标文件夹 ID">
               <TextInput value={cfg?.drive?.scan_folder_id} onChange={v => set('drive', 'scan_folder_id', v)} placeholder="1AbCdEfGhIjKlMn..." mono />
+            </FieldRow>
+          </Section>
+
+          <Section title="115 开放平台设置">
+            <FieldRow label="Client ID" description="115 开放平台应用 client_id">
+              <TextInput value={cfg?.u115?.client_id} onChange={v => set('u115', 'client_id', v)} placeholder="100197847" mono />
+            </FieldRow>
+            <FieldRow label="Token 路径" description="扫码授权成功后自动生成">
+              <TextInput value={cfg?.u115?.token_json} onChange={v => set('u115', 'token_json', v)} placeholder="config/115-token.json" mono />
+            </FieldRow>
+            <FieldRow label="授权状态" description="创建二维码后会自动轮询扫码状态，并在确认后自动换取 115 Token">
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs px-2 py-1 rounded-full"
+                    style={{
+                      background: u115StatusLoading
+                        ? 'rgba(59,130,246,0.12)'
+                        : (u115Oauth?.authorized ? 'rgba(34,197,94,0.15)' : 'rgba(148,163,184,0.14)'),
+                      color: u115StatusLoading
+                        ? '#3b82f6'
+                        : (u115Oauth?.authorized ? '#22c55e' : 'var(--color-muted)'),
+                    }}>
+                    {u115StatusLoading ? '刷新授权中' : (u115Oauth?.authorized ? '已授权' : '未授权')}
+                  </span>
+                  <button
+                    onClick={handleU115CreateQr}
+                    disabled={u115AuthBusy || !cfg?.u115?.client_id}
+                    className="text-xs px-3 py-1 rounded-full transition-all disabled:opacity-40"
+                    style={{ background: 'linear-gradient(135deg, var(--color-accent) 0%, #b37533 100%)', border: 'none', color: '#fff' }}
+                  >
+                    {u115AuthBusy ? '处理中…' : (u115Polling ? '等待扫码中…' : '开始授权')}
+                  </button>
+                  <button
+                    onClick={handleU115Test}
+                    disabled={u115TestBusy || u115Oauth?.token_exists === false}
+                    className="text-xs px-3 py-1 rounded-full transition-all disabled:opacity-40"
+                    style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
+                  >
+                    {u115TestBusy ? '测试中…' : '测试 115 连接'}
+                  </button>
+                  {u115Oauth?.session_exists === false && (
+                    <span className="text-xs px-2 py-1 rounded-full"
+                      style={{ background: 'rgba(148,163,184,0.12)', color: 'var(--color-muted)' }}>
+                      暂无扫码会话
+                    </span>
+                  )}
+                </div>
+
+                {u115QrUrl && (
+                  <div className="rounded-lg p-3 inline-flex flex-col gap-2"
+                    style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+                    <div className="text-xs" style={{ color: 'var(--color-muted)' }}>请使用 115 App 扫码</div>
+                    {u115QrPreviewUrl ? (
+                      <img src={u115QrPreviewUrl} alt="115 OAuth QR Code" className="w-44 h-44 rounded-lg" />
+                    ) : (
+                      <div className="w-44 h-44 rounded-lg flex items-center justify-center text-xs"
+                        style={{ background: 'var(--color-surface-2)', color: 'var(--color-muted)' }}>
+                        二维码加载中…
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {u115OauthMessage && (
+                  <div className="px-3 py-2 rounded-lg text-xs"
+                    style={{
+                      background: u115OauthMessage.type === 'success' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.1)',
+                      border: `1px solid ${u115OauthMessage.type === 'success' ? 'rgba(34,197,94,0.28)' : 'rgba(239,68,68,0.25)'}`,
+                      color: u115OauthMessage.type === 'success' ? '#22c55e' : '#ef4444',
+                    }}>
+                    {u115OauthMessage.text}
+                  </div>
+                )}
+              </div>
             </FieldRow>
           </Section>
 

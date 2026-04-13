@@ -18,6 +18,10 @@ config/service_account.json
 config/config.yaml
 # config/config.example.yaml  ← 这个是模板，应当入库
 
+# 115
+115-token.json
+115-device-session.json
+
 # 运行时数据（SQLite DB、日志）—— 全部放在 config/data/
 config/data/
 metadata2gd.log
