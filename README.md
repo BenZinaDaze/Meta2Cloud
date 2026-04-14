@@ -1,42 +1,151 @@
 # Meta2Cloud
 
-> 自动为云存储中的媒体文件查询 TMDB 元数据、生成 NFO、整理目录结构，并发送 Telegram 入库通知。  
-> 现已内置 **Web UI**，可在浏览器中可视化查看媒体库状态。
+把网盘里的电影和剧集自动整理好。
+
+它会帮你做这些事：
+
+- 识别文件名里的片名、年份、季集号
+- 自动查询 TMDB
+- 自动生成 NFO
+- 自动下载海报和背景图
+- 自动创建电影 / 剧集目录
+- 自动移动和重命名文件
+- 整理完成后推送 Telegram 通知
+
+现在支持：
+
+- Google Drive
+- 115 网盘
 
 ---
 
-## 功能概览
+## 这适合谁
 
-| 功能 | 说明 |
-|---|---|
-| **递归扫描** | 扫描 Drive 指定文件夹（含所有子文件夹）中的视频文件 |
-| **文件名解析** | 识别标题、年份、季集号、字幕组，支持自定义规则 |
-| **TMDB 元数据** | 查询整剧/整片信息，TV 额外获取单集标题、简介、导演 |
-| **NFO 生成** | 生成 Plex / Infuse / Emby 兼容的 `episode.nfo` / `tvshow.nfo` / `season.nfo` |
-| **目录整理** | 在 Drive 按标准结构幂等创建文件夹，将文件移动并标准化命名 |
-| **封面上传** | 下载 TMDB 封面图，上传 `poster.jpg` / `fanart.jpg` / `season01-poster.jpg` |
-| **Telegram 通知** | 带封面图的入库通知，多集合并为一条消息，支持防抖延时 |
-| **Webhook 触发** | HTTP 接口 `POST /trigger`，配合 Aria2 + Rclone 上传完成后自动触发 |
-| **Web UI** | 浏览器可视化媒体库、原生 Aria2 下载大盘、实时流式日志及解析沙盒 |
-| **JWT 登录鉴权** | Web UI 及 API 均受 JWT 保护，支持 Webhook Secret 独立校验 |
-| **TMDB 本地缓存** | SQLite 缓存减少重复请求，支持 TTL 自动过期与负缓存 |
+如果你平时是这样用网盘的：
 
-### 媒体库目录结构
+- 下载完资源后先放到一个“待整理”目录
+- 想把电影和剧集自动归类进媒体库
+- 想让 Emby / Plex / Infuse / Kodi 更容易识别
+- 不想手动改文件名、建文件夹、补海报和 NFO
 
+那这个项目就是给你用的。
+
+---
+
+## 5 分钟快速开始
+
+### 1. 准备一个配置目录
+
+在项目目录旁边新建一个文件夹，名字随意，下面用 `meta2cloud-config/` 举例：
+
+```bash
+mkdir -p meta2cloud-config
+cp config/config.example.yaml meta2cloud-config/config.yaml
 ```
-📁 剧集根目录/
-└─ 📁 Breaking Bad (2008)/
+
+这个目录以后会放：
+
+- `config.yaml`
+- Google Drive 用的 `credentials.json` 和 `token.json`
+- 115 用的 `115-token.json`
+
+### 2. 先把程序配起来
+
+你有两种方式：
+
+- 直接改 `config.yaml`
+- 先启动后，通过 Web UI 的“配置”页面来改
+
+如果你是第一次用，最少先准备好这几项：
+
+```yaml
+storage:
+  primary: "google_drive"   # 当前用哪个网盘跑：google_drive 或 pan115
+
+webui:
+  username: "admin"
+  password: "你的密码"
+
+tmdb:
+  api_key: "你的 TMDB API Key"
+```
+
+然后再把你当前要用的网盘那一段配置好：
+
+- 如果 `storage.primary` 填的是 `google_drive`，就把 `drive:` 这一段填好
+- 如果 `storage.primary` 填的是 `pan115`，就把 `u115:` 这一段填好
+
+这里最容易搞混的一点是：
+
+- `pan115` 是填在 `storage.primary` 里的名字
+- `u115:` 是 115 这部分具体配置所在的位置
+
+也就是说，115 的正确写法是这样：
+
+```yaml
+storage:
+  primary: "pan115"
+
+u115:
+  client_id: "你的 client_id"
+```
+
+后面有 Google Drive 和 115 的单独说明。
+
+### 3. 启动
+
+```bash
+docker compose up -d
+```
+
+### 4. 打开网页
+
+浏览器访问：
+
+```text
+http://localhost:38765
+```
+
+用你在 `config.yaml` 里填的账号密码登录。登录后，很多常用配置也可以直接在 Web UI 里修改。
+
+### 5. 先试跑一次
+
+如果你想先看效果、不真正移动文件：
+
+```bash
+docker exec meta2cloud python pipeline.py --dry-run
+```
+
+如果你用 115：
+
+```bash
+docker exec meta2cloud python pipeline.py --storage pan115 --dry-run
+```
+
+---
+
+## 你最后会得到什么目录结构
+
+### 剧集
+
+```text
+剧集根目录/
+└─ Breaking Bad (2008)/
    ├─ tvshow.nfo
    ├─ poster.jpg
    ├─ fanart.jpg
    ├─ season01-poster.jpg
-   └─ 📁 Season 01/
+   └─ Season 01/
       ├─ season.nfo
       ├─ Breaking Bad - S01E01.mkv
       └─ Breaking Bad - S01E01.nfo
+```
 
-📁 电影根目录/
-└─ 📁 Inception (2010)/
+### 电影
+
+```text
+电影根目录/
+└─ Inception (2010)/
    ├─ Inception (2010).mkv
    ├─ Inception (2010).nfo
    ├─ poster.jpg
@@ -45,264 +154,207 @@
 
 ---
 
-## 部署（Docker，推荐）
+## 如果你用的是 Google Drive
 
-### 1. 准备认证文件
+### 你需要准备什么
 
-在项目目录创建 `meta2cloud-config/` 文件夹，放入以下文件：
+- Google Drive 的 OAuth 凭据文件 `credentials.json`
+- 首次授权后生成的 `token.json`
 
-```
-meta2cloud-config/
-├─ config.yaml          # 主配置文件（从 config/config.example.yaml 复制后修改）
-├─ credentials.json     # Google OAuth2 凭据
-└─ token.json           # OAuth2 Token（首次运行后自动生成）
-```
+### 怎么拿到 `credentials.json`
 
-**获取 Google Drive API 凭据：**
-- 进入 [Google Cloud Console](https://console.cloud.google.com/) → API 和服务 → 凭据
-- 创建 **OAuth2 客户端 ID**（桌面应用）并下载 → 保存为 `credentials.json`
+1. 打开 [Google Cloud Console](https://console.cloud.google.com/)
+2. 进入“API 和服务”
+3. 创建 OAuth 客户端 ID
+4. 类型选“桌面应用”
+5. 下载后保存成 `credentials.json`
 
-### 2. 首次 OAuth2 授权（仅 oauth2 模式）
+### 第一次授权怎么做
+
+把 `credentials.json` 放进 `meta2cloud-config/` 后，执行：
 
 ```bash
 docker run --rm -it \
   -v $(pwd)/meta2cloud-config:/app/config \
   benz1/meta2cloud:latest \
-  python pipeline.py --dry-run
+  python pipeline.py --storage google_drive --dry-run
 ```
 
-浏览器会弹出 Google 授权页面，完成后 `token.json` 自动写入。
+按提示在浏览器里完成授权后，会生成 `token.json`。
 
-### 3. 配置 `config.yaml`
-
-```bash
-cp config/config.example.yaml meta2cloud-config/config.yaml
-# 然后编辑 meta2cloud-config/config.yaml
-```
-
-最少需要填写的字段：
+### `config.yaml` 里要填什么
 
 ```yaml
-webui:
-  username: "admin"          # Web UI 登录用户名
-  password: "your_password"  # Web UI 登录密码（必填，否则无法登录）
-  webhook_secret: ""         # /trigger 端点密钥，留空则不校验（内网可留空）
-
-tmdb:
-  api_key: "你的_TMDB_API_Key"   # https://www.themoviedb.org/settings/api
+storage:
+  primary: "google_drive"   # 这里写的是当前使用的网盘名字
 
 drive:
-  scan_folder_id: "Drive_扫描文件夹_ID"  # 新文件上传到这里
-  root_folder_id: "Drive_整理目标根文件夹_ID"
-  movie_root_id:  "电影专用文件夹_ID"   # 可选，留空用 root_folder_id
-  tv_root_id:     "剧集专用文件夹_ID"   # 可选，留空用 root_folder_id
-
-telegram:
-  bot_token: "你的_Bot_Token"   # 从 @BotFather 获取
-  chat_id:   "你的_Chat_ID"
+  scan_folder_id: "待整理目录 ID"
+  root_folder_id: "媒体库根目录 ID"
+  movie_root_id: "电影目录 ID"   # 可选
+  tv_root_id: "剧集目录 ID"      # 可选
 ```
 
-> **获取 Drive 文件夹 ID**：在 Drive 网页版打开文件夹，URL 末尾即为 ID  
-> `https://drive.google.com/drive/folders/1AbCdEfGhIjKlMn` → ID = `1AbCdEfGhIjKlMn`
+### Google Drive 的目录 ID 怎么看
 
-### 4. 启动服务
+打开文件夹后，浏览器地址通常像这样：
+
+```text
+https://drive.google.com/drive/folders/1AbCdEfGhIjKlMn
+```
+
+最后那串 `1AbCdEfGhIjKlMn` 就是目录 ID。
+
+---
+
+## 如果你用的是 115
+
+### 你需要准备什么
+
+- 115 开放平台 `client_id`
+- 首次授权后得到的 `115-token.json`
+
+第一次使用时，可以直接通过 Web UI 完成 115 授权。  
+授权成功后，程序会把登录信息保存到 `115-token.json`。
+
+### `config.yaml` 里要填什么
+
+```yaml
+storage:
+  primary: "pan115"   # 注意：这里写 pan115，不是 u115
+
+u115:
+  client_id: "你的 client_id"   # 115 的具体配置写在 u115: 下面
+  download_folder_id: "云下载目录 ID"
+  root_folder_id: "媒体库根目录 ID"
+  movie_root_id: "电影目录 ID"
+  tv_root_id: "剧集目录 ID"
+```
+
+### 这些目录分别是干什么的
+
+- `download_folder_id`：程序会从这里开始扫描新资源
+- `root_folder_id`：整理后的总目录
+- `movie_root_id`：电影单独放哪里
+- `tv_root_id`：剧集单独放哪里
+
+如果你已经把电影和剧集分开存了，建议把 `movie_root_id` 和 `tv_root_id` 都填上。
+
+### 115 的目录 ID 怎么找
+
+最直接的方式就是看浏览器地址里的 `cid`。
+
+比如你在 115 网页版打开某个文件夹，地址里如果有：
+
+```text
+...cid=3406743276128217574
+```
+
+那这个 `3406743276128217574` 就是目录 ID。
+
+如果你不方便从浏览器看，也可以用项目里的 Web UI 或日志确认。
+
+---
+
+## 网页里都有什么
+
+你平时主要会用到这些页面：
+
+| 页面 | 你可以拿它做什么 |
+|---|---|
+| 登录 | 进入后台 |
+| 下载大盘 | 如果你接了 Aria2，这里可以看下载状态 |
+| 媒体库 | 看电影和剧集有没有整理成功 |
+| 剧集详情 | 看某一部剧缺了哪几集 |
+| 解析测试 | 测一下某个文件名会被识别成什么 |
+| 实时日志 | 看程序当前在做什么、报了什么错 |
+| 配置 | 查看和修改程序配置 |
+
+---
+
+## 最常用的几条命令
+
+### 正式整理
 
 ```bash
-docker compose up -d
+docker exec meta2cloud python pipeline.py
 ```
 
-查看日志：
+### 先预览，不真正改动文件
+
+```bash
+docker exec meta2cloud python pipeline.py --dry-run
+```
+
+### 指定用 115 跑
+
+```bash
+docker exec meta2cloud python pipeline.py --storage pan115
+```
+
+### 跳过 TMDB
+
+```bash
+docker exec meta2cloud python pipeline.py --no-tmdb
+```
+
+### 不下载海报
+
+```bash
+docker exec meta2cloud python pipeline.py --no-images
+```
+
+### 看日志
 
 ```bash
 docker logs -f meta2cloud
 ```
 
-### 5. 访问 Web UI
-
-服务启动后，浏览器访问：
-
-```
-http://localhost:38765
-```
-
-使用 `config.yaml` 中配置的用户名和密码登录。
-
 ---
 
-## Web UI
+## 如果你想下载完自动整理
 
-Web UI 基于 React + Vite 构建，提供以下页面：
+项目支持通过 `/trigger` 自动触发整理。
 
-| 页面 | 功能 |
-|---|---|
-| **登录** | JWT 鉴权登录，Token 默认 24 小时有效 |
-| **下载大盘** | 集成 Aria2 RPC 提供原生下载中心，支持批量控制、多状态队列、全局限速统计与搜索过滤 |
-| **媒体库** | 电影 / 剧集卡片展示，含 TMDB 海报、评分、概述 |
-| **剧集详情** | 按季展示每集入库状态，区分已入库（✅）与未入库 |
-| **解析测试** | 可视化交互沙盒，可实时验证自定义解析规则、字幕组切分与 TMDB 匹配结果 |
-| **实时日志** | 流式呈现后端 Pipeline 运行日志，提供带有系统级弹窗的沉浸式自动化观测体验 |
-| **配置** | 查看全局服务端配置状态，附带一键发起重建全盘快照功能 |
+最常见的用法是：
 
-媒体库数据来自本地 SQLite 快照（`config/data/library.db`），无需每次访问都扫描 Drive。点击「刷新媒体库」时才重新扫描 Drive 并更新快照。
+- Aria2 下载完成
+- Rclone 上传到网盘
+- 上传脚本顺手请求一下 `/trigger`
+- Meta2Cloud 自动开始整理
 
----
-
-## 配置参考
-
-完整配置项说明（`config.yaml`）：
-
-```yaml
-# ── Web UI & 认证 ──────────────────────────────────
-webui:
-  username: "admin"          # 登录用户名，默认 admin
-  password: ""               # 登录密码（必填，留空将无法登录）
-secret_key: ""             # JWT 签名密钥；留空则自动生成并保存到 config/data/.jwt_secret
-                             # 生产环境建议指定固定值，避免重启后 Token 失效
-  token_expire_hours: 24     # JWT Token 有效期（小时）
-  webhook_secret: ""         # /trigger 端点密钥；留空则不校验（仅内网部署时可留空）
-
-# ── TMDB ──────────────────────────────────────────
-tmdb:
-  api_key: ""          # TMDB v3 API Key（必填）
-  language: "zh-CN"   # 返回语言，支持 zh-CN / zh-TW / en-US / ja-JP 等
-  proxy: ""            # HTTP 代理，示例：http://127.0.0.1:7890
-  timeout: 10          # 请求超时（秒）
-
-# ── 解析器 ─────────────────────────────────────────
-parser:
-  custom_words:
-    # 屏蔽词：从标题中删除
-    # - "国语配音"
-    # 替换词：旧词 => 新词（支持正则）
-    # - "OVA => SP"
-    # 集偏移：前缀 <> 后缀 >> EP+偏移量
-    # - "第 <> 集 >> EP-1"
-
-  custom_release_groups:
-    # 追加到内置字幕组列表（内置已含数百个主流字幕组）
-    # - "MyFansub"
-
-# ── Google Drive ───────────────────────────────────
-drive:
-  credentials_json: "config/credentials.json"
-  token_json: "config/token.json"
-  scan_folder_id: ""                # 扫描的源文件夹 ID（必填）
-  root_folder_id: ""                # 整理目标根文件夹 ID（必填）
-  movie_root_id: ""                 # 电影专用目录 ID（可选）
-  tv_root_id: ""                    # 剧集专用目录 ID（可选）
-
-# ── 115 网盘 ────────────────────────────────────────
-u115:
-  client_id: "100197847"                    # 115 开放平台 client_id
-  token_json: "config/115-token.json"       # 115 access_token / refresh_token 缓存路径
-  session_json: "config/115-device-session.json"  # 115 扫码授权会话缓存路径
-  download_folder_id: ""                    # 115 云下载目录 ID（可选）
-  root_folder_id: ""                        # 115 媒体库根目录 ID（可选）
-  movie_root_id: ""                         # 115 电影专用目录 ID（可选）
-  tv_root_id: ""                            # 115 剧集专用目录 ID（可选）
-
-# ── 流水线 ─────────────────────────────────────────
-pipeline:
-  skip_tmdb: false          # true = 只整理文件夹，不查 TMDB / 不生成 NFO
-  move_on_tmdb_miss: false  # TMDB 找不到时是否仍然移动文件 (默认 false 保证安全)
-  dry_run: false            # true = 只打印计划，不实际操作 Drive
-
-# ── Aria2 ──────────────────────────────────────────
-aria2:
-  enabled: true         # false = 禁用整个 Aria2 集成（前后端都不会连接 RPC）
-  host: "127.0.0.1"     # Aria2 RPC 主机
-  port: 6800            # Aria2 RPC 端口
-  path: "/jsonrpc"      # JSON-RPC 路径
-  secret: ""            # rpc-secret，留空表示无密钥
-  secure: false         # true = 使用 HTTPS
-
-# ── Telegram ───────────────────────────────────────
-telegram:
-  bot_token: ""
-  chat_id: ""
-  debounce_seconds: 60   # 防抖延时（秒）。多集批量入库时，最后一次触发
-                         # 后等待该时间再运行，所有集合并为一条通知。
-                         # 设为 0 关闭防抖（立即触发）。
-```
-
----
-
-## API 接口
-
-所有 `/api/*` 接口均需在请求头中携带 JWT Token（登录后获得）：
-
-```
-Authorization: Bearer <token>
-```
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| `POST` | `/api/auth/login` | 登录，返回 JWT token（无需鉴权） |
-| `GET` | `/api/auth/me` | 验证 Token，返回当前用户名 |
-| `POST` | `/api/auth/logout` | 登出（前端清除 Token） |
-| `GET` | `/api/library` | 从本地快照读取完整媒体库 |
-| `POST` | `/api/library/refresh` | 扫描 Drive，更新本地快照 |
-| `GET` | `/api/library/movies` | 仅获取电影列表（实时扫描） |
-| `GET` | `/api/library/tv` | 仅获取剧集列表（实时扫描） |
-| `GET` | `/api/tv/{tmdb_id}` | 单部剧集详情（含季集入库状态） |
-| `GET` | `/api/stats` | 统计信息（总数、完成率等） |
-| `GET` | `/api/cache/stats` | TMDB 缓存使用情况 |
-| `POST` | `/api/cache/evict` | 手动清理过期缓存 |
-| `POST` | `/trigger` | Webhook：触发 pipeline（需 Webhook Secret） |
-| `GET` | `/api/pipeline/status` | 查询 pipeline 运行状态（需登录） |
-| `GET` | `/health` | 健康检查接口（无需鉴权） |
-
----
-
-## 使用方式
-
-### 方式一：手动触发（一次性整理）
-
-```bash
-# 正式运行
-docker exec meta2cloud python pipeline.py
-
-# 预览（不实际操作 Drive）
-docker exec meta2cloud python pipeline.py --dry-run
-
-# 跳过 TMDB，只整理文件夹
-docker exec meta2cloud python pipeline.py --no-tmdb
-
-# 跳过图片下载
-docker exec meta2cloud python pipeline.py --no-images
-```
-
-### 方式二：Webhook 自动触发（配合 Aria2 + Rclone）
-
-`meta2cloud` 容器内运行 FastAPI Server，监听 `POST /trigger`（端口 `38765`）。
-
-在 Rclone 的 `upload.sh`（P3TERX aria2 方案）中，上传完成后自动调用：
+示例：
 
 ```bash
 curl -sf -X POST http://localhost:38765/trigger \
-     -H "Content-Type: application/json" \
-     -H "X-Webhook-Secret: your_webhook_secret" \
-     -d '{"path": "/path/to/uploaded/file"}'
+  -H "Content-Type: application/json" \
+  -H "X-Webhook-Secret: your_webhook_secret" \
+  -d '{"path": "/path/to/file"}'
 ```
 
-若 `webui.webhook_secret` 配置为空，则无需传 `X-Webhook-Secret` 头（适合内网部署）。
+如果你不用密钥，也可以不传 `X-Webhook-Secret`。
 
-**防抖机制**：配置 `debounce_seconds: 60` 后，批量上传 13 集时，最后一集上传完毕 60 秒后才触发一次 pipeline，Telegram 只收到一条包含所有集数的通知。
+### 批量上传时为什么不会一直狂触发
 
-**健康检查：**
+因为支持防抖。
 
-```bash
-curl http://localhost:38765/health
-# {"status": "ok"}
+比如你连续上传 12 集，不会每集都立刻触发一次整理。  
+你可以在配置里设置：
+
+```yaml
+telegram:
+  debounce_seconds: 60
 ```
+
+这样最后一集传完后，等 60 秒再统一整理一次。
 
 ---
 
-## Telegram 通知示例
+## Telegram 通知大概长这样
 
-### 正常入库
+### 正常整理完成
 
-```
+```text
 📺 Breaking Bad (2008)
 
 Season 01：
@@ -310,157 +362,138 @@ Season 01：
   • S01E03  …And the Bag's in the River
 ```
 
-附带季封面图。
+一般还会带封面图。
 
-### TMDB 未找到元数据
+### 没找到 TMDB
 
-```
+```text
 📺 TMDB 未找到元数据，文件未整理
 • 假面骑士强人.S01E30.1080p.mkv
 • 假面骑士强人.S01E31.1080p.mkv
-
-请检查文件名后手动触发重新整理
 ```
 
-显示原始文件名，方便在 Drive 中定位文件。
+这样你能直接回到网盘里找到原文件，改完名字后再重新整理。
 
 ---
 
-## 与 Aria2-Pro + Rclone 配合使用
+## 常见问题
 
-`docker-compose.yml` 已包含 `aria2-pro` 和 `meta2cloud` 两个服务，均使用 `network_mode: host`，通过 `localhost:38765` 互相通信。
+### 1. 它会不会把我原来的文件删掉
 
-### 整体流程
+正常整理是“移动到你设定好的目录”，不是直接删除。  
+但你最好先用 `--dry-run` 看一遍结果。
 
-```
+### 2. 文件名识别错了怎么办
 
-> 如果你不需要下载中心功能，可在 `config.yaml` 中设置 `aria2.enabled: false`，前端将不再连接 Aria2，后端也会拒绝所有 `/api/aria2/*` 请求。
-Aria2 下载完成
-  → Rclone 上传到 Drive（upload.sh）
-    → POST /trigger 通知 meta2cloud
-      → 防抖等待（debounce_seconds）
-        → Pipeline 扫描 Drive
-          → TMDB 查询 → NFO 生成 → 文件整理
-            → Telegram 入库通知
-              → 自动刷新 Web UI 快照
-```
+先去网页里的“解析测试”页面看看识别结果。  
+如果识别得不对，再改 `config.yaml` 里的 `parser.custom_words` 或手动修文件名。
 
-### 替换 upload.sh
+### 3. TMDB 没找到怎么办
 
-P3TERX 的 [aria2.conf](https://github.com/P3TERX/aria2.conf) 方案使用 `upload.sh` 在 Rclone 上传完成后执行自定义逻辑。将本仓库提供的示例脚本复制后修改：
+通常是文件名太乱、别名太多、年份不准，或者动漫命名比较特别。  
+先把文件名改得更清楚一点，再重新跑一次。
+
+### 4. 我只想整理，不想下载海报
+
+可以加：
 
 ```bash
-# 复制示例脚本
-cp scripts/upload.example.sh aria2-config/upload.sh
-
-# 编辑 upload.sh，填入你的 webhook_secret（与 config.yaml 保持一致）
-# META2CLOUD_WEBHOOK_SECRET="your_webhook_secret_here"
+python pipeline.py --no-images
 ```
 
-> **注意**：`scripts/upload.example.sh` 基于 P3TERX 原版修改，在上传完成后额外调用了 `RUN_META2CLOUD` 函数触发整理流水线，其余逻辑与原版完全一致。
+### 5. 我只想试试看，不想真的移动文件
 
-**新增的关键函数（upload.sh）：**
-
-```bash
-RUN_META2CLOUD() {
-    local WEBHOOK_URL="http://localhost:38765/trigger"
-    local WEBHOOK_SECRET="${META2CLOUD_WEBHOOK_SECRET}"
-
-    # 仅在上传成功时触发
-    [[ "${UPLOAD_SUCCESS}" != "1" ]] && return 0
-
-    local CURL_ARGS=(-sf --max-time 10 -X POST "${WEBHOOK_URL}" \
-        -H "Content-Type: application/json" \
-        -d "{\"path\": \"${REMOTE_PATH}\"}")
-
-    # 有密钥时加入鉴权 header
-    [[ -n "${WEBHOOK_SECRET}" ]] && CURL_ARGS+=(-H "X-Webhook-Secret: ${WEBHOOK_SECRET}")
-
-    curl "${CURL_ARGS[@]}"
-}
-```
-
-上传失败时不会触发整理，避免处理不完整文件。
-
-### 一键启动全套服务
+加：
 
 ```bash
-docker compose up -d
-```
-
----
-
-## 本地开发
-
-### 后端
-
-```bash
-# 安装依赖
-pip install -r requirements.txt
-
-# 运行流水线（需已有 config/config.yaml 和认证文件）
 python pipeline.py --dry-run
-
-# 启动 Web UI 后端
-uvicorn webui.api:app --host 0.0.0.0 --port 38765 --reload
 ```
 
-### 前端
+---
 
-```bash
-cd frontend
+## 配置完整示例
 
-# 安装依赖
-npm install
+如果你已经跑起来了，想进一步细调，再看这段完整配置：
 
-# 开发模式（代理到 localhost:38765）
-npm run dev
+```yaml
+storage:
+  primary: "google_drive"   # 当前使用的网盘名字：google_drive / pan115
 
-# 构建生产包
-npm run build
-# 产物输出到 frontend/dist/，由后端静态托管
-```
+webui:
+  username: "admin"
+  password: ""
+  secret_key: ""
+  token_expire_hours: 24
+  webhook_secret: ""
 
-### 构建镜像
+tmdb:
+  api_key: ""
+  language: "zh-CN"
+  proxy: ""
+  timeout: 10
 
-```bash
-# 构建前端
-cd frontend && npm run build && cd ..
+parser:
+  custom_words:
+    # - "国语配音"
+    # - "OVA => SP"
+    # - "第 <> 集 >> EP-1"
+  custom_release_groups:
+    # - "MyFansub"
 
-# 构建 Docker 镜像
-docker build -t benz1/meta2cloud:latest .
+drive:
+  credentials_json: "config/credentials.json"
+  token_json: "config/token.json"
+  scan_folder_id: ""
+  root_folder_id: ""
+  movie_root_id: ""
+  tv_root_id: ""
+
+u115:
+  client_id: "100197847"
+  token_json: "config/115-token.json"
+  session_json: "config/115-device-session.json"
+  download_folder_id: ""
+  root_folder_id: ""
+  movie_root_id: ""
+  tv_root_id: ""
+
+pipeline:
+  skip_tmdb: false
+  move_on_tmdb_miss: false
+  dry_run: false
+
+aria2:
+  enabled: true
+  host: "127.0.0.1"
+  port: 6800
+  path: "/jsonrpc"
+  secret: ""
+  secure: false
+
+telegram:
+  bot_token: ""
+  chat_id: ""
+  debounce_seconds: 60
 ```
 
 ---
 
 ## 项目结构
 
-```
+```text
 Meta2Cloud/
-├─ pipeline.py              # 核心整理流水线
-├─ mediaparser/             # 文件名解析模块
-│  └─ config.py             # 配置类（含 WebAuthConfig）
-├─ drive/                   # Google Drive 客户端
-├─ webui/                   # Web UI 后端（FastAPI）
-│  ├─ api.py                # REST API + Webhook + 鉴权
-│  ├─ library_store.py      # SQLite 媒体库快照存储
-│  └─ tmdb_cache.py         # TMDB 响应 SQLite 缓存
-├─ frontend/                # Web UI 前端（React + Vite）
-│  └─ src/
-│     ├─ components/        # LoginPage / LibraryPage / ConfigPage 等
-│     └─ api.js             # 前端 API 封装
-├─ config/
-│  └─ config.example.yaml   # 配置文件模板（不含真实密钥）
+├─ pipeline.py
+├─ storage/
+│  ├─ base.py
+│  ├─ google_drive.py
+│  └─ pan115.py
+├─ mediaparser/
+├─ drive/
+├─ u115pan/
+├─ webui/
+├─ frontend/
 ├─ scripts/
-│  ├─ upload.example.sh     # Rclone 上传脚本示例（不含真实密钥）
-│  ├─ build.sh              # 镜像构建脚本
-│  ├─ backfill_nfo.py       # 补录 NFO 工具
-│  └─ fix_existing.py       # 修复已有文件命名工具
 ├─ config/
-│  └─ data/                 # 运行时数据（自动创建，不提交 git）
-│  ├─ library.db            # 媒体库快照
-│  ├─ tmdb_cache.db         # TMDB 缓存
-│  └─ .jwt_secret           # 自动生成的 JWT 密钥
 ├─ docker-compose.yml
 ├─ Dockerfile
 └─ requirements.txt
