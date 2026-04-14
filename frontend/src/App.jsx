@@ -348,6 +348,7 @@ export default function App() {
           ) : activeNav === 'scraper-search' ? (
             <ScraperSearch 
               onToast={addToast} 
+              aria2Enabled={aria2Enabled}
               initialSearchItem={initialSearchItem}
               onClearInitialSearchItem={() => setInitialSearchItem(null)}
               initialQuery={initialQuery}

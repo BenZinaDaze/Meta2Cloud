@@ -453,6 +453,22 @@ function ActionPanel({ uriInput, setUriInput, onSubmitUri, onTorrentChange, torr
   )
 }
 
+function PaginationBar({ pagination, onChange, busy = false }) {
+  if (!pagination || pagination.total_pages <= 1) return null
+
+  return (
+    <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+      <div className="text-xs" style={{ color: 'var(--color-muted)' }}>
+        第 {pagination.page} / {pagination.total_pages} 页，共 {pagination.total} 条
+      </div>
+      <div className="flex items-center gap-2">
+        <ToolButton onClick={() => onChange(pagination.page - 1)} disabled={busy || !pagination.has_prev}>上一页</ToolButton>
+        <ToolButton onClick={() => onChange(pagination.page + 1)} disabled={busy || !pagination.has_next}>下一页</ToolButton>
+      </div>
+    </div>
+  )
+}
+
 export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, initialOverview = null, aria2Enabled = true }) {
   const [overview, setOverview] = useState(initialOverview)
   const [uriInput, setUriInput] = useState('')
@@ -466,7 +482,16 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
   const [confirmRemoveGids, setConfirmRemoveGids] = useState(null)
   const [selectedGids, setSelectedGids] = useState(new Set())
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
+  const [page, setPage] = useState(1)
   const showDashboard = queue === 'all'
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery)
+    }, 250)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
 
   useEffect(() => {
     if (initialOverview) {
@@ -479,41 +504,18 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
     }
   }, [initialOverview, aria2Enabled])
 
-  function applyOptimisticTaskUpdate(gid, patch, targetBucket = null) {
+  function applyOptimisticTaskUpdate(gid, patch) {
     setOverview((prev) => {
-      if (!prev?.tasks) return prev
-      const buckets = ['active', 'waiting', 'stopped']
-      let movedTask = null
-      const nextTasks = {}
-
-      for (const bucket of buckets) {
-        const currentList = prev.tasks[bucket] || []
-        nextTasks[bucket] = currentList.filter((item) => {
-          if (item.gid !== gid) return true
-          movedTask = { ...item, ...patch }
-          return false
-        })
-      }
-
-      if (!movedTask) {
+      if (!prev?.items) return prev
+      if (!prev.items.some((item) => item.gid === gid)) {
         return prev
       }
 
-      const destination = targetBucket || buckets.find((bucket) =>
-        (prev.tasks[bucket] || []).some((item) => item.gid === gid)
-      ) || 'waiting'
-
-      nextTasks[destination] = [movedTask, ...(nextTasks[destination] || [])]
-
       return {
         ...prev,
-        summary: {
-          ...(prev.summary || {}),
-          activeCount: nextTasks.active.length,
-          waitingCount: nextTasks.waiting.length,
-          stoppedCount: nextTasks.stopped.length,
-        },
-        tasks: nextTasks,
+        items: prev.items.map((item) => (
+          item.gid === gid ? { ...item, ...patch } : item
+        )),
       }
     })
   }
@@ -521,7 +523,7 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
   async function loadAll(silent = false) {
     try {
       if (!silent) setLoading(true)
-      const overviewRes = await getAria2Overview()
+      const overviewRes = await getAria2Overview({ queue, page, page_size: 20, search: debouncedSearchQuery.trim() || undefined })
       setOverview(overviewRes.data)
       setError(null)
     } catch (e) {
@@ -545,7 +547,7 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
     async function poll(silent = false) {
       try {
         if (!silent) setLoading(true)
-        const overviewRes = await getAria2Overview()
+        const overviewRes = await getAria2Overview({ queue, page, page_size: 20, search: debouncedSearchQuery.trim() || undefined })
         if (cancelled) return
         setOverview(overviewRes.data)
         setError(null)
@@ -569,27 +571,13 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
       cancelled = true
       if (pollTimer.current) clearTimeout(pollTimer.current)
     }
-  }, [aria2Enabled])
+  }, [aria2Enabled, page, queue, debouncedSearchQuery])
 
-  const tasks = useMemo(() => {
-    if (!overview?.tasks) return []
-    let list = []
-    if (queue === 'active') list = overview.tasks.active
-    else if (queue === 'waiting') list = overview.tasks.waiting
-    else if (queue === 'stopped') list = overview.tasks.stopped
-    else list = [...overview.tasks.active, ...overview.tasks.waiting, ...overview.tasks.stopped]
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase()
-      list = list.filter(t => t.name?.toLowerCase().includes(q) || t.gid.toLowerCase().includes(q))
-    }
-    return list
-  }, [overview, queue, searchQuery])
+  const tasks = useMemo(() => overview?.items || [], [overview])
 
   useEffect(() => {
-    if (!selectedTask || !overview?.tasks) return
-    const latest = [...overview.tasks.active, ...overview.tasks.waiting, ...overview.tasks.stopped]
-      .find((item) => item.gid === selectedTask.gid)
+    if (!selectedTask || !overview?.items) return
+    const latest = overview.items.find((item) => item.gid === selectedTask.gid)
     if (latest) {
       setSelectedTask(latest)
     } else {
@@ -597,14 +585,24 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
     }
   }, [overview, selectedTask])
 
-  async function withAction(action, successMessage, gid = null, actionName = null, optimisticPatch = null, optimisticBucket = null) {
+  useEffect(() => {
+    setPage(1)
+    setSelectedGids(new Set())
+  }, [queue])
+
+  useEffect(() => {
+    setPage(1)
+    setSelectedGids(new Set())
+  }, [debouncedSearchQuery])
+
+  async function withAction(action, successMessage, gid = null, actionName = null, optimisticPatch = null) {
     try {
       setBusy(true)
       if (gid && actionName) {
         setPendingActions((prev) => ({ ...prev, [gid]: actionName }))
       }
       if (gid && optimisticPatch) {
-        applyOptimisticTaskUpdate(gid, optimisticPatch, optimisticBucket)
+        applyOptimisticTaskUpdate(gid, optimisticPatch)
       }
       await action()
       await loadAll(true)
@@ -697,9 +695,7 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
     if (hasSelection) {
       gids = selectedTasks.filter(t => t.status === 'active' || t.status === 'waiting').map(t => t.gid)
     } else {
-      const activeGids = overview?.tasks?.active?.map(t => t.gid) || []
-      const waitingGids = overview?.tasks?.waiting?.filter(t => t.status === 'waiting').map(t => t.gid) || []
-      gids = [...activeGids, ...waitingGids]
+      gids = tasks.filter(t => t.status === 'active' || t.status === 'waiting').map(t => t.gid)
     }
     if (!gids.length) return
     withAction(() => pauseAria2Tasks(gids), `已暂停 ${gids.length} 个任务`)
@@ -711,7 +707,7 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
     if (hasSelection) {
       gids = selectedTasks.filter(t => t.status === 'paused').map(t => t.gid)
     } else {
-      gids = overview?.tasks?.waiting?.filter(t => t.status === 'paused').map(t => t.gid) || []
+      gids = tasks.filter(t => t.status === 'paused').map(t => t.gid)
     }
     if (!gids.length) return
     withAction(() => unpauseAria2Tasks(gids), `已继续 ${gids.length} 个任务`)
@@ -761,11 +757,11 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
                 本页全选
               </label>
             ) : null}
-            {(!hasSelection && ['all', 'active'].includes(queue) && (overview?.tasks?.active?.length > 0 || overview?.tasks?.waiting?.some(t => t.status === 'waiting'))) || (hasSelection && canPauseSelected) ? (
-              <ToolButton onClick={handlePauseAction} disabled={busy}>{hasSelection ? '暂停选中' : '全部暂停'}</ToolButton>
+            {(!hasSelection && tasks.some(t => t.status === 'active' || t.status === 'waiting')) || (hasSelection && canPauseSelected) ? (
+              <ToolButton onClick={handlePauseAction} disabled={busy}>{hasSelection ? '暂停选中' : '暂停本页'}</ToolButton>
             ) : null}
-            {(!hasSelection && ['all', 'waiting'].includes(queue) && overview?.tasks?.waiting?.some(t => t.status === 'paused')) || (hasSelection && canResumeSelected) ? (
-              <ToolButton onClick={handleResumeAction} disabled={busy}>{hasSelection ? '继续选中' : '全部继续'}</ToolButton>
+            {(!hasSelection && tasks.some(t => t.status === 'paused')) || (hasSelection && canResumeSelected) ? (
+              <ToolButton onClick={handleResumeAction} disabled={busy}>{hasSelection ? '继续选中' : '继续本页'}</ToolButton>
             ) : null}
             {hasSelection ? (
               <ToolButton danger onClick={handleRemoveSelected} disabled={busy}>删除选中</ToolButton>
@@ -789,10 +785,10 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
 
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap gap-2">
-            <QueueTab active={queue === 'all'} label="全部" count={(overview?.tasks?.active?.length || 0) + (overview?.tasks?.waiting?.length || 0) + (overview?.tasks?.stopped?.length || 0)} onClick={() => onChangeQueue?.('all')} />
-            <QueueTab active={queue === 'active'} label="下载中" count={overview?.tasks?.active?.length || 0} onClick={() => onChangeQueue?.('active')} />
-            <QueueTab active={queue === 'waiting'} label="等待中" count={overview?.tasks?.waiting?.length || 0} onClick={() => onChangeQueue?.('waiting')} />
-            <QueueTab active={queue === 'stopped'} label="已停止" count={overview?.tasks?.stopped?.length || 0} onClick={() => onChangeQueue?.('stopped')} />
+            <QueueTab active={queue === 'all'} label="全部" count={(summary?.activeCount || 0) + (summary?.waitingCount || 0) + (summary?.stoppedCount || 0)} onClick={() => onChangeQueue?.('all')} />
+            <QueueTab active={queue === 'active'} label="下载中" count={summary?.activeCount || 0} onClick={() => onChangeQueue?.('active')} />
+            <QueueTab active={queue === 'waiting'} label="等待中" count={summary?.waitingCount || 0} onClick={() => onChangeQueue?.('waiting')} />
+            <QueueTab active={queue === 'stopped'} label="已停止" count={summary?.stoppedCount || 0} onClick={() => onChangeQueue?.('stopped')} />
           </div>
           
           <div className="w-full flex-1 sm:max-w-xs">
@@ -857,8 +853,8 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
                   onToggleSelect={handleToggleSelect}
                   onOpen={setSelectedTask}
                   pendingAction={pendingActions[task.gid]}
-                  onPause={(gid) => withAction(() => pauseAria2Tasks([gid]), '任务已暂停', gid, 'pause', { status: 'paused' }, 'waiting')}
-                  onResume={(gid) => withAction(() => unpauseAria2Tasks([gid]), '任务已继续', gid, 'resume', { status: 'active' }, 'active')}
+                  onPause={(gid) => withAction(() => pauseAria2Tasks([gid]), '任务已暂停', gid, 'pause', { status: 'paused' })}
+                  onResume={(gid) => withAction(() => unpauseAria2Tasks([gid]), '任务已继续', gid, 'resume', { status: 'active' })}
                   onRemove={handleRemoveTask}
                   onRetry={(gid) => withAction(() => retryAria2Tasks([gid]), '任务已重新加入队列', gid, 'retry')}
                 />
@@ -866,14 +862,23 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
             )}
           </div>
         )}
+
+        <PaginationBar
+          pagination={overview?.pagination}
+          busy={busy}
+          onChange={(nextPage) => {
+            setSelectedGids(new Set())
+            setPage(nextPage)
+          }}
+        />
       </section>
 
       <TaskDetailModal
         task={selectedTask}
         onClose={() => setSelectedTask(null)}
         pendingAction={selectedTask ? pendingActions[selectedTask.gid] : null}
-        onPause={(gid) => withAction(() => pauseAria2Tasks([gid]), '任务已暂停', gid, 'pause', { status: 'paused' }, 'waiting')}
-        onResume={(gid) => withAction(() => unpauseAria2Tasks([gid]), '任务已继续', gid, 'resume', { status: 'active' }, 'active')}
+        onPause={(gid) => withAction(() => pauseAria2Tasks([gid]), '任务已暂停', gid, 'pause', { status: 'paused' })}
+        onResume={(gid) => withAction(() => unpauseAria2Tasks([gid]), '任务已继续', gid, 'resume', { status: 'active' })}
         onRemove={handleRemoveTask}
         onRetry={(gid) => withAction(() => retryAria2Tasks([gid]), '任务已重新加入队列', gid, 'retry')}
         onParseFile={setParseTestFile}

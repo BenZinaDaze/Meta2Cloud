@@ -131,8 +131,27 @@ drive:
   # 示例：https://drive.google.com/drive/folders/1AbCdEfGhIjKlMn → ID = 1AbCdEfGhIjKlMn
   scan_folder_id: ""
 
+  # 媒体库根目录 ID（必填，Google Drive 文件夹 ID）
+  # 例：https://drive.google.com/drive/folders/1AbCdEfGhIjKlMn → 1AbCdEfGhIjKlMn
+  root_folder_id: ""
+
+  # 电影专用目录 ID（可选）
+  # 留空则使用 root_folder_id
+  # 用途：将电影和剧集分别放到不同的顶层文件夹
+  # 例：电影文件夹 ID
+  movie_root_id: ""
+
+  # 剧集专用目录 ID（可选）
+  # 留空则使用 root_folder_id
+  # 例：剧集文件夹 ID
+  tv_root_id: ""
+
+  # 目录结构说明（与 Plex / Infuse 默认格式一致）：
+  #   电影：{root}/片名 (年份)/
+  #   剧集：{root}/剧名 (年份)/Season N/
+
 # ─────────────────────────────────────────────────────────
-# 115 开放平台设置
+# 115 网盘设置
 # ─────────────────────────────────────────────────────────
 u115:
   # 115 开放平台 client_id
@@ -144,28 +163,21 @@ u115:
   # 115 扫码授权会话缓存路径
   session_json: "config/115-device-session.json"
 
-# ─────────────────────────────────────────────────────────
-# 整理器设置（MediaOrganizer）
-# ─────────────────────────────────────────────────────────
-organizer:
-  # 整理目标根文件夹 ID（必填，Drive 文件夹 ID）
-  # 例：https://drive.google.com/drive/folders/1AbCdEfGhIjKlMn → 1AbCdEfGhIjKlMn
+  # 115 云下载目录 ID（可选）
+  # 用于保存离线下载任务产物
+  download_folder_id: ""
+
+  # 115 媒体库根目录 ID（可选）
+  # 用于后续区分 115 与 Google Drive 的媒体库存储位置
   root_folder_id: ""
 
-  # 电影专用子目录 ID（可选）
+  # 115 电影专用目录 ID（可选）
   # 留空则使用 root_folder_id
-  # 用途：将电影和剧集分别放到不同的顶层文件夹
-  # 例：电影文件夹 ID
   movie_root_id: ""
 
-  # 剧集专用子目录 ID（可选）
+  # 115 剧集专用目录 ID（可选）
   # 留空则使用 root_folder_id
-  # 例：剧集文件夹 ID
   tv_root_id: ""
-
-  # 目录结构说明（与 Plex / Infuse 默认格式一致）：
-  #   电影：{root}/片名 (年份)/
-  #   剧集：{root}/剧名 (年份)/Season N/
 
 # ─────────────────────────────────────────────────────────
 # 流水线设置（pipeline.py）
@@ -196,7 +208,7 @@ telegram:
   # https://api.telegram.org/bot<Token>/getUpdates
   # 找 "chat": {"id": ...}
   chat_id: ""
-  
+
   # 防抖延时（秒）：server.py 收到 /trigger 后等待该时间才真正运行 Pipeline
   # 等待期间若再次收到触发，计时器重置（相当于"最后一次触发后再等 N 秒"）
   # 作用：批量入库时多集合并成一条 TG 通知，而不是每集发一次

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { searchMedia, getEpisodes, addAria2Uri, tmdbGetAlternativeNames } from '../api'
+import { searchMedia, getEpisodes, addAria2Uri, addU115OfflineUrls, getU115OauthStatus, tmdbGetAlternativeNames } from '../api'
 import _resultsCache, { clearResultsCache } from '../utils/resultsCache'
 export { clearResultsCache }
 
-export default function ScraperResultsView({ item, onBack, onToast }) {
+export default function ScraperResultsView({ item, onBack, onToast, aria2Enabled = false }) {
   const searchKey = item.title || item.original_title || item.name
 
   const [searchState, setSearchState] = useState(() => _resultsCache[searchKey]?.searchState ?? 'idle')
@@ -15,6 +15,7 @@ export default function ScraperResultsView({ item, onBack, onToast }) {
   const [usedSearchKey, setUsedSearchKey] = useState(null)  // 实际命中的搜索词（如使用了别名则不为 null）
   const [currentSearchKey, setCurrentSearchKey] = useState(null)  // 当前正在尝试的搜索词
   const [activeMediaTitle, setActiveMediaTitle] = useState(null)
+  const [u115Authorized, setU115Authorized] = useState(false)
   const scrollRef = useRef(null)
 
   const MIKAN_BASE = 'https://mikan.tangbai.cc'
@@ -29,6 +30,26 @@ export default function ScraperResultsView({ item, onBack, onToast }) {
       startSearch()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    getU115OauthStatus()
+      .then((res) => {
+        if (!cancelled) {
+          setU115Authorized(!!res?.data?.authorized)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setU115Authorized(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   /**
@@ -221,7 +242,7 @@ export default function ScraperResultsView({ item, onBack, onToast }) {
     }
   }
 
-  const handleDownload = async (ep) => {
+  const handlePushAria2 = async (ep) => {
     const url = ep.magnet_url || ep.torrent_url
     if (!url) {
       onToast?.('warning', '无效下载链接', '该资源缺少真实下载地址')
@@ -232,6 +253,20 @@ export default function ScraperResultsView({ item, onBack, onToast }) {
       onToast?.('success', '已推送到下载器', ep.title)
     } catch (e) {
       onToast?.('error', '下载失败', e.message)
+    }
+  }
+
+  const handlePushU115 = async (ep) => {
+    const url = ep.magnet_url || ep.torrent_url
+    if (!url) {
+      onToast?.('warning', '无效下载链接', '该资源缺少真实下载地址')
+      return
+    }
+    try {
+      await addU115OfflineUrls({ urls: url })
+      onToast?.('success', '已推送到云下载', ep.title)
+    } catch (e) {
+      onToast?.('error', '云下载失败', e?.response?.data?.detail || e.message)
     }
   }
 
@@ -447,9 +482,34 @@ export default function ScraperResultsView({ item, onBack, onToast }) {
                                                     {ep.publish_time && <span className="rounded bg-white/10 text-white/60 px-2 py-0.5">{ep.publish_time}</span>}
                                                   </div>
                                                 </div>
-                                                <div className="flex md:flex-col items-center justify-end gap-2 shrink-0">
-                                                  <button onClick={() => handleDownload(ep)} className="px-5 py-2 md:py-1.5 bg-[linear-gradient(135deg,#e3b778,#c8924d)] rounded-xl text-[#0A1320] font-bold text-sm w-full md:w-auto hover:opacity-90 transition-opacity">推送下载</button>
-                                                  <button onClick={() => handleCopy(ep)} className="px-5 py-2 md:py-1.5 bg-white/10 rounded-xl text-white font-bold text-sm w-full md:w-auto hover:bg-white/20 transition-colors">复制链接</button>
+                                                <div className="flex flex-wrap items-center justify-end gap-2 shrink-0 md:max-w-[320px] md:flex-nowrap">
+                                                  {aria2Enabled ? (
+                                                    <button
+                                                      onClick={() => handlePushAria2(ep)}
+                                                      className="h-10 px-5 bg-[linear-gradient(135deg,#e3b778,#c8924d)] rounded-xl text-[#0A1320] font-bold text-sm w-full md:w-[132px] hover:opacity-90 transition-opacity"
+                                                    >
+                                                      推送下载
+                                                    </button>
+                                                  ) : null}
+                                                  {u115Authorized ? (
+                                                    <button
+                                                      onClick={() => handlePushU115(ep)}
+                                                      className="h-10 px-5 bg-[linear-gradient(135deg,#e3b778,#c8924d)] rounded-xl text-[#0A1320] font-bold text-sm w-full md:w-[132px] hover:opacity-90 transition-opacity"
+                                                    >
+                                                      推送云下载
+                                                    </button>
+                                                  ) : null}
+                                                  <button
+                                                    onClick={() => handleCopy(ep)}
+                                                    className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-white transition-colors hover:bg-white/20 shrink-0"
+                                                    title="复制链接"
+                                                    aria-label="复制链接"
+                                                  >
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                                                    </svg>
+                                                  </button>
                                                 </div>
                                               </div>
                                             ))}

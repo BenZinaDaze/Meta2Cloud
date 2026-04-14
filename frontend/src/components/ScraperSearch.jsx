@@ -9,7 +9,7 @@ let _cachedQuery = ''
 let _cachedResults = []
 let _cachedSearchModeItem = null
 
-export default function ScraperSearch({ onToast, initialSearchItem, onClearInitialSearchItem, initialQuery, onClearInitialQuery }) {
+export default function ScraperSearch({ onToast, initialSearchItem, onClearInitialSearchItem, initialQuery, onClearInitialQuery, aria2Enabled = false }) {
   const [query, setQuery] = useState(_cachedQuery)
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState(_cachedResults)
@@ -79,7 +79,8 @@ export default function ScraperSearch({ onToast, initialSearchItem, onClearIniti
               setSelectedMedia(searchModeItem)
               setSearchModeItem(null)
             }} 
-            onToast={onToast} 
+            onToast={onToast}
+            aria2Enabled={aria2Enabled}
           />
         </section>
       </div>

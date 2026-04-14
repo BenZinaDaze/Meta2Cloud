@@ -69,6 +69,9 @@ class DriveConfig:
     credentials_json: str = "config/credentials.json"
     token_json: str = "config/token.json"
     scan_folder_id: str = ""
+    root_folder_id: str = ""
+    movie_root_id: str = ""
+    tv_root_id: str = ""
 
     @classmethod
     def from_dict(cls, d: dict) -> "DriveConfig":
@@ -76,6 +79,9 @@ class DriveConfig:
             credentials_json=str(d.get("credentials_json") or "config/credentials.json"),
             token_json=str(d.get("token_json") or "config/token.json"),
             scan_folder_id=str(d.get("scan_folder_id") or ""),
+            root_folder_id=str(d.get("root_folder_id") or ""),
+            movie_root_id=str(d.get("movie_root_id") or ""),
+            tv_root_id=str(d.get("tv_root_id") or ""),
         )
 
 
@@ -84,6 +90,10 @@ class U115Config:
     client_id: str = "100197847"
     token_json: str = "config/115-token.json"
     session_json: str = "config/115-device-session.json"
+    download_folder_id: str = ""
+    root_folder_id: str = ""
+    movie_root_id: str = ""
+    tv_root_id: str = ""
 
     @classmethod
     def from_dict(cls, d: dict) -> "U115Config":
@@ -91,18 +101,7 @@ class U115Config:
             client_id=str(d.get("client_id") or "100197847"),
             token_json=str(d.get("token_json") or "config/115-token.json"),
             session_json=str(d.get("session_json") or "config/115-device-session.json"),
-        )
-
-
-@dataclass
-class OrganizerConfig:
-    root_folder_id: str = ""
-    movie_root_id: str = ""
-    tv_root_id: str = ""
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "OrganizerConfig":
-        return cls(
+            download_folder_id=str(d.get("download_folder_id") or ""),
             root_folder_id=str(d.get("root_folder_id") or ""),
             movie_root_id=str(d.get("movie_root_id") or ""),
             tv_root_id=str(d.get("tv_root_id") or ""),
@@ -187,7 +186,6 @@ class Config:
     parser: ParserConfig = field(default_factory=ParserConfig)
     drive: DriveConfig = field(default_factory=DriveConfig)
     u115: U115Config = field(default_factory=U115Config)
-    organizer: OrganizerConfig = field(default_factory=OrganizerConfig)
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     webui: WebUIConfig = field(default_factory=WebUIConfig)
@@ -230,7 +228,6 @@ class Config:
             parser=ParserConfig.from_dict(d.get("parser") or {}),
             drive=DriveConfig.from_dict(d.get("drive") or {}),
             u115=U115Config.from_dict(d.get("u115") or {}),
-            organizer=OrganizerConfig.from_dict(d.get("organizer") or {}),
             pipeline=PipelineConfig.from_dict(d.get("pipeline") or {}),
             telegram=TelegramConfig.from_dict(d.get("telegram") or {}),
             webui=WebUIConfig.from_dict(d.get("webui") or {}),

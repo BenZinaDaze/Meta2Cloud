@@ -110,9 +110,9 @@ class Pipeline:
 
         self._organizer = MediaOrganizer(
             client=client,
-            root_folder_id=cfg.organizer.root_folder_id,
-            movie_root_id=cfg.organizer.movie_root_id or None,
-            tv_root_id=cfg.organizer.tv_root_id or None,
+            root_folder_id=cfg.drive.root_folder_id,
+            movie_root_id=cfg.drive.movie_root_id or None,
+            tv_root_id=cfg.drive.tv_root_id or None,
             dry_run=self._dry_run,
         )
 
@@ -192,8 +192,8 @@ class Pipeline:
         if not scan_folder:
             print("❌  配置错误：drive.scan_folder_id 未设置")
             sys.exit(1)
-        if not self._cfg.organizer.root_folder_id:
-            print("❌  配置错误：organizer.root_folder_id 未设置")
+        if not self._cfg.drive.root_folder_id:
+            print("❌  配置错误：drive.root_folder_id 未设置")
             sys.exit(1)
 
         print("=" * 68)

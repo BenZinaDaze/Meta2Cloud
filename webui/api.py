@@ -633,52 +633,226 @@ def _aria2_normalize_task(task: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _aria2_fetch_task_lists() -> Dict[str, List[Dict[str, Any]]]:
-    active = _aria2_rpc_call("tellActive", [_ARIA2_TASK_KEYS]) or []
-    waiting = _aria2_rpc_call("tellWaiting", [0, 1000, _ARIA2_TASK_KEYS]) or []
-    stopped = _aria2_rpc_call("tellStopped", [0, 1000, _ARIA2_TASK_KEYS]) or []
-    
+def _pagination_payload(*, page: int, page_size: int, total: int) -> Dict[str, Any]:
+    total_pages = max((total + page_size - 1) // page_size, 1)
+    page = max(1, min(page, total_pages))
+    return {
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": total_pages,
+        "has_prev": page > 1,
+        "has_next": page < total_pages,
+    }
+
+
+def _aria2_flush_metadata_results(gids: List[str]) -> None:
+    if not gids:
+        return
+    try:
+        for gid in gids:
+            _aria2_rpc_call("removeDownloadResult", [gid])
+        logger.info("自动清理了 %d 个已完成的 [METADATA] 或 .torrent 任务", len(gids))
+        _app_log(
+            "download",
+            "metadata_purged",
+            f"已自动从队列中横扫清理并移除了 {len(gids)} 个已完成的种子/元数据任务",
+            level="INFO",
+            details={"count": len(gids), "gids": gids},
+        )
+    except Exception as e:
+        logger.warning("自动清理种子/元数据任务失败：%s", e)
+        _app_log(
+            "download",
+            "metadata_purge_failed",
+            f"尝试清理已完成的种子/元数据任务失败: {e}",
+            level="WARNING",
+            details={"error": str(e)},
+        )
+
+
+def _aria2_normalize_stopped(tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     normalized_stopped = []
     metadata_gids_to_remove = []
-    
-    for t in stopped:
-        norm_t = _aria2_normalize_task(t)
-        name = norm_t.get("name", "")
-        if norm_t.get("status") == "complete" and (
+    for task in tasks:
+        norm_task = _aria2_normalize_task(task)
+        name = norm_task.get("name", "")
+        if norm_task.get("status") == "complete" and (
             "[METADATA]" in name or bool(re.match(r"^[0-9a-fA-F]{40}\.torrent$", name))
         ):
-            metadata_gids_to_remove.append(norm_t["gid"])
-        else:
-            normalized_stopped.append(norm_t)
-            
-    if metadata_gids_to_remove:
-        try:
-            for gid in metadata_gids_to_remove:
-                _aria2_rpc_call("removeDownloadResult", [gid])
-            logger.info("自动清理了 %d 个已完成的 [METADATA] 或 .torrent 任务", len(metadata_gids_to_remove))
-            _app_log(
-                "download",
-                "metadata_purged",
-                f"已自动从队列中横扫清理并移除了 {len(metadata_gids_to_remove)} 个已完成的种子/元数据任务",
-                level="INFO",
-                details={"count": len(metadata_gids_to_remove), "gids": metadata_gids_to_remove}
-            )
-        except Exception as e:
-            logger.warning("自动清理种子/元数据任务失败：%s", e)
-            _app_log(
-                "download",
-                "metadata_purge_failed",
-                f"尝试清理已完成的种子/元数据任务失败: {e}",
-                level="WARNING",
-                details={"error": str(e)}
-            )
+            metadata_gids_to_remove.append(norm_task["gid"])
+            continue
+        normalized_stopped.append(norm_task)
+    _aria2_flush_metadata_results(metadata_gids_to_remove)
+    return normalized_stopped
 
-    # 翻转 active 和 waiting 列表，使得新添加的任务出现在前端顶部（aria2 默认加在尾部）
-    # stopped 列表 aria2 原生就是按“最近停止”逆序的，所以保持原状即可
+
+def _aria2_fetch_waiting_slice(start: int, count: int, total: int) -> List[Dict[str, Any]]:
+    if count <= 0 or start >= total:
+        return []
+    raw_offset = max(total - (start + count), 0)
+    raw_limit = min(count, total - start)
+    waiting = _aria2_rpc_call("tellWaiting", [raw_offset, raw_limit, _ARIA2_TASK_KEYS]) or []
+    return [_aria2_normalize_task(task) for task in waiting][::-1]
+
+
+def _aria2_fetch_stopped_slice(start: int, count: int) -> List[Dict[str, Any]]:
+    if count <= 0:
+        return []
+    stopped = _aria2_rpc_call("tellStopped", [start, count, _ARIA2_TASK_KEYS]) or []
+    return _aria2_normalize_stopped(stopped)
+
+
+def _aria2_task_matches(task: Dict[str, Any], search: str) -> bool:
+    if not search:
+        return True
+    haystacks = [
+        task.get("gid") or "",
+        task.get("name") or "",
+        task.get("dir") or "",
+        task.get("errorMessage") or "",
+    ]
+    for file_item in task.get("files") or []:
+        haystacks.append(file_item.get("path") or "")
+        for uri in file_item.get("uris") or []:
+            haystacks.append(uri or "")
+    return any(search in str(value).lower() for value in haystacks if value)
+
+
+def _aria2_fetch_all_filtered(queue: str, search: str) -> Dict[str, Any]:
+    global_stat = _aria2_rpc_call("getGlobalStat") or {}
+    version = _aria2_rpc_call("getVersion") or {}
+    waiting_total = int(global_stat.get("numWaiting") or 0)
+    stopped_total = int(global_stat.get("numStopped") or 0)
+
+    active = [_aria2_normalize_task(task) for task in (_aria2_rpc_call("tellActive", [_ARIA2_TASK_KEYS]) or [])][::-1]
+    waiting = _aria2_fetch_waiting_slice(0, waiting_total, waiting_total)
+    stopped = _aria2_fetch_stopped_slice(0, stopped_total)
+
+    search = search.strip().lower()
+    filtered = {
+        "active": [task for task in active if _aria2_task_matches(task, search)],
+        "waiting": [task for task in waiting if _aria2_task_matches(task, search)],
+        "stopped": [task for task in stopped if _aria2_task_matches(task, search)],
+    }
+
+    if queue == "active":
+        items = filtered["active"]
+    elif queue == "waiting":
+        items = filtered["waiting"]
+    elif queue == "stopped":
+        items = filtered["stopped"]
+    else:
+        items = filtered["active"] + filtered["waiting"] + filtered["stopped"]
+
     return {
-        "active": [_aria2_normalize_task(t) for t in active][::-1],
-        "waiting": [_aria2_normalize_task(t) for t in waiting][::-1],
-        "stopped": normalized_stopped,
+        "summary": {
+            "activeCount": len(filtered["active"]),
+            "waitingCount": len(filtered["waiting"]),
+            "stoppedCount": len(filtered["stopped"]),
+            "downloadSpeed": int(global_stat.get("downloadSpeed") or 0),
+            "uploadSpeed": int(global_stat.get("uploadSpeed") or 0),
+            "numActive": int(global_stat.get("numActive") or 0),
+            "numWaiting": waiting_total,
+            "numStopped": stopped_total,
+        },
+        "items": items,
+        "version": {
+            "version": version.get("version") or "",
+            "enabledFeatures": version.get("enabledFeatures") or [],
+        },
+    }
+
+
+def _aria2_fetch_queue_items(queue: str, page: int, page_size: int, search: str = "") -> Dict[str, Any]:
+    global_stat = _aria2_rpc_call("getGlobalStat") or {}
+    version = _aria2_rpc_call("getVersion") or {}
+
+    active = [_aria2_normalize_task(task) for task in (_aria2_rpc_call("tellActive", [_ARIA2_TASK_KEYS]) or [])][::-1]
+    active_count = len(active)
+    waiting_count = int(global_stat.get("numWaiting") or 0)
+    stopped_count = int(global_stat.get("numStopped") or 0)
+
+    queue = queue if queue in {"all", "active", "waiting", "stopped"} else "all"
+    search = search.strip()
+    if search:
+        filtered_payload = _aria2_fetch_all_filtered(queue, search)
+        pagination = _pagination_payload(page=page, page_size=page_size, total=len(filtered_payload["items"]))
+        offset = (pagination["page"] - 1) * page_size
+        return {
+            "summary": filtered_payload["summary"],
+            "items": filtered_payload["items"][offset: offset + page_size],
+            "pagination": {
+                **pagination,
+                "queue": queue,
+                "search": search,
+            },
+            "version": filtered_payload["version"],
+        }
+
+    if queue == "active":
+        total = active_count
+    elif queue == "waiting":
+        total = waiting_count
+    elif queue == "stopped":
+        total = stopped_count
+    else:
+        total = active_count + waiting_count + stopped_count
+
+    pagination = _pagination_payload(page=page, page_size=page_size, total=total)
+    offset = (pagination["page"] - 1) * page_size
+    items: List[Dict[str, Any]] = []
+
+    if queue == "active":
+        items = active[offset: offset + page_size]
+    elif queue == "waiting":
+        items = _aria2_fetch_waiting_slice(offset, page_size, waiting_count)
+    elif queue == "stopped":
+        items = _aria2_fetch_stopped_slice(offset, page_size)
+    else:
+        remaining = page_size
+        current_offset = offset
+
+        if current_offset < active_count and remaining > 0:
+            take = min(remaining, active_count - current_offset)
+            items.extend(active[current_offset: current_offset + take])
+            remaining -= take
+            current_offset = 0
+        else:
+            current_offset = max(current_offset - active_count, 0)
+
+        if remaining > 0:
+            if current_offset < waiting_count:
+                take = min(remaining, waiting_count - current_offset)
+                items.extend(_aria2_fetch_waiting_slice(current_offset, take, waiting_count))
+                remaining -= take
+                current_offset = 0
+            else:
+                current_offset = max(current_offset - waiting_count, 0)
+
+        if remaining > 0:
+            items.extend(_aria2_fetch_stopped_slice(current_offset, remaining))
+
+    return {
+        "summary": {
+            "activeCount": active_count,
+            "waitingCount": waiting_count,
+            "stoppedCount": stopped_count,
+            "downloadSpeed": int(global_stat.get("downloadSpeed") or 0),
+            "uploadSpeed": int(global_stat.get("uploadSpeed") or 0),
+            "numActive": int(global_stat.get("numActive") or 0),
+            "numWaiting": waiting_count,
+            "numStopped": stopped_count,
+        },
+        "items": items,
+        "pagination": {
+            **pagination,
+            "queue": queue,
+        },
+        "version": {
+            "version": version.get("version") or "",
+            "enabledFeatures": version.get("enabledFeatures") or [],
+        },
     }
 
 
@@ -846,7 +1020,7 @@ def _read_drive_file_content(client: DriveClient, file_id: str) -> Optional[str]
 
 def scan_movies(client: DriveClient, cfg: Config) -> List[MediaItem]:
     """扫描电影目录，返回电影列表"""
-    movie_root = cfg.organizer.movie_root_id or cfg.organizer.root_folder_id
+    movie_root = cfg.drive.movie_root_id or cfg.drive.root_folder_id
     if not movie_root:
         return []
 
@@ -913,7 +1087,7 @@ def scan_movies(client: DriveClient, cfg: Config) -> List[MediaItem]:
 
 def scan_tv_shows(client: DriveClient, cfg: Config) -> List[MediaItem]:
     """扫描剧集目录，返回剧集列表（含季集入库状态）"""
-    tv_root = cfg.organizer.tv_root_id or cfg.organizer.root_folder_id
+    tv_root = cfg.drive.tv_root_id or cfg.drive.root_folder_id
     if not tv_root:
         return []
 
@@ -2200,20 +2374,29 @@ def _u115_test_connection_sync():
 
 
 @app.get("/api/u115/offline/overview")
-async def u115_offline_overview():
-    return await run_in_threadpool(_u115_offline_overview_sync)
+async def u115_offline_overview(
+    page: int = Query(1, ge=1),
+):
+    return await run_in_threadpool(_u115_offline_overview_sync, page)
 
 
-def _u115_offline_overview_sync():
+def _u115_offline_overview_sync(page: int):
     try:
         offline = _u115_offline_client()
         quota = offline.get_quota_info()
-        tasks = offline.get_all_tasks()
-        tasks.sort(key=lambda item: ((item.last_update or item.add_time or 0), item.add_time or 0), reverse=True)
+        task_page = offline.get_task_list(page=page)
         return {
             "ok": True,
             "quota": _serialize_u115_offline_quota(quota),
-            "tasks": [_serialize_u115_offline_task(task) for task in tasks],
+            "tasks": [_serialize_u115_offline_task(task) for task in task_page.tasks],
+            "pagination": {
+                "page": task_page.page,
+                "page_size": len(task_page.tasks),
+                "total": task_page.count,
+                "total_pages": max(task_page.page_count, 1),
+                "has_prev": task_page.page > 1,
+                "has_next": task_page.page < max(task_page.page_count, 1),
+            },
         }
     except Exception as exc:
         logger.exception("115 云下载概览获取失败")
@@ -2232,11 +2415,18 @@ def _u115_offline_add_urls_sync(body: U115OfflineAddUrlsBody):
 
     try:
         offline = _u115_offline_client()
-        results = offline.add_task_urls(url_lines, wp_path_id=body.wp_path_id or None)
+        cfg = get_config().u115
+        target_path_id = (
+            (body.wp_path_id.strip() if body.wp_path_id else "")
+            or (cfg.download_folder_id.strip() if cfg.download_folder_id else "")
+            or None
+        )
+        results = offline.add_task_urls(url_lines, wp_path_id=target_path_id)
         return {
             "ok": True,
             "count": len(results),
             "results": [asdict(item) for item in results],
+            "wp_path_id": target_path_id,
         }
     except Exception as exc:
         logger.exception("115 云下载添加链接失败")
@@ -2296,33 +2486,13 @@ def _logs_payload(limit: int, category: Optional[str], level: Optional[str]):
 
 
 @app.get("/api/aria2/overview")
-async def aria2_overview():
-    tasks, global_stat, version = await run_in_threadpool(_aria2_overview_payload)
-
-    return {
-        "summary": {
-            "activeCount": len(tasks["active"]),
-            "waitingCount": len(tasks["waiting"]),
-            "stoppedCount": len(tasks["stopped"]),
-            "downloadSpeed": int(global_stat.get("downloadSpeed") or 0),
-            "uploadSpeed": int(global_stat.get("uploadSpeed") or 0),
-            "numActive": int(global_stat.get("numActive") or 0),
-            "numWaiting": int(global_stat.get("numWaiting") or 0),
-            "numStopped": int(global_stat.get("numStopped") or 0),
-        },
-        "tasks": tasks,
-        "version": {
-            "version": version.get("version") or "",
-            "enabledFeatures": version.get("enabledFeatures") or [],
-        },
-    }
-
-
-def _aria2_overview_payload():
-    tasks = _aria2_fetch_task_lists()
-    global_stat = _aria2_rpc_call("getGlobalStat") or {}
-    version = _aria2_rpc_call("getVersion") or {}
-    return tasks, global_stat, version
+async def aria2_overview(
+    queue: str = Query("all"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
+    search: str = Query(""),
+):
+    return await run_in_threadpool(_aria2_fetch_queue_items, queue, page, page_size, search)
 
 
 @app.get("/api/aria2/options")

@@ -192,9 +192,9 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
 
   const isLibraryExpanded = libraryExpanded || active === 'movies' || active === 'tv'
   const isDownloadsExpanded = downloadsExpanded || ['downloads-active', 'downloads-waiting', 'downloads-stopped'].includes(active)
-  const activeCount = aria2Overview?.tasks?.active?.length ?? 0
-  const waitingCount = aria2Overview?.tasks?.waiting?.length ?? 0
-  const stoppedCount = aria2Overview?.tasks?.stopped?.length ?? 0
+  const activeCount = aria2Overview?.summary?.activeCount ?? 0
+  const waitingCount = aria2Overview?.summary?.waitingCount ?? 0
+  const stoppedCount = aria2Overview?.summary?.stoppedCount ?? 0
   const totalDownloadCount = activeCount + waitingCount + stoppedCount
   const aria2Connected = !!aria2Overview
   const connectionState = {

@@ -15,10 +15,12 @@ import {
 function normalizeConfig(data) {
   const next = structuredClone(data || {})
   const aria2 = { ...(next.aria2 || {}) }
+
   if (aria2.enabled === undefined) {
     aria2.enabled = aria2.auto_connect !== false
   }
   delete aria2.auto_connect
+
   next.aria2 = aria2
   return next
 }
@@ -746,23 +748,6 @@ export default function ConfigPage({ onAria2EnabledChange = null }) {
             </FieldRow>
           </Section>
 
-          {/* ── TMDB ── */}
-          <Section title="TMDB 设置">
-            <FieldRow label="API Key" description="TMDB v3 API Key，必填">
-              <TextInput value={cfg?.tmdb?.api_key} type="password"
-                onChange={v => set('tmdb', 'api_key', v)} placeholder="0ec3b170d4c..." mono />
-            </FieldRow>
-            <FieldRow label="返回语言" description="如 zh-CN、en-US、ja-JP">
-              <TextInput value={cfg?.tmdb?.language} onChange={v => set('tmdb', 'language', v)} placeholder="zh-CN" />
-            </FieldRow>
-            <FieldRow label="HTTP 代理" description="可选，如 http://127.0.0.1:7890">
-              <TextInput value={cfg?.tmdb?.proxy} onChange={v => set('tmdb', 'proxy', v)} placeholder="留空则不使用代理" mono />
-            </FieldRow>
-            <FieldRow label="请求超时（秒）">
-              <NumberInput value={cfg?.tmdb?.timeout} onChange={v => set('tmdb', 'timeout', v)} min={1} max={120} />
-            </FieldRow>
-          </Section>
-
           {/* ── Google Drive ── */}
           <Section title="Google Drive 设置">
             <FieldRow label="OAuth2 凭据路径" description="credentials.json 文件路径">
@@ -822,9 +807,18 @@ export default function ConfigPage({ onAria2EnabledChange = null }) {
             <FieldRow label="扫描目录 ID" description="Drive 目标文件夹 ID">
               <TextInput value={cfg?.drive?.scan_folder_id} onChange={v => set('drive', 'scan_folder_id', v)} placeholder="1AbCdEfGhIjKlMn..." mono />
             </FieldRow>
+            <FieldRow label="媒体库根目录 ID" description="Google Drive 媒体库顶层目录 ID，电影和剧集默认归档到这里">
+              <TextInput value={cfg?.drive?.root_folder_id} onChange={v => set('drive', 'root_folder_id', v)} placeholder="Google Drive 文件夹 ID" mono />
+            </FieldRow>
+            <FieldRow label="电影归档目录 ID" description="Google Drive 电影目录 ID，留空则直接使用媒体库根目录">
+              <TextInput value={cfg?.drive?.movie_root_id} onChange={v => set('drive', 'movie_root_id', v)} placeholder="留空同根目录" mono />
+            </FieldRow>
+            <FieldRow label="剧集归档目录 ID" description="Google Drive 剧集目录 ID，留空则直接使用媒体库根目录">
+              <TextInput value={cfg?.drive?.tv_root_id} onChange={v => set('drive', 'tv_root_id', v)} placeholder="留空同根目录" mono />
+            </FieldRow>
           </Section>
 
-          <Section title="115 开放平台设置">
+          <Section title="115 网盘设置">
             <FieldRow label="Client ID" description="115 开放平台应用 client_id">
               <TextInput value={cfg?.u115?.client_id} onChange={v => set('u115', 'client_id', v)} placeholder="100197847" mono />
             </FieldRow>
@@ -896,6 +890,50 @@ export default function ConfigPage({ onAria2EnabledChange = null }) {
                 )}
               </div>
             </FieldRow>
+            <FieldRow label="云下载目录 ID" description="115 离线下载默认保存目录 ID">
+              <TextInput value={cfg?.u115?.download_folder_id} onChange={v => set('u115', 'download_folder_id', v)} placeholder="115 云下载目录 ID" mono />
+            </FieldRow>
+            <FieldRow label="媒体库根目录 ID" description="115 媒体库顶层目录 ID，电影和剧集默认归档到这里">
+              <TextInput value={cfg?.u115?.root_folder_id} onChange={v => set('u115', 'root_folder_id', v)} placeholder="115 目录 ID" mono />
+            </FieldRow>
+            <FieldRow label="电影归档目录 ID" description="115 电影目录 ID，留空则直接使用媒体库根目录">
+              <TextInput value={cfg?.u115?.movie_root_id} onChange={v => set('u115', 'movie_root_id', v)} placeholder="留空同根目录" mono />
+            </FieldRow>
+            <FieldRow label="剧集归档目录 ID" description="115 剧集目录 ID，留空则直接使用媒体库根目录">
+              <TextInput value={cfg?.u115?.tv_root_id} onChange={v => set('u115', 'tv_root_id', v)} placeholder="留空同根目录" mono />
+            </FieldRow>
+          </Section>
+
+        </div>
+
+        {/* 右列 */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+          {/* ── TMDB ── */}
+          <Section title="TMDB 设置">
+            <FieldRow label="API Key" description="TMDB v3 API Key，必填">
+              <TextInput value={cfg?.tmdb?.api_key} type="password"
+                onChange={v => set('tmdb', 'api_key', v)} placeholder="0ec3b170d4c..." mono />
+            </FieldRow>
+            <FieldRow label="返回语言" description="如 zh-CN、en-US、ja-JP">
+              <TextInput value={cfg?.tmdb?.language} onChange={v => set('tmdb', 'language', v)} placeholder="zh-CN" />
+            </FieldRow>
+            <FieldRow label="HTTP 代理" description="可选，如 http://127.0.0.1:7890">
+              <TextInput value={cfg?.tmdb?.proxy} onChange={v => set('tmdb', 'proxy', v)} placeholder="留空则不使用代理" mono />
+            </FieldRow>
+            <FieldRow label="请求超时（秒）">
+              <NumberInput value={cfg?.tmdb?.timeout} onChange={v => set('tmdb', 'timeout', v)} min={1} max={120} />
+            </FieldRow>
+          </Section>
+
+          {/* ── 解析器 ── */}
+          <Section title="文件名识别规则">
+            <FieldRow label="自定义识别词" description="每条一条规则，支持 4 种格式">
+              <ListField value={cfg?.parser?.custom_words ?? []} onChange={v => set('parser', 'custom_words', v)} />
+              <CustomWordsHelp />
+            </FieldRow>
+            <FieldRow label="自定义字幕组" description="补充内置列表没有的字幕组名称">
+              <ListField value={cfg?.parser?.custom_release_groups ?? []} onChange={v => set('parser', 'custom_release_groups', v)} />
+            </FieldRow>
           </Section>
 
           {/* ── 扫描与整理 ── */}
@@ -908,33 +946,6 @@ export default function ConfigPage({ onAria2EnabledChange = null }) {
             </FieldRow>
             <FieldRow label="Dry Run 模式" description="只打印计划，不实际操作 Drive">
               <Toggle value={cfg?.pipeline?.dry_run} onChange={v => set('pipeline', 'dry_run', v)} />
-            </FieldRow>
-          </Section>
-        </div>
-
-        {/* 右列 */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-          {/* ── 解析器 ── */}
-          <Section title="文件名识别规则">
-            <FieldRow label="自定义识别词" description="每条一条规则，支持 4 种格式">
-              <ListField value={cfg?.parser?.custom_words ?? []} onChange={v => set('parser', 'custom_words', v)} />
-              <CustomWordsHelp />
-            </FieldRow>
-            <FieldRow label="自定义字幕组" description="补充内置列表没有的字幕组名称">
-              <ListField value={cfg?.parser?.custom_release_groups ?? []} onChange={v => set('parser', 'custom_release_groups', v)} />
-            </FieldRow>
-          </Section>
-
-          {/* ── 整理器 ── */}
-          <Section title="媒体库目录映射">
-            <FieldRow label="媒体库根目录 ID" description="电影和剧集默认归档到这个顶层文件夹">
-              <TextInput value={cfg?.organizer?.root_folder_id} onChange={v => set('organizer', 'root_folder_id', v)} placeholder="Drive 文件夹 ID" mono />
-            </FieldRow>
-            <FieldRow label="电影归档目录 ID" description="留空则直接使用资料馆根目录">
-              <TextInput value={cfg?.organizer?.movie_root_id} onChange={v => set('organizer', 'movie_root_id', v)} placeholder="留空同根目录" mono />
-            </FieldRow>
-            <FieldRow label="剧集归档目录 ID" description="留空则直接使用资料馆根目录">
-              <TextInput value={cfg?.organizer?.tv_root_id} onChange={v => set('organizer', 'tv_root_id', v)} placeholder="留空同根目录" mono />
             </FieldRow>
           </Section>
 

@@ -93,8 +93,6 @@ tmdb:
 
 drive:
   scan_folder_id: "Drive_扫描文件夹_ID"  # 新文件上传到这里
-
-organizer:
   root_folder_id: "Drive_整理目标根文件夹_ID"
   movie_root_id:  "电影专用文件夹_ID"   # 可选，留空用 root_folder_id
   tv_root_id:     "剧集专用文件夹_ID"   # 可选，留空用 root_folder_id
@@ -189,12 +187,19 @@ drive:
   credentials_json: "config/credentials.json"
   token_json: "config/token.json"
   scan_folder_id: ""                # 扫描的源文件夹 ID（必填）
+  root_folder_id: ""                # 整理目标根文件夹 ID（必填）
+  movie_root_id: ""                 # 电影专用目录 ID（可选）
+  tv_root_id: ""                    # 剧集专用目录 ID（可选）
 
-# ── 整理器 ─────────────────────────────────────────
-organizer:
-  root_folder_id: ""   # 整理目标根文件夹 ID（必填）
-  movie_root_id:  ""   # 电影专用子目录 ID（可选）
-  tv_root_id:     ""   # 剧集专用子目录 ID（可选）
+# ── 115 网盘 ────────────────────────────────────────
+u115:
+  client_id: "100197847"                    # 115 开放平台 client_id
+  token_json: "config/115-token.json"       # 115 access_token / refresh_token 缓存路径
+  session_json: "config/115-device-session.json"  # 115 扫码授权会话缓存路径
+  download_folder_id: ""                    # 115 云下载目录 ID（可选）
+  root_folder_id: ""                        # 115 媒体库根目录 ID（可选）
+  movie_root_id: ""                         # 115 电影专用目录 ID（可选）
+  tv_root_id: ""                            # 115 剧集专用目录 ID（可选）
 
 # ── 流水线 ─────────────────────────────────────────
 pipeline:

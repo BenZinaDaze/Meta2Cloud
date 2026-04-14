@@ -22,7 +22,7 @@ from mediaparser.types import MediaType
 from mediaparser.words import WordsMatcher
 from mediaparser.release_group import ReleaseGroupsMatcher
 from mediaparser.tmdb import TmdbClient
-from mediaparser.config import Config, DriveConfig, OrganizerConfig, PipelineConfig, Aria2Config
+from mediaparser.config import Config, DriveConfig, PipelineConfig, Aria2Config
 
 __all__ = [
     "MetaInfo",
@@ -34,7 +34,6 @@ __all__ = [
     "TmdbClient",
     "Config",
     "DriveConfig",
-    "OrganizerConfig",
     "PipelineConfig",
     "Aria2Config",
 ]
