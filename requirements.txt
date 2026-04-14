@@ -1,4 +1,4 @@
-# Metadata2GD 依赖
+# Meta2Cloud 依赖
 # 安装：pip install -r requirements.txt
 
 # ── Google Drive API ──────────────────────────────────
@@ -24,6 +24,7 @@ Pinyin2Hanzi>=0.1.1
 
 # HTTP 请求（TmdbClient 用到）
 requests>=2.31.0
+oss2>=2.18.0
 
 # YAML 配置文件支持（Config 用到）
 pyyaml>=6.0

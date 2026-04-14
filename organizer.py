@@ -3,7 +3,7 @@ organizer.py —— 媒体文件夹整理器
 
 功能：
   解析媒体文件名  →  生成标准目录路径
-  →  在 Google Drive 按需创建（幂等）文件夹
+  →  在云存储中按需创建（幂等）文件夹
 
 目录结构规范：
   电影：  {片名} ({年份})/
@@ -11,10 +11,10 @@ organizer.py —— 媒体文件夹整理器
 
 用法：
     from organizer import MediaOrganizer
-    from drive import DriveClient
+    from storage import get_provider
 
-    client = DriveClient.from_oauth("config/credentials.json", "config/token.json")
-    org = MediaOrganizer(client, root_folder_id="1AbCd...")
+    provider = get_provider("google_drive", cfg)
+    org = MediaOrganizer(provider, root_folder_id="1AbCd...")
 
     # 从文件名整理
     folder = org.ensure_folder_for("Breaking.Bad.S01E03.1080p.mkv")
@@ -22,14 +22,14 @@ organizer.py —— 媒体文件夹整理器
 
     # 只获取路径字符串（不操作 Drive）
     path = org.folder_path_for("Inception.2010.1080p.mkv")
-    print(path)     # "Inception (2010)"
+    print(path)     # \"Inception (2010)\"
 """
 
 import logging
 from pathlib import Path
 from typing import Optional, Union
 
-from drive.client import DriveClient, DriveFile
+from storage.base import StorageProvider, CloudFile
 from mediaparser import MetaInfo, MetaInfoPath, MediaType
 
 logger = logging.getLogger(__name__)
@@ -40,16 +40,16 @@ class MediaOrganizer:
     媒体文件夹整理器
 
     参数：
-        client        : DriveClient 实例
-        root_folder_id: Drive 根文件夹 ID（整理目标的顶层目录）
+        client        : StorageProvider 实例（任意网盘 Provider）
+        root_folder_id: 根文件夹 ID（整理目标的顶层目录）
         movie_root_id : 电影专用子目录 ID，None 则使用 root_folder_id
         tv_root_id    : 剧集专用子目录 ID，None 则使用 root_folder_id
-        dry_run       : True 时只计算路径，不实际创建 Drive 文件夹
+        dry_run       : True 时只计算路径，不实际创建文件夹
     """
 
     def __init__(
         self,
-        client: DriveClient,
+        client: StorageProvider,
         root_folder_id: str,
         movie_root_id: Optional[str] = None,
         tv_root_id: Optional[str] = None,
@@ -95,33 +95,33 @@ class MediaOrganizer:
         meta = MetaInfoPath(path)
         return self._build_path(meta)
 
-    def ensure_folder_for(self, name: str, isfile: bool = True) -> Optional[DriveFile]:
+    def ensure_folder_for(self, name: str, isfile: bool = True) -> Optional[CloudFile]:
         """
-        根据文件名在 Drive 中按需创建文件夹（幂等），返回叶子文件夹。
+        根据文件名在云存储中按需创建文件夹（幂等），返回叶子文件夹。
 
         参数：
             name   : 文件名（例如 "Breaking.Bad.S01E03.mkv"）
             isfile : 是否为文件名
 
-        返回：叶子文件夹的 DriveFile；解析失败或 dry_run 时返回 None
+        返回：叶子文件夹的 CloudFile；解析失败或 dry_run 时返回 None
         """
         meta = MetaInfo(name, isfile=isfile)
         return self._ensure_folders(meta, label=name)
 
-    def ensure_folder_for_meta(self, meta, label: str = "") -> Optional[DriveFile]:
+    def ensure_folder_for_meta(self, meta, label: str = "") -> Optional[CloudFile]:
         """
-        直接通过 MetaInfo 在 Drive 中按需创建文件夹（幂等），返回叶子文件夹。
+        直接通过 MetaInfo 在云存储中按需创建文件夹（幂等），返回叶子文件夹。
         """
         return self._ensure_folders(meta, label=label)
 
-    def ensure_folder_for_path(self, path: Union[str, Path]) -> Optional[DriveFile]:
+    def ensure_folder_for_path(self, path: Union[str, Path]) -> Optional[CloudFile]:
         """
-        根据文件路径（合并父目录信息）在 Drive 中按需创建文件夹（幂等）。
+        根据文件路径（合并父目录信息）在云存储中按需创建文件夹（幂等）。
 
         参数：
             path : 文件完整路径
 
-        返回：叶子文件夹的 DriveFile
+        返回：叶子文件夹的 CloudFile
         """
         meta = MetaInfoPath(path)
         return self._ensure_folders(meta, label=str(path))
@@ -147,8 +147,8 @@ class MediaOrganizer:
             # 电影或未知类型，只有一层
             return top
 
-    def _ensure_folders(self, meta, label: str = "") -> Optional[DriveFile]:
-        """在 Drive 中幂等创建目录链，返回叶子文件夹。"""
+    def _ensure_folders(self, meta, label: str = "") -> Optional[CloudFile]:
+        """在云存储中幂等创建目录链，返回叶子文件夹。"""
         if not meta or not meta.name:
             logger.warning(f"解析失败，跳过：{label!r}")
             return None
@@ -171,7 +171,7 @@ class MediaOrganizer:
         )
 
         if self._dry_run:
-            logger.info("dry_run=True，跳过 Drive 操作")
+            logger.info("dry_run=True，跳过云存储操作")
             return None
 
         # 第一层：片名/剧名 (年份)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-webui/api.py —— Metadata2GD 媒体库 Web UI 后端
+webui/api.py —— Meta2Cloud 媒体库 Web UI 后端
 
 提供以下 REST API:
   GET /api/library                - 获取完整媒体库（电影 + 电视剧）
@@ -58,6 +58,7 @@ sys.path.insert(0, _ROOT)
 
 from drive.client import DriveClient
 from drive.auth import SCOPES as DRIVE_SCOPES
+from storage.base import StorageProvider, CloudFile
 from mediaparser import Config, MetaInfo, MetaInfoPath, TmdbClient
 from mediaparser.release_group import ReleaseGroupsMatcher
 from nfo import NfoGenerator, ImageUploader
@@ -78,6 +79,7 @@ logger = logging.getLogger("webui")
 
 _cfg: Optional[Config] = None
 _client: Optional[DriveClient] = None
+_storage_provider: Optional[StorageProvider] = None
 _tmdb_cache: Optional[TmdbCache] = None
 TMDB_IMG_BASE = "https://image.tmdb.org/t/p/w500"
 TMDB_IMG_ORIG = "https://image.tmdb.org/t/p/original"
@@ -212,7 +214,7 @@ def send_telegram(token: str, chat_id: str, text: str) -> None:
 def _do_refresh_library() -> dict:
     """同步刷新快照核心逻辑，可在线程或协程中调用。"""
     _app_log("library", "refresh_scan_start", "开始刷新媒体库快照")
-    client   = get_drive_client()
+    client   = get_storage_provider()
     cfg      = get_config()
     movies   = scan_movies(client, cfg)
     tv_shows = scan_tv_shows(client, cfg)
@@ -296,7 +298,7 @@ def _do_run_pipeline() -> None:
                 details={"runId": run_id, "returncode": returncode},
             )
             send_telegram(tg_token, tg_chat_id,
-                          f"❌ <b>Metadata2GD</b>\n整理失败，退出码：<code>{returncode}</code>")
+                          f"❌ <b>Meta2Cloud</b>\n整理失败，退出码：<code>{returncode}</code>")
     except Exception as exc:
         logger.error("Pipeline 异常：%s", exc)
         _app_log(
@@ -307,7 +309,7 @@ def _do_run_pipeline() -> None:
             details={"runId": run_id, "error": str(exc)},
         )
         send_telegram(tg_token, tg_chat_id,
-                      f"❌ <b>Metadata2GD</b>\n异常：<code>{exc}</code>")
+                      f"❌ <b>Meta2Cloud</b>\n异常：<code>{exc}</code>")
     finally:
         with _pl_lock:
             _pipeline_running = False
@@ -366,6 +368,16 @@ def get_drive_client() -> DriveClient:
             token_path=drive_cfg.token_json,
         )
     return _client
+
+
+def get_storage_provider() -> StorageProvider:
+    """获取统一的 StorageProvider 实例（根据 config.storage.primary 选择）"""
+    global _storage_provider
+    if _storage_provider is None:
+        cfg = get_config()
+        from storage import get_provider
+        _storage_provider = get_provider(cfg.storage.primary, cfg)
+    return _storage_provider
 
 
 def _get_release_group_matcher() -> ReleaseGroupsMatcher:
@@ -1004,23 +1016,9 @@ def _parse_episode_from_filename(filename: str) -> Optional[tuple]:
     return None
 
 
-def _read_drive_file_content(client: DriveClient, file_id: str) -> Optional[str]:
-    """从 Drive 读取文本文件内容"""
-    try:
-        svc = client._svc
-        request = svc.files().get_media(fileId=file_id)
-        content = client._execute(request)
-        if isinstance(content, bytes):
-            return content.decode("utf-8", errors="ignore")
-        return str(content)
-    except Exception as e:
-        logger.warning("读取 Drive 文件失败 %s: %s", file_id, e)
-        return None
-
-
-def scan_movies(client: DriveClient, cfg: Config) -> List[MediaItem]:
+def scan_movies(client: StorageProvider, cfg: Config) -> List[MediaItem]:
     """扫描电影目录，返回电影列表"""
-    movie_root = cfg.drive.movie_root_id or cfg.drive.root_folder_id
+    movie_root = cfg.active_movie_root_id()
     if not movie_root:
         return []
 
@@ -1041,7 +1039,7 @@ def scan_movies(client: DriveClient, cfg: Config) -> List[MediaItem]:
         tmdb_info = None
 
         for nfo in nfo_files:
-            content = _read_drive_file_content(client, nfo.id)
+            content = client.read_text(nfo)
             if content:
                 tmdb_id = _parse_tmdb_id_from_nfo(content)
                 if tmdb_id:
@@ -1085,9 +1083,9 @@ def scan_movies(client: DriveClient, cfg: Config) -> List[MediaItem]:
     return movies
 
 
-def scan_tv_shows(client: DriveClient, cfg: Config) -> List[MediaItem]:
+def scan_tv_shows(client: StorageProvider, cfg: Config) -> List[MediaItem]:
     """扫描剧集目录，返回剧集列表（含季集入库状态）"""
-    tv_root = cfg.drive.tv_root_id or cfg.drive.root_folder_id
+    tv_root = cfg.active_tv_root_id()
     if not tv_root:
         return []
 
@@ -1106,7 +1104,7 @@ def scan_tv_shows(client: DriveClient, cfg: Config) -> List[MediaItem]:
         tmdb_id = None
 
         if tvshow_nfo:
-            content = _read_drive_file_content(client, tvshow_nfo.id)
+            content = client.read_text(tvshow_nfo)
             if content:
                 tmdb_id = _parse_tmdb_id_from_nfo(content)
 
@@ -1234,7 +1232,7 @@ def scan_tv_shows(client: DriveClient, cfg: Config) -> List[MediaItem]:
 # ──────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="Metadata2GD 媒体库",
+    title="Meta2Cloud 媒体库",
     description="查看 Google Drive 上的电影/电视剧入库状态",
     version="1.0.0",
 )
@@ -1389,7 +1387,7 @@ async def refresh_library():
 class RefreshItemRequest(BaseModel):
     tmdb_id: int
     media_type: str          # "movie" | "tv"
-    drive_folder_id: str     # Drive 文件夹 ID（电影文件夹 or 剧名文件夹）
+    drive_folder_id: str     # 媒体文件夹 ID（电影文件夹 or 剧名文件夹）
     title: Optional[str] = None   # 供 tmdb_id=0 时按名称搜索
     year: Optional[str] = None    # 供 tmdb_id=0 时按年份辅助搜索
 
@@ -1397,7 +1395,7 @@ class RefreshItemRequest(BaseModel):
 def _do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str,
                      title: Optional[str] = None, year: Optional[str] = None) -> dict:
     """
-    重新从 TMDB 获取详情，生成 NFO 并将封面/背景图上传覆盖到 Drive。
+    重新从 TMDB 获取详情，生成 NFO 并将封面/背景图上传覆盖到当前存储后端。
     直接复用 NfoGenerator 和 ImageUploader。
     tmdb_id=0 时自动用 title+year 搜索 TMDB。
     """
@@ -1423,7 +1421,7 @@ def _do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str,
         tmdb_id = found.get("tmdb_id") or found.get("id")
         logger.info("按名称找到 tmdb_id=%s：%s", tmdb_id, found.get('name') or found.get('title'))
 
-    client = get_drive_client()
+    client = get_storage_provider()
     gen    = NfoGenerator()
     uploader = ImageUploader(client, overwrite=True)
 
@@ -1617,7 +1615,7 @@ def _do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str,
 
 @app.post("/api/library/refresh-item")
 async def refresh_item(body: RefreshItemRequest):
-    """（需登录）刷新单个媒体项：重新从 TMDB 获取元数据，生成并上传 NFO + 封面到 Drive。"""
+    """（需登录）刷新单个媒体项：重新从 TMDB 获取元数据，生成并上传 NFO + 封面到当前存储后端。"""
     if not body.drive_folder_id:
         raise HTTPException(status_code=400, detail="drive_folder_id 不能为空")
     try:
@@ -1721,7 +1719,7 @@ async def trigger_pipeline():
 async def get_movies():
     """获取电影列表"""
     try:
-        client = get_drive_client()
+        client = get_storage_provider()
         cfg = get_config()
         return scan_movies(client, cfg)
     except Exception as e:
@@ -1733,7 +1731,7 @@ async def get_movies():
 async def get_tv_shows():
     """获取电视剧列表"""
     try:
-        client = get_drive_client()
+        client = get_storage_provider()
         cfg = get_config()
         return scan_tv_shows(client, cfg)
     except Exception as e:
@@ -1745,7 +1743,7 @@ async def get_tv_shows():
 async def get_tv_detail(tmdb_id: int):
     """获取单部剧集详情（含季集入库状态）"""
     try:
-        client = get_drive_client()
+        client = get_storage_provider()
         cfg = get_config()
         shows = scan_tv_shows(client, cfg)
         for show in shows:
@@ -1763,7 +1761,7 @@ async def get_tv_detail(tmdb_id: int):
 async def get_stats():
     """获取统计信息"""
     try:
-        client = get_drive_client()
+        client = get_storage_provider()
         cfg = get_config()
         movies = scan_movies(client, cfg)
         tv_shows = scan_tv_shows(client, cfg)
@@ -2174,9 +2172,10 @@ async def write_config(body: ConfigSaveBody):
         indent=2,
     )
     _CONFIG_PATH.write_text(new_yaml, encoding="utf-8")
-    # 使全局 Config 缓存失效
-    global _cfg
+    # 使全局缓存失效
+    global _cfg, _storage_provider
     _cfg = None
+    _storage_provider = None
     _app_log("system", "config_updated", "配置文件已更新", level="SUCCESS")
     return {"ok": True, "message": "配置已保存"}
 

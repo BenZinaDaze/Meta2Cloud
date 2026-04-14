@@ -174,7 +174,7 @@ export default function CalendarPage({ onSearch }) {
     setLoading(true)
     setError(null)
     fetch('https://api.bgm.tv/calendar', {
-      headers: { 'User-Agent': 'Metadata2GD/1.0 (https://github.com/BenZinaDaze/Metadata2GD)' },
+      headers: { 'User-Agent': 'Meta2Cloud/1.0 (https://github.com/BenZinaDaze/Meta2Cloud)' },
     })
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -197,7 +197,7 @@ export default function CalendarPage({ onSearch }) {
     setLoading(true)
     setError(null)
     fetch('https://api.bgm.tv/calendar', {
-      headers: { 'User-Agent': 'Metadata2GD/1.0 (https://github.com/BenZinaDaze/Metadata2GD)' },
+      headers: { 'User-Agent': 'Meta2Cloud/1.0 (https://github.com/BenZinaDaze/Meta2Cloud)' },
       cache: 'no-store',
     })
       .then(res => res.json())

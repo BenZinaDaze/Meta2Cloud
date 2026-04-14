@@ -1,5 +1,5 @@
 """
-Tokens —— 将标题字符串按分隔符拆为 token 列表，与 Metadata2GD 保持一致。
+Tokens —— 将标题字符串按分隔符拆为 token 列表，与 Meta2Cloud 保持一致。
 """
 import re
 

@@ -80,7 +80,7 @@ export default function LoginPage({ onLogin }) {
                 Archive access
               </div>
               <div className="font-bold text-lg tracking-tight" style={{ color: 'var(--color-text)' }}>
-                Metadata<span style={{ color: 'var(--color-accent)' }}>2GD</span>
+                Meta<span style={{ color: 'var(--color-accent)' }}>2Cloud</span>
               </div>
               <div className="text-xs mt-0.5" style={{ color: 'var(--color-muted)' }}>
                 媒体库管理系统

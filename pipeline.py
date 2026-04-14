@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-pipeline.py —— Metadata2GD 完整流水线
+pipeline.py —— Meta2Cloud 完整流水线
 
 流程：
   1. 从 Google Drive 扫描目标文件夹中的视频文件
@@ -39,7 +39,7 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from drive.client import DriveClient, DriveFile
+from storage.base import StorageProvider, CloudFile
 from mediaparser import MetaInfo, TmdbClient, Config, MediaType
 from mediaparser.release_group import ReleaseGroupsMatcher
 from nfo import NfoGenerator, ImageUploader
@@ -62,10 +62,10 @@ logger = logging.getLogger("pipeline")
 
 @dataclass
 class ProcessResult:
-    file: DriveFile
+    file: CloudFile
     status: str          # "ok" | "skipped" | "failed"
     reason: str = ""
-    target_folder: Optional[DriveFile] = None
+    target_folder: Optional[CloudFile] = None
     nfo_uploaded: bool = False
     moved: bool = False
 
@@ -96,7 +96,7 @@ class Pipeline:
 
     def __init__(
         self,
-        client: DriveClient,
+        client: StorageProvider,
         cfg: Config,
         dry_run: bool = False,
         skip_tmdb: bool = False,
@@ -110,9 +110,9 @@ class Pipeline:
 
         self._organizer = MediaOrganizer(
             client=client,
-            root_folder_id=cfg.drive.root_folder_id,
-            movie_root_id=cfg.drive.movie_root_id or None,
-            tv_root_id=cfg.drive.tv_root_id or None,
+            root_folder_id=cfg.active_root_folder_id(),
+            movie_root_id=cfg.active_movie_root_id() or None,
+            tv_root_id=cfg.active_tv_root_id() or None,
             dry_run=self._dry_run,
         )
 
@@ -149,7 +149,7 @@ class Pipeline:
         self._poster_done: Set[str] = set()        # 已上传 poster/fanart 的文件夹 ID
         self._season_poster_done: Set[str] = set() # 已上传季封面的文件夹 ID
         # 剧名文件夹缓存：key = (tmdb_id, season) 用于季层，top key = tmdb_id 用于第一层
-        self._show_folder_cache: dict = {}   # tmdb_id(str) → 剧名文件夹 DriveFile
+        self._show_folder_cache: dict = {}   # tmdb_id(str) → 剧名文件夹 CloudFile
         # 季封面缓存：key = "tmdb_id:season_num" → poster_path，避免重复 API 调用
         self._season_poster_cache: dict = {}
         # 字幕组匹配器（内置 + 自定义 custom_release_groups）
@@ -188,16 +188,16 @@ class Pipeline:
     # ── 主入口 ──────────────────────────────────────────────────
 
     def run(self) -> None:
-        scan_folder = self._cfg.drive.scan_folder_id
+        scan_folder = self._cfg.active_scan_folder_id()
         if not scan_folder:
-            print("❌  配置错误：drive.scan_folder_id 未设置")
+            print("❌  配置错误：当前存储后端的扫描目录未设置")
             sys.exit(1)
-        if not self._cfg.drive.root_folder_id:
-            print("❌  配置错误：drive.root_folder_id 未设置")
+        if not self._cfg.active_root_folder_id():
+            print("❌  配置错误：当前存储后端的媒体库根目录未设置")
             sys.exit(1)
 
         print("=" * 68)
-        print("  Metadata2GD 开始整理")
+        print("  Meta2Cloud 开始整理")
         if self._dry_run:
             print("  ⚠️  DRY-RUN 模式 — 不会操作 Drive")
         if self._skip_tmdb or not self._tmdb:
@@ -264,7 +264,7 @@ class Pipeline:
 
         return is_empty
 
-    def _process_one(self, video: DriveFile, idx: int, total: int) -> ProcessResult:
+    def _process_one(self, video: CloudFile, idx: int, total: int) -> ProcessResult:
         print(f"[{idx}/{total}] 🎬  {video.name}")
         result = ProcessResult(file=video, status="ok")
 
@@ -360,7 +360,7 @@ class Pipeline:
             nfo_name = os.path.splitext(clean_name)[0] + ".nfo" if clean_name else self._nfo_gen.nfo_name_for(video.name)
 
         # ── Step 6: 创建目标文件夹 ─────────────────────────
-        target_folder: Optional[DriveFile] = None
+        target_folder: Optional[CloudFile] = None
         top_folder_id: Optional[str] = None   # 剧名文件夹（TV）或电影文件夹
         if not self._dry_run:
             target_folder = self._organizer.ensure_folder_for_meta(meta, label=video.name)
@@ -699,23 +699,27 @@ def main():
             pass
 
     parser = argparse.ArgumentParser(
-        description="Metadata2GD — 扫描 Drive 媒体文件，查询 TMDB 元数据，生成 NFO，整理到目标文件夹",
+        description="Meta2Cloud — 扫描云存储媒体文件，查询 TMDB 元数据，生成 NFO，整理到目标文件夹",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 流程：
-  扫描 Drive 源文件夹 → 解析文件名 → TMDB 查询（整剧+单集）→ 生成 NFO
+  扫描源文件夹 → 解析文件名 → TMDB 查询（整剧+单集）→ 生成 NFO
   → 创建文件夹 → 上传 NFO + tvshow.nfo + season.nfo → 下载图片 → 移动文件
 
 示例：
-  python pipeline.py                  # 正式运行
-  python pipeline.py --dry-run        # 预览计划，不操作 Drive
-  python pipeline.py --no-tmdb        # 只整理文件夹，不查 TMDB/生成 NFO
-  python pipeline.py --no-images      # 跳过图片下载上传
+  python pipeline.py                          # 正式运行（使用配置文件中的存储后端）
+  python pipeline.py --dry-run                # 预览计划，不实际操作
+  python pipeline.py --storage pan115         # 使用 115 网盘作为存储后端
+  python pipeline.py --storage google_drive   # 使用 Google Drive
+  python pipeline.py --no-tmdb                # 只整理文件夹，不查 TMDB/生成 NFO
+  python pipeline.py --no-images              # 跳过图片下载上传
 """,
     )
-    parser.add_argument("--dry-run", action="store_true", help="只打印计划，不实际操作 Google Drive")
+    parser.add_argument("--dry-run", action="store_true", help="只打印计划，不实际操作")
     parser.add_argument("--no-tmdb", action="store_true", help="跳过 TMDB 查询（不生成 NFO，只整理文件夹）")
     parser.add_argument("--no-images", action="store_true", help="跳过图片下载上传（poster/fanart）")
+    parser.add_argument("--storage", default=None, metavar="NAME",
+                        help="存储后端名称（google_drive / pan115），覆盖配置文件 storage.primary")
     parser.add_argument("--config", default=None, metavar="PATH", help="配置文件路径（默认自动查找 config/config.yaml）")
     parser.add_argument("--verbose", "-v", action="store_true", help="输出详细日志")
     args = parser.parse_args()
@@ -725,21 +729,25 @@ def main():
 
     cfg = Config.load(args.config)
 
-    drive_cfg = cfg.drive
+    # 确定使用哪个存储后端：CLI --storage 优先，否则读取 config 中的 storage.primary
+    storage_name = args.storage or cfg.storage.primary
+    cfg.storage.primary = storage_name
     try:
-        client = DriveClient.from_oauth(
-            credentials_path=drive_cfg.credentials_json,
-            token_path=drive_cfg.token_json,
-        )
+        from storage import get_provider
+        provider = get_provider(storage_name, cfg)
+        logger.info("使用存储后端：%s", provider.provider_name)
     except FileNotFoundError as e:
         print(f"❌  认证文件不存在：{e}")
         sys.exit(1)
+    except ValueError as e:
+        print(f"❌  {e}")
+        sys.exit(1)
     except Exception as e:
-        print(f"❌  初始化 Drive 客户端失败：{e}")
+        print(f"❌  初始化存储客户端失败（{storage_name}）：{e}")
         sys.exit(1)
 
     pipe = Pipeline(
-        client=client,
+        client=provider,
         cfg=cfg,
         dry_run=args.dry_run,
         skip_tmdb=args.no_tmdb,

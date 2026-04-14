@@ -1,6 +1,6 @@
 # u115pan
 
-这是一个独立的 115 开放平台外部接口层，当前**未集成进主程序**。
+这是项目内置的 115 开放平台接口层，供 Meta2Cloud 的 `pan115` 存储后端复用。
 
 已提供的能力：
 
@@ -15,11 +15,11 @@
 
 ## 目录说明
 
-- [client.py](/home/benz1/Code/github/Metadata2GD/u115pan/client.py): 主客户端
-- [auth.py](/home/benz1/Code/github/Metadata2GD/u115pan/auth.py): PKCE 与 token 持久化工具
-- [models.py](/home/benz1/Code/github/Metadata2GD/u115pan/models.py): 数据模型
-- [errors.py](/home/benz1/Code/github/Metadata2GD/u115pan/errors.py): 异常定义
-- [offline.py](/home/benz1/Code/github/Metadata2GD/u115pan/offline.py): 云下载接口
+- [client.py](./client.py): 主客户端
+- [auth.py](./auth.py): PKCE 与 token 持久化工具
+- [models.py](./models.py): 数据模型
+- [errors.py](./errors.py): 异常定义
+- [offline.py](./offline.py): 云下载接口
 
 ## 使用示例
 
@@ -63,6 +63,6 @@ print(quota.surplus, len(tasks))
 
 ## 说明
 
-- 当前目录名已调整为 `u115pan`，可以作为合法 Python 包名使用。
-- 现在仍是独立外部接口层，未接入主程序。
-- 后续正式集成时，可以直接 `import u115pan`，不需要再做目录改名。
+- 当前目录名为 `u115pan`，可直接作为合法 Python 包名使用。
+- Meta2Cloud 已通过 `storage/pan115.py` 接入此接口层。
+- 如需调用云下载能力，可直接 `import u115pan` 或通过 `Pan115Provider.raw_client` 访问底层客户端。
