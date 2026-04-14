@@ -120,7 +120,7 @@ class WordsMatcher:
 def is_anime(title: str) -> bool:
     """
     判断是否为动漫格式（简单规则：带方括号形如 [字幕组] Title [编号]...）
-    与 Metadata2GD app/core/metainfo.py 中 is_anime() 逻辑一致。
+    与 Meta2Cloud 既有 metainfo 逻辑保持一致。
     """
     if not title:
         return False

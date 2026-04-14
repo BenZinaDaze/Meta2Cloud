@@ -181,6 +181,20 @@ class Aria2Config:
 
 
 @dataclass
+class StorageConfig:
+    """存储后端选择配置"""
+    # 主存储 Provider：pipeline / organizer 使用此 provider
+    # 可选值：google_drive / pan115
+    primary: str = "google_drive"
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "StorageConfig":
+        return cls(
+            primary=str(d.get("primary") or "google_drive"),
+        )
+
+
+@dataclass
 class Config:
     tmdb: TmdbConfig = field(default_factory=TmdbConfig)
     parser: ParserConfig = field(default_factory=ParserConfig)
@@ -190,6 +204,7 @@ class Config:
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     webui: WebUIConfig = field(default_factory=WebUIConfig)
     aria2: Aria2Config = field(default_factory=Aria2Config)
+    storage: StorageConfig = field(default_factory=StorageConfig)
 
 
     # ── 加载方法 ─────────────────────────────────────────
@@ -232,6 +247,7 @@ class Config:
             telegram=TelegramConfig.from_dict(d.get("telegram") or {}),
             webui=WebUIConfig.from_dict(d.get("webui") or {}),
             aria2=Aria2Config.from_dict(d.get("aria2") or {}),
+            storage=StorageConfig.from_dict(d.get("storage") or {}),
         )
 
     @staticmethod
@@ -253,3 +269,37 @@ class Config:
     def is_tmdb_ready(self) -> bool:
         """是否具备 TMDB 查询条件（有 api_key）"""
         return bool(self.tmdb.api_key)
+
+    def active_storage_name(self) -> str:
+        """返回当前启用的存储后端名称。"""
+        return self.storage.primary or "google_drive"
+
+    def active_scan_folder_id(self) -> str:
+        """
+        返回当前存储后端对应的扫描目录 ID。
+
+        约定：
+          - google_drive 使用 drive.scan_folder_id
+          - pan115 使用 u115.download_folder_id
+        """
+        if self.active_storage_name() == "pan115":
+            return self.u115.download_folder_id
+        return self.drive.scan_folder_id
+
+    def active_root_folder_id(self) -> str:
+        """返回当前存储后端的媒体库根目录 ID。"""
+        if self.active_storage_name() == "pan115":
+            return self.u115.root_folder_id
+        return self.drive.root_folder_id
+
+    def active_movie_root_id(self) -> str:
+        """返回当前存储后端的电影根目录 ID，未单独配置时回退到媒体库根目录。"""
+        if self.active_storage_name() == "pan115":
+            return self.u115.movie_root_id or self.u115.root_folder_id
+        return self.drive.movie_root_id or self.drive.root_folder_id
+
+    def active_tv_root_id(self) -> str:
+        """返回当前存储后端的剧集根目录 ID，未单独配置时回退到媒体库根目录。"""
+        if self.active_storage_name() == "pan115":
+            return self.u115.tv_root_id or self.u115.root_folder_id
+        return self.drive.tv_root_id or self.drive.root_folder_id

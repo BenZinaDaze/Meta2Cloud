@@ -53,7 +53,7 @@ export default function Topbar({ onLogout, onOpenParseTest, onToggleSidebar, onT
             Media Archive
           </div>
           <span className="block text-sm font-semibold sm:text-base" style={{ color: 'var(--color-text)' }}>
-            Metadata<span style={{ color: 'var(--color-accent)' }}>2GD</span>
+            Meta<span style={{ color: 'var(--color-accent)' }}>2Cloud</span>
           </span>
         </div>
       </div>

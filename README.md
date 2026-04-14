@@ -1,6 +1,6 @@
-# Metadata2GD
+# Meta2Cloud
 
-> 自动为 Google Drive 上的媒体文件查询 TMDB 元数据、生成 NFO、整理目录结构，并发送 Telegram 入库通知。  
+> 自动为云存储中的媒体文件查询 TMDB 元数据、生成 NFO、整理目录结构，并发送 Telegram 入库通知。  
 > 现已内置 **Web UI**，可在浏览器中可视化查看媒体库状态。
 
 ---
@@ -21,7 +21,7 @@
 | **JWT 登录鉴权** | Web UI 及 API 均受 JWT 保护，支持 Webhook Secret 独立校验 |
 | **TMDB 本地缓存** | SQLite 缓存减少重复请求，支持 TTL 自动过期与负缓存 |
 
-### Drive 目录结构
+### 媒体库目录结构
 
 ```
 📁 剧集根目录/
@@ -49,10 +49,10 @@
 
 ### 1. 准备认证文件
 
-在项目目录创建 `metadata2gd-config/` 文件夹，放入以下文件：
+在项目目录创建 `meta2cloud-config/` 文件夹，放入以下文件：
 
 ```
-metadata2gd-config/
+meta2cloud-config/
 ├─ config.yaml          # 主配置文件（从 config/config.example.yaml 复制后修改）
 ├─ credentials.json     # Google OAuth2 凭据
 └─ token.json           # OAuth2 Token（首次运行后自动生成）
@@ -66,8 +66,8 @@ metadata2gd-config/
 
 ```bash
 docker run --rm -it \
-  -v $(pwd)/metadata2gd-config:/app/config \
-  benz1/metadata2gd:latest \
+  -v $(pwd)/meta2cloud-config:/app/config \
+  benz1/meta2cloud:latest \
   python pipeline.py --dry-run
 ```
 
@@ -76,8 +76,8 @@ docker run --rm -it \
 ### 3. 配置 `config.yaml`
 
 ```bash
-cp config/config.example.yaml metadata2gd-config/config.yaml
-# 然后编辑 metadata2gd-config/config.yaml
+cp config/config.example.yaml meta2cloud-config/config.yaml
+# 然后编辑 meta2cloud-config/config.yaml
 ```
 
 最少需要填写的字段：
@@ -114,7 +114,7 @@ docker compose up -d
 查看日志：
 
 ```bash
-docker logs -f metadata2gd
+docker logs -f meta2cloud
 ```
 
 ### 5. 访问 Web UI
@@ -260,21 +260,21 @@ Authorization: Bearer <token>
 
 ```bash
 # 正式运行
-docker exec metadata2gd python pipeline.py
+docker exec meta2cloud python pipeline.py
 
 # 预览（不实际操作 Drive）
-docker exec metadata2gd python pipeline.py --dry-run
+docker exec meta2cloud python pipeline.py --dry-run
 
 # 跳过 TMDB，只整理文件夹
-docker exec metadata2gd python pipeline.py --no-tmdb
+docker exec meta2cloud python pipeline.py --no-tmdb
 
 # 跳过图片下载
-docker exec metadata2gd python pipeline.py --no-images
+docker exec meta2cloud python pipeline.py --no-images
 ```
 
 ### 方式二：Webhook 自动触发（配合 Aria2 + Rclone）
 
-`metadata2gd` 容器内运行 FastAPI Server，监听 `POST /trigger`（端口 `38765`）。
+`meta2cloud` 容器内运行 FastAPI Server，监听 `POST /trigger`（端口 `38765`）。
 
 在 Rclone 的 `upload.sh`（P3TERX aria2 方案）中，上传完成后自动调用：
 
@@ -328,7 +328,7 @@ Season 01：
 
 ## 与 Aria2-Pro + Rclone 配合使用
 
-`docker-compose.yml` 已包含 `aria2-pro` 和 `metadata2gd` 两个服务，均使用 `network_mode: host`，通过 `localhost:38765` 互相通信。
+`docker-compose.yml` 已包含 `aria2-pro` 和 `meta2cloud` 两个服务，均使用 `network_mode: host`，通过 `localhost:38765` 互相通信。
 
 ### 整体流程
 
@@ -337,7 +337,7 @@ Season 01：
 > 如果你不需要下载中心功能，可在 `config.yaml` 中设置 `aria2.enabled: false`，前端将不再连接 Aria2，后端也会拒绝所有 `/api/aria2/*` 请求。
 Aria2 下载完成
   → Rclone 上传到 Drive（upload.sh）
-    → POST /trigger 通知 metadata2gd
+    → POST /trigger 通知 meta2cloud
       → 防抖等待（debounce_seconds）
         → Pipeline 扫描 Drive
           → TMDB 查询 → NFO 生成 → 文件整理
@@ -354,17 +354,17 @@ P3TERX 的 [aria2.conf](https://github.com/P3TERX/aria2.conf) 方案使用 `uplo
 cp scripts/upload.example.sh aria2-config/upload.sh
 
 # 编辑 upload.sh，填入你的 webhook_secret（与 config.yaml 保持一致）
-# METADATA2GD_WEBHOOK_SECRET="your_webhook_secret_here"
+# META2CLOUD_WEBHOOK_SECRET="your_webhook_secret_here"
 ```
 
-> **注意**：`scripts/upload.example.sh` 基于 P3TERX 原版修改，在上传完成后额外调用了 `RUN_METADATA2GD` 函数触发整理流水线，其余逻辑与原版完全一致。
+> **注意**：`scripts/upload.example.sh` 基于 P3TERX 原版修改，在上传完成后额外调用了 `RUN_META2CLOUD` 函数触发整理流水线，其余逻辑与原版完全一致。
 
 **新增的关键函数（upload.sh）：**
 
 ```bash
-RUN_METADATA2GD() {
+RUN_META2CLOUD() {
     local WEBHOOK_URL="http://localhost:38765/trigger"
-    local WEBHOOK_SECRET="${METADATA2GD_WEBHOOK_SECRET}"
+    local WEBHOOK_SECRET="${META2CLOUD_WEBHOOK_SECRET}"
 
     # 仅在上传成功时触发
     [[ "${UPLOAD_SUCCESS}" != "1" ]] && return 0
@@ -428,7 +428,7 @@ npm run build
 cd frontend && npm run build && cd ..
 
 # 构建 Docker 镜像
-docker build -t benz1/metadata2gd:latest .
+docker build -t benz1/meta2cloud:latest .
 ```
 
 ---
@@ -436,7 +436,7 @@ docker build -t benz1/metadata2gd:latest .
 ## 项目结构
 
 ```
-Metadata2GD/
+Meta2Cloud/
 ├─ pipeline.py              # 核心整理流水线
 ├─ mediaparser/             # 文件名解析模块
 │  └─ config.py             # 配置类（含 WebAuthConfig）

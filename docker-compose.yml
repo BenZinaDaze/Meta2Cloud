@@ -27,21 +27,20 @@ services:
         max-size: 1m
 
 
-  # ── Metadata2GD ────────────────────────────────────────────────
+  # ── Meta2Cloud ────────────────────────────────────────────────
   # host 网络与 aria2-pro 共享，upload.sh 用 localhost:38765/trigger 触发
   # WebUI 地址：http://localhost:38765
-  metadata2gd:
-    container_name: metadata2gd
-    image: benz1/metadata2gd:latest
+  meta2cloud:
+    container_name: meta2cloud
+    image: benz1/meta2cloud:latest
     environment:
       - TZ=Asia/Shanghai
     volumes:
       # Google Drive 认证文件，不打包进镜像
-      - ${PWD}/metadata2gd-config:/app/config
+      - ${PWD}/meta2cloud-config:/app/config
     network_mode: host
     restart: unless-stopped
     logging:
       driver: json-file
       options:
         max-size: 1m
-

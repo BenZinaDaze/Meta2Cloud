@@ -1,4 +1,4 @@
-Write-Host "🚀 Starting metadata2gd complete development environment..." -ForegroundColor Cyan
+Write-Host "🚀 Starting meta2cloud complete development environment..." -ForegroundColor Cyan
 
 # 自动寻找虚拟环境的 Python
 $pythonCmd = "python"

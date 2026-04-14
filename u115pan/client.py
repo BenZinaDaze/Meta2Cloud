@@ -495,11 +495,18 @@ class Pan115Client:
             auth_required=True,
             is_download=True,
         )
+        data = payload.get("data")
+        if isinstance(data, dict):
+            for value in data.values():
+                if isinstance(value, dict):
+                    maybe_url = value.get("url")
+                    if isinstance(maybe_url, dict) and maybe_url.get("url"):
+                        return str(maybe_url["url"])
         for value in payload.values():
             if isinstance(value, dict):
-                maybe_url = (((value.get("url") or {}) if isinstance(value.get("url"), dict) else {}).get("url"))
-                if maybe_url:
-                    return str(maybe_url)
+                maybe_url = value.get("url")
+                if isinstance(maybe_url, dict) and maybe_url.get("url"):
+                    return str(maybe_url["url"])
         raise Pan115ApiError("未从 downurl 响应中解析到下载地址", payload=payload)
 
     def download_file(
@@ -566,7 +573,7 @@ class Pan115Client:
         start_str, end_str = sign_check.split("-", 1)
         start = int(start_str)
         end = int(end_str)
-        length = end - start
+        length = end - start + 1
         if length <= 0:
             raise ValueError(f"非法 sign_check：{sign_check}")
 

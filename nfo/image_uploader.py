@@ -1,5 +1,5 @@
 """
-nfo/image_uploader.py —— 从 TMDB 下载图片并上传到 Google Drive
+nfo/image_uploader.py —— 从 TMDB 下载图片并上传到云存储
 
 支持的图片类型（对齐 Plex / Infuse 标准）：
     poster.jpg         媒体文件夹根目录（电影或剧名文件夹）
@@ -14,7 +14,7 @@ from typing import Optional
 
 import requests
 
-from drive.client import DriveClient, DriveFile
+from storage.base import StorageProvider, CloudFile
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +31,10 @@ _EXT_MIME = {
 
 class ImageUploader:
     """
-    从 TMDB 图片 CDN 下载图片，并上传到指定的 Drive 文件夹。
+    从 TMDB 图片 CDN 下载图片，并上传到指定的云存储文件夹。
 
     用法：
-        uploader = ImageUploader(client, session=requests.Session())
+        uploader = ImageUploader(provider, session=requests.Session())
         uploader.upload_poster(poster_path="/poster.jpg", folder_id="1AbC...")
         uploader.upload_fanart(backdrop_path="/backdrop.jpg", folder_id="1AbC...")
         uploader.upload_season_poster(poster_path="/season1.jpg", season=1, folder_id="1AbC...")
@@ -43,7 +43,7 @@ class ImageUploader:
 
     def __init__(
         self,
-        client: DriveClient,
+        client: StorageProvider,
         session: Optional[requests.Session] = None,
         timeout: int = 15,
         overwrite: bool = True,
@@ -60,13 +60,13 @@ class ImageUploader:
         poster_path: Optional[str],
         folder_id: str,
         filename: str = "poster.jpg",
-    ) -> Optional[DriveFile]:
+    ) -> Optional[CloudFile]:
         """
         下载并上传 poster（封面）。
 
         :param poster_path: TMDB 图片路径，如 "/poster.jpg"
         :param folder_id:   目标文件夹 ID（电影文件夹 or 剧名文件夹）
-        :param filename:    Drive 上的文件名（默认 poster.jpg）
+        :param filename:    云存储上的文件名（默认 poster.jpg）
         """
         return self._download_and_upload(poster_path, filename, folder_id)
 
@@ -75,13 +75,13 @@ class ImageUploader:
         backdrop_path: Optional[str],
         folder_id: str,
         filename: str = "fanart.jpg",
-    ) -> Optional[DriveFile]:
+    ) -> Optional[CloudFile]:
         """
         下载并上传 fanart（背景图）。
 
         :param backdrop_path: TMDB backdrop_path，如 "/backdrop.jpg"
         :param folder_id:     目标文件夹 ID
-        :param filename:      Drive 上的文件名（默认 fanart.jpg）
+        :param filename:      云存储上的文件名（默认 fanart.jpg）
         """
         return self._download_and_upload(backdrop_path, filename, folder_id)
 
@@ -90,7 +90,7 @@ class ImageUploader:
         poster_path: Optional[str],
         season: int,
         folder_id: str,
-    ) -> Optional[DriveFile]:
+    ) -> Optional[CloudFile]:
         """
         下载并上传季封面。
 
@@ -111,7 +111,7 @@ class ImageUploader:
         still_path: Optional[str],
         folder_id: str,
         filename: str = "episode-thumb.jpg",
-    ) -> Optional[DriveFile]:
+    ) -> Optional[CloudFile]:
         """
         下载并上传单集剧照（still_path）。
 
@@ -128,8 +128,8 @@ class ImageUploader:
         tmdb_path: Optional[str],
         filename: str,
         folder_id: str,
-    ) -> Optional[DriveFile]:
-        """下载 TMDB 图片并上传到 Drive。失败时返回 None。"""
+    ) -> Optional[CloudFile]:
+        """下载 TMDB 图片并上传到云存储。失败时返回 None。"""
         if not tmdb_path:
             return None
 

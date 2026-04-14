@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# metadata2gd 本地全栈开发启动脚本
+# meta2cloud 本地全栈开发启动脚本
 # 一键并联启动 fastapi 后端和 vite 前端
 
-echo "🚀 Starting metadata2gd complete development environment..."
+echo "🚀 Starting meta2cloud complete development environment..."
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"

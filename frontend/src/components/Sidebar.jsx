@@ -176,7 +176,7 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
   };
 
   useEffect(() => {
-    fetch('https://api.github.com/repos/BenZinaDaze/Metadata2GD/tags')
+    fetch('https://api.github.com/repos/BenZinaDaze/Meta2Cloud/tags')
       .then(res => res.json())
       .then(tags => {
         if (tags && tags.length > 0) {
@@ -404,7 +404,7 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
       <div className="flex-1 min-h-[40px]" />
 
       <a
-        href="https://github.com/BenZinaDaze/Metadata2GD"
+        href="https://github.com/BenZinaDaze/Meta2Cloud"
         target="_blank"
         rel="noopener noreferrer"
         className="mx-5 mb-2 mt-auto flex items-center justify-between rounded-[18px] px-4 py-3 transition-colors duration-150 hover:bg-white/5"

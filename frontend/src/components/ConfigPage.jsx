@@ -729,6 +729,35 @@ export default function ConfigPage({ onAria2EnabledChange = null }) {
       <div className="config-grid">
         {/* 左列 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+          {/* ── 存储后端 ── */}
+          <Section title="云存储选择">
+            <FieldRow label="使用的网盘" description="选择媒体文件存放在哪个网盘，扫描整理和元数据上传都会使用该网盘">
+              <div className="flex items-center gap-3">
+                <SelectInput
+                  value={cfg?.storage?.primary || 'google_drive'}
+                  onChange={v => set('storage', 'primary', v)}
+                  options={[
+                    { value: 'google_drive', label: 'Google Drive' },
+                    { value: 'pan115', label: '115 网盘' },
+                  ]}
+                />
+                <span className="text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5"
+                  style={{
+                    background: (cfg?.storage?.primary || 'google_drive') === 'google_drive'
+                      ? 'rgba(66,133,244,0.12)' : 'rgba(34,197,94,0.12)',
+                    color: (cfg?.storage?.primary || 'google_drive') === 'google_drive'
+                      ? '#4285f4' : '#22c55e',
+                  }}>
+                  <span style={{
+                    width: 6, height: 6, borderRadius: '50%',
+                    background: 'currentColor',
+                  }} />
+                  {(cfg?.storage?.primary || 'google_drive') === 'google_drive' ? 'Google Drive' : '115 网盘'}
+                </span>
+              </div>
+            </FieldRow>
+          </Section>
+
           {/* ── WebUI 认证 ── */}
           <Section title="WebUI 认证">
             <FieldRow label="用户名" description="登录账号，默认 admin">

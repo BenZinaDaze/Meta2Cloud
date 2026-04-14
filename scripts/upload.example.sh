@@ -26,8 +26,8 @@
 # SOFTWARE.
 #
 
-# ── Metadata2GD Webhook 密钥（与 config.yaml 中 webui.webhook_secret 保持一致；留空则不校验）
-METADATA2GD_WEBHOOK_SECRET="your_webhook_secret_here"
+# ── Meta2Cloud Webhook 密钥（与 config.yaml 中 webui.webhook_secret 保持一致；留空则不校验）
+META2CLOUD_WEBHOOK_SECRET="your_webhook_secret_here"
 
 CHECK_CORE_FILE() {
     CORE_FILE="$(dirname $0)/core"
@@ -93,19 +93,19 @@ LOAD_RCLONE_ENV() {
     [[ -f ${RCLONE_ENV_FILE} ]] && export $(grep -Ev "^#|^$" ${RCLONE_ENV_FILE} | xargs -0)
 }
 
-RUN_METADATA2GD() {
+RUN_META2CLOUD() {
     # host 网络模式下同宿主机，直接用 localhost
     local WEBHOOK_URL="http://localhost:38765/trigger"
     local TIMEOUT=10   # 秒，只等 HTTP 响应，pipeline 在容器内异步运行
 
-    local WEBHOOK_SECRET="${METADATA2GD_WEBHOOK_SECRET}"
+    local WEBHOOK_SECRET="${META2CLOUD_WEBHOOK_SECRET}"
 
     if [[ "${UPLOAD_SUCCESS}" != "1" ]]; then
-        echo -e "$(DATE_TIME) ${INFO} Upload was not successful, skipping Metadata2GD."
+        echo -e "$(DATE_TIME) ${INFO} Upload was not successful, skipping Meta2Cloud."
         return 0
     fi
 
-    echo -e "$(DATE_TIME) ${INFO} Triggering Metadata2GD: ${WEBHOOK_URL}"
+    echo -e "$(DATE_TIME) ${INFO} Triggering Meta2Cloud: ${WEBHOOK_URL}"
     local RESPONSE
     local CURL_ARGS=(-sf --max-time "${TIMEOUT}" -X POST "${WEBHOOK_URL}" \
         -H "Content-Type: application/json" \
@@ -118,9 +118,9 @@ RUN_METADATA2GD() {
     local EXIT_CODE=$?
 
     if [[ ${EXIT_CODE} -eq 0 ]]; then
-        echo -e "$(DATE_TIME) ${INFO} Metadata2GD triggered successfully. Response: ${RESPONSE}"
+        echo -e "$(DATE_TIME) ${INFO} Meta2Cloud triggered successfully. Response: ${RESPONSE}"
     else
-        echo -e "$(DATE_TIME) ${ERROR} Failed to reach Metadata2GD (curl exit ${EXIT_CODE}). Is the container running?"
+        echo -e "$(DATE_TIME) ${ERROR} Failed to reach Meta2Cloud (curl exit ${EXIT_CODE}). Is the container running?"
     fi
     return ${EXIT_CODE}
 }
@@ -167,5 +167,5 @@ DEFINITION_PATH
 CLEAN_UP
 LOAD_RCLONE_ENV
 UPLOAD_FILE
-RUN_METADATA2GD
+RUN_META2CLOUD
 exit 0
