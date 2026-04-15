@@ -30,14 +30,9 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 复制源代码（config/ 目录通过 volume 挂载，不打包进镜像）
-COPY drive/       ./drive/
-COPY mediaparser/ ./mediaparser/
-COPY nfo/         ./nfo/
-COPY scraper/     ./scraper/
-COPY webui/       ./webui/
-COPY organizer.py ./
-COPY pipeline.py  ./
+# 复制项目源码；通过 .dockerignore 排除不需要进入运行镜像的内容。
+# 这样新增顶层 Python 包时不需要再手动更新 Dockerfile。
+COPY . ./
 
 # 复制前端构建产物
 COPY --from=frontend-builder /frontend/dist ./frontend/dist
