@@ -1,5 +1,17 @@
-docker buildx build \
+#!/usr/bin/env sh
+set -eu
+
+IMAGE="${IMAGE:-benz1/meta2cloud}"
+VERSION="${1:-}"
+
+set -- docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  -t benz1/meta2cloud:latest \
-  -t benz1/meta2cloud:v4.03 \
-  --push .
+  -t "${IMAGE}:latest"
+
+if [ -n "${VERSION}" ]; then
+  set -- "$@" -t "${IMAGE}:${VERSION}"
+fi
+
+set -- "$@" --push .
+
+exec "$@"

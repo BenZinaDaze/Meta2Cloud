@@ -10,7 +10,7 @@ on:
   workflow_dispatch:  # 允许手动触发（自动推送最新 tag + latest）
 
 env:
-  DOCKERHUB_IMAGE: benz1/metadata2gd
+  DOCKERHUB_IMAGE: benz1/meta2cloud
 
 jobs:
   build-and-push:
