@@ -369,6 +369,7 @@ export default function ConfigPage({ onAria2EnabledChange = null }) {
   const [u115OauthMessage, setU115OauthMessage] = useState(null)
   const [u115QrUrl, setU115QrUrl] = useState('')
   const [u115QrPreviewUrl, setU115QrPreviewUrl] = useState('')
+  const [u115QrPreviewError, setU115QrPreviewError] = useState('')
   const [u115AuthBusy, setU115AuthBusy] = useState(false)
   const [u115TestBusy, setU115TestBusy] = useState(false)
   const [u115Polling, setU115Polling] = useState(false)
@@ -495,6 +496,7 @@ export default function ConfigPage({ onAria2EnabledChange = null }) {
     setU115AuthBusy(true)
     setU115Polling(false)
     setU115OauthMessage(null)
+    setU115QrPreviewError('')
     cancelU115AuthFlow()
     try {
       const createController = new AbortController()
@@ -513,8 +515,15 @@ export default function ConfigPage({ onAria2EnabledChange = null }) {
         if (!mountedRef.current) return
         const objectUrl = URL.createObjectURL(qrRes.data)
         setU115QrPreviewUrl(objectUrl)
-      } catch {
+      } catch (e) {
+        if (!mountedRef.current) return
         setU115QrPreviewUrl('')
+        const status = e?.response?.status
+        if (status === 404) {
+          setU115QrPreviewError('当前服务端未提供二维码图片接口，请更新后端到最新版本。')
+        } else {
+          setU115QrPreviewError(e?.response?.data?.detail || e.message || '二维码图片加载失败')
+        }
       } finally {
         u115QrFetchAbortRef.current = null
       }
@@ -619,6 +628,14 @@ export default function ConfigPage({ onAria2EnabledChange = null }) {
       } catch (e) {
         if (cancelled) return
         if (e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') return
+        const status = e?.response?.status
+        if (status === 502 || status === 503 || status === 504 || !status) {
+          setU115OauthMessage({
+            type: 'error',
+            text: '115 扫码状态查询暂时超时，系统会继续自动重试…',
+          })
+          return
+        }
         setU115Polling(false)
         setU115OauthMessage({
           type: 'error',
@@ -898,6 +915,11 @@ export default function ConfigPage({ onAria2EnabledChange = null }) {
                     <div className="text-xs" style={{ color: 'var(--color-muted)' }}>请使用 115 App 扫码</div>
                     {u115QrPreviewUrl ? (
                       <img src={u115QrPreviewUrl} alt="115 OAuth QR Code" className="w-44 h-44 rounded-lg" />
+                    ) : u115QrPreviewError ? (
+                      <div className="w-44 h-44 rounded-lg flex items-center justify-center text-xs text-center p-3"
+                        style={{ background: 'rgba(239,68,68,0.08)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.18)' }}>
+                        {u115QrPreviewError}
+                      </div>
                     ) : (
                       <div className="w-44 h-44 rounded-lg flex items-center justify-center text-xs"
                         style={{ background: 'var(--color-surface-2)', color: 'var(--color-muted)' }}>

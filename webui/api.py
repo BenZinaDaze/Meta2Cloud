@@ -26,6 +26,7 @@ import subprocess
 import sys
 import threading
 import base64
+import io
 import json
 import uuid
 import sqlite3
@@ -2508,15 +2509,16 @@ async def u115_oauth_qrcode():
 def _u115_oauth_qrcode_sync():
     cfg = get_config().u115
     try:
+        import qrcode
+
         session = _load_u115_device_session(_resolve_config_path(cfg.session_json))
-        result = subprocess.run(
-            ["qrencode", "-t", "PNG", "-o", "-", session.qrcode],
-            check=True,
-            capture_output=True,
-        )
-        return Response(content=result.stdout, media_type="image/png")
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        qr = qrcode.QRCode(border=2, box_size=8)
+        qr.add_data(session.qrcode)
+        qr.make(fit=True)
+        image = qr.make_image(fill_color="black", back_color="white")
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        return Response(content=buffer.getvalue(), media_type="image/png")
     except Exception as exc:
         logger.exception("115 二维码代理失败")
         raise HTTPException(status_code=400, detail=f"115 二维码代理失败：{exc}") from exc
