@@ -63,6 +63,7 @@ export const exchangeU115OauthToken = (data, config) => api.post('/u115/oauth/ex
 export const testU115Connection = () => api.post('/u115/test')
 export const fetchU115QrCode = (config) => api.get('/u115/oauth/qrcode', { responseType: 'blob', ...(config || {}) })
 export const getU115OfflineOverview = (params) => api.get('/u115/offline/overview', { params })
+export const getU115OfflineQuota = () => api.get('/u115/offline/quota')
 export const getU115AutoOrganizeStatus = () => api.get('/u115/offline/auto-organize-status')
 export const addU115OfflineUrls = (data) => api.post('/u115/offline/add-urls', data)
 export const deleteU115OfflineTasks = (data) => api.post('/u115/offline/tasks/delete', data)
