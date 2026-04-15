@@ -2552,8 +2552,13 @@ def _u115_oauth_poll_sync():
         if not status.confirmed and int(status.status) >= 1:
             try:
                 client.exchange_device_token(session)
-                if os.path.exists(session_path):
-                    os.remove(session_path)
+                # 删除前校验 uid：如果文件已被新的 create 覆盖，跳过删除
+                try:
+                    on_disk = _load_u115_device_session(session_path)
+                    if on_disk.uid == session.uid:
+                        os.remove(session_path)
+                except (FileNotFoundError, Exception):
+                    pass
                 return {
                     "ok": True,
                     "status": status.status,
@@ -2601,9 +2606,12 @@ def _u115_oauth_exchange_sync(body: Optional[U115ExchangeBody] = None):
         resolved_session_path = _resolve_config_path(session_json)
         session = _load_u115_device_session(resolved_session_path)
         token = client.exchange_device_token(session)
+        # 删除前校验 uid：如果文件已被新的 create 覆盖，跳过删除
         try:
-            os.remove(resolved_session_path)
-        except FileNotFoundError:
+            on_disk = _load_u115_device_session(resolved_session_path)
+            if on_disk.uid == session.uid:
+                os.remove(resolved_session_path)
+        except (FileNotFoundError, Exception):
             pass
         return {
             "ok": True,
