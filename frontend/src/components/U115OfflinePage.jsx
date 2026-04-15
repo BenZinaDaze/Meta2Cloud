@@ -207,9 +207,21 @@ export default function U115OfflinePage({ onToast }) {
   const pagination = overview?.pagination
   const latestTrigger = autoOrganizeStatus?.last_triggered
   const latestTriggerTask = latestTrigger?.tasks?.[0] || null
-  const autoOrganizeState = autoOrganizeStatus?.enabled
-    ? (
-      autoOrganizeStatus?.last_poll_error
+  const autoOrganizeState = !autoOrganizeStatus?.enabled
+    ? {
+        label: '已关闭',
+        color: '#94a3b8',
+        bg: 'rgba(148,163,184,0.12)',
+        desc: '自动整理未启用',
+      }
+    : !autoOrganizeStatus?.authorized
+      ? {
+          label: '未授权',
+          color: '#f59e0b',
+          bg: 'rgba(245,158,11,0.14)',
+          desc: '115 尚未授权，自动整理监听不会开始轮询',
+        }
+      : autoOrganizeStatus?.last_poll_error
         ? {
             label: '异常',
             color: '#ef4444',
@@ -222,13 +234,6 @@ export default function U115OfflinePage({ onToast }) {
             bg: 'rgba(59,130,246,0.12)',
             desc: `每 ${autoOrganizeStatus?.poll_seconds ?? '-'} 秒检查一次，完成后等待 ${autoOrganizeStatus?.stable_seconds ?? '-'} 秒触发整理`,
           }
-    )
-    : {
-        label: '已关闭',
-        color: '#94a3b8',
-        bg: 'rgba(148,163,184,0.12)',
-        desc: '自动整理未启用',
-      }
 
   const selectedSet = useMemo(() => new Set(selected), [selected])
 

@@ -170,6 +170,9 @@ def _poll_u115_auto_organize_once() -> None:
         return
     if not cfg.u115.download_folder_id:
         return
+    oauth_status = _u115_oauth_status_payload()
+    if not oauth_status.get("authorized"):
+        return
 
     offline = _u115_offline_client()
     tasks = offline.get_all_tasks()
@@ -324,6 +327,7 @@ def _u115_auto_organize_status_payload() -> Dict[str, Any]:
     return {
         "enabled": bool(cfg.u115.auto_organize_enabled and cfg.storage.primary == "pan115"),
         "storage_primary": cfg.storage.primary,
+        "authorized": bool(_u115_oauth_status_payload().get("authorized")),
         "watcher_alive": bool(_u115_auto_organize_thread and _u115_auto_organize_thread.is_alive()),
         "poll_seconds": cfg.u115.auto_organize_poll_seconds,
         "stable_seconds": cfg.u115.auto_organize_stable_seconds,

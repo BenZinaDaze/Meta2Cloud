@@ -901,12 +901,6 @@ export default function ConfigPage({ onAria2EnabledChange = null }) {
                   >
                     {u115TestBusy ? '测试中…' : '测试 115 连接'}
                   </button>
-                  {u115Oauth?.session_exists === false && (
-                    <span className="text-xs px-2 py-1 rounded-full"
-                      style={{ background: 'rgba(148,163,184,0.12)', color: 'var(--color-muted)' }}>
-                      暂无扫码会话
-                    </span>
-                  )}
                 </div>
 
                 {u115QrUrl && (
