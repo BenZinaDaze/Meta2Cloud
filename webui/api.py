@@ -175,7 +175,8 @@ def _poll_u115_auto_organize_once() -> None:
         return
 
     offline = _u115_offline_client()
-    tasks = offline.get_all_tasks()
+    task_page = offline.get_task_list(page=1)
+    tasks = task_page.tasks
     stable_seconds = max(0, cfg.u115.auto_organize_stable_seconds)
     now = datetime.now(timezone.utc)
     store = _get_u115_auto_organize_store()
@@ -275,6 +276,9 @@ def _u115_auto_organize_loop() -> None:
             cfg = get_config()
             sleep_seconds = max(10, cfg.u115.auto_organize_poll_seconds)
             _poll_u115_auto_organize_once()
+        except u115pan.Pan115RateLimitError as exc:
+            logger.warning("115 自动整理轮询进入冷却：%s", exc)
+            _u115_auto_organize_last_poll_error = str(exc)
         except (sqlite3.Error, ValueError) as exc:
             logger.warning("115 自动整理状态处理失败：%s", exc)
             _u115_auto_organize_last_poll_error = str(exc)
@@ -2646,14 +2650,17 @@ async def u115_offline_auto_organize_status():
     return await run_in_threadpool(_u115_auto_organize_status_payload)
 
 
+@app.get("/api/u115/offline/quota")
+async def u115_offline_quota():
+    return await run_in_threadpool(_u115_offline_quota_sync)
+
+
 def _u115_offline_overview_sync(page: int):
     try:
         offline = _u115_offline_client()
-        quota = offline.get_quota_info()
         task_page = offline.get_task_list(page=page)
         return {
             "ok": True,
-            "quota": _serialize_u115_offline_quota(quota),
             "tasks": [_serialize_u115_offline_task(task) for task in task_page.tasks],
             "pagination": {
                 "page": task_page.page,
@@ -2667,6 +2674,19 @@ def _u115_offline_overview_sync(page: int):
     except Exception as exc:
         logger.exception("115 云下载概览获取失败")
         raise HTTPException(status_code=400, detail=f"115 云下载概览获取失败：{exc}") from exc
+
+
+def _u115_offline_quota_sync():
+    try:
+        offline = _u115_offline_client()
+        quota = offline.get_quota_info()
+        return {
+            "ok": True,
+            "quota": _serialize_u115_offline_quota(quota),
+        }
+    except Exception as exc:
+        logger.exception("115 云下载配额获取失败")
+        raise HTTPException(status_code=400, detail=f"115 云下载配额获取失败：{exc}") from exc
 
 
 @app.post("/api/u115/offline/add-urls")

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   addU115OfflineUrls,
   clearU115OfflineTasks,
   deleteU115OfflineTasks,
   getU115AutoOrganizeStatus,
   getU115OfflineOverview,
+  getU115OfflineQuota,
   testU115Connection,
 } from '../api'
 import ParseTestModal from './ParseTestModal'
@@ -79,46 +81,6 @@ function ToolButton({ children, onClick, danger = false, disabled = false }) {
   )
 }
 
-function TaskCheckbox({ checked, onChange, label }) {
-  return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={onChange}
-      className="flex items-center justify-center transition-all"
-      style={{
-        width: 22,
-        height: 22,
-        marginTop: 2,
-        borderRadius: 7,
-        border: checked ? '1px solid var(--color-accent)' : '1px solid var(--color-border)',
-        background: checked ? 'var(--color-accent)' : 'var(--color-surface)',
-        boxShadow: checked ? '0 8px 20px rgba(180, 117, 51, 0.22)' : 'none',
-        color: '#fff',
-        flexShrink: 0,
-      }}
-    >
-      <svg
-        width="13"
-        height="13"
-        viewBox="0 0 16 16"
-        fill="none"
-        style={{ opacity: checked ? 1 : 0, transform: checked ? 'scale(1)' : 'scale(0.7)', transition: 'all 0.16s ease' }}
-      >
-        <path
-          d="M3.5 8.5L6.5 11.5L12.5 4.5"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </button>
-  )
-}
-
 function PaginationBar({ pagination, onChange, busy = false }) {
   if (!pagination || pagination.total_pages <= 1) return null
 
@@ -135,16 +97,119 @@ function PaginationBar({ pagination, onChange, busy = false }) {
   )
 }
 
+function DeleteConfirmModal({ task, busy = false, onDeleteKeepSource, onDeleteSource, onClose }) {
+  const [show, setShow] = useState(false)
+
+  useEffect(() => {
+    requestAnimationFrame(() => setShow(true))
+    const onKey = (event) => {
+      if (event.key === 'Escape' && !busy) onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [busy, onClose])
+
+  if (!task) return null
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[140] flex items-center justify-center p-4"
+      style={{
+        background: 'rgba(2, 8, 18, 0.78)',
+        backdropFilter: 'blur(10px)',
+        opacity: show ? 1 : 0,
+        transition: 'opacity 0.2s',
+      }}
+    >
+      <div
+        className="relative w-full max-w-lg overflow-hidden rounded-[30px]"
+        style={{
+          background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.98) 0%, rgba(11, 22, 37, 0.98) 100%)',
+          border: '1px solid var(--color-border)',
+          transform: show ? 'translateY(0)' : 'translateY(20px)',
+          transition: 'transform 0.2s',
+          boxShadow: 'var(--shadow-strong)',
+        }}
+      >
+        <div className="border-b px-6 py-5" style={{ borderColor: 'var(--color-border)' }}>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--color-accent-hover)' }}>
+            Delete Task
+          </div>
+          <h2 className="mt-2 text-[24px] font-bold leading-snug" style={{ color: 'var(--color-text)' }}>
+            删除云下载任务
+          </h2>
+          <p className="mt-2 text-sm leading-6" style={{ color: 'var(--color-muted)' }}>
+            请选择要执行的删除方式。删除源文件后，115 网盘中的对应文件也会一并删除。
+          </p>
+        </div>
+
+        <div className="px-6 py-5">
+          <div
+            className="rounded-[22px] px-4 py-4 text-sm break-all"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
+          >
+            {task.name || task.url || task.info_hash}
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button
+              onClick={onDeleteKeepSource}
+              disabled={busy}
+              className="rounded-full px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-40"
+              style={{
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-text)',
+              }}
+            >
+              {busy ? '处理中…' : '不删除源文件'}
+            </button>
+            <button
+              onClick={onDeleteSource}
+              disabled={busy}
+              className="rounded-full px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-40"
+              style={{
+                background: 'rgba(239, 125, 117, 0.12)',
+                border: '1px solid rgba(239, 125, 117, 0.28)',
+                color: 'var(--color-danger)',
+              }}
+            >
+              {busy ? '处理中…' : '删除源文件'}
+            </button>
+            <button
+              onClick={onClose}
+              disabled={busy}
+              className="rounded-full px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-40"
+              style={{
+                background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: 'var(--color-muted)',
+              }}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 export default function U115OfflinePage({ onToast }) {
   const [overview, setOverview] = useState(null)
+  const [quota, setQuota] = useState(null)
   const [autoOrganizeStatus, setAutoOrganizeStatus] = useState(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [pageVisible, setPageVisible] = useState(() => (
+    typeof document === 'undefined' ? true : document.visibilityState === 'visible'
+  ))
   const [urls, setUrls] = useState('')
   const [wpPathId, setWpPathId] = useState('')
-  const [selected, setSelected] = useState([])
   const [driveSpace, setDriveSpace] = useState(null)
   const [parseTestFile, setParseTestFile] = useState('')
+  const [deleteConfirmTask, setDeleteConfirmTask] = useState(null)
   const [page, setPage] = useState(1)
 
   const loadOverview = useCallback(async () => {
@@ -167,9 +232,22 @@ export default function U115OfflinePage({ onToast }) {
     }
   }, [])
 
+  const loadQuota = useCallback(async () => {
+    try {
+      const res = await getU115OfflineQuota()
+      setQuota(res?.data?.quota || null)
+    } catch {
+      setQuota(null)
+    }
+  }, [])
+
   useEffect(() => {
     loadOverview()
   }, [loadOverview])
+
+  useEffect(() => {
+    loadQuota()
+  }, [loadQuota])
 
   const loadDriveSpace = useCallback(async () => {
     try {
@@ -189,21 +267,36 @@ export default function U115OfflinePage({ onToast }) {
   }, [loadAutoOrganizeStatus])
 
   useEffect(() => {
+    const handleVisibilityChange = () => {
+      setPageVisible(document.visibilityState === 'visible')
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!pageVisible || busy) return
+    loadOverview()
+    loadAutoOrganizeStatus()
+  }, [busy, loadAutoOrganizeStatus, loadOverview, pageVisible])
+
+  useEffect(() => {
+    if (!pageVisible) return undefined
     const timer = setInterval(() => {
       if (!busy) {
         loadOverview()
-        loadDriveSpace()
         loadAutoOrganizeStatus()
       }
-    }, 5000)
+    }, 15000)
 
     return () => {
       clearInterval(timer)
     }
-  }, [busy, loadAutoOrganizeStatus, loadDriveSpace, loadOverview])
+  }, [busy, loadAutoOrganizeStatus, loadOverview, pageVisible])
 
   const tasks = useMemo(() => overview?.tasks || [], [overview])
-  const quota = overview?.quota
   const pagination = overview?.pagination
   const latestTrigger = autoOrganizeStatus?.last_triggered
   const latestTriggerTask = latestTrigger?.tasks?.[0] || null
@@ -235,12 +328,6 @@ export default function U115OfflinePage({ onToast }) {
             desc: `每 ${autoOrganizeStatus?.poll_seconds ?? '-'} 秒检查一次，完成后等待 ${autoOrganizeStatus?.stable_seconds ?? '-'} 秒触发整理`,
           }
 
-  const selectedSet = useMemo(() => new Set(selected), [selected])
-
-  useEffect(() => {
-    setSelected(prev => prev.filter(infoHash => tasks.some(task => task.info_hash === infoHash)))
-  }, [tasks])
-
   async function handleAddUrls() {
     if (!urls.trim()) {
       onToast?.('warning', '缺少链接', '请至少输入一个下载链接')
@@ -264,26 +351,9 @@ export default function U115OfflinePage({ onToast }) {
       )
       setUrls('')
       await loadOverview()
+      await loadAutoOrganizeStatus()
     } catch (e) {
       onToast?.('error', '添加任务失败', e?.response?.data?.detail || e.message || '115 云下载添加链接失败')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleDelete(infoHashes, delSourceFile = 0) {
-    if (!infoHashes.length) return
-    setBusy(true)
-    try {
-      await deleteU115OfflineTasks({
-        info_hashes: infoHashes,
-        del_source_file: delSourceFile,
-      })
-      onToast?.('success', '任务已删除', `已删除 ${infoHashes.length} 个云下载任务`)
-      setSelected(prev => prev.filter(item => !infoHashes.includes(item)))
-      await loadOverview()
-    } catch (e) {
-      onToast?.('error', '删除任务失败', e?.response?.data?.detail || e.message || '115 云下载删除任务失败')
     } finally {
       setBusy(false)
     }
@@ -294,8 +364,8 @@ export default function U115OfflinePage({ onToast }) {
     try {
       await clearU115OfflineTasks({ flag })
       onToast?.('success', '任务已清空', flag === 1 ? '已清空失败任务' : flag === 2 ? '已清空完成任务' : '已清空全部任务')
-      setSelected([])
       await loadOverview()
+      await loadAutoOrganizeStatus()
     } catch (e) {
       onToast?.('error', '清空任务失败', e?.response?.data?.detail || e.message || '115 云下载清空任务失败')
     } finally {
@@ -303,12 +373,23 @@ export default function U115OfflinePage({ onToast }) {
     }
   }
 
-  function toggleTask(infoHash) {
-    setSelected(prev => (
-      prev.includes(infoHash)
-        ? prev.filter(item => item !== infoHash)
-        : [...prev, infoHash]
-    ))
+  async function handleDeleteOne(infoHash, delSourceFile = 0) {
+    if (!infoHash) return
+    setBusy(true)
+    try {
+      await deleteU115OfflineTasks({
+        info_hashes: [infoHash],
+        del_source_file: delSourceFile,
+      })
+      onToast?.('success', '任务已删除', delSourceFile ? '已删除任务并删除源文件' : '已删除任务')
+      setDeleteConfirmTask(null)
+      await loadOverview()
+      await loadAutoOrganizeStatus()
+    } catch (e) {
+      onToast?.('error', '删除任务失败', e?.response?.data?.detail || e.message || '115 云下载删除任务失败')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -326,7 +407,17 @@ export default function U115OfflinePage({ onToast }) {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <ToolButton onClick={loadOverview} disabled={busy}>刷新</ToolButton>
+          <ToolButton
+            onClick={() => {
+              loadOverview()
+              loadQuota()
+              loadDriveSpace()
+              loadAutoOrganizeStatus()
+            }}
+            disabled={busy}
+          >
+            刷新
+          </ToolButton>
           <ToolButton onClick={() => handleClear(2)} disabled={busy}>清空已完成</ToolButton>
         </div>
       </div>
@@ -467,8 +558,6 @@ export default function U115OfflinePage({ onToast }) {
             <div className="text-base font-semibold" style={{ color: 'var(--color-text)' }}>任务列表</div>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <ToolButton onClick={() => handleDelete(selected, 0)} disabled={busy || selected.length === 0}>删除选中</ToolButton>
-            <ToolButton danger onClick={() => handleDelete(selected, 1)} disabled={busy || selected.length === 0}>删除并删源文件</ToolButton>
             <ToolButton onClick={() => handleClear(1)} disabled={busy}>清空失败任务</ToolButton>
           </div>
         </div>
@@ -484,27 +573,17 @@ export default function U115OfflinePage({ onToast }) {
           <div className="grid gap-3">
             {tasks.map((task) => {
               const status = statusMeta(task.status)
-              const checked = selectedSet.has(task.info_hash)
               return (
                 <div
                   key={task.info_hash}
                   className="rounded-[24px] px-5 py-5 transition-all duration-150"
                   style={{
-                    background: checked
-                      ? 'linear-gradient(180deg, rgba(41, 56, 75, 0.94) 0%, rgba(22, 33, 48, 0.98) 100%)'
-                      : 'linear-gradient(180deg, rgba(20, 37, 59, 0.82) 0%, rgba(13, 24, 39, 0.96) 100%)',
-                    border: checked
-                      ? '1px solid rgba(200, 146, 77, 0.28)'
-                      : '1px solid var(--color-border)',
-                    boxShadow: checked ? '0 0 0 1px rgba(200,146,77,0.12) inset' : 'none',
+                    background: 'linear-gradient(180deg, rgba(20, 37, 59, 0.82) 0%, rgba(13, 24, 39, 0.96) 100%)',
+                    border: '1px solid var(--color-border)',
+                    boxShadow: 'none',
                   }}
                 >
                   <div className="flex flex-wrap items-start gap-3">
-                    <TaskCheckbox
-                      checked={checked}
-                      onChange={() => toggleTask(task.info_hash)}
-                      label={`选择任务 ${task.name || task.url || task.info_hash}`}
-                    />
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2 mb-2">
                         <span
@@ -562,7 +641,7 @@ export default function U115OfflinePage({ onToast }) {
                         {task.url ? <div className="break-all">链接：{task.url}</div> : null}
                       </div>
                     </div>
-                    <ToolButton danger onClick={() => handleDelete([task.info_hash], 0)} disabled={busy}>删除</ToolButton>
+                    <ToolButton danger onClick={() => setDeleteConfirmTask(task)} disabled={busy}>删除</ToolButton>
                   </div>
                 </div>
               )
@@ -574,7 +653,6 @@ export default function U115OfflinePage({ onToast }) {
           pagination={pagination}
           busy={busy}
           onChange={(nextPage) => {
-            setSelected([])
             setPage(nextPage)
           }}
         />
@@ -584,6 +662,15 @@ export default function U115OfflinePage({ onToast }) {
         <ParseTestModal
           initialFilename={parseTestFile}
           onClose={() => setParseTestFile('')}
+        />
+      ) : null}
+      {deleteConfirmTask ? (
+        <DeleteConfirmModal
+          task={deleteConfirmTask}
+          busy={busy}
+          onDeleteKeepSource={() => handleDeleteOne(deleteConfirmTask.info_hash, 0)}
+          onDeleteSource={() => handleDeleteOne(deleteConfirmTask.info_hash, 1)}
+          onClose={() => !busy && setDeleteConfirmTask(null)}
         />
       ) : null}
     </div>

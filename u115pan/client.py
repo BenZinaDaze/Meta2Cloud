@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import os
 import random
+import threading
 import time
 from typing import Any, Optional
 from urllib.parse import urljoin
@@ -79,6 +80,7 @@ class Pan115Client:
         self._next_api_at = 0.0
         self._next_download_at = 0.0
         self._cooldown_until = 0.0
+        self._rate_lock = threading.Lock()
 
         self.session.headers.update(
             {
@@ -101,23 +103,42 @@ class Pan115Client:
         if self.token and self.token_path:
             save_token(self.token, self.token_path)
 
+    def _enter_cooldown(self) -> None:
+        cooldown_until = time.time() + self.cooldown_seconds
+        with self._rate_lock:
+            self._cooldown_until = cooldown_until
+            self._next_api_at = max(self._next_api_at, cooldown_until)
+            self._next_download_at = max(self._next_download_at, cooldown_until)
+
     def _sleep_rate_limit(self, *, is_download: bool) -> None:
-        now = time.time()
-        if now < self._cooldown_until:
-            time.sleep(self._cooldown_until - now)
+        wait_seconds = 0.0
+        with self._rate_lock:
             now = time.time()
+            if now < self._cooldown_until:
+                retry_after = max(1, int(self._cooldown_until - now))
+                raise Pan115RateLimitError(
+                    f"115 接口冷却中，请 {retry_after} 秒后再试",
+                    code=429,
+                    payload={
+                        "cooldown_until": self._cooldown_until,
+                        "retry_after": retry_after,
+                    },
+                )
 
-        next_at = self._next_download_at if is_download else self._next_api_at
-        if now < next_at:
-            time.sleep(next_at - now)
-            now = time.time()
+            next_at = self._next_download_at if is_download else self._next_api_at
+            reserve_at = max(now, next_at)
+            wait_seconds = max(0.0, reserve_at - now)
 
-        qps = self.download_qps if is_download else self.api_qps
-        interval = 1.0 / qps if qps > 0 else 0.0
-        if is_download:
-            self._next_download_at = now + interval
-        else:
-            self._next_api_at = now + interval
+            qps = self.download_qps if is_download else self.api_qps
+            interval = 1.0 / qps if qps > 0 else 0.0
+            reserved_next = reserve_at + interval
+            if is_download:
+                self._next_download_at = reserved_next
+            else:
+                self._next_api_at = reserved_next
+
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
 
     def _make_headers(
         self,
@@ -174,7 +195,7 @@ class Pan115Client:
                     timeout=self.timeout,
                 )
                 if response.status_code == 429:
-                    self._cooldown_until = time.time() + self.cooldown_seconds
+                    self._enter_cooldown()
                     raise Pan115RateLimitError(
                         "115 接口返回 HTTP 429，进入冷却",
                         code=429,
@@ -186,7 +207,7 @@ class Pan115Client:
 
                 message = str(payload.get("message") or payload.get("msg") or "")
                 if "已达到当前访问上限" in message:
-                    self._cooldown_until = time.time() + self.cooldown_seconds
+                    self._enter_cooldown()
                     raise Pan115RateLimitError(
                         "115 接口提示达到访问上限，进入冷却",
                         code=payload.get("code"),
