@@ -2,6 +2,36 @@ import { useState, useEffect, useRef } from 'react'
 
 const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 7] // Mon → Sun
 
+function normalizeBangumiUrl(url) {
+  if (typeof url !== 'string') return url
+  if (url.startsWith('http://')) {
+    return `https://${url.slice('http://'.length)}`
+  }
+  return url
+}
+
+function normalizeCalendarPayload(payload) {
+  if (!Array.isArray(payload)) return []
+  return payload.map(day => ({
+    ...day,
+    items: Array.isArray(day?.items)
+      ? day.items.map(item => ({
+          ...item,
+          images: item?.images
+            ? {
+                ...item.images,
+                large: normalizeBangumiUrl(item.images.large),
+                common: normalizeBangumiUrl(item.images.common),
+                medium: normalizeBangumiUrl(item.images.medium),
+                small: normalizeBangumiUrl(item.images.small),
+                grid: normalizeBangumiUrl(item.images.grid),
+              }
+            : item?.images,
+        }))
+      : day?.items,
+  }))
+}
+
 function StarIcon({ fill = false }) {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill={fill ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
@@ -158,6 +188,80 @@ function WeekdaySection({ weekday, items, isToday, onSearch }) {
   )
 }
 
+function LazyWeekdaySection({ weekday, items, isToday, onSearch, eager = false }) {
+  const [revealed, setRevealed] = useState(eager)
+  const anchorRef = useRef(null)
+
+  useEffect(() => {
+    if (eager) {
+      setRevealed(true)
+      return
+    }
+    const node = anchorRef.current
+    if (!node || revealed) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some(entry => entry.isIntersecting)) {
+          setRevealed(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '900px 0px' }
+    )
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [eager, revealed])
+
+  if (!items || items.length === 0) return null
+
+  return (
+    <div ref={anchorRef}>
+      {revealed ? (
+        <WeekdaySection weekday={weekday} items={items} isToday={isToday} onSearch={onSearch} />
+      ) : (
+        <section className="mb-8">
+          <div className="mb-4 flex items-center gap-3">
+            {isToday && (
+              <span
+                className="flex h-5 items-center rounded-full px-2 text-[10px] font-bold uppercase tracking-wide flex-shrink-0"
+                style={{ background: 'var(--color-accent)', color: 'var(--color-primary-text)' }}
+              >
+                今日
+              </span>
+            )}
+            <span className="text-[22px] font-bold flex-shrink-0" style={{ color: isToday ? 'var(--color-accent-hover)' : 'var(--color-text)' }}>
+              {weekday.cn}
+            </span>
+            <span className="text-[15px] flex-shrink-0" style={{ color: 'var(--color-muted)' }}>
+              {weekday.en}
+            </span>
+            <span
+              className="rounded-full px-2 py-0.5 text-[13px] font-semibold flex-shrink-0"
+              style={{
+                background: isToday ? 'rgba(200, 146, 77, 0.15)' : 'rgba(255,255,255,0.05)',
+                color: isToday ? 'var(--color-accent-hover)' : 'var(--color-muted)',
+              }}
+            >
+              {items.length}
+            </span>
+            <span className="flex-1" style={{ height: 1, background: 'rgba(144, 178, 221, 0.10)' }} />
+          </div>
+          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
+            {Array.from({ length: Math.min(items.length, 6) }, (_, index) => (
+              <div
+                key={`${weekday.id}-placeholder-${index}`}
+                className="animate-pulse rounded-[16px] overflow-hidden"
+                style={{ background: 'rgba(255,255,255,0.04)', aspectRatio: '2/3' }}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  )
+}
+
 export default function CalendarPage({ onSearch }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -169,6 +273,11 @@ export default function CalendarPage({ onSearch }) {
   // Map JS day → bgm id
   const jsDayToBgm = d => d === 0 ? 7 : d
   const todayBgmId = jsDayToBgm(new Date().getDay())
+  const eagerWeekdays = new Set([
+    todayBgmId,
+    todayBgmId === 1 ? 7 : todayBgmId - 1,
+    todayBgmId === 7 ? 1 : todayBgmId + 1,
+  ])
 
   useEffect(() => {
     setLoading(true)
@@ -182,7 +291,8 @@ export default function CalendarPage({ onSearch }) {
       })
       .then(json => {
         // Sort by weekday id
-        const sorted = [...json].sort((a, b) => a.weekday.id - b.weekday.id)
+        const normalized = normalizeCalendarPayload(json)
+        const sorted = [...normalized].sort((a, b) => a.weekday.id - b.weekday.id)
         setData(sorted)
         setLastUpdated(new Date())
         setLoading(false)
@@ -200,9 +310,13 @@ export default function CalendarPage({ onSearch }) {
       headers: { 'User-Agent': 'Meta2Cloud/1.0 (https://github.com/BenZinaDaze/Meta2Cloud)' },
       cache: 'no-store',
     })
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
       .then(json => {
-        const sorted = [...json].sort((a, b) => a.weekday.id - b.weekday.id)
+        const normalized = normalizeCalendarPayload(json)
+        const sorted = [...normalized].sort((a, b) => a.weekday.id - b.weekday.id)
         setData(sorted)
         setLastUpdated(new Date())
         setLoading(false)
@@ -288,12 +402,13 @@ export default function CalendarPage({ onSearch }) {
       {!loading && data && (
         <div>
           {data.map(({ weekday, items }) => (
-            <WeekdaySection
+            <LazyWeekdaySection
               key={weekday.id}
               weekday={weekday}
               items={items || []}
               isToday={weekday.id === todayBgmId}
               onSearch={onSearch}
+              eager={eagerWeekdays.has(weekday.id)}
             />
           ))}
         </div>
