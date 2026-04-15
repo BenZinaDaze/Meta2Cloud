@@ -81,6 +81,7 @@ _cfg: Optional[Config] = None
 _client: Optional[DriveClient] = None
 _storage_provider: Optional[StorageProvider] = None
 _tmdb_cache: Optional[TmdbCache] = None
+_config_mtime_ns: Optional[int] = None
 TMDB_IMG_BASE = "https://image.tmdb.org/t/p/w500"
 TMDB_IMG_ORIG = "https://image.tmdb.org/t/p/original"
 
@@ -213,9 +214,19 @@ def send_telegram(token: str, chat_id: str, text: str) -> None:
 
 def _do_refresh_library() -> dict:
     """同步刷新快照核心逻辑，可在线程或协程中调用。"""
-    _app_log("library", "refresh_scan_start", "开始刷新媒体库快照")
     client   = get_storage_provider()
     cfg      = get_config()
+    _app_log(
+        "library",
+        "refresh_scan_start",
+        "开始刷新媒体库快照",
+        details={
+            "provider": getattr(client, "provider_name", "unknown"),
+            "movie_root_id": cfg.active_movie_root_id(),
+            "tv_root_id": cfg.active_tv_root_id(),
+            "root_folder_id": cfg.active_root_folder_id(),
+        },
+    )
     movies   = scan_movies(client, cfg)
     tv_shows = scan_tv_shows(client, cfg)
     diff = get_library_store().save_snapshot(movies, tv_shows)
@@ -351,15 +362,41 @@ def get_tmdb_cache() -> TmdbCache:
     return _tmdb_cache
 
 
+def _invalidate_runtime_cache_if_config_changed() -> None:
+    """配置文件被外部修改时，主动失效运行时缓存。"""
+    global _cfg, _client, _storage_provider, _config_mtime_ns
+    try:
+        mtime_ns = _CONFIG_PATH.stat().st_mtime_ns
+    except FileNotFoundError:
+        mtime_ns = None
+
+    if _config_mtime_ns is None:
+        _config_mtime_ns = mtime_ns
+        return
+
+    if mtime_ns != _config_mtime_ns:
+        logger.info("检测到 config.yaml 已变更，重载配置与存储 Provider 缓存")
+        _cfg = None
+        _client = None
+        _storage_provider = None
+        _config_mtime_ns = mtime_ns
+
+
 def get_config() -> Config:
-    global _cfg
+    global _cfg, _config_mtime_ns
+    _invalidate_runtime_cache_if_config_changed()
     if _cfg is None:
         _cfg = Config.load()
+        try:
+            _config_mtime_ns = _CONFIG_PATH.stat().st_mtime_ns
+        except FileNotFoundError:
+            _config_mtime_ns = None
     return _cfg
 
 
 def get_drive_client() -> DriveClient:
     global _client
+    _invalidate_runtime_cache_if_config_changed()
     if _client is None:
         cfg = get_config()
         drive_cfg = cfg.drive
@@ -373,6 +410,7 @@ def get_drive_client() -> DriveClient:
 def get_storage_provider() -> StorageProvider:
     """获取统一的 StorageProvider 实例（根据 config.storage.primary 选择）"""
     global _storage_provider
+    _invalidate_runtime_cache_if_config_changed()
     if _storage_provider is None:
         cfg = get_config()
         from storage import get_provider
@@ -2173,9 +2211,14 @@ async def write_config(body: ConfigSaveBody):
     )
     _CONFIG_PATH.write_text(new_yaml, encoding="utf-8")
     # 使全局缓存失效
-    global _cfg, _storage_provider
+    global _cfg, _client, _storage_provider, _config_mtime_ns
     _cfg = None
+    _client = None
     _storage_provider = None
+    try:
+        _config_mtime_ns = _CONFIG_PATH.stat().st_mtime_ns
+    except FileNotFoundError:
+        _config_mtime_ns = None
     _app_log("system", "config_updated", "配置文件已更新", level="SUCCESS")
     return {"ok": True, "message": "配置已保存"}
 
