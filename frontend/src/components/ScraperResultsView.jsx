@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { searchMedia, getEpisodes, addAria2Uri, addU115OfflineUrls, getU115OauthStatus, tmdbGetAlternativeNames } from '../api'
-import _resultsCache, { clearResultsCache } from '../utils/resultsCache'
-export { clearResultsCache }
+import _resultsCache from '../utils/resultsCache'
 
 export default function ScraperResultsView({ item, onBack, onToast, aria2Enabled = false }) {
   const searchKey = item.title || item.original_title || item.name

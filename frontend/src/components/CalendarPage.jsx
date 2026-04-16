@@ -32,6 +32,21 @@ function normalizeCalendarPayload(payload) {
   }))
 }
 
+function normalizeAndSortCalendarData(json) {
+  const normalized = normalizeCalendarPayload(json)
+  return [...normalized].sort((a, b) => a.weekday.id - b.weekday.id)
+}
+
+async function fetchCalendar(options = {}) {
+  const res = await fetch('https://api.bgm.tv/calendar', {
+    headers: { 'User-Agent': 'Meta2Cloud/1.0 (https://github.com/BenZinaDaze/Meta2Cloud)' },
+    ...options,
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const json = await res.json()
+  return normalizeAndSortCalendarData(json)
+}
+
 function StarIcon({ fill = false }) {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill={fill ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
@@ -193,10 +208,7 @@ function LazyWeekdaySection({ weekday, items, isToday, onSearch, eager = false }
   const anchorRef = useRef(null)
 
   useEffect(() => {
-    if (eager) {
-      setRevealed(true)
-      return
-    }
+    if (eager) return
     const node = anchorRef.current
     if (!node || revealed) return
 
@@ -280,20 +292,10 @@ export default function CalendarPage({ onSearch }) {
   ])
 
   useEffect(() => {
-    setLoading(true)
-    setError(null)
-    fetch('https://api.bgm.tv/calendar', {
-      headers: { 'User-Agent': 'Meta2Cloud/1.0 (https://github.com/BenZinaDaze/Meta2Cloud)' },
-    })
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.json()
-      })
-      .then(json => {
-        // Sort by weekday id
-        const normalized = normalizeCalendarPayload(json)
-        const sorted = [...normalized].sort((a, b) => a.weekday.id - b.weekday.id)
+    fetchCalendar()
+      .then(sorted => {
         setData(sorted)
+        setError(null)
         setLastUpdated(new Date())
         setLoading(false)
       })
@@ -306,17 +308,8 @@ export default function CalendarPage({ onSearch }) {
   function handleRefresh() {
     setLoading(true)
     setError(null)
-    fetch('https://api.bgm.tv/calendar', {
-      headers: { 'User-Agent': 'Meta2Cloud/1.0 (https://github.com/BenZinaDaze/Meta2Cloud)' },
-      cache: 'no-store',
-    })
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.json()
-      })
-      .then(json => {
-        const normalized = normalizeCalendarPayload(json)
-        const sorted = [...normalized].sort((a, b) => a.weekday.id - b.weekday.id)
+    fetchCalendar({ cache: 'no-store' })
+      .then(sorted => {
         setData(sorted)
         setLastUpdated(new Date())
         setLoading(false)

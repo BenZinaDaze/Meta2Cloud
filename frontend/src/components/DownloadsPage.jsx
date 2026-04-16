@@ -565,12 +565,13 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
         setError(getAria2ErrorMessage(e))
         errorCount.current += 1
       } finally {
-        if (cancelled) return
-        if (!silent) setLoading(false)
-        // 逾退策略：0 次错=5s, 1次=10s, 2次=20s, ≥3次=30s
-        const delays = [5000, 10000, 20000, 30000]
-        const delay = delays[Math.min(errorCount.current, delays.length - 1)]
-        pollTimer.current = setTimeout(() => poll(true), delay)
+        if (!cancelled) {
+          if (!silent) setLoading(false)
+          // 逾退策略：0 次错=5s, 1次=10s, 2次=20s, ≥3次=30s
+          const delays = [5000, 10000, 20000, 30000]
+          const delay = delays[Math.min(errorCount.current, delays.length - 1)]
+          pollTimer.current = setTimeout(() => poll(true), delay)
+        }
       }
     }
 
