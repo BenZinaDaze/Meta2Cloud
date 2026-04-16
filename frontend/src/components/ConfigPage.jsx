@@ -14,6 +14,7 @@ import {
   fetchU115QrCode,
 } from '../api'
 import CustomWordsHelp from './config/CustomWordsHelp'
+import { SkeletonPanel } from './StatePanel'
 
 const PAGE_VARIANTS = {
   general: {
@@ -757,10 +758,7 @@ export default function ConfigPage({ onAria2EnabledChange = null, page = 'genera
 
   if (loading) return (
     <div className="flex-1 space-y-4">
-      {[1, 2, 3].map(i => (
-        <div key={i} className="rounded-xl animate-pulse h-32"
-          style={{ background: 'var(--color-surface-2)' }} />
-      ))}
+      {[1, 2, 3].map(i => <SkeletonPanel key={i} compact rows={3} />)}
     </div>
   )
 

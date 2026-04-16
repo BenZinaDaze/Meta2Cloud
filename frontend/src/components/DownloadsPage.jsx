@@ -11,6 +11,7 @@ import {
   unpauseAria2Tasks,
 } from '../api'
 import ParseTestModal from './ParseTestModal'
+import { StatePanel } from './StatePanel'
 
 function getAria2ErrorMessage(error) {
   const detail = error?.response?.data?.detail || error?.message || '下载中心加载失败'
@@ -75,7 +76,7 @@ function ToolButton({ children, onClick, danger = false, disabled = false, loadi
     <button
       onClick={onClick}
       disabled={disabled || loading}
-      className="rounded-full px-3 py-2 text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40"
+      className="min-h-11 rounded-full px-3.5 py-2 text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40"
       style={{
         background: danger ? 'rgba(239, 125, 117, 0.12)' : 'rgba(255,255,255,0.03)',
         border: danger ? '1px solid rgba(239, 125, 117, 0.28)' : '1px solid var(--color-border)',
@@ -98,7 +99,7 @@ function QueueTab({ active, label, count, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="rounded-full px-4 py-2 text-sm font-medium transition-all duration-150"
+      className="min-h-11 rounded-full px-4 py-2 text-sm font-medium transition-all duration-150"
       style={{
         color: active ? 'var(--color-accent-hover)' : 'var(--color-muted)',
         background: active ? 'rgba(200, 146, 77, 0.14)' : 'rgba(255,255,255,0.03)',
@@ -169,30 +170,46 @@ function TaskDetailModal({ task, onClose, onPause, onResume, onRemove, onRetry, 
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto p-4 pt-20 sm:pt-24"
+      className="fixed inset-0 z-[120] flex items-end justify-center overflow-y-auto p-0 sm:items-start sm:p-4 sm:pt-24"
       style={{ background: 'rgba(2,8,18,0.78)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}
-      onClick={onClose}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className="relative w-full max-w-[1180px] overflow-hidden rounded-[24px] sm:rounded-[32px]"
+        className="relative flex w-full max-w-[1180px] flex-col overflow-hidden rounded-t-[28px] sm:rounded-[32px]"
         style={{
           background: 'linear-gradient(180deg, rgba(15,27,45,0.98) 0%, rgba(11,22,37,0.98) 100%)',
           border: '1px solid var(--color-border)',
           boxShadow: 'var(--shadow-strong)',
+          maxHeight: 'calc(100dvh - env(safe-area-inset-top) - 0.75rem)',
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* 关闭按钮（绝对定位，同 ParseTestModal 风格） */}
-        <button
-          onClick={onClose}
-          className="absolute right-4 top-4 flex size-9 items-center justify-center rounded-full text-sm transition-colors hover:bg-black/40"
-          style={{ background: 'rgba(0,0,0,0.45)', color: 'var(--color-text)', border: '1px solid rgba(255,255,255,0.08)' }}
-        >✕</button>
+        <div className="border-b px-4 py-4 sm:px-6 sm:py-5" style={{ borderColor: 'var(--color-border)' }}>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--color-accent-hover)' }}>
+                Download Detail
+              </div>
+              <h2 className="mt-2 line-clamp-2 text-base font-semibold leading-snug sm:text-xl" style={{ color: 'var(--color-text)' }}>{task.name}</h2>
+              <p className="mt-1 text-xs" style={{ color: 'var(--color-muted)' }}>{task.dir || '未指定目录'}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex size-11 items-center justify-center rounded-2xl transition-all duration-150"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
+              aria-label="关闭下载详情"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <path d="M6 6l12 12" />
+                <path d="M18 6L6 18" />
+              </svg>
+            </button>
+          </div>
+        </div>
 
-        {/* 内容区（普通流式，overlay 负责整体滚动） */}
-        <div className="px-5 py-5 sm:px-6 sm:py-6">
-          {/* 标题 */}
-          <div className="mb-3 pr-10">
+        <div className="overflow-y-auto px-4 py-4 sm:px-6 sm:py-6" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
+          <div className="mb-4">
             <div className="mb-1.5 flex flex-wrap items-center gap-2">
               <span className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.14em]"
                 style={{
@@ -203,12 +220,9 @@ function TaskDetailModal({ task, onClose, onPause, onResume, onRemove, onRetry, 
               </span>
               <span className="text-xs font-mono" style={{ color: 'var(--color-muted-soft)' }}>{task.gid}</span>
             </div>
-            <h2 className="text-base font-semibold leading-snug sm:text-xl" style={{ color: 'var(--color-text)' }}>{task.name}</h2>
-            <p className="mt-0.5 text-xs" style={{ color: 'var(--color-muted)' }}>{task.dir || '未指定目录'}</p>
           </div>
 
-          {/* 操作按钮 */}
-          <div className="mb-4 flex flex-wrap gap-2">
+          <div className="mb-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
             {showPause  && <ToolButton onClick={() => onPause(task.gid)}  loading={pendingAction === 'pause'} >{pendingAction === 'pause'  ? '暂停中…' : '暂停'}</ToolButton>}
             {showResume && <ToolButton onClick={() => onResume(task.gid)} loading={pendingAction === 'resume'}>{pendingAction === 'resume' ? '继续中…' : '继续'}</ToolButton>}
             {showRetry  && <ToolButton onClick={() => onRetry(task.gid)}  loading={pendingAction === 'retry'} >{pendingAction === 'retry'  ? '重试中…' : '重试'}</ToolButton>}
@@ -316,7 +330,7 @@ function TaskCard({ task, onPause, onResume, onRemove, onRetry, onOpen, pendingA
 
   return (
     <div
-      className="rounded-[24px] px-5 py-5 transition-all duration-150"
+      className="rounded-[22px] px-4 py-4 transition-all duration-150 sm:rounded-[24px] sm:px-5 sm:py-5"
       onClick={() => onOpen(task)}
       style={{
         background: 'linear-gradient(180deg, rgba(20, 37, 59, 0.82) 0%, rgba(13, 24, 39, 0.96) 100%)',
@@ -361,12 +375,12 @@ function TaskCard({ task, onPause, onResume, onRemove, onRetry, onOpen, pendingA
             <span className="text-xs font-mono" style={{ color: 'var(--color-muted-soft)' }}>{task.gid}</span>
           </div>
 
-          <div className="truncate text-lg font-semibold" style={{ color: 'var(--color-text)' }}>{task.name}</div>
-          <div className="mt-2 text-sm leading-6" style={{ color: 'var(--color-muted)' }}>
+          <div className="line-clamp-2 text-base font-semibold leading-snug sm:text-lg" style={{ color: 'var(--color-text)' }}>{task.name}</div>
+          <div className="mt-1.5 line-clamp-2 text-xs leading-5 sm:mt-2 sm:text-sm sm:leading-6" style={{ color: 'var(--color-muted)' }}>
             {task.dir || '未指定目录'}
           </div>
 
-          <div className="mt-4">
+          <div className="mt-3 sm:mt-4">
             <div className="mb-2 flex items-center justify-between text-xs" style={{ color: 'var(--color-muted)' }}>
               <span>{formatBytes(task.completedLength)} / {formatBytes(task.totalLength)}</span>
               <span>{task.progress.toFixed(1)}%</span>
@@ -384,11 +398,23 @@ function TaskCard({ task, onPause, onResume, onRemove, onRetry, onOpen, pendingA
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
-            <div><div style={{ color: 'var(--color-muted-soft)' }}>下载速度</div><div style={{ color: 'var(--color-text)' }}>{formatSpeed(task.downloadSpeed)}</div></div>
-            <div><div style={{ color: 'var(--color-muted-soft)' }}>上传速度</div><div style={{ color: 'var(--color-text)' }}>{formatSpeed(task.uploadSpeed)}</div></div>
-            <div><div style={{ color: 'var(--color-muted-soft)' }}>连接数</div><div style={{ color: 'var(--color-text)' }}>{task.connections}</div></div>
-            <div><div style={{ color: 'var(--color-muted-soft)' }}>文件数</div><div style={{ color: 'var(--color-text)' }}>{task.fileCount}</div></div>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:mt-4 sm:gap-3 md:grid-cols-4">
+            <div className="rounded-2xl px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}>
+              <div className="text-[11px]" style={{ color: 'var(--color-muted-soft)' }}>下载速度</div>
+              <div className="mt-1 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{formatSpeed(task.downloadSpeed)}</div>
+            </div>
+            <div className="hidden rounded-2xl px-3 py-2.5 md:block" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}>
+              <div className="text-[11px]" style={{ color: 'var(--color-muted-soft)' }}>上传速度</div>
+              <div className="mt-1 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{formatSpeed(task.uploadSpeed)}</div>
+            </div>
+            <div className="rounded-2xl px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}>
+              <div className="text-[11px]" style={{ color: 'var(--color-muted-soft)' }}>文件数</div>
+              <div className="mt-1 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{task.fileCount}</div>
+            </div>
+            <div className="hidden rounded-2xl px-3 py-2.5 md:block" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}>
+              <div className="text-[11px]" style={{ color: 'var(--color-muted-soft)' }}>连接数</div>
+              <div className="mt-1 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{task.connections}</div>
+            </div>
           </div>
 
           {task.errorMessage && (
@@ -400,7 +426,7 @@ function TaskCard({ task, onPause, onResume, onRemove, onRetry, onOpen, pendingA
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2 xl:max-w-[220px] xl:justify-end">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap xl:max-w-[220px] xl:justify-end">
           {showPause && <ToolButton onClick={(e) => { e.stopPropagation(); onPause(task.gid) }} loading={pendingAction === 'pause'}>{pendingAction === 'pause' ? '暂停中…' : '暂停'}</ToolButton>}
           {showResume && <ToolButton onClick={(e) => { e.stopPropagation(); onResume(task.gid) }} loading={pendingAction === 'resume'}>{pendingAction === 'resume' ? '继续中…' : '继续'}</ToolButton>}
           {showRetry && <ToolButton onClick={(e) => { e.stopPropagation(); onRetry(task.gid) }} loading={pendingAction === 'retry'}>{pendingAction === 'retry' ? '重试中…' : '重试'}</ToolButton>}
@@ -413,7 +439,7 @@ function TaskCard({ task, onPause, onResume, onRemove, onRetry, onOpen, pendingA
 
 function ActionPanel({ uriInput, setUriInput, onSubmitUri, onTorrentChange, torrentName }) {
   return (
-    <div className="rounded-[28px] px-5 py-5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)' }}>
+    <div className="rounded-[24px] px-4 py-4 sm:rounded-[28px] sm:px-5 sm:py-5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)' }}>
       <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--color-accent-hover)' }}>
         新建下载
       </div>
@@ -430,17 +456,17 @@ function ActionPanel({ uriInput, setUriInput, onSubmitUri, onTorrentChange, torr
           overflowY: 'auto',
         }}
       />
-      <div className="mt-3 flex flex-wrap items-center gap-2.5">
+      <div className="mt-3 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
         <button
           onClick={onSubmitUri}
-          className="rounded-full px-4 py-2 text-sm font-semibold"
+          className="min-h-11 rounded-full px-4 py-2 text-sm font-semibold"
           style={{ background: 'linear-gradient(135deg, var(--color-accent) 0%, #b37533 100%)', color: '#fff', border: 'none' }}
         >
           添加链接下载
         </button>
 
         <label
-          className="cursor-pointer rounded-full px-4 py-2 text-sm font-semibold"
+          className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-full px-4 py-2 text-sm font-semibold"
           style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
         >
           上传 Torrent
@@ -725,18 +751,18 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
 
   return (
     <div className="flex-1">
-      <section className="panel-surface rounded-[32px] px-7 py-7" style={{ minHeight: 'calc(100dvh - 128px)' }}>
+      <section className="page-panel panel-surface rounded-[22px] px-3 py-4 sm:rounded-[32px] sm:px-7 sm:py-7">
         <div className="mb-7 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl">
             <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.24em]" style={{ color: 'var(--color-accent-hover)' }}>
               Native Download Center
             </div>
-            <h1 className="text-[34px] font-bold leading-tight" style={{ color: 'var(--color-text)' }}>
+            <h1 className="text-[28px] font-bold leading-tight sm:text-[34px]" style={{ color: 'var(--color-text)' }}>
               {showDashboard ? '下载管理' : statusLabel(queue)}
             </h1>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="-mx-1 flex flex-nowrap items-center gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
             <ToolButton onClick={() => loadAll()} disabled={busy || !aria2Enabled}>刷新</ToolButton>
             {hasSelection ? (
               <label className="flex items-center gap-2.5 cursor-pointer text-sm font-medium mr-2 select-none hover:opacity-80 transition-opacity" style={{ color: 'var(--color-text)' }}>
@@ -792,21 +818,21 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
           </div>
         ) : null}
 
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap gap-2">
+          <div className="mb-6 flex flex-col gap-4">
+          <div className="-mx-1 flex flex-nowrap gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
             <QueueTab active={queue === 'all'} label="全部" count={(summary?.activeCount || 0) + (summary?.waitingCount || 0) + (summary?.stoppedCount || 0)} onClick={() => onChangeQueue?.('all')} />
             <QueueTab active={queue === 'active'} label="下载中" count={summary?.activeCount || 0} onClick={() => onChangeQueue?.('active')} />
             <QueueTab active={queue === 'waiting'} label="等待中" count={summary?.waitingCount || 0} onClick={() => onChangeQueue?.('waiting')} />
             <QueueTab active={queue === 'stopped'} label="已停止" count={summary?.stoppedCount || 0} onClick={() => onChangeQueue?.('stopped')} />
           </div>
           
-          <div className="w-full flex-1 sm:max-w-xs">
+          <div className="w-full sm:max-w-xs">
             <input
               type="text"
               placeholder="搜索任务名称 或 GID..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full rounded-full px-4 py-2 text-sm outline-none transition-colors border"
+              className="min-h-11 w-full rounded-full border px-4 py-2 text-sm outline-none transition-colors"
               style={{
                 background: 'rgba(255,255,255,0.03)',
                 borderColor: searchQuery ? 'var(--color-accent)' : 'var(--color-border)',
@@ -827,32 +853,44 @@ export default function DownloadsPage({ queue = 'all', onChangeQueue, onToast, i
         ) : null}
 
         {loading && !overview && (
-          <div className="py-20 text-center text-sm" style={{ color: 'var(--color-muted)' }}>
-            正在连接 aria2…
-          </div>
+          <StatePanel
+            title="正在连接 aria2"
+            description="下载中心正在初始化任务状态和运行信息。"
+            compact
+          />
         )}
 
         {!loading && !error && !overview && !aria2Enabled && (
-          <div className="mt-6 rounded-[24px] px-5 py-5 text-sm"
-            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }}>
-            Aria2 集成已关闭。请在配置页启用后再使用下载中心。
+          <div className="mt-6">
+            <StatePanel
+              icon="⤓"
+              title="Aria2 集成已关闭"
+              description="请先在配置页启用 Aria2，再使用下载中心。"
+              compact
+            />
           </div>
         )}
 
         {error && (
-          <div className="mt-6 rounded-[24px] px-5 py-5 text-sm"
-            style={{ background: 'rgba(239,125,117,0.08)', border: '1px solid rgba(239,125,117,0.2)', color: 'var(--color-danger)' }}>
-            {error}
+          <div className="mt-6">
+            <StatePanel
+              icon="!"
+              title={error}
+              description="请检查 aria2 连接状态，或稍后重试。"
+              tone="danger"
+              compact
+            />
           </div>
         )}
 
         {!loading && !error && (
           <div className={`${showDashboard ? 'mt-6' : 'mt-2'} space-y-4`}>
             {tasks.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-4 py-24">
-                <span style={{ fontSize: 96, lineHeight: 1 }}>⤓</span>
-                <p className="text-xl font-medium" style={{ color: 'var(--color-muted)' }}>当前分组没有任务</p>
-              </div>
+              <StatePanel
+                icon="⤓"
+                title="当前分组没有任务"
+                description="换一个任务分组，或者添加新的下载任务。"
+              />
             ) : (
               tasks.map(task => (
                 <TaskCard

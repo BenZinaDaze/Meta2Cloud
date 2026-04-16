@@ -1,20 +1,12 @@
-import { useState } from 'react'
-import { logout, triggerPipeline } from '../api'
+import { triggerPipeline } from '../api'
 import BrandMark from './BrandMark'
 
-export default function Topbar({ onLogout, onOpenParseTest, onToggleSidebar, onToast }) {
-  const [confirming, setConfirming] = useState(false)
-
-  async function handleLogout() {
-    if (!confirming) { setConfirming(true); setTimeout(() => setConfirming(false), 3000); return }
-    try { await logout() } catch { void 0 }
-    onLogout?.()
-  }
-
+export default function Topbar({ onOpenParseTest, onToggleSidebar, onToast }) {
   return (
     <header
-      className="fixed left-3 right-3 top-3 z-50 flex h-14 items-center justify-between rounded-[22px] px-3 sm:left-5 sm:right-5 sm:top-5 sm:h-16 sm:rounded-[26px] sm:px-5"
+      className="app-topbar fixed left-3 right-3 top-3 z-50 flex h-14 items-center justify-between rounded-[22px] px-3 sm:left-5 sm:right-5 sm:top-5 sm:h-16 sm:rounded-[26px] sm:px-5"
       style={{
+        top: 'var(--mobile-topbar-offset)',
         background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.995) 0%, rgba(10, 19, 32, 1) 100%)',
         border: '1px solid var(--color-border-strong)',
         boxShadow: '0 20px 48px rgba(2, 8, 18, 0.58)',
@@ -26,7 +18,7 @@ export default function Topbar({ onLogout, onOpenParseTest, onToggleSidebar, onT
         {/* 移动端汉堡菜单按钮，打开侧边栏 */}
         <button
           onClick={onToggleSidebar}
-          className="flex h-9 w-9 items-center justify-center rounded-xl transition-all duration-150 lg:hidden"
+          className="hidden h-11 w-11 items-center justify-center rounded-2xl transition-all duration-150 sm:flex lg:hidden"
           style={{
             background: 'rgba(255,255,255,0.04)',
             border: '1px solid var(--color-border)',
@@ -78,7 +70,7 @@ export default function Topbar({ onLogout, onOpenParseTest, onToggleSidebar, onT
               onToast?.('error', '触发失败', e?.response?.data?.detail || e.message)
             }
           }}
-          className="flex items-center gap-1.5 rounded-full px-2.5 py-2 text-xs font-semibold transition-all duration-150 sm:px-4"
+          className="flex min-h-11 items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold transition-all duration-150 sm:px-4"
           style={{
             color: 'var(--color-accent-hover)',
             background: 'linear-gradient(135deg, rgba(200, 146, 77, 0.16) 0%, rgba(200, 146, 77, 0.05) 100%)',
@@ -94,7 +86,7 @@ export default function Topbar({ onLogout, onOpenParseTest, onToggleSidebar, onT
 
         <button
           onClick={onOpenParseTest}
-          className="flex items-center gap-1.5 rounded-full px-2.5 py-2 text-xs font-semibold transition-all duration-150 sm:px-4"
+          className="hidden min-h-11 items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold transition-all duration-150 min-[430px]:flex sm:px-4"
           style={{
             color: 'var(--color-text)',
             background: 'rgba(255,255,255,0.03)',
@@ -109,25 +101,6 @@ export default function Topbar({ onLogout, onOpenParseTest, onToggleSidebar, onT
           </svg>
           <span className="hidden sm:inline">解析测试</span>
         </button>
-        {onLogout && (
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1.5 rounded-full px-2.5 py-2 text-xs font-semibold transition-all duration-150 sm:px-4"
-            style={{
-              color: confirming ? 'var(--color-danger)' : 'var(--color-text)',
-              background: confirming ? 'rgba(239, 125, 117, 0.12)' : 'rgba(255,255,255,0.03)',
-              border: confirming ? '1px solid rgba(239, 125, 117, 0.28)' : '1px solid var(--color-border)',
-            }}
-            title="退出登录"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-            <span className="hidden sm:inline">{confirming ? '再次点击确认' : '退出登录'}</span>
-          </button>
-        )}
       </div>
     </header>
   )

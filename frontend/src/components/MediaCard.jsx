@@ -30,7 +30,7 @@ export default function MediaCard({ item, onClick, compact = false }) {
   return (
     <div
       onClick={() => onClick?.(item)}
-      className="group relative flex cursor-pointer flex-col overflow-hidden rounded-[22px] transition-all duration-200 hover:-translate-y-1"
+      className="group relative flex cursor-pointer flex-col overflow-hidden rounded-[20px] transition-all duration-200 hover:-translate-y-1 sm:rounded-[22px]"
       style={{
         background: 'linear-gradient(180deg, rgba(20, 37, 59, 0.96) 0%, rgba(13, 26, 44, 0.98) 100%)',
         border: '1px solid var(--color-border)',
@@ -53,19 +53,19 @@ export default function MediaCard({ item, onClick, compact = false }) {
         )}
 
         {item.rating > 0 && (
-          <div className="absolute right-3 top-3 rounded-full px-2 py-1 text-[11px] font-bold"
+          <div className="absolute right-2.5 top-2.5 rounded-full px-2 py-1 text-[10px] font-bold sm:right-3 sm:top-3 sm:text-[11px]"
             style={{ background: 'rgba(4, 11, 21, 0.84)', color: 'var(--color-warning)', border: '1px solid rgba(255,255,255,0.08)' }}>
             ★ {item.rating}
           </div>
         )}
 
-        <div className="absolute left-3 top-3 rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.14em]"
+        <div className="absolute left-2.5 top-2.5 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] sm:left-3 sm:top-3 sm:text-[11px]"
           style={{ background: 'rgba(4, 11, 21, 0.84)', color: 'var(--color-muted)', border: '1px solid rgba(255,255,255,0.08)' }}>
           {isTV ? 'TV' : '电影'}
         </div>
 
         {isTV && pct !== null && (
-          <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 rounded-full"
+          <div className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full sm:bottom-2.5 sm:right-2.5"
             style={{ background: 'rgba(4, 11, 21, 0.78)', padding: '2px 4px', border: '1px solid rgba(255,255,255,0.06)' }}>
             <RingProgress value={item.in_library_episodes} max={item.total_episodes} />
             <span className="text-[10px] font-semibold tabular-nums" style={{ color: 'var(--color-text)' }}>{pct}%</span>
@@ -77,16 +77,16 @@ export default function MediaCard({ item, onClick, compact = false }) {
       </div>
 
       <div
-        className="flex flex-col px-3.5 pt-3 pb-3.5"
-        style={{ height: compact ? 64 : 92, overflow: 'hidden' }}
+        className="flex flex-col px-3 pt-3 pb-3 sm:px-3.5 sm:pt-3.5 sm:pb-3.5"
+        style={{ height: compact ? 64 : 88, overflow: 'hidden' }}
       >
         <p
-          className={`text-sm font-semibold leading-snug ${compact ? 'line-clamp-1' : 'line-clamp-2'}`}
+          className={`font-semibold leading-snug ${compact ? 'line-clamp-1 text-sm' : 'line-clamp-2 text-[13px] sm:text-sm'}`}
           style={{ color: 'var(--color-text)' }}
         >
           {item.title}
         </p>
-        <div className="mt-auto flex flex-nowrap items-center gap-1.5">
+        <div className="mt-auto flex min-w-0 flex-nowrap items-center gap-1.5">
           {item.year && (
             <span className="shrink-0 text-xs tabular-nums" style={{ color: 'var(--color-muted)' }}>{item.year}</span>
           )}
@@ -94,7 +94,7 @@ export default function MediaCard({ item, onClick, compact = false }) {
             <span className="text-xs shrink-0" style={{ color: 'var(--color-border)' }}>·</span>
           )}
           {!compact && isTV && item.in_library_episodes !== undefined && (
-            <span className="text-xs truncate" style={{ color: 'var(--color-muted)' }}>
+            <span className="truncate text-[11px] sm:text-xs" style={{ color: 'var(--color-muted)' }}>
               已入库 {item.in_library_episodes}/{item.total_episodes} 集
             </span>
           )}

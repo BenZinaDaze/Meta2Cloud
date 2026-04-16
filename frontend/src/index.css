@@ -21,6 +21,9 @@
     --color-danger: #ef7d75;
     --shadow-soft: 0 18px 45px rgba(3, 10, 19, 0.35);
     --shadow-strong: 0 32px 80px rgba(2, 8, 18, 0.52);
+    --mobile-topbar-offset: calc(env(safe-area-inset-top) + 0.75rem);
+    --mobile-topbar-height: 3.5rem;
+    --mobile-nav-height: calc(4.5rem + env(safe-area-inset-bottom));
   }
 
   * {
@@ -142,6 +145,10 @@
     backdrop-filter: blur(18px);
   }
 
+  .page-panel {
+    min-height: calc(100dvh - var(--mobile-topbar-offset) - var(--mobile-topbar-height) - var(--mobile-nav-height) - 1rem);
+  }
+
   /* 移动端触摸滚动优化 */
   main, .overflow-y-auto {
     -webkit-overflow-scrolling: touch;
@@ -150,6 +157,11 @@
   /* 桌面端侧边栏始终可见（覆盖JS控制的transform抽屉动画） */
   @media (min-width: 1024px) {
     aside[class*="fixed"] {
+      width: 18rem !important;
+      left: 1.25rem !important;
+      top: 96px !important;
+      bottom: 1.25rem !important;
+      border-radius: 30px !important;
       transform: translateX(0) !important;
       transition: none !important;
     }
@@ -171,7 +183,7 @@
 
   /* 主内容区 top 响应式：移动端配合小 Topbar，桌面端配合大 Topbar */
   .main-scrollable {
-    top: 72px;
+    top: calc(var(--mobile-topbar-offset) + var(--mobile-topbar-height) + 0.5rem);
   }
 
   @media (min-width: 640px) {
@@ -182,8 +194,16 @@
 
   /* 桌面端主内容区底部填充覆盖（无底部导航） */
   @media (min-width: 1024px) {
+    .app-topbar {
+      top: 1.25rem !important;
+    }
+
     .main-pad {
       padding-bottom: 1.25rem !important;
+    }
+
+    .page-panel {
+      min-height: calc(100dvh - 128px);
     }
   }
 }

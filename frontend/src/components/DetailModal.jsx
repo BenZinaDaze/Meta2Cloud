@@ -76,6 +76,7 @@ function formatStatus(status) {
 
 export default function DetailModal({ item, onClose, footerSlot, loadingSlot, headerRightSlot, titleActionSlot }) {
   const [show, setShow] = useState(false)
+  const [showOverview, setShowOverview] = useState(false)
 
   const handleClose = useCallback(() => {
     setShow(false)
@@ -91,15 +92,17 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
 
   if (!item) return null
   const isTV = item.media_type === 'tv'
-
-  // 海报高度估算（2:3 比例，宽度 w-24 = 96px）
-  const POSTER_W = 96
-  const POSTER_H = 144  // 2:3 ratio
-  const BACKDROP_H = 160 // h-40
+  const summaryPairs = [
+    item.year ? ['年份', item.year] : null,
+    item.genre_names?.length ? ['类型', item.genre_names.slice(0, 2).join(' / ')] : null,
+    item.original_language ? ['语言', String(item.original_language).toUpperCase()] : null,
+    isTV && item.total_episodes ? ['总集数', `${item.total_episodes} 集`] : null,
+    !isTV && item.runtime ? ['时长', `${item.runtime} 分钟`] : null,
+  ].filter(Boolean)
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto p-4 pt-16 sm:pt-28"
+      className="fixed inset-0 z-[100] flex items-end justify-center overflow-y-auto p-0 sm:items-start sm:p-4 sm:pt-28"
       style={{
         background: 'rgba(2, 8, 18, 0.78)',
         backdropFilter: 'blur(10px)',
@@ -109,17 +112,48 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
       onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
       <div
-        className="relative w-full max-w-3xl overflow-hidden rounded-[30px]"
+        className="relative flex h-[calc(100dvh-env(safe-area-inset-top)-0.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-t-[28px] sm:h-auto sm:rounded-[30px]"
         style={{
           background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.98) 0%, rgba(11, 22, 37, 0.98) 100%)',
           border: '1px solid var(--color-border)',
           transform: show ? 'translateY(0)' : 'translateY(20px)',
           transition: 'transform 0.2s',
           boxShadow: 'var(--shadow-strong)',
+          maxHeight: 'calc(100dvh - env(safe-area-inset-top) - 0.75rem)',
         }}
         onClick={e => e.stopPropagation()}
       >
-        <div className="relative overflow-hidden" style={{ height: BACKDROP_H }}>
+        <div
+          className="sticky top-0 z-20 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] sm:hidden"
+          style={{
+            borderColor: 'rgba(144, 178, 221, 0.12)',
+            background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.99) 0%, rgba(11, 22, 37, 0.98) 100%)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+          }}
+        >
+          <div className="mx-auto mb-3 h-1.5 w-12 rounded-full" style={{ background: 'rgba(255,255,255,0.14)' }} />
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--color-accent-hover)' }}>
+                Metadata detail
+              </div>
+              <div className="mt-1 truncate text-base font-semibold" style={{ color: 'var(--color-text)' }}>
+                {item.title}
+              </div>
+            </div>
+            <button
+              onClick={handleClose}
+              className="flex size-10 flex-shrink-0 items-center justify-center rounded-full text-sm transition-colors hover:bg-black/40"
+              style={{ background: 'rgba(0,0,0,0.45)', color: 'var(--color-text)', border: '1px solid rgba(255,255,255,0.08)' }}
+              aria-label="关闭详情"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div className="relative h-[108px] overflow-hidden sm:h-40">
           {item.backdrop_url
             ? <img src={item.backdrop_url} alt="" className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300" style={{ opacity: loadingSlot ? 0.3 : 1 }} />
             : <div className="absolute inset-0" style={{ background: 'var(--color-surface-2)' }} />
@@ -128,20 +162,16 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
             style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.08) 10%, rgba(7, 17, 31, 0.88) 100%)' }} />
         </div>
 
-        {/* 封面 + 标题信息：统一 flex 容器，横幅下方 */}
         <div
-          className="flex items-end gap-4 px-6 pt-4 transition-opacity duration-300"
+          className="flex flex-col gap-3 px-4 pt-3 transition-opacity duration-300 sm:flex-row sm:items-end sm:gap-4 sm:px-6 sm:pt-4"
           style={{ position: 'relative', zIndex: 10, opacity: loadingSlot ? 0.5 : 1 }}
         >
-          {/* 小封面 */}
           {item.poster_url && (
             <img
               src={item.poster_url}
               alt={item.title}
-              className="rounded-lg shadow-xl flex-shrink-0"
+              className="h-[112px] w-[76px] rounded-lg shadow-xl flex-shrink-0 sm:h-[132px] sm:w-[88px]"
               style={{
-                width: POSTER_W,
-                height: POSTER_H,
                 objectFit: 'cover',
                 border: '2px solid rgba(255,255,255,0.08)',
                 display: 'block',
@@ -149,22 +179,21 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
             />
           )}
 
-          {/* 文字信息 */}
-          <div className="flex-1 min-w-0 pb-3 pr-4">
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--color-accent-hover)' }}>
+          <div className="min-w-0 flex-1 pb-2 sm:pb-3 sm:pr-4">
+            <div className="mb-2 hidden text-[11px] font-semibold uppercase tracking-[0.22em] sm:block" style={{ color: 'var(--color-accent-hover)' }}>
               Metadata detail
             </div>
             <div className="mb-1">
-              <h2 className="text-[28px] font-bold leading-snug" style={{ color: 'var(--color-text)' }}>
+              <h2 className="text-[18px] font-bold leading-snug sm:text-[28px]" style={{ color: 'var(--color-text)' }}>
                 {item.title}
               </h2>
             </div>
             {item.original_title && item.original_title !== item.title && (
-              <p className="mb-3 text-sm leading-snug" style={{ color: 'var(--color-muted)' }}>
+              <p className="mb-2 text-[13px] leading-snug sm:mb-3 sm:text-sm" style={{ color: 'var(--color-muted)' }}>
                 {item.original_title}
               </p>
             )}
-            <div className="flex flex-wrap gap-1.5 mt-2">
+            <div className="mt-2 flex flex-wrap gap-1.5">
               {item.year && (
                 <span className="text-xs px-2 py-0.5 rounded-full"
                   style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }}>
@@ -196,42 +225,49 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
                 </span>
               )}
               {item.tmdb_id && (
-                <a
-                  href={`https://www.themoviedb.org/${isTV ? 'tv' : 'movie'}/${item.tmdb_id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs px-2 py-0.5 rounded-full transition-all duration-150"
-                  style={{
-                    background: 'rgba(1, 180, 228, 0.08)',
-                    color: '#01b4e4',
-                    border: '1px solid rgba(1, 180, 228, 0.35)',
-                    textDecoration: 'none',
-                    cursor: 'pointer',
-                  }}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.background = 'rgba(1, 180, 228, 0.18)'
-                    e.currentTarget.style.borderColor = 'rgba(1, 180, 228, 0.65)'
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.background = 'rgba(1, 180, 228, 0.08)'
-                    e.currentTarget.style.borderColor = 'rgba(1, 180, 228, 0.35)'
-                  }}
-                >
-                  TMDB {item.tmdb_id}
-                </a>
+                <div className="flex items-center gap-1.5">
+                  <a
+                    href={`https://www.themoviedb.org/${isTV ? 'tv' : 'movie'}/${item.tmdb_id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs px-2 py-0.5 rounded-full transition-all duration-150"
+                    style={{
+                      background: 'rgba(1, 180, 228, 0.08)',
+                      color: '#01b4e4',
+                      border: '1px solid rgba(1, 180, 228, 0.35)',
+                      textDecoration: 'none',
+                      cursor: 'pointer',
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = 'rgba(1, 180, 228, 0.18)'
+                      e.currentTarget.style.borderColor = 'rgba(1, 180, 228, 0.65)'
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = 'rgba(1, 180, 228, 0.08)'
+                      e.currentTarget.style.borderColor = 'rgba(1, 180, 228, 0.35)'
+                    }}
+                  >
+                    TMDB {item.tmdb_id}
+                  </a>
+                  {titleActionSlot}
+                </div>
               )}
-              {titleActionSlot}
             </div>
+            {headerRightSlot && (
+              <div className="mt-2 flex items-center gap-2 sm:hidden">
+                {headerRightSlot}
+              </div>
+            )}
           </div>
           
           {headerRightSlot && (
-            <div className="pb-3 flex-shrink-0 self-center pr-2">
+            <div className="hidden pb-3 flex-shrink-0 self-start sm:block sm:self-center sm:pr-2">
               {headerRightSlot}
             </div>
           )}
         </div>
 
-        <div className="px-6 pb-2 mt-4 relative">
+        <div className="relative mt-2 min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:mt-4 sm:px-6 sm:pb-6" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
           {loadingSlot && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#0B1625]/50 backdrop-blur-sm">
                <span className="text-white/40 text-sm animate-pulse flex items-center gap-2">
@@ -241,10 +277,61 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
             </div>
           )}
 
+          {summaryPairs.length > 0 && (
+            <div className="mb-3 grid grid-cols-2 gap-2 sm:hidden">
+              {summaryPairs.map(([label, value]) => (
+                <div
+                  key={label}
+                  className="rounded-2xl px-3 py-2.5"
+                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}
+                >
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-muted)' }}>
+                    {label}
+                  </div>
+                  <div className="mt-1 text-[13px] font-medium leading-5" style={{ color: 'var(--color-text)' }}>
+                    {value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {item.overview && (
-            <p className="mb-5 text-sm leading-7" style={{ color: 'var(--color-muted)' }}>
-              {item.overview}
-            </p>
+            <>
+              <div
+                className="mb-4 rounded-[22px] px-4 py-3.5 sm:hidden"
+                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}
+              >
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-muted)' }}>
+                  内容简介
+                </div>
+                <p
+                  className="mt-2 text-[13px] leading-6"
+                  style={{
+                    color: 'var(--color-muted)',
+                    display: '-webkit-box',
+                    WebkitLineClamp: showOverview ? 'unset' : 4,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {item.overview}
+                </p>
+                {item.overview.length > 120 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowOverview((value) => !value)}
+                    className="mt-2 text-xs font-semibold"
+                    style={{ color: 'var(--color-accent-hover)' }}
+                  >
+                    {showOverview ? '收起简介' : '展开简介'}
+                  </button>
+                )}
+              </div>
+              <p className="mb-5 hidden text-sm leading-7 sm:block" style={{ color: 'var(--color-muted)' }}>
+                {item.overview}
+              </p>
+            </>
           )}
 
           {isTV && item.seasons && item.seasons.length > 0 && (
@@ -253,7 +340,7 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
                 style={{ color: 'var(--color-text)', borderColor: 'var(--color-border)' }}>
                 季集入库状态
               </h3>
-              <div className="flex gap-4 mb-4 text-xs" style={{ color: 'var(--color-muted)' }}>
+              <div className="mb-3 flex flex-wrap gap-3 text-xs" style={{ color: 'var(--color-muted)' }}>
                 {[
                   { style: { border: '1.5px solid var(--color-success)', background: 'rgba(74,222,128,0.15)' }, label: '已入库' },
                   { style: { border: '1.5px solid var(--color-danger)', background: 'var(--color-surface)' }, label: '未入库' },
@@ -279,7 +366,7 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
 
         <button
           onClick={handleClose}
-          className="absolute right-4 top-4 flex size-9 items-center justify-center rounded-full text-sm transition-colors hover:bg-black/40 z-50"
+          className="absolute right-4 top-4 hidden size-9 items-center justify-center rounded-full text-sm transition-colors hover:bg-black/40 z-50 sm:flex"
           style={{ background: 'rgba(0,0,0,0.45)', color: 'var(--color-text)', border: '1px solid rgba(255,255,255,0.08)' }}
         >
           ✕
@@ -289,4 +376,3 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
     document.body
   )
 }
-

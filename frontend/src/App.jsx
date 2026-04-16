@@ -32,9 +32,28 @@ const MobileNavIcons = {
       <line x1="12" y1="15" x2="12" y2="3"/>
     </svg>
   ),
-  activity: (
+  cloudDownload: (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+      <path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.25" />
+      <path d="M12 12v9" />
+      <path d="m8 17 4 4 4-4" />
+    </svg>
+  ),
+  search: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="8"/>
+      <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+  ),
+  calendar: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+      <line x1="16" y1="2" x2="16" y2="6"/>
+      <line x1="8" y1="2" x2="8" y2="6"/>
+      <line x1="3" y1="10" x2="21" y2="10"/>
+      <line x1="8" y1="14" x2="8.01" y2="14"/>
+      <line x1="12" y1="14" x2="12.01" y2="14"/>
+      <line x1="16" y1="14" x2="16.01" y2="14"/>
     </svg>
   ),
   settings: (
@@ -53,14 +72,14 @@ const MobileNavIcons = {
 }
 
 function MobileNav({ active, onSelect, onToggleSidebar }) {
-  const isDownload = ['downloads', 'downloads-active', 'downloads-waiting', 'downloads-stopped'].includes(active)
   const isLibrary = ['all', 'movies', 'tv'].includes(active)
+  const isMore = ['downloads', 'downloads-active', 'downloads-waiting', 'downloads-stopped', 'logs', 'config', 'config-filename-rules'].includes(active)
 
   const tabs = [
     { key: 'all', label: '媒体库', icon: MobileNavIcons.library, isActive: isLibrary },
-    { key: 'downloads', label: '下载', icon: MobileNavIcons.download, isActive: isDownload },
-    { key: 'logs', label: '日志', icon: MobileNavIcons.activity, isActive: active === 'logs' },
-    { key: 'config', label: '配置', icon: MobileNavIcons.settings, isActive: ['config', 'config-filename-rules'].includes(active) },
+    { key: 'scraper-search', label: '检索', icon: MobileNavIcons.search, isActive: active === 'scraper-search' },
+    { key: 'calendar', label: '新番', icon: MobileNavIcons.calendar, isActive: active === 'calendar' },
+    { key: 'u115-offline', label: '云下载', icon: MobileNavIcons.cloudDownload, isActive: active === 'u115-offline' },
   ]
 
   return (
@@ -71,6 +90,7 @@ function MobileNav({ active, onSelect, onToggleSidebar }) {
         borderTop: '1px solid rgba(144, 178, 221, 0.18)',
         backdropFilter: 'blur(20px)',
         WebkitBackdropFilter: 'blur(20px)',
+        minHeight: 'var(--mobile-nav-height)',
         paddingBottom: 'env(safe-area-inset-bottom)',
       }}
     >
@@ -79,7 +99,7 @@ function MobileNav({ active, onSelect, onToggleSidebar }) {
           <button
             key={tab.key}
             onClick={() => onSelect(tab.key)}
-            className="flex flex-1 flex-col items-center justify-center gap-1 py-2.5 transition-all duration-150"
+            className="flex min-h-16 flex-1 flex-col items-center justify-center gap-1 py-2.5 transition-all duration-150"
             style={{
               color: tab.isActive ? 'var(--color-accent-hover)' : 'var(--color-muted)',
               background: 'none',
@@ -98,11 +118,18 @@ function MobileNav({ active, onSelect, onToggleSidebar }) {
         {/* 汉堡菜单——展开侧边栏 */}
         <button
           onClick={onToggleSidebar}
-          className="flex flex-1 flex-col items-center justify-center gap-1 py-2.5 transition-all duration-150"
-          style={{ color: 'var(--color-muted)', background: 'none', border: 'none', cursor: 'pointer' }}
+          className="flex min-h-16 flex-1 flex-col items-center justify-center gap-1 py-2.5 transition-all duration-150"
+          style={{
+            color: isMore ? 'var(--color-accent-hover)' : 'var(--color-muted)',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+          }}
         >
-          {MobileNavIcons.menu}
-          <span style={{ fontSize: 10, fontWeight: 500 }}>更多</span>
+          <span style={{ color: isMore ? 'var(--color-accent)' : 'inherit' }}>
+            {MobileNavIcons.menu}
+          </span>
+          <span style={{ fontSize: 10, fontWeight: isMore ? 600 : 500 }}>更多</span>
         </button>
       </div>
     </nav>
@@ -310,6 +337,7 @@ export default function App() {
         onOpenParseTest={() => setShowParseTest(true)}
         onToggleSidebar={() => setMobileSidebarOpen(o => !o)}
         onToast={addToast}
+        mobileSidebarOpen={mobileSidebarOpen}
       />
       <Sidebar
         active={activeNav}
@@ -318,6 +346,7 @@ export default function App() {
         aria2ConnectionStatus={aria2ConnectionStatus}
         mobileOpen={mobileSidebarOpen}
         onMobileClose={() => setMobileSidebarOpen(false)}
+        onLogout={handleLogout}
       />
 
       {/* 移动端侧边栏遮罩 */}
@@ -338,8 +367,8 @@ export default function App() {
           移动端:      满宽，底部为移动导航栏留空间
         */}
         <div
-          className="main-pad flex min-h-full flex-col px-4 pt-3 lg:pl-[calc(18rem+2.5rem)] lg:pr-5"
-          style={{ paddingBottom: 'calc(4.5rem + env(safe-area-inset-bottom))' }}
+          className="main-pad flex min-h-full flex-col px-3 pt-3 sm:px-4 lg:pl-[calc(18rem+2.5rem)] lg:pr-5"
+          style={{ paddingBottom: 'calc(var(--mobile-nav-height) + 0.75rem)' }}
         >
           {activeNav === 'config' ? (
             <ConfigPage onAria2EnabledChange={setAria2Enabled} page="general" />

@@ -10,6 +10,7 @@ import {
   testU115Connection,
 } from '../api'
 import ParseTestModal from './ParseTestModal'
+import { StatePanel } from './StatePanel'
 
 function formatBytes(bytes) {
   const value = Number(bytes)
@@ -563,12 +564,17 @@ export default function U115OfflinePage({ onToast }) {
         </div>
 
         {loading ? (
-          <div className="py-20 text-center text-sm" style={{ color: 'var(--color-muted)' }}>正在加载云下载任务…</div>
+          <StatePanel
+            title="正在加载云下载任务"
+            description="任务列表和空间状态正在同步中。"
+            compact
+          />
         ) : tasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-4 py-24">
-            <span style={{ fontSize: 96, lineHeight: 1 }}>☁</span>
-            <p className="text-xl font-medium" style={{ color: 'var(--color-muted)' }}>当前没有云下载任务</p>
-          </div>
+          <StatePanel
+            icon="☁"
+            title="当前没有云下载任务"
+            description="在上方提交链接后，任务会出现在这里。"
+          />
         ) : (
           <div className="grid gap-3">
             {tasks.map((task) => {

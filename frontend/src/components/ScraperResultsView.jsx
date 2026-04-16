@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { searchMedia, getEpisodes, addAria2Uri, addU115OfflineUrls, getU115OauthStatus, tmdbGetAlternativeNames } from '../api'
 import _resultsCache from '../utils/resultsCache'
+import { StatePanel } from './StatePanel'
 
 export default function ScraperResultsView({ item, onBack, onToast, aria2Enabled = false }) {
   const searchKey = item.title || item.original_title || item.name
@@ -312,24 +313,22 @@ export default function ScraperResultsView({ item, onBack, onToast, aria2Enabled
 
         <div className="flex flex-col w-full">
           {searchState === 'searching' && (
-            <div className="flex flex-col items-center justify-center py-12 gap-3 text-white/50">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-spin text-[#c8924d]">
-                <line x1="12" y1="2" x2="12" y2="6" /><line x1="12" y1="18" x2="12" y2="22" /><line x1="4.93" y1="4.93" x2="7.76" y2="7.76" /><line x1="16.24" y1="16.24" x2="19.07" y2="19.07" /><line x1="2" y1="12" x2="6" y2="12" /><line x1="18" y1="12" x2="22" y2="12" /><line x1="4.93" y1="19.07" x2="7.76" y2="16.24" /><line x1="16.24" y1="7.76" x2="19.07" y2="4.93" />
-              </svg>
-              <div className="flex flex-col items-center gap-1">
-                <span className="text-sm">
-                  以「<span className="text-white/80 font-medium">{currentSearchKey || searchKey}</span>」检索中...
-                </span>
-                {currentSearchKey && currentSearchKey !== searchKey && (
-                  <span className="text-xs text-white/30">主标题无结果，尝试别名</span>
-                )}
-              </div>
-            </div>
+            <StatePanel
+              title={`以「${currentSearchKey || searchKey}」检索中`}
+              description={currentSearchKey && currentSearchKey !== searchKey ? '主标题无结果，正在尝试别名。' : '正在从源站聚合可用资源，请稍候。'}
+              compact
+            />
           )}
 
           {searchState === 'error' && (
-            <div className="bg-red-500/20 text-red-200 px-6 py-4 mb-6 rounded-xl border border-red-500/30 w-full mx-auto max-w-4xl">
-              检索失败或无匹配资源: {errorMsg}
+            <div className="mx-auto mb-6 w-full max-w-4xl">
+              <StatePanel
+                icon="!"
+                title="检索失败或无匹配资源"
+                description={errorMsg || '请更换关键词，或稍后重新尝试。'}
+                tone="danger"
+                compact
+              />
             </div>
           )}
 
@@ -472,43 +471,49 @@ export default function ScraperResultsView({ item, onBack, onToast, aria2Enabled
                                             {episodes.length === 0 ? (
                                               <div className="text-sm text-white/30 px-2 py-3">该字幕组暂无资源</div>
                                             ) : episodes.map((ep, idx) => (
-                                              <div key={idx} className="flex flex-col md:flex-row gap-4 p-5 rounded-2xl border border-white/5 bg-white/5 hover:bg-white/10 transition-colors">
+                                              <div key={idx} className="flex flex-col gap-4 rounded-2xl border border-white/5 bg-white/5 p-4 transition-colors hover:bg-white/10 md:flex-row md:p-5">
                                                 <div className="flex-1 min-w-0">
-                                                  <div className="font-semibold text-white/95 break-all leading-relaxed text-sm md:text-base mb-2">{ep.title}</div>
+                                                  <div className="mb-2 break-all text-sm font-semibold leading-relaxed text-white/95 md:text-base">{ep.title}</div>
                                                   <div className="flex flex-wrap gap-2 text-xs font-medium">
                                                     <span className="rounded bg-blue-500/20 text-blue-300 px-2 py-0.5">{ep._site.toUpperCase()}</span>
                                                     {ep.file_size_mb && <span className="rounded bg-white/10 text-white/60 px-2 py-0.5">{ep.file_size_mb} MB</span>}
                                                     {ep.publish_time && <span className="rounded bg-white/10 text-white/60 px-2 py-0.5">{ep.publish_time}</span>}
                                                   </div>
                                                 </div>
-                                                <div className="flex flex-wrap items-center justify-end gap-2 shrink-0 md:max-w-[320px] md:flex-nowrap">
-                                                  {aria2Enabled ? (
+                                                <div className="flex flex-col gap-2 shrink-0 md:max-w-[320px] md:items-end">
+                                                  {u115Authorized ? (
+                                                    <button
+                                                      onClick={() => handlePushU115(ep)}
+                                                      className="h-11 w-full rounded-xl bg-[linear-gradient(135deg,#e3b778,#c8924d)] px-5 text-sm font-bold text-[#0A1320] transition-opacity hover:opacity-90 md:h-10 md:w-[132px]"
+                                                    >
+                                                      推送云下载
+                                                    </button>
+                                                  ) : aria2Enabled ? (
                                                     <button
                                                       onClick={() => handlePushAria2(ep)}
-                                                      className="h-10 px-5 bg-[linear-gradient(135deg,#e3b778,#c8924d)] rounded-xl text-[#0A1320] font-bold text-sm w-full md:w-[132px] hover:opacity-90 transition-opacity"
+                                                      className="h-11 w-full rounded-xl bg-[linear-gradient(135deg,#e3b778,#c8924d)] px-5 text-sm font-bold text-[#0A1320] transition-opacity hover:opacity-90 md:h-10 md:w-[132px]"
                                                     >
                                                       推送下载
                                                     </button>
                                                   ) : null}
-                                                  {u115Authorized ? (
+                                                  <div className="grid grid-cols-2 gap-2 md:flex md:w-auto md:justify-end">
+                                                    {u115Authorized && aria2Enabled ? (
+                                                      <button
+                                                        onClick={() => handlePushAria2(ep)}
+                                                        className="h-10 rounded-xl border border-white/10 bg-white/8 px-4 text-sm font-semibold text-white/85 transition-colors hover:bg-white/12 md:w-[132px]"
+                                                      >
+                                                        推送下载
+                                                      </button>
+                                                    ) : null}
                                                     <button
-                                                      onClick={() => handlePushU115(ep)}
-                                                      className="h-10 px-5 bg-[linear-gradient(135deg,#e3b778,#c8924d)] rounded-xl text-[#0A1320] font-bold text-sm w-full md:w-[132px] hover:opacity-90 transition-opacity"
+                                                      onClick={() => handleCopy(ep)}
+                                                      className="flex h-10 items-center justify-center rounded-xl border border-white/10 bg-white/8 px-4 text-sm font-semibold text-white/85 transition-colors hover:bg-white/12 md:w-auto"
+                                                      title="复制链接"
+                                                      aria-label="复制链接"
                                                     >
-                                                      推送云下载
+                                                      复制链接
                                                     </button>
-                                                  ) : null}
-                                                  <button
-                                                    onClick={() => handleCopy(ep)}
-                                                    className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-white transition-colors hover:bg-white/20 shrink-0"
-                                                    title="复制链接"
-                                                    aria-label="复制链接"
-                                                  >
-                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                                                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                                                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                                                    </svg>
-                                                  </button>
+                                                  </div>
                                                 </div>
                                               </div>
                                             ))}

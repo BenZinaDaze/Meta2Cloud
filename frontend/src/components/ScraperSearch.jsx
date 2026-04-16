@@ -4,6 +4,7 @@ import ScraperDetailModal from './ScraperDetailModal'
 import ScraperResultsView from './ScraperResultsView'
 import MediaCard from './MediaCard'
 import { clearResultsCache } from '../utils/resultsCache'
+import { StatePanel } from './StatePanel'
 
 // Module-level cache to preserve state across remounts
 let _cachedQuery = ''
@@ -91,8 +92,7 @@ export default function ScraperSearch({ onToast, initialSearchItem, onClearIniti
   return (
     <div className="flex flex-col flex-1">
       <section
-        className="panel-surface rounded-[24px] px-4 py-4 sm:rounded-[32px] sm:px-7 sm:py-7 flex-1 flex flex-col"
-        style={{ minHeight: 'calc(100dvh - 128px)' }}
+        className="page-panel panel-surface flex flex-1 flex-col rounded-[22px] px-3 py-4 sm:rounded-[32px] sm:px-7 sm:py-7"
       >
         <div className="mb-6 flex flex-col gap-3 sm:mb-7 sm:gap-5 lg:flex-row lg:items-end lg:justify-between shrink-0">
           <div className="max-w-2xl">
@@ -112,7 +112,7 @@ export default function ScraperSearch({ onToast, initialSearchItem, onClearIniti
             <input
               type="text"
               placeholder="搜索任何电影或电视剧..."
-              className="w-full rounded-full py-3.5 pl-12 pr-[100px] text-sm outline-none transition-all"
+              className="min-h-12 w-full rounded-full py-3.5 pl-12 pr-[88px] text-sm outline-none transition-all min-[430px]:pr-[100px]"
               style={{
                 background: 'rgba(255,255,255,0.03)',
                 border: '1px solid var(--color-border)',
@@ -124,7 +124,7 @@ export default function ScraperSearch({ onToast, initialSearchItem, onClearIniti
             <button
               type="submit"
               disabled={loading}
-              className="absolute right-1.5 top-1.5 bottom-1.5 bg-[linear-gradient(135deg,#e3b778,#c8924d)] shadow-[0_2px_8px_rgba(200,146,77,0.3)] text-[#0A1320] px-8 rounded-full font-bold text-sm hover:opacity-90 disabled:opacity-50 flex items-center justify-center transition-all"
+              className="absolute right-1.5 top-1.5 bottom-1.5 flex min-w-[72px] items-center justify-center rounded-full bg-[linear-gradient(135deg,#e3b778,#c8924d)] px-5 text-sm font-bold text-[#0A1320] shadow-[0_2px_8px_rgba(200,146,77,0.3)] transition-all hover:opacity-90 disabled:opacity-50 min-[430px]:min-w-[84px] min-[430px]:px-8"
             >
               {loading ? '搜索中...' : '搜索'}
             </button>
@@ -132,19 +132,25 @@ export default function ScraperSearch({ onToast, initialSearchItem, onClearIniti
         </div>
 
         {error && (
-          <div className="bg-red-500/10 border border-red-500/20 text-red-100 rounded-2xl p-4 mb-6 shrink-0 text-sm">
-            搜索失败: {error}
+          <div className="mb-6 shrink-0">
+            <StatePanel
+              icon="!"
+              title={`搜索失败：${error}`}
+              description="请检查网络连接，或者稍后重新搜索。"
+              tone="danger"
+              compact
+            />
           </div>
         )}
 
         {/* Grid Area */}
         <div className="flex-1 min-h-0 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--color-border) transparent' }}>
           {results.length === 0 && !loading && !error && (
-            <div className="flex flex-col items-center justify-center py-32 gap-4">
-              <span style={{ fontSize: 100, lineHeight: 1 }}>🔍</span>
-              <p className="text-xl font-medium" style={{ color: 'var(--color-muted)' }}>全局元数据探索引擎</p>
-              <p className="text-sm text-center" style={{ color: 'var(--color-muted)', opacity: 0.6 }}>基于 TMDB 定位内容，智能匹配所有支持的源探测器。</p>
-            </div>
+            <StatePanel
+              icon="🔍"
+              title="全局元数据探索引擎"
+              description="输入电影或剧集名称，从 TMDB 定位条目后再继续检索资源。"
+            />
           )}
 
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3 pb-8">

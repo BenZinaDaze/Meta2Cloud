@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getLogs, getPipelineStatus } from '../api'
+import { StatePanel } from './StatePanel'
 
 function Dropdown({ value, onChange, options, label = '' }) {
   const [open, setOpen] = useState(false)
@@ -368,17 +369,26 @@ export default function LogsPage() {
         </div>
 
         {loading ? (
-          <div className="rounded-[22px] px-5 py-10 text-center text-sm" style={{ color: 'var(--color-muted)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)' }}>
-            正在加载日志…
-          </div>
+          <StatePanel
+            title="正在加载日志"
+            description="最近日志内容正在准备中。"
+            compact
+          />
         ) : error ? (
-          <div className="rounded-[22px] px-5 py-10 text-center text-sm" style={{ color: 'var(--color-danger)', background: 'rgba(239,125,117,0.08)', border: '1px solid rgba(239,125,117,0.2)' }}>
-            {error}
-          </div>
+          <StatePanel
+            icon="!"
+            title={error}
+            description="请检查日志服务状态，或稍后重试。"
+            tone="danger"
+            compact
+          />
         ) : filteredLines.length === 0 ? (
-          <div className="rounded-[22px] px-5 py-10 text-center text-sm" style={{ color: 'var(--color-muted)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)' }}>
-            当前筛选条件下没有日志
-          </div>
+          <StatePanel
+            icon="≡"
+            title="当前筛选条件下没有日志"
+            description="调整级别或关键词后再试一次。"
+            compact
+          />
         ) : (
           <div
             className="overflow-x-auto rounded-[22px] px-5 py-4"

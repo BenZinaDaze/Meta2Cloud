@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { getLibrary } from '../api'
 import MediaCard from './MediaCard'
 import ScraperDetailModal from './ScraperDetailModal'
+import { StatePanel } from './StatePanel'
 
 /** ISO 时间 → 「x 分钟前」 */
 function relativeTime(isoStr) {
@@ -165,8 +166,7 @@ export default function LibraryPage({ filter, onChangeFilter, onRefresh, refresh
   return (
     <div className="flex-1">
       <section
-        className="panel-surface rounded-[24px] px-4 py-4 sm:rounded-[32px] sm:px-7 sm:py-7 flex-1 flex flex-col relative"
-        style={{ minHeight: 'calc(100dvh - 128px)' }}
+        className="page-panel panel-surface flex flex-1 flex-col rounded-[22px] px-3 py-4 sm:rounded-[32px] sm:px-7 sm:py-7 relative"
       >
         <div className="mb-4 flex flex-col gap-3 sm:mb-7 sm:gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl">
@@ -179,7 +179,7 @@ export default function LibraryPage({ filter, onChangeFilter, onRefresh, refresh
             </p>
           </div>
 
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
           <span className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-muted)' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -190,7 +190,7 @@ export default function LibraryPage({ filter, onChangeFilter, onRefresh, refresh
             placeholder="搜索标题..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full rounded-full py-3 pl-10 pr-4 text-sm outline-none transition-all sm:w-72"
+            className="min-h-11 w-full rounded-full py-3 pl-10 pr-4 text-sm outline-none transition-all sm:w-72"
             style={{
               background: 'rgba(255,255,255,0.03)',
               border: '1px solid var(--color-border)',
@@ -269,13 +269,12 @@ export default function LibraryPage({ filter, onChangeFilter, onRefresh, refresh
         )}
 
         {error && (
-          <div className="flex flex-col items-center justify-center gap-4 py-32">
-          <span style={{ fontSize: 120, lineHeight: 1 }}>⚠️</span>
-          <p className="text-xl font-medium" style={{ color: 'var(--color-danger)' }}>加载失败：{error}</p>
-          <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
-            请确认 FastAPI 后端已在 localhost:38765 运行
-          </p>
-        </div>
+          <StatePanel
+            icon="!"
+            title={`加载失败：${error}`}
+            description="请确认 FastAPI 后端已启动，或稍后重试。"
+            tone="danger"
+          />
         )}
 
         {!loading && !error && search.trim() && (
@@ -287,22 +286,22 @@ export default function LibraryPage({ filter, onChangeFilter, onRefresh, refresh
             <MediaGrid items={filteredItems} onSelect={setSelected} />
           </>
         ) : (
-          <div className="flex flex-col items-center justify-center py-32 gap-4">
-            <span style={{ fontSize: 120, lineHeight: 1 }}>📭</span>
-            <p className="text-xl font-medium" style={{ color: 'var(--color-muted)' }}>没有匹配的结果</p>
-            <p className="text-sm" style={{ color: 'var(--color-muted)', opacity: 0.6 }}>试试其他关键词</p>
-          </div>
+          <StatePanel
+            icon="🔎"
+            title="没有匹配的结果"
+            description="换一个标题关键词，或者试试原始标题。"
+          />
         )
         )}
 
         {!loading && !error && !search.trim() && filter === 'all' && data && (
         <>
           {data.movies.length === 0 && data.tv_shows.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-4 py-32">
-              <span style={{ fontSize: 120, lineHeight: 1 }}>📭</span>
-              <p className="text-xl font-medium" style={{ color: 'var(--color-muted)' }}>媒体库为空</p>
-              <p className="text-sm" style={{ color: 'var(--color-muted)', opacity: 0.6 }}>点击右上角「刷新媒体库」扫描 Drive</p>
-            </div>
+            <StatePanel
+              icon="📭"
+              title="媒体库为空"
+              description="点击上方刷新媒体库，重新扫描 Drive 内容。"
+            />
           ) : (
             <>
               {data.movies.length > 0 && (
@@ -328,10 +327,11 @@ export default function LibraryPage({ filter, onChangeFilter, onRefresh, refresh
         singleList.length > 0 ? (
           <MediaGrid items={singleList} onSelect={setSelected} />
         ) : (
-          <div className="flex flex-col items-center justify-center gap-4 py-32">
-            <span style={{ fontSize: 120, lineHeight: 1 }}>📭</span>
-            <p className="text-xl font-medium" style={{ color: 'var(--color-muted)' }}>暂无{pageTitle}</p>
-          </div>
+          <StatePanel
+            icon="📭"
+            title={`暂无${pageTitle}`}
+            description="这个分类下暂时没有可展示的媒体项。"
+          />
         )
         )}
       </section>

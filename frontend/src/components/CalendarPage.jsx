@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { StatePanel } from './StatePanel'
 
 const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 7] // Mon → Sun
 
@@ -362,16 +363,14 @@ export default function CalendarPage({ onSearch }) {
 
       {/* Error state */}
       {error && !loading && (
-        <div
-          className="mb-6 flex items-center gap-3 rounded-[16px] px-5 py-4"
-          style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.20)' }}
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#ef4444', flexShrink: 0 }}>
-            <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-          </svg>
-          <span className="text-[13px]" style={{ color: '#ef4444' }}>
-            加载失败：{error}。请检查网络或稍后重试。
-          </span>
+        <div className="mb-6">
+          <StatePanel
+            icon="!"
+            title={`加载失败：${error}`}
+            description="请检查网络连接，或稍后刷新重试。"
+            tone="danger"
+            compact
+          />
         </div>
       )}
 
