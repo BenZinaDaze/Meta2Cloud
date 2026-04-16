@@ -38,6 +38,7 @@ from .offline import (
     TorrentFileItem,
     TorrentInfo,
 )
+from .runtime import U115RuntimeManager, get_runtime_manager
 
 __all__ = [
     "Pan115ApiError",
@@ -61,6 +62,8 @@ __all__ = [
     "ResumeInfo",
     "TorrentFileItem",
     "TorrentInfo",
+    "U115RuntimeManager",
+    "get_runtime_manager",
     "UploadHashes",
     "UploadInitInfo",
     "UploadToken",

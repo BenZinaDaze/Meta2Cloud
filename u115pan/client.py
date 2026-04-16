@@ -14,7 +14,7 @@ import os
 import random
 import threading
 import time
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 from urllib.parse import urljoin
 
 import requests
@@ -61,6 +61,7 @@ class Pan115Client:
         *,
         token: Optional[Pan115Token] = None,
         token_path: Optional[str] = None,
+        on_token_updated: Optional[Callable[["Pan115Client", Pan115Token], None]] = None,
         timeout: int = 30,
         user_agent: str = "W115Storage/2.0",
         session: Optional[requests.Session] = None,
@@ -71,6 +72,7 @@ class Pan115Client:
         self.client_id = str(client_id)
         self.token = token
         self.token_path = token_path
+        self.on_token_updated = on_token_updated
         self.timeout = timeout
         self.session = session or requests.Session()
         self.api_qps = api_qps
@@ -102,6 +104,10 @@ class Pan115Client:
     def _persist_token(self) -> None:
         if self.token and self.token_path:
             save_token(self.token, self.token_path)
+
+    def _emit_token_updated(self, token: Pan115Token) -> None:
+        if self.on_token_updated is not None:
+            self.on_token_updated(self, token)
 
     def _enter_cooldown(self) -> None:
         cooldown_until = time.time() + self.cooldown_seconds
@@ -313,6 +319,7 @@ class Pan115Client:
         token = Pan115Token.from_dict(payload["data"])
         self.token = token
         self._persist_token()
+        self._emit_token_updated(token)
         return token
 
     def refresh_token(self) -> Pan115Token:
@@ -334,6 +341,7 @@ class Pan115Client:
         )
         self.token = token
         self._persist_token()
+        self._emit_token_updated(token)
         return token
 
     def list_files(self, cid: int | str = 0, *, limit: int = 1000, offset: int = 0) -> list[Pan115File]:

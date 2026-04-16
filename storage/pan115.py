@@ -17,11 +17,12 @@ import logging
 import os
 import tempfile
 import base64
-from typing import Iterator, List, Optional
+from typing import Callable, Iterator, List, Optional
 
 from u115pan.client import Pan115Client
 from u115pan.errors import Pan115ApiError
 from u115pan.models import Pan115File
+from u115pan.runtime import get_runtime_manager
 from storage.base import CloudFile, FileType, StorageProvider
 
 logger = logging.getLogger(__name__)
@@ -30,8 +31,16 @@ logger = logging.getLogger(__name__)
 class Pan115Provider(StorageProvider):
     """115 网盘存储 Provider"""
 
-    def __init__(self, client: Pan115Client):
+    def __init__(
+        self,
+        client: Optional[Pan115Client] = None,
+        *,
+        client_getter: Optional[Callable[[], Pan115Client]] = None,
+    ):
+        if client is None and client_getter is None:
+            raise ValueError("Pan115Provider 需要 client 或 client_getter")
         self._client = client
+        self._client_getter = client_getter
 
     @property
     def provider_name(self) -> str:
@@ -41,16 +50,32 @@ class Pan115Provider(StorageProvider):
     def from_config(cls, cfg) -> "Pan115Provider":
         """从 Config 对象构造（读取 u115 配置段）"""
         u115_cfg = cfg.u115
-        client = Pan115Client.from_token_file(
+        runtime = get_runtime_manager()
+        token_path = os.path.abspath(u115_cfg.token_json)
+        client = runtime.get_client(
             client_id=u115_cfg.client_id,
-            token_path=u115_cfg.token_json,
+            token_path=token_path,
         )
         return cls(client)
+
+    @classmethod
+    def from_client_getter(
+        cls,
+        client_getter: Callable[[], Pan115Client],
+    ) -> "Pan115Provider":
+        """从共享 client getter 构造，适合 WebUI 等长生命周期场景。"""
+        return cls(client_getter=client_getter)
+
+    def _current_client(self) -> Pan115Client:
+        if self._client_getter is not None:
+            return self._client_getter()
+        assert self._client is not None
+        return self._client
 
     @property
     def raw_client(self) -> Pan115Client:
         """暴露底层 Pan115Client，供需要平台特有功能的场景使用"""
-        return self._client
+        return self._current_client()
 
     # ── 类型转换 ─────────────────────────────────────────
 
@@ -90,7 +115,7 @@ class Pan115Provider(StorageProvider):
         """
         # 兼容 "root" → "0" 映射
         cid = "0" if folder_id == "root" else folder_id
-        raw = self._client.list_files(cid=cid, limit=page_size)
+        raw = self._current_client().list_files(cid=cid, limit=page_size)
         return [self._to_cloud_file(f) for f in raw]
 
     def list_all_recursive(
@@ -103,7 +128,7 @@ class Pan115Provider(StorageProvider):
             return
 
         cid = "0" if folder_id == "root" else folder_id
-        items = [self._to_cloud_file(f) for f in self._client.list_all_files(cid=cid, limit=1000)]
+        items = [self._to_cloud_file(f) for f in self._current_client().list_all_files(cid=cid, limit=1000)]
         for item in items:
             yield item
             if item.is_folder:
@@ -123,7 +148,7 @@ class Pan115Provider(StorageProvider):
         这里用 search 按文件 ID 查找（回退到 list_files 扫描父目录）。
         """
         # 尝试通过 search 查找
-        results = self._client.search(file_id, limit=1)
+        results = self._current_client().search(file_id, limit=1)
         for r in results:
             if r.id == file_id:
                 return self._to_cloud_file(r)
@@ -134,8 +159,9 @@ class Pan115Provider(StorageProvider):
         if not pick_code:
             return None
         try:
-            download_url = self._client.get_download_url(str(pick_code))
-            resp = self._client.session.get(download_url, timeout=self._client.timeout)
+            client = self._current_client()
+            download_url = client.get_download_url(str(pick_code))
+            resp = client.session.get(download_url, timeout=client.timeout)
             resp.raise_for_status()
             return resp.content.decode("utf-8", errors="ignore")
         except Exception:
@@ -150,7 +176,7 @@ class Pan115Provider(StorageProvider):
         cid = folder_id or "0"
         if cid == "root":
             cid = "0"
-        results = self._client.search(name, cid=cid, limit=10)
+        results = self._current_client().search(name, cid=cid, limit=10)
         for r in results:
             if r.name == name:
                 return self._to_cloud_file(r)
@@ -166,8 +192,9 @@ class Pan115Provider(StorageProvider):
     # ── 修改 ─────────────────────────────────────────────
 
     def rename_file(self, file_id: str, new_name: str) -> CloudFile:
-        self._client.rename(file_id, new_name)
-        results = self._client.search(new_name, limit=20)
+        client = self._current_client()
+        client.rename(file_id, new_name)
+        results = client.search(new_name, limit=20)
         for r in results:
             if r.id == file_id:
                 return self._to_cloud_file(r)
@@ -180,10 +207,11 @@ class Pan115Provider(StorageProvider):
         new_name: Optional[str] = None,
     ) -> CloudFile:
         # 先移动
-        self._client.move(file_id, to_cid=new_folder_id)
+        client = self._current_client()
+        client.move(file_id, to_cid=new_folder_id)
         # 再重命名（如果需要）
         if new_name:
-            self._client.rename(file_id, new_name)
+            client.rename(file_id, new_name)
             moved = self.find_file(new_name, folder_id=new_folder_id)
             if moved:
                 return moved
@@ -225,7 +253,7 @@ class Pan115Provider(StorageProvider):
             existing = self.find_file(name, folder_id=cid)
             if existing:
                 try:
-                    self._client.delete(existing.id)
+                    self._current_client().delete(existing.id)
                 except Exception:
                     logger.warning("删除已有文件失败 [%s]，继续上传", name)
 
@@ -250,7 +278,7 @@ class Pan115Provider(StorageProvider):
             existing = self.find_file(name, folder_id=cid)
             if existing:
                 try:
-                    self._client.delete(existing.id)
+                    self._current_client().delete(existing.id)
                 except Exception:
                     logger.warning("删除已有文件失败 [%s]，继续上传", name)
 
@@ -264,7 +292,8 @@ class Pan115Provider(StorageProvider):
 
         try:
             hashes = Pan115Client.compute_upload_hashes(tmp_path)
-            init_info = self._client.init_upload(
+            client = self._current_client()
+            init_info = client.init_upload(
                 file_name=name,
                 file_size=hashes.file_size,
                 cid=cid,
@@ -285,7 +314,7 @@ class Pan115Provider(StorageProvider):
 
             if init_info.requires_second_check:
                 sign_val = Pan115Client.compute_sign_val(tmp_path, init_info.sign_check)
-                init_info = self._client.init_upload(
+                init_info = client.init_upload(
                     file_name=name,
                     file_size=hashes.file_size,
                     cid=cid,
@@ -357,8 +386,9 @@ class Pan115Provider(StorageProvider):
         except ImportError as exc:
             raise Pan115ApiError("缺少 oss2 依赖，无法执行 115 分片上传") from exc
 
-        token = self._client.get_upload_token()
-        resume_info = self._client.resume_upload(
+        client = self._current_client()
+        token = client.get_upload_token()
+        resume_info = client.resume_upload(
             file_size=file_size,
             cid=cid,
             fileid=fileid,
@@ -428,11 +458,11 @@ class Pan115Provider(StorageProvider):
         此处用 delete 代替。
         """
         info = CloudFile(id=file_id, name=file_id, file_type=FileType.FILE, trashed=True)
-        self._client.delete(file_id)
+        self._current_client().delete(file_id)
         return info
 
     def delete_file(self, file_id: str) -> None:
-        self._client.delete(file_id)
+        self._current_client().delete(file_id)
 
     # ── 文件夹 ───────────────────────────────────────────
 
@@ -444,7 +474,7 @@ class Pan115Provider(StorageProvider):
         pid = parent_id or "0"
         if pid == "root":
             pid = "0"
-        new_id = self._client.create_folder(pid, name)
+        new_id = self._current_client().create_folder(pid, name)
         return CloudFile(
             id=new_id or "",
             name=name,
@@ -463,7 +493,7 @@ class Pan115Provider(StorageProvider):
         if pid == "root":
             pid = "0"
         # 115 的 create_folder 已经是幂等的（已存在返回已有 ID）
-        new_id = self._client.create_folder(pid, name)
+        new_id = self._current_client().create_folder(pid, name)
         if new_id:
             return CloudFile(
                 id=new_id,

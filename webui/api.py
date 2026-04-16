@@ -61,6 +61,7 @@ sys.path.insert(0, _ROOT)
 from drive.client import DriveClient
 from drive.auth import SCOPES as DRIVE_SCOPES
 from storage.base import StorageProvider, CloudFile
+from storage.pan115 import Pan115Provider
 from mediaparser import Config, MetaInfo, MetaInfoPath, TmdbClient
 from mediaparser.release_group import ReleaseGroupsMatcher
 from nfo import NfoGenerator, ImageUploader
@@ -83,6 +84,7 @@ logger = logging.getLogger("webui")
 _cfg: Optional[Config] = None
 _client: Optional[DriveClient] = None
 _storage_provider: Optional[StorageProvider] = None
+_u115_runtime = u115pan.get_runtime_manager()
 _tmdb_cache: Optional[TmdbCache] = None
 _config_mtime_ns: Optional[int] = None
 _u115_auto_organize_store: Optional[U115AutoOrganizeStore] = None
@@ -589,7 +591,16 @@ def _invalidate_runtime_cache_if_config_changed() -> None:
         _cfg = None
         _client = None
         _storage_provider = None
+        _u115_runtime.invalidate()
         _config_mtime_ns = mtime_ns
+
+
+def _invalidate_u115_runtime_cache() -> None:
+    """清理 115 共享 client 与依赖它的存储 Provider 缓存。"""
+    global _storage_provider
+    _u115_runtime.invalidate()
+    if isinstance(_storage_provider, Pan115Provider):
+        _storage_provider = None
 
 
 def get_config() -> Config:
@@ -623,8 +634,11 @@ def get_storage_provider() -> StorageProvider:
     _invalidate_runtime_cache_if_config_changed()
     if _storage_provider is None:
         cfg = get_config()
-        from storage import get_provider
-        _storage_provider = get_provider(cfg.storage.primary, cfg)
+        if cfg.storage.primary == "pan115":
+            _storage_provider = Pan115Provider.from_client_getter(_u115_client)
+        else:
+            from storage import get_provider
+            _storage_provider = get_provider(cfg.storage.primary, cfg)
     return _storage_provider
 
 
@@ -2127,7 +2141,7 @@ def _resolve_config_path(path_str: str) -> str:
 
 def _u115_client() -> u115pan.Pan115Client:
     cfg = get_config().u115
-    return u115pan.Pan115Client.from_token_file(
+    return _u115_runtime.get_client(
         client_id=cfg.client_id,
         token_path=_resolve_config_path(cfg.token_json),
     )
@@ -2236,11 +2250,16 @@ def _u115_oauth_status_payload() -> Dict[str, Any]:
                 token_expired = token.is_expired(skew_seconds=0)
                 if token_expired:
                     try:
-                        client = u115pan.Pan115Client.from_token_file(
+                        client = _u115_runtime.get_client(
                             client_id=cfg.client_id,
                             token_path=token_path,
                         )
                         token = client.refresh_token()
+                        _u115_runtime.sync_token(
+                            client_id=cfg.client_id,
+                            token_path=token_path,
+                            token=token,
+                        )
                         refreshed = True
                         refresh_time = token.refresh_time
                         expires_at = token.expires_at
@@ -2437,6 +2456,7 @@ async def write_config(body: ConfigSaveBody):
     _cfg = None
     _client = None
     _storage_provider = None
+    _u115_runtime.invalidate()
     try:
         _config_mtime_ns = _CONFIG_PATH.stat().st_mtime_ns
     except FileNotFoundError:
@@ -2490,9 +2510,10 @@ def _u115_oauth_create_sync(body: Optional[U115CreateSessionBody] = None):
     if not client_id:
         raise HTTPException(status_code=400, detail="u115.client_id 不能为空")
 
-    client = u115pan.Pan115Client.from_token_file(
+    resolved_token_path = _resolve_config_path(token_json)
+    client = _u115_runtime.get_client(
         client_id=client_id,
-        token_path=_resolve_config_path(token_json),
+        token_path=resolved_token_path,
     )
     try:
         session = client.create_device_code()
@@ -2551,7 +2572,13 @@ def _u115_oauth_poll_sync():
         # 避免前端一直卡在等待确认。
         if not status.confirmed and int(status.status) >= 1:
             try:
-                client.exchange_device_token(session)
+                token = client.exchange_device_token(session)
+                _u115_runtime.sync_token(
+                    client_id=cfg.client_id,
+                    token_path=_resolve_config_path(cfg.token_json),
+                    token=token,
+                )
+                _invalidate_u115_runtime_cache()
                 # 删除前校验 uid：如果文件已被新的 create 覆盖，跳过删除
                 try:
                     on_disk = _load_u115_device_session(session_path)
@@ -2598,14 +2625,21 @@ def _u115_oauth_exchange_sync(body: Optional[U115ExchangeBody] = None):
     if not client_id:
         raise HTTPException(status_code=400, detail="u115.client_id 不能为空")
 
-    client = u115pan.Pan115Client.from_token_file(
+    resolved_token_path = _resolve_config_path(token_json)
+    client = _u115_runtime.get_client(
         client_id=client_id,
-        token_path=_resolve_config_path(token_json),
+        token_path=resolved_token_path,
     )
     try:
         resolved_session_path = _resolve_config_path(session_json)
         session = _load_u115_device_session(resolved_session_path)
         token = client.exchange_device_token(session)
+        _u115_runtime.sync_token(
+            client_id=client_id,
+            token_path=resolved_token_path,
+            token=token,
+        )
+        _invalidate_u115_runtime_cache()
         # 删除前校验 uid：如果文件已被新的 create 覆盖，跳过删除
         try:
             on_disk = _load_u115_device_session(resolved_session_path)
