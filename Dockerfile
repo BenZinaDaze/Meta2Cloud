@@ -44,4 +44,4 @@ RUN mkdir -p /app/data
 EXPOSE 38765
 
 # 单进程启动：WebUI API + Webhook /trigger 均在 38765
-CMD ["uvicorn", "webui.api:app", "--host", "0.0.0.0", "--port", "38765"]
+CMD ["uvicorn", "webui.app:app", "--host", "0.0.0.0", "--port", "38765"]

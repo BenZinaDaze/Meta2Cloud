@@ -12,7 +12,7 @@ Write-Host "============================================================" -Foreg
 Write-Host "=> [Backend] Starting FastAPI Server on port 38765 in a new Terminal..." -ForegroundColor Green
 Write-Host "============================================================" -ForegroundColor DarkGray
 
-$backendArgs = "-m", "uvicorn", "webui.api:app", "--host", "0.0.0.0", "--port", "38765", "--reload"
+$backendArgs = "-m", "uvicorn", "webui.app:app", "--host", "0.0.0.0", "--port", "38765", "--reload"
 $backendProcess = Start-Process -FilePath $pythonCmd -ArgumentList $backendArgs -PassThru
 
 # 稍微等待半秒以免互相交织不清
