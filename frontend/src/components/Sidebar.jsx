@@ -142,7 +142,7 @@ function NavItem({ icon, label, active, onClick, indent = false, right, bold = f
 
 export default function Sidebar({ active, onSelect, aria2Overview = null, aria2ConnectionStatus = 'connecting', mobileOpen = false }) {
   const [libraryExpanded, setLibraryExpanded] = useState(true)
-  const [downloadsExpanded, setDownloadsExpanded] = useState(true)
+  const [downloadsExpanded, setDownloadsExpanded] = useState(false)
   const [latestVersion, setLatestVersion] = useState(null)
   
   const currentVersion = import.meta.env.VITE_APP_VERSION || 'v4.03'

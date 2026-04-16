@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { tmdbSearchMulti } from '../api'
 import ScraperDetailModal from './ScraperDetailModal'
-import ScraperResultsView, { clearResultsCache } from './ScraperResultsView'
+import ScraperResultsView from './ScraperResultsView'
 import MediaCard from './MediaCard'
+import { clearResultsCache } from '../utils/resultsCache'
 
 // Module-level cache to preserve state across remounts
 let _cachedQuery = ''

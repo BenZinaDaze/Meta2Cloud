@@ -23,7 +23,7 @@ export default function ScraperDetailModal({ item: initialItem, onClose, onToast
         } else {
           setItem(initialItem)
         }
-      } catch (e) {
+      } catch {
         setItem(initialItem)
       } finally {
         setLoadingDetail(false)
