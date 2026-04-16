@@ -51,9 +51,11 @@ def list_providers() -> list[str]:
 
 from storage.google_drive import GoogleDriveProvider  # noqa: E402
 from storage.pan115 import Pan115Provider  # noqa: E402
+from storage.quark import QuarkProvider  # noqa: E402
 
 register_provider("google_drive", GoogleDriveProvider)
 register_provider("pan115", Pan115Provider)
+register_provider("quark", QuarkProvider)
 
 __all__ = [
     "CloudFile",
@@ -61,6 +63,7 @@ __all__ = [
     "StorageProvider",
     "GoogleDriveProvider",
     "Pan115Provider",
+    "QuarkProvider",
     "get_provider",
     "list_providers",
     "register_provider",
