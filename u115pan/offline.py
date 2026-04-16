@@ -322,7 +322,16 @@ class OfflineClient:
         )
 
     def clear_tasks(self, flag: int = 0) -> None:
-        """按类型清空云下载任务"""
+        """按类型清空云下载任务。
+
+        flag 枚举：
+          - 0: 清空已完成
+          - 1: 清空全部
+          - 2: 清空失败
+          - 3: 清空进行中
+          - 4: 清空已完成任务并清空对应源文件
+          - 5: 清空全部任务并清空对应源文件
+        """
         self._client._request(
             "POST",
             self._client.PRO_API,

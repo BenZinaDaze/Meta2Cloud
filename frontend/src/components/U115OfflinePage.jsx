@@ -363,7 +363,7 @@ export default function U115OfflinePage({ onToast }) {
     setBusy(true)
     try {
       await clearU115OfflineTasks({ flag })
-      onToast?.('success', '任务已清空', flag === 1 ? '已清空失败任务' : flag === 2 ? '已清空完成任务' : '已清空全部任务')
+      onToast?.('success', '任务已清空', flag === 2 ? '已清空失败任务' : flag === 0 ? '已清空完成任务' : '已清空全部任务')
       await loadOverview()
       await loadAutoOrganizeStatus()
     } catch (e) {
@@ -418,7 +418,7 @@ export default function U115OfflinePage({ onToast }) {
           >
             刷新
           </ToolButton>
-          <ToolButton onClick={() => handleClear(2)} disabled={busy}>清空已完成</ToolButton>
+          <ToolButton onClick={() => handleClear(0)} disabled={busy}>清空已完成</ToolButton>
         </div>
       </div>
 
@@ -558,7 +558,7 @@ export default function U115OfflinePage({ onToast }) {
             <div className="text-base font-semibold" style={{ color: 'var(--color-text)' }}>任务列表</div>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <ToolButton onClick={() => handleClear(1)} disabled={busy}>清空失败任务</ToolButton>
+            <ToolButton onClick={() => handleClear(2)} disabled={busy}>清空失败任务</ToolButton>
           </div>
         </div>
 
