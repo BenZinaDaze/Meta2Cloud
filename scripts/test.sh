@@ -36,7 +36,7 @@ echo "============================================================"
 echo "=> [Backend] Starting FastAPI Server on port 38765..."
 echo "============================================================"
 # 这里使用 python -m uvicorn，以防 uvicorn 不在系统 PATH 中
-"$PYTHON_CMD" -m uvicorn webui.api:app --host 0.0.0.0 --port 38765 --reload &
+"$PYTHON_CMD" -m uvicorn webui.app:app --host 0.0.0.0 --port 38765 --reload &
 BACKEND_PID=$!
 
 # 稍微等待半秒以免前端的日志先刷掉后端的启动日志
