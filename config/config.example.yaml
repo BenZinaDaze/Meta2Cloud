@@ -28,7 +28,7 @@ webui:
 # ─────────────────────────────────────────────────────────
 storage:
   # 主流程使用的存储 Provider
-  # 可选值：google_drive / pan115
+  # 可选值：google_drive / pan115 / quark
   # pipeline.py / organizer 会使用此 Provider 进行文件整理
   # 也可以通过 CLI 参数 --storage 覆盖
   primary: "google_drive"
@@ -145,6 +145,38 @@ u115:
   tv_root_id: ""
 
   # 115 云下载完成后是否自动触发整理流程
+  auto_organize_enabled: false
+
+  # 自动整理轮询间隔（秒）
+  auto_organize_poll_seconds: 45
+
+  # 检测到任务完成后，额外等待多少秒再触发整理
+  auto_organize_stable_seconds: 30
+
+# ─────────────────────────────────────────────────────────
+# 夸克网盘设置
+# ─────────────────────────────────────────────────────────
+quark:
+  # 夸克 access_token 缓存路径
+  token_json: "config/quark-token.json"
+
+  # 夸克云下载目录 ID（可选）
+  # 用于保存离线下载任务产物
+  download_folder_id: ""
+
+  # 夸克媒体库根目录 ID（可选）
+  # 用于区分不同网盘的媒体库存储位置
+  root_folder_id: ""
+
+  # 夸克电影专用目录 ID（可选）
+  # 留空则使用 root_folder_id
+  movie_root_id: ""
+
+  # 夸克剧集专用目录 ID（可选）
+  # 留空则使用 root_folder_id
+  tv_root_id: ""
+
+  # 夸克云下载完成后是否自动触发整理流程
   auto_organize_enabled: false
 
   # 自动整理轮询间隔（秒）

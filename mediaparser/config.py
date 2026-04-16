@@ -116,6 +116,33 @@ class U115Config:
 
 
 @dataclass
+class QuarkConfig:
+    token_json: str = "config/quark-token.json"
+    scan_folder_id: str = ""
+    root_folder_id: str = ""
+    movie_root_id: str = ""
+    tv_root_id: str = ""
+    download_folder_id: str = ""
+    auto_organize_enabled: bool = False
+    auto_organize_poll_seconds: int = 45
+    auto_organize_stable_seconds: int = 30
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "QuarkConfig":
+        return cls(
+            token_json=str(d.get("token_json") or "config/quark-token.json"),
+            scan_folder_id=str(d.get("scan_folder_id") or ""),
+            root_folder_id=str(d.get("root_folder_id") or ""),
+            movie_root_id=str(d.get("movie_root_id") or ""),
+            tv_root_id=str(d.get("tv_root_id") or ""),
+            download_folder_id=str(d.get("download_folder_id") or ""),
+            auto_organize_enabled=bool(d.get("auto_organize_enabled", False)),
+            auto_organize_poll_seconds=max(10, int(d.get("auto_organize_poll_seconds") or 45)),
+            auto_organize_stable_seconds=max(0, int(d.get("auto_organize_stable_seconds") or 30)),
+        )
+
+
+@dataclass
 class PipelineConfig:
     skip_tmdb: bool = False
     move_on_tmdb_miss: bool = False
@@ -191,7 +218,7 @@ class Aria2Config:
 class StorageConfig:
     """存储后端选择配置"""
     # 主存储 Provider：pipeline / organizer 使用此 provider
-    # 可选值：google_drive / pan115
+    # 可选值：google_drive / pan115 / quark
     primary: str = "google_drive"
 
     @classmethod
@@ -207,6 +234,7 @@ class Config:
     parser: ParserConfig = field(default_factory=ParserConfig)
     drive: DriveConfig = field(default_factory=DriveConfig)
     u115: U115Config = field(default_factory=U115Config)
+    quark: QuarkConfig = field(default_factory=QuarkConfig)
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     webui: WebUIConfig = field(default_factory=WebUIConfig)
@@ -259,6 +287,7 @@ class Config:
             parser=ParserConfig.from_dict(d.get("parser") or {}),
             drive=DriveConfig.from_dict(d.get("drive") or {}),
             u115=U115Config.from_dict(d.get("u115") or {}),
+            quark=QuarkConfig.from_dict(d.get("quark") or {}),
             pipeline=PipelineConfig.from_dict(d.get("pipeline") or {}),
             telegram=TelegramConfig.from_dict(d.get("telegram") or {}),
             webui=WebUIConfig.from_dict(d.get("webui") or {}),
@@ -301,25 +330,34 @@ class Config:
         约定：
           - google_drive 使用 drive.scan_folder_id
           - pan115 使用 u115.download_folder_id
+          - quark 使用 quark.download_folder_id
         """
         if self.active_storage_name() == "pan115":
             return self.u115.download_folder_id
+        if self.active_storage_name() == "quark":
+            return self.quark.download_folder_id
         return self.drive.scan_folder_id
 
     def active_root_folder_id(self) -> str:
         """返回当前存储后端的媒体库根目录 ID。"""
         if self.active_storage_name() == "pan115":
             return self.u115.root_folder_id
+        if self.active_storage_name() == "quark":
+            return self.quark.root_folder_id
         return self.drive.root_folder_id
 
     def active_movie_root_id(self) -> str:
         """返回当前存储后端的电影根目录 ID，未单独配置时回退到媒体库根目录。"""
         if self.active_storage_name() == "pan115":
             return self.u115.movie_root_id or self.u115.root_folder_id
+        if self.active_storage_name() == "quark":
+            return self.quark.movie_root_id or self.quark.root_folder_id
         return self.drive.movie_root_id or self.drive.root_folder_id
 
     def active_tv_root_id(self) -> str:
         """返回当前存储后端的剧集根目录 ID，未单独配置时回退到媒体库根目录。"""
         if self.active_storage_name() == "pan115":
             return self.u115.tv_root_id or self.u115.root_folder_id
+        if self.active_storage_name() == "quark":
+            return self.quark.tv_root_id or self.quark.root_folder_id
         return self.drive.tv_root_id or self.drive.root_folder_id
