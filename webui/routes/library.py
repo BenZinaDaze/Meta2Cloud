@@ -79,6 +79,9 @@ async def get_tv_shows():
 @router.get("/api/tv/{tmdb_id}", response_model=MediaItem)
 async def get_tv_detail(tmdb_id: int):
     try:
+        item = get_library_store().get_library_item_by_tmdb("tv", tmdb_id)
+        if item:
+            return MediaItem(**item)
         client = get_storage_provider()
         cfg = get_config()
         shows = scan_tv_shows(client, cfg)

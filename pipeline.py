@@ -116,11 +116,11 @@ class Pipeline:
             dry_run=self._dry_run,
         )
 
-        # 写入 WebUI SQLite 缓存（同时供整理流程和后端读取复用）
+        # 写入 WebUI 实体库（供整理流程和后端统一复用）
         self._tmdb_write_cache = None
         if _WebUiCache is not None:
             _cache_db = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "config", "data", "tmdb_cache.db"
+                os.path.dirname(os.path.abspath(__file__)), "config", "data", "library.db"
             )
             try:
                 self._tmdb_write_cache = _WebUiCache(_cache_db)

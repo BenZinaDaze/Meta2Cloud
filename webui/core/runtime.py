@@ -24,7 +24,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 _ROOT_DIR = _ROOT
 _CONFIG_PATH = Path(_ROOT) / "config" / "config.yaml"
 _PARSER_RULES_PATH = Path(_ROOT) / "config" / "parser-rules.yaml"
-_CACHE_DB = os.path.join(_ROOT_DIR, "config", "data", "tmdb_cache.db")
+_LIBRARY_DB = os.path.join(_ROOT_DIR, "config", "data", "library.db")
 _APP_LOG_DIR = os.path.join(_ROOT_DIR, "config", "data", "logs")
 _LEGACY_APP_LOG_DB = os.path.join(_ROOT_DIR, "config", "data", "app_logs.jsonl")
 _U115_AUTO_ORGANIZE_DB = os.path.join(_ROOT_DIR, "config", "data", "u115_auto_organize.db")
@@ -84,6 +84,7 @@ def _validate_main_config_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     webui = dict(normalized.get("webui") or {})
     tmdb = dict(normalized.get("tmdb") or {})
     u115 = dict(normalized.get("u115") or {})
+    rss = dict(normalized.get("rss") or {})
     aria2 = dict(normalized.get("aria2") or {})
     telegram = dict(normalized.get("telegram") or {})
 
@@ -92,12 +93,14 @@ def _validate_main_config_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     _parse_int_field(tmdb, "timeout", "TMDB 请求超时", 1, 120)
     _parse_int_field(u115, "auto_organize_poll_seconds", "115 自动整理轮询间隔", 10, 600)
     _parse_int_field(u115, "auto_organize_stable_seconds", "115 完成稳定等待", 0, 600)
+    _parse_int_field(rss, "poll_seconds", "RSS 订阅轮询间隔", 10, 3600)
     _parse_int_field(aria2, "port", "Aria2 RPC 端口", 1, 65535)
     _parse_int_field(telegram, "debounce_seconds", "Telegram 防抖延时", 0, 600)
 
     normalized["webui"] = webui
     normalized["tmdb"] = tmdb
     normalized["u115"] = u115
+    normalized["rss"] = rss
     normalized["aria2"] = aria2
     normalized["telegram"] = telegram
     return normalized

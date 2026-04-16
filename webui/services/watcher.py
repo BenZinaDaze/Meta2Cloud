@@ -6,7 +6,12 @@ import sqlite3
 import u115pan
 
 from webui.services.pipeline import schedule_pipeline
-from webui.services.subscriptions import close_subscription_store, poll_subscriptions_once, subscriptions_status_payload
+from webui.services.subscriptions import (
+    close_subscription_store,
+    get_subscription_poll_seconds,
+    poll_subscriptions_once,
+    subscriptions_status_payload,
+)
 from webui.services.u115 import u115_offline_client, u115_oauth_status_payload
 import webui.core.runtime as runtime
 from webui.core.app_logging import app_log
@@ -168,7 +173,7 @@ def _rss_subscription_loop() -> None:
     global _rss_subscription_last_polled_at, _rss_subscription_last_poll_error, _rss_subscription_last_summary
     logger.info("RSS 订阅监听线程已启动")
     while not _rss_subscription_stop.is_set():
-        sleep_seconds = 300
+        sleep_seconds = get_subscription_poll_seconds()
         try:
             _rss_subscription_last_polled_at = datetime.now(timezone.utc).isoformat()
             _rss_subscription_last_poll_error = None

@@ -112,7 +112,7 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
       onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
       <div
-        className="relative flex h-[calc(100dvh-env(safe-area-inset-top)-0.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-t-[28px] sm:h-auto sm:rounded-[30px]"
+        className="relative flex h-[calc(100dvh-env(safe-area-inset-top)-0.5rem)] w-full max-w-3xl flex-col overflow-x-hidden overflow-y-auto rounded-t-[28px] sm:h-auto sm:rounded-[30px]"
         style={{
           background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.98) 0%, rgba(11, 22, 37, 0.98) 100%)',
           border: '1px solid var(--color-border)',
@@ -267,7 +267,7 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
           )}
         </div>
 
-        <div className="relative mt-2 min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:mt-4 sm:px-6 sm:pb-6" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
+        <div className="relative mt-2 px-4 pb-4 sm:mt-4 sm:px-6 sm:pb-6" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
           {loadingSlot && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#0B1625]/50 backdrop-blur-sm">
                <span className="text-white/40 text-sm animate-pulse flex items-center gap-2">
@@ -359,7 +359,7 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
         </div>
 
         {footerSlot && (
-          <div className="mt-2">
+          <div className="mt-2 px-4 pb-4 sm:px-6 sm:pb-6">
             {footerSlot}
           </div>
         )}

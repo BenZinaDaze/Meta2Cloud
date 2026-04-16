@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 import threading
 from dataclasses import asdict
 from typing import Any
@@ -12,7 +13,8 @@ from fastapi import HTTPException
 from mediaparser import MetaInfo
 from scraper.core.factory import SpiderFactory
 from webui.core.app_logging import app_log
-from webui.core.runtime import get_config, logger
+from webui.core.runtime import _read_merged_config_dict, get_config, logger
+from webui.library_store import get_library_store
 from webui.rss_subscription_store import RSSSubscriptionStore, SubscriptionRecord
 from webui.schemas.aria2 import Aria2AddUriBody
 from webui.schemas.config import U115OfflineAddUrlsBody
@@ -22,8 +24,20 @@ from webui.services.u115 import u115_oauth_status_payload, u115_offline_add_urls
 
 _store_lock = threading.Lock()
 _store: RSSSubscriptionStore | None = None
-_DB_PATH = "config/data/rss_subscriptions.db"
+_DB_PATH = "config/data/library.db"
 _DEFAULT_POLL_SECONDS = 300
+
+
+def get_subscription_poll_seconds() -> int:
+    raw = _read_merged_config_dict()
+    rss = raw.get("rss") or {}
+    value = rss.get("poll_seconds")
+    if value in (None, ""):
+        return _DEFAULT_POLL_SECONDS
+    try:
+        return max(10, int(value))
+    except (TypeError, ValueError):
+        return _DEFAULT_POLL_SECONDS
 
 
 def _resolve_store() -> RSSSubscriptionStore:
@@ -33,7 +47,8 @@ def _resolve_store() -> RSSSubscriptionStore:
             if _store is None:
                 from webui.core.runtime import _ROOT_DIR
 
-                _store = RSSSubscriptionStore(f"{_ROOT_DIR}/{_DB_PATH}")
+                db_path = f"{_ROOT_DIR}/{_DB_PATH}"
+                _store = RSSSubscriptionStore(db_path, library_db_path=db_path)
     return _store
 
 
@@ -63,8 +78,48 @@ def _serialize_subscription(record: SubscriptionRecord, *, include_hits: bool = 
     payload["enabled"] = bool(record.enabled)
     payload["keyword_all"] = json.loads(record.keyword_all or "[]")
     payload["hit_count"] = store.count_hits(record.id)
+    payload["tmdb"] = None
+    payload["library"] = None
+    if record.tmdb_id:
+        library_store = get_library_store()
+        tmdb_entry = library_store.get_tmdb_entry(record.media_type, record.tmdb_id)
+        library_entry = library_store.get_library_item_by_tmdb(record.media_type, record.tmdb_id)
+        if tmdb_entry:
+            raw = tmdb_entry.get("raw_json") or {}
+            payload["tmdb"] = {
+                "tmdb_id": record.tmdb_id,
+                "media_type": record.media_type,
+                "title": raw.get("title") or raw.get("name") or tmdb_entry.get("title") or "",
+                "original_title": raw.get("original_title") or raw.get("original_name") or tmdb_entry.get("original_title") or "",
+                "overview": raw.get("overview") or tmdb_entry.get("overview") or "",
+                "poster_path": raw.get("poster_path") or tmdb_entry.get("poster_path") or "",
+                "backdrop_path": raw.get("backdrop_path") or tmdb_entry.get("backdrop_path") or "",
+                "release_date": raw.get("release_date") or raw.get("first_air_date") or "",
+                "status": raw.get("status") or tmdb_entry.get("status") or "",
+                "rating": round(raw.get("vote_average") or tmdb_entry.get("vote_average") or 0, 1),
+            }
+        if library_entry:
+            payload["library"] = {
+                "in_library": True,
+                "drive_folder_id": library_entry.get("drive_folder_id"),
+                "title": library_entry.get("title") or "",
+                "year": library_entry.get("year") or "",
+                "poster_url": library_entry.get("poster_url"),
+                "total_episodes": library_entry.get("total_episodes"),
+                "in_library_episodes": library_entry.get("in_library_episodes"),
+            }
+        else:
+            payload["library"] = {"in_library": False}
     if include_hits:
         payload["recent_hits"] = [asdict(item) for item in store.list_hits(record.id, limit=5)]
+    return payload
+
+
+def _with_recent_hits(payload: dict[str, Any], *, include_hits: bool = True) -> dict[str, Any]:
+    if not include_hits:
+        return payload
+    store = _resolve_store()
+    payload["recent_hits"] = [asdict(item) for item in store.list_hits(payload["id"], limit=5)]
     return payload
 
 
@@ -194,7 +249,10 @@ def create_subscription_payload(body) -> dict[str, Any]:
     store = _resolve_store()
     payload = body.model_dump()
     payload["keyword_all"] = json.dumps(_normalize_keywords(body.keyword_all), ensure_ascii=False)
-    record = store.create_subscription(payload)
+    try:
+        record = store.create_subscription(payload)
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="订阅已存在，请勿重复创建相同规则") from exc
     app_log(
         "subscription",
         "created",
@@ -202,16 +260,23 @@ def create_subscription_payload(body) -> dict[str, Any]:
         level="SUCCESS",
         details={"subscription_id": record.id, "site": record.site, "push_target": record.push_target},
     )
-    return {"ok": True, "subscription": _serialize_subscription(record)}
+    joined = store.get_subscription_joined(record.id)
+    return {"ok": True, "subscription": _with_recent_hits(joined) if joined else _serialize_subscription(record)}
 
 
 def list_subscriptions_payload() -> dict[str, Any]:
     store = _resolve_store()
+    joined = store.list_subscriptions_joined()
+    if joined:
+        return {"ok": True, "subscriptions": [_with_recent_hits(item) for item in joined]}
     return {"ok": True, "subscriptions": [_serialize_subscription(item) for item in store.list_subscriptions()]}
 
 
 def get_subscription_payload(subscription_id: int) -> dict[str, Any]:
     store = _resolve_store()
+    joined = store.get_subscription_joined(subscription_id)
+    if joined is not None:
+        return {"ok": True, "subscription": _with_recent_hits(joined)}
     record = store.get_subscription(subscription_id)
     if record is None:
         raise HTTPException(status_code=404, detail="订阅不存在")
@@ -222,7 +287,10 @@ def update_subscription_payload(subscription_id: int, body) -> dict[str, Any]:
     store = _resolve_store()
     payload = body.model_dump()
     payload["keyword_all"] = json.dumps(_normalize_keywords(body.keyword_all), ensure_ascii=False)
-    record = store.update_subscription(subscription_id, payload)
+    try:
+        record = store.update_subscription(subscription_id, payload)
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="更新后的订阅规则与现有订阅重复") from exc
     if record is None:
         raise HTTPException(status_code=404, detail="订阅不存在")
     app_log(
@@ -232,7 +300,8 @@ def update_subscription_payload(subscription_id: int, body) -> dict[str, Any]:
         level="SUCCESS",
         details={"subscription_id": record.id},
     )
-    return {"ok": True, "subscription": _serialize_subscription(record)}
+    joined = store.get_subscription_joined(record.id)
+    return {"ok": True, "subscription": _with_recent_hits(joined) if joined else _serialize_subscription(record)}
 
 
 def delete_subscription_payload(subscription_id: int) -> dict[str, Any]:
@@ -389,5 +458,5 @@ def subscriptions_status_payload() -> dict[str, Any]:
     return {
         "enabled_count": len(store.list_enabled_subscriptions()),
         "total_count": len(store.list_subscriptions()),
-        "poll_seconds": _DEFAULT_POLL_SECONDS,
+        "poll_seconds": get_subscription_poll_seconds(),
     }

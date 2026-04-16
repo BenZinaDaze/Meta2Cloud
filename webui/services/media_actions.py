@@ -281,20 +281,9 @@ def tmdb_search_multi_payload(keyword: str):
 def tmdb_detail_payload(tmdb_id: int, media_type: str):
     try:
         store = get_library_store()
-        snapshot = store.get_snapshot()
-        if snapshot:
-            if media_type == "movie":
-                found = next((m for m in snapshot["movies"] if str(m.get("tmdb_id", "")) == str(tmdb_id)), None)
-                if found:
-                    found_copy = dict(found)
-                    found_copy["in_library"] = True
-                    return {"ok": True, "detail": found_copy}
-            elif media_type == "tv":
-                found = next((t for t in snapshot["tv_shows"] if str(t.get("tmdb_id", "")) == str(tmdb_id)), None)
-                if found:
-                    found_copy = dict(found)
-                    found_copy["in_library"] = True
-                    return {"ok": True, "detail": found_copy}
+        joined = store.get_joined_media_item(media_type, tmdb_id)
+        if joined:
+            return {"ok": True, "detail": joined}
         cfg = get_config()
         if not cfg.tmdb or not cfg.tmdb.api_key:
             raise ValueError("TMDB API Key 未配置")

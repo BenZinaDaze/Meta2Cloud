@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from dataclasses import dataclass
@@ -89,6 +90,18 @@ CREATE TABLE IF NOT EXISTS rss_subscription_hits (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_rss_subscription_hits_dedupe
 ON rss_subscription_hits(subscription_id, dedupe_key);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rss_subscription_unique
+ON rss_subscriptions(
+    media_type,
+    tmdb_id,
+    site,
+    rss_url,
+    subgroup_name,
+    season_number,
+    start_episode,
+    push_target
+);
 """
 
 _SUBSCRIPTION_COLUMN_MIGRATIONS: dict[str, str] = {
@@ -97,12 +110,15 @@ _SUBSCRIPTION_COLUMN_MIGRATIONS: dict[str, str] = {
 
 
 class RSSSubscriptionStore:
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, library_db_path: Optional[str] = None):
         os.makedirs(os.path.dirname(db_path) if os.path.dirname(db_path) else ".", exist_ok=True)
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
+        self._library_db_path = library_db_path or db_path
+        self._same_db = os.path.abspath(self._library_db_path) == os.path.abspath(db_path)
+        self._media_attached = False
         self._conn.executescript(_DDL)
         self._migrate_schema()
         self._conn.commit()
@@ -130,6 +146,101 @@ class RSSSubscriptionStore:
         if row is None:
             return None
         return SubscriptionHitRecord(**dict(row))
+
+    def _ensure_media_db_attached(self) -> bool:
+        if self._same_db:
+            return True
+        if self._media_attached:
+            return True
+        if not self._library_db_path or not os.path.exists(self._library_db_path):
+            return False
+        self._conn.execute("ATTACH DATABASE ? AS media_db", (self._library_db_path,))
+        self._media_attached = True
+        return True
+
+    def _serialize_joined_subscription_row(self, row: sqlite3.Row) -> dict[str, Any]:
+        payload = {
+            "id": row["id"],
+            "name": row["name"],
+            "media_title": row["media_title"],
+            "media_type": row["media_type"],
+            "tmdb_id": row["tmdb_id"],
+            "poster_url": row["poster_url"],
+            "site": row["site"],
+            "rss_url": row["rss_url"],
+            "subgroup_name": row["subgroup_name"],
+            "season_number": row["season_number"],
+            "start_episode": row["start_episode"],
+            "keyword_all": json.loads(row["keyword_all"] or "[]"),
+            "push_target": row["push_target"],
+            "enabled": bool(row["enabled"]),
+            "last_checked_at": row["last_checked_at"],
+            "last_matched_at": row["last_matched_at"],
+            "last_error": row["last_error"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "hit_count": row["hit_count"] or 0,
+            "tmdb": None,
+            "library": {"in_library": bool(row["lib_drive_folder_id"])} if "lib_drive_folder_id" in row.keys() else None,
+        }
+        if row["tm_title"] is not None:
+            payload["tmdb"] = {
+                "tmdb_id": row["tmdb_id"],
+                "media_type": row["media_type"],
+                "title": row["tm_title"] or "",
+                "original_title": row["tm_original_title"] or "",
+                "overview": row["tm_overview"] or "",
+                "poster_path": row["tm_poster_path"] or "",
+                "backdrop_path": row["tm_backdrop_path"] or "",
+                "release_date": row["tm_release_date"] or row["tm_first_air_date"] or "",
+                "status": row["tm_status"] or "",
+                "rating": round(row["tm_vote_average"] or 0, 1),
+            }
+        if row["lib_drive_folder_id"] is not None:
+            payload["library"] = {
+                "in_library": True,
+                "drive_folder_id": row["lib_drive_folder_id"],
+                "title": row["lib_title"] or "",
+                "year": row["lib_year"] or "",
+                "poster_url": row["lib_poster_url"],
+                "total_episodes": row["lib_total_episodes"],
+                "in_library_episodes": row["lib_in_library_episodes"],
+            }
+        return payload
+
+    def _subscription_join_select(self) -> str:
+        media_schema = "main" if self._same_db else "media_db"
+        return """
+            SELECT
+                s.*,
+                COALESCE(hit_stats.hit_count, 0) AS hit_count,
+                tm.title AS tm_title,
+                tm.original_title AS tm_original_title,
+                tm.overview AS tm_overview,
+                tm.poster_path AS tm_poster_path,
+                tm.backdrop_path AS tm_backdrop_path,
+                tm.release_date AS tm_release_date,
+                tm.first_air_date AS tm_first_air_date,
+                tm.status AS tm_status,
+                tm.vote_average AS tm_vote_average,
+                lib.drive_folder_id AS lib_drive_folder_id,
+                lib.title AS lib_title,
+                lib.year AS lib_year,
+                lib.poster_url AS lib_poster_url,
+                lib.total_episodes AS lib_total_episodes,
+                lib.in_library_episodes AS lib_in_library_episodes
+            FROM rss_subscriptions AS s
+            LEFT JOIN (
+                SELECT subscription_id, COUNT(*) AS hit_count
+                FROM rss_subscription_hits
+                GROUP BY subscription_id
+            ) AS hit_stats
+                ON hit_stats.subscription_id = s.id
+            LEFT JOIN {media_schema}.tmdb_media AS tm
+                ON tm.media_type = s.media_type AND tm.tmdb_id = s.tmdb_id
+            LEFT JOIN {media_schema}.library_media AS lib
+                ON lib.media_type = s.media_type AND lib.tmdb_id = s.tmdb_id
+        """.format(media_schema=media_schema)
 
     def create_subscription(self, payload: dict[str, Any]) -> SubscriptionRecord:
         now = self._utc_now()
@@ -172,6 +283,17 @@ class RSSSubscriptionStore:
         ).fetchall()
         return [self._row_to_subscription(row) for row in rows if row is not None]
 
+    def list_subscriptions_joined(self) -> list[dict[str, Any]]:
+        if not self._ensure_media_db_attached():
+            return []
+        rows = self._conn.execute(
+            self._subscription_join_select()
+            + """
+            ORDER BY s.updated_at DESC, s.id DESC
+            """
+        ).fetchall()
+        return [self._serialize_joined_subscription_row(row) for row in rows]
+
     def list_enabled_subscriptions(self) -> list[SubscriptionRecord]:
         rows = self._conn.execute(
             """
@@ -189,6 +311,21 @@ class RSSSubscriptionStore:
             (subscription_id,),
         ).fetchone()
         return self._row_to_subscription(row)
+
+    def get_subscription_joined(self, subscription_id: int) -> Optional[dict[str, Any]]:
+        if not self._ensure_media_db_attached():
+            return None
+        row = self._conn.execute(
+            self._subscription_join_select()
+            + """
+            WHERE s.id = ?
+            LIMIT 1
+            """,
+            (subscription_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return self._serialize_joined_subscription_row(row)
 
     def update_subscription(self, subscription_id: int, payload: dict[str, Any]) -> Optional[SubscriptionRecord]:
         current = self.get_subscription(subscription_id)

@@ -1,186 +1,494 @@
 """
-webui/library_store.py —— Google Drive 媒体库快照存储
+webui/library_store.py —— 实体化媒体存储
 
-将每次 Drive 扫描结果存入 SQLite，后续读取直接从本地 DB 获取，
-无需每次都访问 Google Drive API。
-
-表结构：
-  library_snapshot(
-    id          INTEGER PRIMARY KEY,
-    scanned_at  TEXT,      -- ISO8601 时间戳
-    movies_json TEXT,      -- JSON 数组
-    tv_json     TEXT,      -- JSON 数组
-    movie_count INTEGER,
-    tv_count    INTEGER
-  )
+职责：
+1. `tmdb_media`：缓存 TMDB 主信息，按 `(media_type, tmdb_id)` 关联。
+2. `library_media`：缓存媒体库入库状态，按 `drive_folder_id` 唯一。
+3. `app_state`：存放最后一次扫描时间等少量全局状态。
 """
+
+from __future__ import annotations
 
 import json
 import logging
 import os
 import sqlite3
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
+_TMDB_IMG_BASE = "https://image.tmdb.org/t/p/w500"
+_TMDB_IMG_ORIG = "https://image.tmdb.org/t/p/original"
 
 _DDL = """
-CREATE TABLE IF NOT EXISTS library_snapshot (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    scanned_at  TEXT    NOT NULL,
-    movies_json TEXT    NOT NULL DEFAULT '[]',
-    tv_json     TEXT    NOT NULL DEFAULT '[]',
-    movie_count INTEGER NOT NULL DEFAULT 0,
-    tv_count    INTEGER NOT NULL DEFAULT 0
+CREATE TABLE IF NOT EXISTS tmdb_media (
+    media_type          TEXT    NOT NULL,
+    tmdb_id             INTEGER NOT NULL,
+    language            TEXT    NOT NULL DEFAULT '',
+    title               TEXT    NOT NULL DEFAULT '',
+    original_title      TEXT    NOT NULL DEFAULT '',
+    original_language   TEXT    NOT NULL DEFAULT '',
+    overview            TEXT    NOT NULL DEFAULT '',
+    poster_path         TEXT    NOT NULL DEFAULT '',
+    backdrop_path       TEXT    NOT NULL DEFAULT '',
+    release_date        TEXT    NOT NULL DEFAULT '',
+    first_air_date      TEXT    NOT NULL DEFAULT '',
+    status              TEXT    NOT NULL DEFAULT '',
+    vote_average        REAL    NOT NULL DEFAULT 0,
+    vote_count          INTEGER NOT NULL DEFAULT 0,
+    raw_json            TEXT    NOT NULL DEFAULT '{}',
+    season_details_json TEXT    NOT NULL DEFAULT '{}',
+    episode_details_json TEXT   NOT NULL DEFAULT '{}',
+    last_synced_at      TEXT    NOT NULL,
+    expires_at          REAL    NOT NULL DEFAULT 0,
+    PRIMARY KEY (media_type, tmdb_id)
+);
+
+CREATE TABLE IF NOT EXISTS library_media (
+    drive_folder_id      TEXT    PRIMARY KEY,
+    media_type           TEXT    NOT NULL,
+    tmdb_id              INTEGER NOT NULL DEFAULT 0,
+    title                TEXT    NOT NULL DEFAULT '',
+    original_title       TEXT    NOT NULL DEFAULT '',
+    year                 TEXT    NOT NULL DEFAULT '',
+    poster_url           TEXT,
+    backdrop_url         TEXT,
+    overview             TEXT    NOT NULL DEFAULT '',
+    rating               REAL    NOT NULL DEFAULT 0,
+    status               TEXT    NOT NULL DEFAULT '',
+    total_episodes       INTEGER,
+    in_library_episodes  INTEGER,
+    raw_json             TEXT    NOT NULL DEFAULT '{}',
+    in_library           INTEGER NOT NULL DEFAULT 1,
+    last_scanned_at      TEXT    NOT NULL,
+    updated_at           TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_library_media_tmdb
+ON library_media(media_type, tmdb_id)
+WHERE tmdb_id > 0;
+
+CREATE INDEX IF NOT EXISTS idx_library_media_media_type
+ON library_media(media_type);
+
+CREATE INDEX IF NOT EXISTS idx_tmdb_media_title
+ON tmdb_media(title);
+
+CREATE TABLE IF NOT EXISTS app_state (
+    key    TEXT PRIMARY KEY,
+    value  TEXT NOT NULL
 );
 """
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DB_PATH = os.path.join(_ROOT, "config", "data", "library.db")
+_SCAN_AT_KEY = "library.last_scanned_at"
 
 
 class LibraryStore:
     def __init__(self, db_path: str = _DB_PATH):
         os.makedirs(os.path.dirname(db_path) if os.path.dirname(db_path) else ".", exist_ok=True)
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(_DDL)
         self._conn.commit()
-        logger.info("媒体库存储启动：%s", db_path)
+        logger.info("媒体实体存储启动：%s", db_path)
 
-    # ── 读取 ────────────────────────────────────────────
+    @staticmethod
+    def _utc_now() -> str:
+        return datetime.now(timezone.utc).isoformat()
 
-    def get_snapshot(self) -> Optional[dict]:
-        """返回最新快照，未扫描过则返回 None"""
-        cur = self._conn.execute(
-            "SELECT scanned_at, movies_json, tv_json, movie_count, tv_count "
-            "FROM library_snapshot ORDER BY id DESC LIMIT 1"
+    def _set_state(self, key: str, value: str) -> None:
+        self._conn.execute(
+            """
+            INSERT INTO app_state(key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (key, value),
         )
-        row = cur.fetchone()
+
+    def _get_state(self, key: str) -> Optional[str]:
+        row = self._conn.execute("SELECT value FROM app_state WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    # ── TMDB 缓存 ──────────────────────────────────────
+
+    def get_tmdb_entry(self, media_type: str, tmdb_id: int) -> Optional[dict[str, Any]]:
+        row = self._conn.execute(
+            "SELECT * FROM tmdb_media WHERE media_type = ? AND tmdb_id = ?",
+            (media_type, tmdb_id),
+        ).fetchone()
         if row is None:
             return None
-        scanned_at, movies_json, tv_json, movie_count, tv_count = row
-        return {
-            "scanned_at": scanned_at,
-            "movies": json.loads(movies_json),
-            "tv_shows": json.loads(tv_json),
-            "total_movies": movie_count,
-            "total_tv": tv_count,
-        }
+        data = dict(row)
+        for key in ("raw_json", "season_details_json", "episode_details_json"):
+            data[key] = json.loads(data.get(key) or "{}")
+        return data
 
-    def last_scanned(self) -> Optional[str]:
-        """返回最后扫描时间（ISO8601），从未扫描返回 None"""
-        cur = self._conn.execute(
-            "SELECT scanned_at FROM library_snapshot ORDER BY id DESC LIMIT 1"
-        )
-        row = cur.fetchone()
-        return row[0] if row else None
-
-    # ── 写入 ────────────────────────────────────────────
-
-    def save_snapshot(self, movies: list, tv_shows: list) -> dict:
-        """
-        保存新快照，并与上一次对比，返回变更统计：
-        {
-          "new_movies": int,       新增电影数
-          "new_tv": int,           新增剧集数
-          "total_movies": int,
-          "total_tv": int,
-          "scanned_at": str,
-        }
-        """
-        old = self.get_snapshot()
-        # old snapshot 来自 JSON，已是 dict；movies/tv_shows 是 Pydantic MediaItem 对象
-        old_movie_ids = {m["tmdb_id"] for m in (old["movies"] if old else []) if m.get("tmdb_id")}
-        old_tv_ids    = {t["tmdb_id"] for t in (old["tv_shows"] if old else []) if t.get("tmdb_id")}
-
-        new_movie_ids = {m.tmdb_id for m in movies   if m.tmdb_id}
-        new_tv_ids    = {t.tmdb_id for t in tv_shows if t.tmdb_id}
-
-        new_movies_count = len(new_movie_ids - old_movie_ids)
-        new_tv_count     = len(new_tv_ids - old_tv_ids)
-
-        now = datetime.now(timezone.utc).isoformat()
-
+    def upsert_tmdb_detail(
+        self,
+        *,
+        media_type: str,
+        tmdb_id: int,
+        language: str,
+        data: dict[str, Any],
+        expires_at: float,
+    ) -> None:
+        now = self._utc_now()
+        current = self.get_tmdb_entry(media_type, tmdb_id) or {}
         self._conn.execute(
-            "INSERT INTO library_snapshot(scanned_at, movies_json, tv_json, movie_count, tv_count) "
-            "VALUES (?, ?, ?, ?, ?)",
+            """
+            INSERT INTO tmdb_media(
+                media_type, tmdb_id, language, title, original_title, original_language,
+                overview, poster_path, backdrop_path, release_date, first_air_date,
+                status, vote_average, vote_count, raw_json, season_details_json,
+                episode_details_json, last_synced_at, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(media_type, tmdb_id) DO UPDATE SET
+                language = excluded.language,
+                title = excluded.title,
+                original_title = excluded.original_title,
+                original_language = excluded.original_language,
+                overview = excluded.overview,
+                poster_path = excluded.poster_path,
+                backdrop_path = excluded.backdrop_path,
+                release_date = excluded.release_date,
+                first_air_date = excluded.first_air_date,
+                status = excluded.status,
+                vote_average = excluded.vote_average,
+                vote_count = excluded.vote_count,
+                raw_json = excluded.raw_json,
+                season_details_json = excluded.season_details_json,
+                episode_details_json = excluded.episode_details_json,
+                last_synced_at = excluded.last_synced_at,
+                expires_at = excluded.expires_at
+            """,
             (
+                media_type,
+                tmdb_id,
+                language,
+                data.get("title") or data.get("name") or "",
+                data.get("original_title") or data.get("original_name") or "",
+                data.get("original_language") or "",
+                data.get("overview") or "",
+                data.get("poster_path") or "",
+                data.get("backdrop_path") or "",
+                data.get("release_date") or "",
+                data.get("first_air_date") or "",
+                data.get("status") or "",
+                float(data.get("vote_average") or 0),
+                int(data.get("vote_count") or 0),
+                json.dumps(data, ensure_ascii=False),
+                json.dumps(current.get("season_details_json") or {}, ensure_ascii=False),
+                json.dumps(current.get("episode_details_json") or {}, ensure_ascii=False),
                 now,
-                json.dumps([m if isinstance(m, dict) else m.model_dump() for m in movies],
-                           ensure_ascii=False),
-                json.dumps([t if isinstance(t, dict) else t.model_dump() for t in tv_shows],
-                           ensure_ascii=False),
-                len(movies),
-                len(tv_shows),
+                expires_at,
             ),
         )
         self._conn.commit()
 
-        # 只保留最近 5 次快照，防止数据库无限增长
+    def upsert_tmdb_season_detail(
+        self,
+        *,
+        tmdb_id: int,
+        language: str,
+        season_number: int,
+        data: dict[str, Any],
+        expires_at: float,
+    ) -> None:
+        current = self.get_tmdb_entry("tv", tmdb_id) or {}
+        seasons = current.get("season_details_json") or {}
+        seasons[str(season_number)] = data
         self._conn.execute(
-            "DELETE FROM library_snapshot WHERE id NOT IN "
-            "(SELECT id FROM library_snapshot ORDER BY id DESC LIMIT 5)"
+            """
+            INSERT INTO tmdb_media(
+                media_type, tmdb_id, language, raw_json, season_details_json,
+                episode_details_json, last_synced_at, expires_at
+            ) VALUES ('tv', ?, ?, '{}', ?, ?, ?, ?)
+            ON CONFLICT(media_type, tmdb_id) DO UPDATE SET
+                language = excluded.language,
+                season_details_json = excluded.season_details_json,
+                episode_details_json = excluded.episode_details_json,
+                last_synced_at = excluded.last_synced_at,
+                expires_at = excluded.expires_at
+            """,
+            (
+                tmdb_id,
+                language,
+                json.dumps(seasons, ensure_ascii=False),
+                json.dumps(current.get("episode_details_json") or {}, ensure_ascii=False),
+                self._utc_now(),
+                expires_at,
+            ),
         )
         self._conn.commit()
 
-        logger.info(
-            "媒体库快照已保存：%d 部电影，%d 部剧集（新增 %d / %d）",
-            len(movies), len(tv_shows), new_movies_count, new_tv_count,
+    def upsert_tmdb_episode_detail(
+        self,
+        *,
+        tmdb_id: int,
+        language: str,
+        season_number: int,
+        episode_number: int,
+        data: dict[str, Any],
+        expires_at: float,
+    ) -> None:
+        current = self.get_tmdb_entry("tv", tmdb_id) or {}
+        episodes = current.get("episode_details_json") or {}
+        episodes[f"{season_number}:{episode_number}"] = data
+        self._conn.execute(
+            """
+            INSERT INTO tmdb_media(
+                media_type, tmdb_id, language, raw_json, season_details_json,
+                episode_details_json, last_synced_at, expires_at
+            ) VALUES ('tv', ?, ?, '{}', ?, ?, ?, ?)
+            ON CONFLICT(media_type, tmdb_id) DO UPDATE SET
+                language = excluded.language,
+                season_details_json = excluded.season_details_json,
+                episode_details_json = excluded.episode_details_json,
+                last_synced_at = excluded.last_synced_at,
+                expires_at = excluded.expires_at
+            """,
+            (
+                tmdb_id,
+                language,
+                json.dumps(current.get("season_details_json") or {}, ensure_ascii=False),
+                json.dumps(episodes, ensure_ascii=False),
+                self._utc_now(),
+                expires_at,
+            ),
         )
+        self._conn.commit()
+
+    def evict_tmdb_expired(self) -> int:
+        cur = self._conn.execute(
+            "DELETE FROM tmdb_media WHERE expires_at > 0 AND expires_at < ?",
+            (datetime.now(timezone.utc).timestamp(),),
+        )
+        self._conn.commit()
+        return cur.rowcount
+
+    def tmdb_stats(self) -> dict[str, int]:
+        cur = self._conn.execute(
+            "SELECT COUNT(*), SUM(CASE WHEN expires_at >= ? THEN 1 ELSE 0 END) FROM tmdb_media",
+            (datetime.now(timezone.utc).timestamp(),),
+        )
+        total, valid = cur.fetchone()
+        total = total or 0
+        valid = valid or 0
+        return {"total": total, "valid": valid, "expired": total - valid}
+
+    # ── 媒体库快照 ──────────────────────────────────────
+
+    def get_snapshot(self) -> Optional[dict]:
+        scanned_at = self._get_state(_SCAN_AT_KEY)
+        if scanned_at is None:
+            return None
+        rows = self._conn.execute(
+            """
+            SELECT *
+            FROM library_media
+            ORDER BY media_type ASC, year DESC, title COLLATE NOCASE ASC
+            """
+        ).fetchall()
+        movies: list[dict[str, Any]] = []
+        tv_shows: list[dict[str, Any]] = []
+        for row in rows:
+            payload = json.loads(row["raw_json"] or "{}")
+            target = movies if row["media_type"] == "movie" else tv_shows
+            target.append(payload)
         return {
-            "new_movies": new_movies_count,
-            "new_tv": new_tv_count,
+            "scanned_at": scanned_at,
+            "movies": movies,
+            "tv_shows": tv_shows,
             "total_movies": len(movies),
             "total_tv": len(tv_shows),
-            "scanned_at": now,
         }
 
+    def last_scanned(self) -> Optional[str]:
+        return self._get_state(_SCAN_AT_KEY)
+
+    def save_snapshot(self, movies: list, tv_shows: list) -> dict:
+        old_rows = self._conn.execute(
+            "SELECT media_type, tmdb_id FROM library_media WHERE tmdb_id > 0"
+        ).fetchall()
+        old_movie_ids = {row["tmdb_id"] for row in old_rows if row["media_type"] == "movie"}
+        old_tv_ids = {row["tmdb_id"] for row in old_rows if row["media_type"] == "tv"}
+
+        now = self._utc_now()
+        movie_payloads = [m if isinstance(m, dict) else m.model_dump() for m in movies]
+        tv_payloads = [t if isinstance(t, dict) else t.model_dump() for t in tv_shows]
+
+        new_movie_ids = {item.get("tmdb_id") for item in movie_payloads if int(item.get("tmdb_id") or 0) > 0}
+        new_tv_ids = {item.get("tmdb_id") for item in tv_payloads if int(item.get("tmdb_id") or 0) > 0}
+
+        self._conn.execute("DELETE FROM library_media")
+        for payload in movie_payloads + tv_payloads:
+            self._upsert_library_item(payload, now)
+        self._set_state(_SCAN_AT_KEY, now)
+        self._conn.commit()
+
+        diff = {
+            "new_movies": len(new_movie_ids - old_movie_ids),
+            "new_tv": len(new_tv_ids - old_tv_ids),
+            "total_movies": len(movie_payloads),
+            "total_tv": len(tv_payloads),
+            "scanned_at": now,
+        }
+        logger.info(
+            "媒体库实体快照已保存：%d 部电影，%d 部剧集（新增 %d / %d）",
+            diff["total_movies"],
+            diff["total_tv"],
+            diff["new_movies"],
+            diff["new_tv"],
+        )
+        return diff
+
+    def _upsert_library_item(self, payload: dict[str, Any], scanned_at: str) -> None:
+        drive_folder_id = payload.get("drive_folder_id") or ""
+        if not drive_folder_id:
+            return
+        self._conn.execute(
+            """
+            INSERT INTO library_media(
+                drive_folder_id, media_type, tmdb_id, title, original_title, year,
+                poster_url, backdrop_url, overview, rating, status,
+                total_episodes, in_library_episodes, raw_json, in_library,
+                last_scanned_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            ON CONFLICT(drive_folder_id) DO UPDATE SET
+                media_type = excluded.media_type,
+                tmdb_id = excluded.tmdb_id,
+                title = excluded.title,
+                original_title = excluded.original_title,
+                year = excluded.year,
+                poster_url = excluded.poster_url,
+                backdrop_url = excluded.backdrop_url,
+                overview = excluded.overview,
+                rating = excluded.rating,
+                status = excluded.status,
+                total_episodes = excluded.total_episodes,
+                in_library_episodes = excluded.in_library_episodes,
+                raw_json = excluded.raw_json,
+                in_library = excluded.in_library,
+                last_scanned_at = excluded.last_scanned_at,
+                updated_at = excluded.updated_at
+            """,
+            (
+                drive_folder_id,
+                payload.get("media_type") or "",
+                int(payload.get("tmdb_id") or 0),
+                payload.get("title") or "",
+                payload.get("original_title") or "",
+                payload.get("year") or "",
+                payload.get("poster_url"),
+                payload.get("backdrop_url"),
+                payload.get("overview") or "",
+                float(payload.get("rating") or 0),
+                payload.get("status") or "",
+                payload.get("total_episodes"),
+                payload.get("in_library_episodes"),
+                json.dumps(payload, ensure_ascii=False),
+                scanned_at,
+                scanned_at,
+            ),
+        )
+
     def patch_item(self, drive_folder_id: str, updates: dict) -> bool:
-        """
-        按 drive_folder_id 定位最新快照中的某个条目并就地更新指定字段。
-        updates: 要更新的键值对，例如 {"tmdb_id": 12345, "poster_path": "/abc.jpg"}
-        返回 True 表示找到并更新了条目，False 表示未找到。
-        """
         row = self._conn.execute(
-            "SELECT id, movies_json, tv_json FROM library_snapshot ORDER BY id DESC LIMIT 1"
+            "SELECT raw_json FROM library_media WHERE drive_folder_id = ?",
+            (drive_folder_id,),
         ).fetchone()
         if row is None:
-            return False
-        snap_id, movies_json, tv_json = row
-        movies   = json.loads(movies_json)
-        tv_shows = json.loads(tv_json)
-
-        found = False
-        for item in movies:
-            if item.get("drive_folder_id") == drive_folder_id:
-                item.update(updates)
-                found = True
-                break
-        if not found:
-            for item in tv_shows:
-                if item.get("drive_folder_id") == drive_folder_id:
-                    item.update(updates)
-                    found = True
-                    break
-
-        if found:
-            self._conn.execute(
-                "UPDATE library_snapshot SET movies_json=?, tv_json=? WHERE id=?",
-                (json.dumps(movies, ensure_ascii=False),
-                 json.dumps(tv_shows, ensure_ascii=False),
-                 snap_id),
-            )
-            self._conn.commit()
-            logger.info("已就地更新库条目 drive_folder_id=%s", drive_folder_id)
-        else:
             logger.warning("patch_item: 未找到 drive_folder_id=%s", drive_folder_id)
-        return found
+            return False
+        payload = json.loads(row["raw_json"] or "{}")
+        payload.update(updates)
+        self._upsert_library_item(payload, self.last_scanned() or self._utc_now())
+        self._conn.commit()
+        logger.info("已更新库条目 drive_folder_id=%s", drive_folder_id)
+        return True
+
+    def get_library_item_by_tmdb(self, media_type: str, tmdb_id: int) -> Optional[dict[str, Any]]:
+        row = self._conn.execute(
+            """
+            SELECT *
+            FROM library_media
+            WHERE media_type = ? AND tmdb_id = ?
+            LIMIT 1
+            """,
+            (media_type, tmdb_id),
+        ).fetchone()
+        if row is None:
+            return None
+        return json.loads(row["raw_json"] or "{}")
+
+    def list_library_items(self, media_type: Optional[str] = None) -> list[dict[str, Any]]:
+        if media_type:
+            rows = self._conn.execute(
+                "SELECT raw_json FROM library_media WHERE media_type = ? ORDER BY year DESC, title COLLATE NOCASE ASC",
+                (media_type,),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT raw_json FROM library_media ORDER BY media_type ASC, year DESC, title COLLATE NOCASE ASC"
+            ).fetchall()
+        return [json.loads(row["raw_json"] or "{}") for row in rows]
+
+    def get_joined_media_item(self, media_type: str, tmdb_id: int) -> Optional[dict[str, Any]]:
+        library_item = self.get_library_item_by_tmdb(media_type, tmdb_id)
+        if library_item:
+            return {**library_item, "in_library": True}
+        tmdb_entry = self.get_tmdb_entry(media_type, tmdb_id)
+        if not tmdb_entry:
+            return None
+        raw = tmdb_entry.get("raw_json") or {}
+        poster_path = raw.get("poster_path") or tmdb_entry.get("poster_path") or ""
+        backdrop_path = raw.get("backdrop_path") or tmdb_entry.get("backdrop_path") or ""
+        payload = dict(raw)
+        payload.update({
+            "tmdb_id": tmdb_id,
+            "media_type": media_type,
+            "title": raw.get("title") or raw.get("name") or tmdb_entry.get("title") or "",
+            "original_title": raw.get("original_title") or raw.get("original_name") or tmdb_entry.get("original_title") or "",
+            "year": (raw.get("release_date") or raw.get("first_air_date") or "")[:4],
+            "poster_url": f"{_TMDB_IMG_BASE}{poster_path}" if poster_path else None,
+            "backdrop_url": f"{_TMDB_IMG_ORIG}{backdrop_path}" if backdrop_path else None,
+            "overview": raw.get("overview") or tmdb_entry.get("overview") or "",
+            "rating": round(raw.get("vote_average") or tmdb_entry.get("vote_average") or 0, 1),
+            "status": raw.get("status") or tmdb_entry.get("status") or "",
+            "in_library": False,
+        })
+        return payload
+
+    def get_stats(self) -> dict[str, Any]:
+        snapshot = self.get_snapshot()
+        if snapshot is None:
+            return {
+                "total_movies": 0,
+                "total_tv_shows": 0,
+                "total_episodes_in_library": 0,
+                "total_episodes_on_tmdb": 0,
+                "completion_rate": 0.0,
+            }
+        tv_shows = snapshot["tv_shows"]
+        total_eps_tmdb = sum((show.get("total_episodes") or 0) for show in tv_shows)
+        total_eps_lib = sum((show.get("in_library_episodes") or 0) for show in tv_shows)
+        return {
+            "total_movies": snapshot["total_movies"],
+            "total_tv_shows": snapshot["total_tv"],
+            "total_episodes_in_library": total_eps_lib,
+            "total_episodes_on_tmdb": total_eps_tmdb,
+            "completion_rate": round(total_eps_lib / total_eps_tmdb * 100, 1) if total_eps_tmdb > 0 else 0.0,
+        }
 
     def close(self):
         self._conn.close()
 
 
-# 全局单例
 _store: Optional[LibraryStore] = None
 
 

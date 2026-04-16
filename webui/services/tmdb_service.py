@@ -8,7 +8,7 @@ from urllib3.util.retry import Retry
 from mediaparser import TmdbClient
 from webui.tmdb_cache import TmdbCache
 from webui.core.app_logging import app_log
-from webui.core.runtime import _CACHE_DB, get_config, logger
+from webui.core.runtime import _LIBRARY_DB, get_config, logger
 
 
 TMDB_IMG_BASE = "https://image.tmdb.org/t/p/w500"
@@ -31,7 +31,7 @@ _tmdb_cache: Optional[TmdbCache] = None
 def get_tmdb_cache() -> TmdbCache:
     global _tmdb_cache
     if _tmdb_cache is None:
-        _tmdb_cache = TmdbCache(_CACHE_DB)
+        _tmdb_cache = TmdbCache(_LIBRARY_DB)
         _tmdb_cache.evict_expired()
     return _tmdb_cache
 

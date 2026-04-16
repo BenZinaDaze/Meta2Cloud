@@ -33,6 +33,7 @@ function normalizeConfig(data) {
   const webui = { ...(next.webui || {}) }
   const tmdb = { ...(next.tmdb || {}) }
   const u115 = { ...(next.u115 || {}) }
+  const rss = { ...(next.rss || {}) }
   const telegram = { ...(next.telegram || {}) }
 
   if (aria2.enabled === undefined) {
@@ -55,6 +56,9 @@ function normalizeConfig(data) {
   if (u115.auto_organize_stable_seconds === undefined || u115.auto_organize_stable_seconds === null || u115.auto_organize_stable_seconds === '') {
     u115.auto_organize_stable_seconds = 30
   }
+  if (rss.poll_seconds === undefined || rss.poll_seconds === null || rss.poll_seconds === '') {
+    rss.poll_seconds = 300
+  }
   if (telegram.debounce_seconds === undefined || telegram.debounce_seconds === null || telegram.debounce_seconds === '') {
     telegram.debounce_seconds = 60
   }
@@ -63,6 +67,7 @@ function normalizeConfig(data) {
   next.webui = webui
   next.tmdb = tmdb
   next.u115 = u115
+  next.rss = rss
   next.telegram = telegram
   return next
 }
@@ -1094,10 +1099,11 @@ export default function ConfigPage({ onAria2EnabledChange = null, page = 'genera
             <FieldRow label="电影归档目录 ID" description="115 电影目录 ID，留空则直接使用媒体库根目录">
               <TextInput value={cfg?.u115?.movie_root_id} onChange={v => set('u115', 'movie_root_id', v)} placeholder="留空同根目录" mono />
             </FieldRow>
-            <FieldRow label="剧集归档目录 ID" description="115 剧集目录 ID，留空则直接使用媒体库根目录">
+              <FieldRow label="剧集归档目录 ID" description="115 剧集目录 ID，留空则直接使用媒体库根目录">
               <TextInput value={cfg?.u115?.tv_root_id} onChange={v => set('u115', 'tv_root_id', v)} placeholder="留空同根目录" mono />
             </FieldRow>
               </Section>
+
             </>
           )}
 
@@ -1121,6 +1127,17 @@ export default function ConfigPage({ onAria2EnabledChange = null, page = 'genera
                 </FieldRow>
                 <FieldRow label="请求超时（秒）">
                   <NumberInput value={cfg?.tmdb?.timeout} onChange={v => set('tmdb', 'timeout', v)} min={1} max={120} />
+                </FieldRow>
+              </Section>
+
+              <Section title="RSS 订阅">
+                <FieldRow label="轮询间隔（秒）" description="后台检查所有启用 RSS 订阅的频率，默认 300 秒">
+                  <NumberInput
+                    value={cfg?.rss?.poll_seconds ?? 300}
+                    onChange={v => set('rss', 'poll_seconds', v)}
+                    min={10}
+                    max={3600}
+                  />
                 </FieldRow>
               </Section>
 
