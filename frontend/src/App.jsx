@@ -60,7 +60,7 @@ function MobileNav({ active, onSelect, onToggleSidebar }) {
     { key: 'all', label: '媒体库', icon: MobileNavIcons.library, isActive: isLibrary },
     { key: 'downloads', label: '下载', icon: MobileNavIcons.download, isActive: isDownload },
     { key: 'logs', label: '日志', icon: MobileNavIcons.activity, isActive: active === 'logs' },
-    { key: 'config', label: '配置', icon: MobileNavIcons.settings, isActive: active === 'config' },
+    { key: 'config', label: '配置', icon: MobileNavIcons.settings, isActive: ['config', 'config-filename-rules'].includes(active) },
   ]
 
   return (
@@ -342,7 +342,9 @@ export default function App() {
           style={{ paddingBottom: 'calc(4.5rem + env(safe-area-inset-bottom))' }}
         >
           {activeNav === 'config' ? (
-            <ConfigPage onAria2EnabledChange={setAria2Enabled} />
+            <ConfigPage onAria2EnabledChange={setAria2Enabled} page="general" />
+          ) : activeNav === 'config-filename-rules' ? (
+            <ConfigPage onAria2EnabledChange={setAria2Enabled} page="filenameRules" />
           ) : activeNav === 'calendar' ? (
             <CalendarPage
               onSearch={(anime) => {

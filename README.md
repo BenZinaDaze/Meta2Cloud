@@ -41,11 +41,13 @@
 ```bash
 mkdir -p meta2cloud-config
 cp config/config.example.yaml meta2cloud-config/config.yaml
+cp config/parser-rules.example.yaml meta2cloud-config/parser-rules.yaml
 ```
 
 这个目录以后会放：
 
 - `config.yaml`
+- `parser-rules.yaml`
 - Google Drive 用的 `credentials.json` 和 `token.json`
 - 115 用的 `115-token.json`
 
@@ -53,7 +55,7 @@ cp config/config.example.yaml meta2cloud-config/config.yaml
 
 你有两种方式：
 
-- 直接改 `config.yaml`
+- 直接改 `config.yaml` 和 `parser-rules.yaml`
 - 先启动后，通过 Web UI 的“配置”页面来改
 
 如果你是第一次用，最少先准备好这几项：
@@ -386,7 +388,7 @@ Season 01：
 ### 2. 文件名识别错了怎么办
 
 先去网页里的“解析测试”页面看看识别结果。  
-如果识别得不对，再改 `config.yaml` 里的 `parser.custom_words` 或手动修文件名。
+如果识别得不对，再改 `parser-rules.yaml` 里的 `custom_words` / `custom_release_groups`，或者手动修文件名。
 
 ### 3. TMDB 没找到怎么办
 
@@ -431,14 +433,6 @@ tmdb:
   language: "zh-CN"
   proxy: ""
   timeout: 10
-
-parser:
-  custom_words:
-    # - "国语配音"
-    # - "OVA => SP"
-    # - "第 <> 集 >> EP-1"
-  custom_release_groups:
-    # - "MyFansub"
 
 drive:
   credentials_json: "config/credentials.json"

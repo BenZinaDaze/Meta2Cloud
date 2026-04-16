@@ -28,6 +28,7 @@ _DEFAULT_SEARCH_PATHS = [
     Path.cwd() / "config.yaml",                           # 向后兼容：根目录
     Path(__file__).parent.parent / "config.yaml",         # 向后兼容：根目录
 ]
+_PARSER_RULES_FILENAME = "parser-rules.yaml"
 
 
 # ─────────────────────────────────────────────────────────
@@ -235,6 +236,15 @@ class Config:
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
+            parser_rules_path = cls._parser_rules_path(config_path)
+            parser_data = {}
+            if parser_rules_path.exists():
+                with open(parser_rules_path, "r", encoding="utf-8") as f:
+                    parser_rules_raw = yaml.safe_load(f) or {}
+                parser_rules_data = parser_rules_raw.get("parser") if isinstance(parser_rules_raw, dict) and "parser" in parser_rules_raw else parser_rules_raw
+                if isinstance(parser_rules_data, dict):
+                    parser_data = dict(parser_rules_data)
+            data["parser"] = parser_data
             logger.info("已加载配置文件：%s", config_path)
             return cls.from_dict(data)
         except Exception as e:
@@ -265,6 +275,10 @@ class Config:
             if candidate.exists():
                 return candidate
         return None
+
+    @staticmethod
+    def _parser_rules_path(config_path: Path) -> Path:
+        return config_path.parent / _PARSER_RULES_FILENAME
 
     # ── 便利属性 ─────────────────────────────────────────
 

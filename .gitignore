@@ -17,6 +17,7 @@ config/token.json
 config/service_account.json
 config/config.yaml
 # config/config.example.yaml  ← 这个是模板，应当入库
+config/parser-rules.yaml
 
 # 115
 115-token.json

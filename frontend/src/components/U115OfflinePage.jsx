@@ -393,7 +393,7 @@ export default function U115OfflinePage({ onToast }) {
   }
 
   return (
-    <div className="flex-1 flex flex-col gap-5 min-w-0" style={{ maxWidth: 1440 }}>
+    <div className="flex-1 flex flex-col gap-5 min-w-0">
       <div className="mb-2 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-2xl">
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.24em]" style={{ color: 'var(--color-accent-hover)' }}>

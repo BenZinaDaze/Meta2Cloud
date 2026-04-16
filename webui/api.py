@@ -86,7 +86,7 @@ _client: Optional[DriveClient] = None
 _storage_provider: Optional[StorageProvider] = None
 _u115_runtime = u115pan.get_runtime_manager()
 _tmdb_cache: Optional[TmdbCache] = None
-_config_mtime_ns: Optional[int] = None
+_config_mtime_ns: Optional[tuple[Optional[int], Optional[int]]] = None
 _u115_auto_organize_store: Optional[U115AutoOrganizeStore] = None
 _u115_auto_organize_thread: Optional[threading.Thread] = None
 _u115_auto_organize_stop = threading.Event()
@@ -115,6 +115,8 @@ _ARIA2_GLOBAL_OPTION_KEYS = [
     "min-split-size", "continue", "max-tries", "retry-wait",
     "user-agent", "all-proxy", "seed-ratio", "seed-time", "bt-max-peers",
 ]
+_CONFIG_PATH = Path(_ROOT) / "config" / "config.yaml"
+_PARSER_RULES_PATH = Path(_ROOT) / "config" / "parser-rules.yaml"
 
 
 def _app_log(
@@ -574,20 +576,93 @@ def get_tmdb_cache() -> TmdbCache:
     return _tmdb_cache
 
 
+def _read_yaml_dict(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+
+def _get_mtime_ns(path: Path) -> Optional[int]:
+    try:
+        return path.stat().st_mtime_ns
+    except FileNotFoundError:
+        return None
+
+
+def _get_config_signature() -> tuple[Optional[int], Optional[int]]:
+    return (_get_mtime_ns(_CONFIG_PATH), _get_mtime_ns(_PARSER_RULES_PATH))
+
+
+def _extract_parser_rules(data: Dict[str, Any]) -> Dict[str, Any]:
+    parser = data.get("parser") or {}
+    if not isinstance(parser, dict):
+        return {
+            "custom_words": [],
+            "custom_release_groups": [],
+        }
+    return {
+        "custom_words": list(parser.get("custom_words") or []),
+        "custom_release_groups": list(parser.get("custom_release_groups") or []),
+    }
+
+
+def _parse_int_field(section: Dict[str, Any], key: str, label: str, minimum: int, maximum: int) -> None:
+    if key not in section or section.get(key) in (None, ""):
+        return
+    try:
+        value = int(section[key])
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"{label} 必须是整数")
+    if value < minimum or value > maximum:
+        raise HTTPException(status_code=400, detail=f"{label} 必须在 {minimum} 到 {maximum} 之间")
+    section[key] = value
+
+
+def _validate_main_config_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(payload or {})
+    webui = dict(normalized.get("webui") or {})
+    tmdb = dict(normalized.get("tmdb") or {})
+    u115 = dict(normalized.get("u115") or {})
+    aria2 = dict(normalized.get("aria2") or {})
+    telegram = dict(normalized.get("telegram") or {})
+
+    _parse_int_field(webui, "token_expire_hours", "Token 有效期", 1, 8760)
+    _parse_int_field(webui, "log_retention_days", "日志保留天数", 1, 365)
+    _parse_int_field(tmdb, "timeout", "TMDB 请求超时", 1, 120)
+    _parse_int_field(u115, "auto_organize_poll_seconds", "115 自动整理轮询间隔", 10, 600)
+    _parse_int_field(u115, "auto_organize_stable_seconds", "115 完成稳定等待", 0, 600)
+    _parse_int_field(aria2, "port", "Aria2 RPC 端口", 1, 65535)
+    _parse_int_field(telegram, "debounce_seconds", "Telegram 防抖延时", 0, 600)
+
+    normalized["webui"] = webui
+    normalized["tmdb"] = tmdb
+    normalized["u115"] = u115
+    normalized["aria2"] = aria2
+    normalized["telegram"] = telegram
+    return normalized
+
+
+def _read_merged_config_dict() -> Dict[str, Any]:
+    parsed = _read_yaml_dict(_CONFIG_PATH)
+    parser_rules = _read_yaml_dict(_PARSER_RULES_PATH)
+    if isinstance(parser_rules, dict) and "parser" in parser_rules and isinstance(parser_rules.get("parser"), dict):
+        parser_rules = parser_rules["parser"]
+
+    parsed["parser"] = _extract_parser_rules({"parser": parser_rules if isinstance(parser_rules, dict) else {}})
+    return parsed
+
+
 def _invalidate_runtime_cache_if_config_changed() -> None:
     """配置文件被外部修改时，主动失效运行时缓存。"""
     global _cfg, _client, _storage_provider, _config_mtime_ns
-    try:
-        mtime_ns = _CONFIG_PATH.stat().st_mtime_ns
-    except FileNotFoundError:
-        mtime_ns = None
+    mtime_ns = _get_config_signature()
 
     if _config_mtime_ns is None:
         _config_mtime_ns = mtime_ns
         return
 
     if mtime_ns != _config_mtime_ns:
-        logger.info("检测到 config.yaml 已变更，重载配置与存储 Provider 缓存")
+        logger.info("检测到配置文件已变更，重载配置与存储 Provider 缓存")
         _cfg = None
         _client = None
         _storage_provider = None
@@ -608,10 +683,7 @@ def get_config() -> Config:
     _invalidate_runtime_cache_if_config_changed()
     if _cfg is None:
         _cfg = Config.load()
-        try:
-            _config_mtime_ns = _CONFIG_PATH.stat().st_mtime_ns
-        except FileNotFoundError:
-            _config_mtime_ns = None
+        _config_mtime_ns = _get_config_signature()
     return _cfg
 
 
@@ -2078,8 +2150,6 @@ async def health():
 # 配置文件 API（结构化表单版）
 # ──────────────────────────────────────────────────────────────
 
-_CONFIG_PATH = Path(_ROOT) / "config" / "config.yaml"
-
 
 class ConfigSaveBody(BaseModel):
     data: dict
@@ -2360,12 +2430,24 @@ def _aria2_retry_task(gid: str) -> Dict[str, Any]:
 
 @app.get("/api/config")
 async def read_config():
-    """读取 config.yaml，返回解析后的结构化 dict"""
+    """读取配置文件，返回主配置与识别规则合并后的结构化 dict"""
     if not _CONFIG_PATH.exists():
         raise HTTPException(status_code=404, detail="config.yaml 不存在")
-    raw = _CONFIG_PATH.read_text(encoding="utf-8")
-    parsed = yaml.safe_load(raw) or {}
-    return parsed
+    return _read_merged_config_dict()
+
+
+@app.get("/api/config/main")
+async def read_main_config():
+    """只读取主配置文件 config.yaml。"""
+    if not _CONFIG_PATH.exists():
+        raise HTTPException(status_code=404, detail="config.yaml 不存在")
+    return _read_yaml_dict(_CONFIG_PATH)
+
+
+@app.get("/api/config/parser-rules")
+async def read_parser_rules_config():
+    """只读取文件名识别规则配置文件 parser-rules.yaml。"""
+    return _extract_parser_rules({"parser": _read_yaml_dict(_PARSER_RULES_PATH)})
 
 
 def _looks_like_file_path(text: str) -> bool:
@@ -2442,27 +2524,84 @@ async def parser_test(body: ParserTestBody):
 
 @app.put("/api/config")
 async def write_config(body: ConfigSaveBody):
-    """接收结构化 dict，写回 config.yaml（YAML dump）"""
+    """接收结构化 dict，将主配置与识别规则拆分写回配置文件。"""
+    payload = _validate_main_config_payload(dict(body.data or {}))
+    parser_rules = _extract_parser_rules(payload)
+    payload.pop("parser", None)
+
     new_yaml = yaml.dump(
-        body.data,
+        payload,
+        allow_unicode=True,
+        default_flow_style=False,
+        sort_keys=False,
+        indent=2,
+    )
+    parser_yaml = yaml.dump(
+        parser_rules,
         allow_unicode=True,
         default_flow_style=False,
         sort_keys=False,
         indent=2,
     )
     _CONFIG_PATH.write_text(new_yaml, encoding="utf-8")
+    _PARSER_RULES_PATH.write_text(parser_yaml, encoding="utf-8")
     # 使全局缓存失效
     global _cfg, _client, _storage_provider, _config_mtime_ns
     _cfg = None
     _client = None
     _storage_provider = None
     _u115_runtime.invalidate()
-    try:
-        _config_mtime_ns = _CONFIG_PATH.stat().st_mtime_ns
-    except FileNotFoundError:
-        _config_mtime_ns = None
+    _config_mtime_ns = _get_config_signature()
     _app_log("system", "config_updated", "配置文件已更新", level="SUCCESS")
     return {"ok": True, "message": "配置已保存"}
+
+
+@app.put("/api/config/main")
+async def write_main_config(body: ConfigSaveBody):
+    """只写回主配置文件 config.yaml，不影响 parser-rules.yaml。"""
+    payload = _validate_main_config_payload(dict(body.data or {}))
+    payload.pop("parser", None)
+
+    new_yaml = yaml.dump(
+        payload,
+        allow_unicode=True,
+        default_flow_style=False,
+        sort_keys=False,
+        indent=2,
+    )
+    _CONFIG_PATH.write_text(new_yaml, encoding="utf-8")
+
+    global _cfg, _client, _storage_provider, _config_mtime_ns
+    _cfg = None
+    _client = None
+    _storage_provider = None
+    _u115_runtime.invalidate()
+    _config_mtime_ns = _get_config_signature()
+    _app_log("system", "main_config_updated", "主配置文件已更新", level="SUCCESS")
+    return {"ok": True, "message": "主配置已保存"}
+
+
+@app.put("/api/config/parser-rules")
+async def write_parser_rules_config(body: ConfigSaveBody):
+    """只写回文件名识别规则配置文件 parser-rules.yaml，不影响 config.yaml。"""
+    parser_rules = _extract_parser_rules({"parser": body.data or {}})
+    parser_yaml = yaml.dump(
+        parser_rules,
+        allow_unicode=True,
+        default_flow_style=False,
+        sort_keys=False,
+        indent=2,
+    )
+    _PARSER_RULES_PATH.write_text(parser_yaml, encoding="utf-8")
+
+    global _cfg, _client, _storage_provider, _config_mtime_ns
+    _cfg = None
+    _client = None
+    _storage_provider = None
+    _u115_runtime.invalidate()
+    _config_mtime_ns = _get_config_signature()
+    _app_log("system", "parser_rules_updated", "文件名识别规则已更新", level="SUCCESS")
+    return {"ok": True, "message": "识别规则已保存"}
 
 
 @app.get("/api/drive/oauth/status")
