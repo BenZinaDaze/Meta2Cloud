@@ -6,6 +6,7 @@ import sqlite3
 import u115pan
 
 from webui.services.pipeline import schedule_pipeline
+from webui.services.subscriptions import close_subscription_store, poll_subscriptions_once, subscriptions_status_payload
 from webui.services.u115 import u115_offline_client, u115_oauth_status_payload
 import webui.core.runtime as runtime
 from webui.core.app_logging import app_log
@@ -17,6 +18,11 @@ _u115_auto_organize_stop = threading.Event()
 _u115_auto_organize_last_polled_at: Optional[str] = None
 _u115_auto_organize_last_poll_error: Optional[str] = None
 _u115_auto_organize_last_triggered_task: Optional[Dict[str, Any]] = None
+_rss_subscription_thread: Optional[threading.Thread] = None
+_rss_subscription_stop = threading.Event()
+_rss_subscription_last_polled_at: Optional[str] = None
+_rss_subscription_last_poll_error: Optional[str] = None
+_rss_subscription_last_summary: Optional[Dict[str, Any]] = None
 def _get_u115_auto_organize_store():
     if runtime._u115_auto_organize_store is None:
         runtime._u115_auto_organize_store = runtime.U115AutoOrganizeStore(runtime._U115_AUTO_ORGANIZE_DB)
@@ -158,6 +164,39 @@ def ensure_u115_auto_organize_thread() -> None:
     _u115_auto_organize_thread = thread
 
 
+def _rss_subscription_loop() -> None:
+    global _rss_subscription_last_polled_at, _rss_subscription_last_poll_error, _rss_subscription_last_summary
+    logger.info("RSS 订阅监听线程已启动")
+    while not _rss_subscription_stop.is_set():
+        sleep_seconds = 300
+        try:
+            _rss_subscription_last_polled_at = datetime.now(timezone.utc).isoformat()
+            _rss_subscription_last_poll_error = None
+            _rss_subscription_last_summary = poll_subscriptions_once()
+        except Exception as exc:
+            _rss_subscription_last_poll_error = str(exc)
+            logger.warning("RSS 订阅轮询失败：%s", exc)
+            app_log(
+                "subscription",
+                "poll_failed",
+                "RSS 订阅轮询失败",
+                level="ERROR",
+                details={"error": str(exc)},
+            )
+        _rss_subscription_stop.wait(timeout=sleep_seconds)
+    logger.info("RSS 订阅监听线程已停止")
+
+
+def ensure_rss_subscription_thread() -> None:
+    global _rss_subscription_thread
+    if _rss_subscription_thread and _rss_subscription_thread.is_alive():
+        return
+    _rss_subscription_stop.clear()
+    thread = threading.Thread(target=_rss_subscription_loop, name="rss-subscription", daemon=True)
+    thread.start()
+    _rss_subscription_thread = thread
+
+
 def u115_auto_organize_status_payload() -> Dict[str, Any]:
     cfg = get_config()
     store = _get_u115_auto_organize_store()
@@ -190,11 +229,27 @@ def u115_auto_organize_status_payload() -> Dict[str, Any]:
     }
 
 
+def rss_subscription_status_payload() -> Dict[str, Any]:
+    summary = subscriptions_status_payload()
+    summary.update(
+        {
+            "watcher_alive": bool(_rss_subscription_thread and _rss_subscription_thread.is_alive()),
+            "last_polled_at": _rss_subscription_last_polled_at,
+            "last_poll_error": _rss_subscription_last_poll_error,
+            "last_summary": _rss_subscription_last_summary,
+        }
+    )
+    return summary
+
+
 async def startup_background_watchers():
     ensure_u115_auto_organize_thread()
+    ensure_rss_subscription_thread()
 
 
 async def shutdown_background_watchers():
     _u115_auto_organize_stop.set()
+    _rss_subscription_stop.set()
     if runtime._u115_auto_organize_store is not None:
         runtime._u115_auto_organize_store.close()
+    close_subscription_store()

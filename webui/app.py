@@ -15,6 +15,7 @@ from webui.routes.media_actions import router as media_actions_router
 from webui.routes.pages import router as pages_router
 from webui.routes.pipeline import router as pipeline_router
 from webui.routes.stats import router as stats_router
+from webui.routes.subscriptions import router as subscriptions_router
 from webui.routes.u115 import router as u115_router
 from webui.services.watcher import shutdown_background_watchers as _shutdown_background_watchers
 from webui.services.watcher import startup_background_watchers as _startup_background_watchers
@@ -65,4 +66,5 @@ app.include_router(logs_router)
 app.include_router(media_actions_router)
 app.include_router(pipeline_router)
 app.include_router(stats_router)
+app.include_router(subscriptions_router)
 app.include_router(u115_router)

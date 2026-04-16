@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { searchMedia, getEpisodes, addAria2Uri, addU115OfflineUrls, getU115OauthStatus, tmdbGetAlternativeNames } from '../api'
 import _resultsCache from '../utils/resultsCache'
 import { StatePanel } from './StatePanel'
+import SubscriptionModal from './SubscriptionModal'
 
 export default function ScraperResultsView({ item, onBack, onToast, aria2Enabled = false }) {
   const searchKey = item.title || item.original_title || item.name
@@ -16,6 +17,7 @@ export default function ScraperResultsView({ item, onBack, onToast, aria2Enabled
   const [currentSearchKey, setCurrentSearchKey] = useState(null)  // 当前正在尝试的搜索词
   const [activeMediaTitle, setActiveMediaTitle] = useState(null)
   const [u115Authorized, setU115Authorized] = useState(false)
+  const [subscriptionDraft, setSubscriptionDraft] = useState(null)
   const scrollRef = useRef(null)
 
   const MIKAN_BASE = 'https://mikan.tangbai.cc'
@@ -405,7 +407,7 @@ export default function ScraperResultsView({ item, onBack, onToast, aria2Enabled
                             )}
                             <div className="flex flex-col gap-6">
                               {subgroups.map((subItem) => {
-                                const { name, rssUrl, episodes, loading, originalIndex, uniqueKey } = subItem;
+                                const { name, rssUrl, episodes, loading, originalIndex, uniqueKey, src } = subItem;
                                 const isExpanded = !collapsedGroups.has(uniqueKey)
                                 const toggle = () => setCollapsedGroups(prev => {
                                   const next = new Set(prev)
@@ -427,17 +429,47 @@ export default function ScraperResultsView({ item, onBack, onToast, aria2Enabled
                                         }
                                       </h4>
                                       {rssUrl && (
-                                        <span
-                                          role="button"
-                                          onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(rssUrl).then(() => onToast?.('success', '已复制 RSS 链接', rssUrl)).catch(err => onToast?.('error', '复制失败', err.message)) }}
-                                          title="复制该字幕组的 RSS 订阅链接"
-                                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all border border-orange-400/30 text-orange-300/80 hover:text-orange-200 hover:border-orange-400/60 hover:bg-orange-400/10 shrink-0"
-                                        >
-                                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                                            <path d="M4 11a9 9 0 0 1 9 9" /><path d="M4 4a16 16 0 0 1 16 16" /><circle cx="5" cy="19" r="1" />
-                                          </svg>
-                                          复制 RSS
-                                        </span>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                          <span
+                                            role="button"
+                                            onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(rssUrl).then(() => onToast?.('success', '已复制 RSS 链接', rssUrl)).catch(err => onToast?.('error', '复制失败', err.message)) }}
+                                            title="复制该字幕组的 RSS 订阅链接"
+                                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all border border-orange-400/30 text-orange-300/80 hover:text-orange-200 hover:border-orange-400/60 hover:bg-orange-400/10"
+                                          >
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                              <path d="M4 11a9 9 0 0 1 9 9" /><path d="M4 4a16 16 0 0 1 16 16" /><circle cx="5" cy="19" r="1" />
+                                            </svg>
+                                            复制 RSS
+                                          </span>
+                                          <span
+                                            role="button"
+                                            onClick={e => {
+                                              e.stopPropagation()
+                                              setSubscriptionDraft({
+                                                name: `${mediaTitle || searchKey} [${name}]`,
+                                                media_title: mediaTitle || searchKey,
+                                                media_type: item.media_type || 'tv',
+                                                tmdb_id: item.tmdb_id || null,
+                                                poster_url: item.poster_url || null,
+                                                site: (src?.site || 'mikan'),
+                                                rss_url: rssUrl,
+                                                subgroup_name: name,
+                                                season_number: 1,
+                                                start_episode: 1,
+                                                keyword_all: [],
+                                                push_target: u115Authorized ? 'u115' : 'aria2',
+                                                enabled: true,
+                                              })
+                                            }}
+                                            title="创建 RSS 订阅"
+                                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all border border-emerald-400/30 text-emerald-300/85 hover:text-emerald-200 hover:border-emerald-400/60 hover:bg-emerald-400/10"
+                                          >
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                              <path d="M4 11a9 9 0 0 1 9 9" /><path d="M4 4a16 16 0 0 1 16 16" /><circle cx="5" cy="19" r="1" />
+                                            </svg>
+                                            订阅 RSS
+                                          </span>
+                                        </div>
                                       )}
                                       <span
                                         role="button"
@@ -551,6 +583,17 @@ export default function ScraperResultsView({ item, onBack, onToast, aria2Enabled
           </svg>
         </button>
       )}
+
+      {subscriptionDraft ? (
+        <SubscriptionModal
+          initialValue={subscriptionDraft}
+          aria2Enabled={aria2Enabled}
+          u115Authorized={u115Authorized}
+          onClose={() => setSubscriptionDraft(null)}
+          onToast={onToast}
+          onSaved={() => setSubscriptionDraft(null)}
+        />
+      ) : null}
     </div>
   )
 }

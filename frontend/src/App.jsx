@@ -14,6 +14,8 @@ import ParseTestModal from './components/ParseTestModal'
 import CalendarPage from './components/CalendarPage'
 import ToastContainer from './components/Toast'
 import U115OfflinePage from './components/U115OfflinePage'
+import SubscriptionsPage from './components/SubscriptionsPage'
+import { getU115OauthStatus } from './api'
 
 let _toastId = 0
 
@@ -153,6 +155,7 @@ export default function App() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [initialSearchItem, setInitialSearchItem] = useState(null)
   const [initialQuery, setInitialQuery] = useState(null)
+  const [u115Authorized, setU115Authorized] = useState(false)
 
   const downloadQueue = {
     downloads: 'all',
@@ -176,6 +179,7 @@ export default function App() {
   useEffect(() => {
     if (!token) {
       setAria2Enabled(null)
+      setU115Authorized(false)
       return
     }
 
@@ -196,6 +200,23 @@ export default function App() {
     return () => {
       cancelled = true
     }
+  }, [token])
+
+  useEffect(() => {
+    if (!token) {
+      setU115Authorized(false)
+      return
+    }
+
+    let cancelled = false
+    getU115OauthStatus()
+      .then((res) => {
+        if (!cancelled) setU115Authorized(!!res?.data?.authorized)
+      })
+      .catch(() => {
+        if (!cancelled) setU115Authorized(false)
+      })
+    return () => { cancelled = true }
   }, [token])
 
   // ── 注册 401 全局处理 ────────────────────────────────
@@ -391,6 +412,8 @@ export default function App() {
               initialQuery={initialQuery}
               onClearInitialQuery={() => setInitialQuery(null)}
             />
+          ) : activeNav === 'subscriptions' ? (
+            <SubscriptionsPage onToast={addToast} aria2Enabled={aria2Enabled} u115Authorized={u115Authorized} />
           ) : activeNav === 'logs' ? (
             <LogsPage />
           ) : activeNav === 'u115-offline' ? (

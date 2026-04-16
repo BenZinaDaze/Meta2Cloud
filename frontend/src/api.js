@@ -43,6 +43,13 @@ export const tmdbGetDetail = (media_type, tmdb_id) => api.get('/tmdb/detail', { 
 export const tmdbGetAlternativeNames = (media_type, tmdb_id) => api.get('/tmdb/alternative_names', { params: { media_type, tmdb_id } })
 export const searchMedia = (keyword) => api.get('/scraper/search_media', { params: { keyword } })
 export const getEpisodes = (site, media_id, subgroup_id) => api.get('/scraper/get_episodes', { params: { site, media_id, subgroup_id } })
+export const listSubscriptions = () => api.get('/subscriptions')
+export const getSubscription = (id) => api.get(`/subscriptions/${id}`)
+export const createSubscription = (data) => api.post('/subscriptions', data)
+export const updateSubscription = (id, data) => api.put(`/subscriptions/${id}`, data)
+export const deleteSubscription = (id) => api.delete(`/subscriptions/${id}`)
+export const testSubscription = (data) => api.post('/subscriptions/test', data)
+export const checkSubscription = (id) => api.post(`/subscriptions/${id}/check`)
 
 export const getStats    = () => api.get('/stats')
 export const getTvDetail = (tmdbId) => api.get(`/tv/${tmdbId}`)

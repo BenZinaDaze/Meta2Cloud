@@ -14,6 +14,13 @@ const Icons = {
       <line x1="21" y1="21" x2="16.65" y2="16.65" />
     </svg>
   ),
+  rss: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 11a9 9 0 0 1 9 9" />
+      <path d="M4 4a16 16 0 0 1 16 16" />
+      <circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none" />
+    </svg>
+  ),
   movie: (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
@@ -400,6 +407,16 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
             label="资源检索"
             active={active === 'scraper-search'}
             onClick={() => onSelect('scraper-search')}
+            bold
+          />
+        </div>
+
+        <div className="hidden lg:block">
+          <NavItem
+            icon={Icons.rss}
+            label="订阅列表"
+            active={active === 'subscriptions'}
+            onClick={() => onSelect('subscriptions')}
             bold
           />
         </div>
