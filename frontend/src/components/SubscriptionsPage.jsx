@@ -436,65 +436,65 @@ export default function SubscriptionsPage({ onToast, aria2Enabled = false, u115A
             null
           )}
           headerRightSlot={null}
+          contentSlot={(
+            <SubscriptionDetailContent
+              item={selectedDetail || selectedItem}
+            />
+          )}
           footerSlot={(
-            <div className="grid gap-4">
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEditingItem(selectedItem)}
-                  disabled={detailActionLoading !== ''}
-                  className="rounded-full px-4 py-2 text-xs font-semibold transition-all duration-150 disabled:opacity-50"
-                  style={{
-                    background: 'rgba(227,183,120,0.14)',
-                    color: 'var(--color-accent-hover)',
-                    border: '1px solid rgba(227,183,120,0.24)',
-                  }}
-                >
-                  编辑订阅
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCheckSelected}
-                  disabled={detailActionLoading !== ''}
-                  className="rounded-full px-4 py-2 text-xs font-semibold transition-all duration-150 disabled:opacity-50"
-                  style={{
-                    background: 'rgba(255,255,255,0.05)',
-                    color: 'var(--color-text)',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                  }}
-                >
-                  {detailActionLoading === 'check' ? '检查中…' : '立即检查'}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleToggleSelected}
-                  disabled={detailActionLoading !== ''}
-                  className="rounded-full px-4 py-2 text-xs font-semibold transition-all duration-150 disabled:opacity-50"
-                  style={{
-                    background: selectedItem.enabled ? 'rgba(245,196,81,0.12)' : 'rgba(74,201,126,0.12)',
-                    color: selectedItem.enabled ? 'var(--color-warning)' : 'var(--color-success)',
-                    border: `1px solid ${selectedItem.enabled ? 'rgba(245,196,81,0.18)' : 'rgba(74,201,126,0.18)'}`,
-                  }}
-                >
-                  {detailActionLoading === 'toggle' ? '处理中…' : (selectedItem.enabled ? '暂停订阅' : '启用订阅')}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDeleteSelected}
-                  disabled={detailActionLoading !== ''}
-                  className="rounded-full px-4 py-2 text-xs font-semibold transition-all duration-150 disabled:opacity-50"
-                  style={{
-                    background: 'rgba(239,125,117,0.12)',
-                    color: 'var(--color-danger)',
-                    border: '1px solid rgba(239,125,117,0.18)',
-                  }}
-                >
-                  {detailActionLoading === 'delete' ? '删除中…' : '删除订阅'}
-                </button>
-              </div>
-              <SubscriptionDetailContent
-                item={selectedDetail || selectedItem}
-              />
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingItem(selectedItem)}
+                disabled={detailActionLoading !== ''}
+                className="rounded-full px-4 py-2 text-xs font-semibold transition-all duration-150 disabled:opacity-50"
+                style={{
+                  background: 'rgba(227,183,120,0.14)',
+                  color: 'var(--color-accent-hover)',
+                  border: '1px solid rgba(227,183,120,0.24)',
+                }}
+              >
+                编辑订阅
+              </button>
+              <button
+                type="button"
+                onClick={handleCheckSelected}
+                disabled={detailActionLoading !== ''}
+                className="rounded-full px-4 py-2 text-xs font-semibold transition-all duration-150 disabled:opacity-50"
+                style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  color: 'var(--color-text)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                }}
+              >
+                {detailActionLoading === 'check' ? '检查中…' : '立即检查'}
+              </button>
+              <button
+                type="button"
+                onClick={handleToggleSelected}
+                disabled={detailActionLoading !== ''}
+                className="rounded-full px-4 py-2 text-xs font-semibold transition-all duration-150 disabled:opacity-50"
+                style={{
+                  background: selectedItem.enabled ? 'rgba(245,196,81,0.12)' : 'rgba(74,201,126,0.12)',
+                  color: selectedItem.enabled ? 'var(--color-warning)' : 'var(--color-success)',
+                  border: `1px solid ${selectedItem.enabled ? 'rgba(245,196,81,0.18)' : 'rgba(74,201,126,0.18)'}`,
+                }}
+              >
+                {detailActionLoading === 'toggle' ? '处理中…' : (selectedItem.enabled ? '暂停订阅' : '启用订阅')}
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteSelected}
+                disabled={detailActionLoading !== ''}
+                className="rounded-full px-4 py-2 text-xs font-semibold transition-all duration-150 disabled:opacity-50"
+                style={{
+                  background: 'rgba(239,125,117,0.12)',
+                  color: 'var(--color-danger)',
+                  border: '1px solid rgba(239,125,117,0.18)',
+                }}
+              >
+                {detailActionLoading === 'delete' ? '删除中…' : '删除订阅'}
+              </button>
             </div>
           )}
           loadingSlot={detailLoading ? <span /> : null}

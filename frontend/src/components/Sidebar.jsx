@@ -553,31 +553,34 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
           </div>
         ) : null}
 
-        <a
-          href="https://github.com/BenZinaDaze/Meta2Cloud"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mx-2 mb-2 mt-3 flex items-center justify-between rounded-[16px] px-3 py-2.5 transition-colors duration-150 hover:bg-white/5"
-          style={{ border: '1px solid rgba(144, 178, 221, 0.12)', textDecoration: 'none' }}
-          title="View Repository on GitHub"
-        >
-          <div className="flex items-center gap-2">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{ color: 'var(--color-muted-soft)' }}>
-              <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.45-1.15-1.11-1.46-1.11-1.46-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z" />
-            </svg>
-            <span className="text-[12px] font-medium" style={{ color: 'var(--color-muted)' }}>GitHub</span>
-          </div>
-          <div className="flex items-center gap-2">
-            {hasUpdate && (
-              <span className="animate-pulse flex items-center justify-center rounded-md px-1.5 py-0.5 text-[10px] font-bold shadow-sm" style={{ background: 'var(--color-accent)', color: 'var(--color-primary-text)' }}>
-                可更新 {latestVersion}
-              </span>
-            )}
-            <span className="min-w-[64px] rounded-md px-2.5 py-0.5 text-center text-[11px] font-semibold tracking-[0.01em]" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+        <div className="mx-3 mb-2 mt-3 px-1 py-1.5">
+          <div className="flex items-center gap-2 text-[11px]">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--color-muted-soft)' }}>
+              Build
+            </span>
+            <span className="text-[12px] font-semibold" style={{ color: 'var(--color-text)' }}>
               {currentVersion}
             </span>
+            {hasUpdate ? (
+              <span className="text-[11px]" style={{ color: 'var(--color-accent-hover)' }}>
+                可更新到 {latestVersion}
+              </span>
+            ) : null}
+            <a
+              href="https://github.com/BenZinaDaze/Meta2Cloud"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-auto inline-flex size-7 items-center justify-center transition-opacity duration-150 hover:opacity-80"
+              style={{ color: 'var(--color-muted-soft)', textDecoration: 'none' }}
+              title="查看 GitHub 仓库"
+              aria-label="查看 GitHub 仓库"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.45-1.15-1.11-1.46-1.11-1.46-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z" />
+              </svg>
+            </a>
           </div>
-        </a>
+        </div>
       </div>
     </aside>
   )

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 function EpisodePill({ ep }) {
@@ -76,9 +76,12 @@ function formatStatus(status) {
   return STATUS_MAP[status] ?? status
 }
 
-export default function DetailModal({ item, onClose, footerSlot, loadingSlot, headerRightSlot, titleActionSlot }) {
+export default function DetailModal({ item, onClose, contentSlot, footerSlot, loadingSlot, headerRightSlot, titleActionSlot }) {
   const [show, setShow] = useState(false)
   const [showOverview, setShowOverview] = useState(false)
+  const hasFooter = !!footerSlot
+  const headerRef = useRef(null)
+  const [contentMaxHeight, setContentMaxHeight] = useState(null)
 
   const handleClose = useCallback(() => {
     setShow(false)
@@ -92,6 +95,49 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
     return () => window.removeEventListener('keydown', onKey)
   }, [handleClose])
 
+  useEffect(() => {
+    const { body, documentElement } = document
+    const prevBodyOverflow = body.style.overflow
+    const prevHtmlOverflow = documentElement.style.overflow
+
+    body.style.overflow = 'hidden'
+    documentElement.style.overflow = 'hidden'
+
+    return () => {
+      body.style.overflow = prevBodyOverflow
+      documentElement.style.overflow = prevHtmlOverflow
+    }
+  }, [])
+
+  useEffect(() => {
+    if (hasFooter || !headerRef.current) return
+
+    const headerEl = headerRef.current
+
+    const updateContentMaxHeight = () => {
+      const headerHeight = headerEl.getBoundingClientRect().height
+      const desktopTopGap = 120
+      const mobileBottomGap = 12
+      const extraSpacing = 24
+      const viewportAllowance = window.innerWidth >= 640
+        ? `100dvh - ${desktopTopGap}px`
+        : `100dvh - env(safe-area-inset-top) - ${mobileBottomGap}px`
+
+      setContentMaxHeight(`calc(${viewportAllowance} - ${Math.ceil(headerHeight + extraSpacing)}px)`)
+    }
+
+    updateContentMaxHeight()
+
+    const resizeObserver = new ResizeObserver(updateContentMaxHeight)
+    resizeObserver.observe(headerEl)
+    window.addEventListener('resize', updateContentMaxHeight)
+
+    return () => {
+      resizeObserver.disconnect()
+      window.removeEventListener('resize', updateContentMaxHeight)
+    }
+  }, [hasFooter, item?.title, item?.overview, item?.poster_url, item?.backdrop_url, headerRightSlot, titleActionSlot, loadingSlot])
+
   if (!item) return null
   const isTV = item.media_type === 'tv'
   const summaryPairs = [
@@ -104,7 +150,7 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-end justify-center overflow-y-auto p-0 sm:items-start sm:p-4 sm:pt-28"
+      className="fixed inset-0 z-[100] flex items-end justify-center overflow-hidden p-0 sm:items-start sm:p-4 sm:pt-28"
       style={{
         background: 'rgba(2, 8, 18, 0.78)',
         backdropFilter: 'blur(10px)',
@@ -114,162 +160,177 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
       onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
       <div
-        className="relative flex h-[calc(100dvh-env(safe-area-inset-top)-0.5rem)] w-full max-w-3xl flex-col overflow-x-hidden overflow-y-auto rounded-t-[28px] sm:h-auto sm:rounded-[30px]"
+        className={`relative w-full max-w-3xl overflow-hidden rounded-t-[28px] sm:rounded-[30px] ${
+          hasFooter
+            ? 'grid h-[calc(100dvh-env(safe-area-inset-top)-0.5rem)] grid-rows-[auto_minmax(0,1fr)_auto] sm:h-[calc(100dvh-7.5rem)]'
+            : 'flex max-h-[calc(100dvh-env(safe-area-inset-top)-0.75rem)] flex-col sm:max-h-[calc(100dvh-7.5rem)]'
+        }`}
         style={{
           background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.98) 0%, rgba(11, 22, 37, 0.98) 100%)',
           border: '1px solid var(--color-border)',
           transform: show ? 'translateY(0)' : 'translateY(20px)',
           transition: 'transform 0.2s',
           boxShadow: 'var(--shadow-strong)',
-          maxHeight: 'calc(100dvh - env(safe-area-inset-top) - 0.75rem)',
         }}
         onClick={e => e.stopPropagation()}
       >
-        <div
-          className="sticky top-0 z-20 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] sm:hidden"
-          style={{
-            borderColor: 'rgba(144, 178, 221, 0.12)',
-            background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.99) 0%, rgba(11, 22, 37, 0.98) 100%)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-          }}
-        >
-          <div className="mx-auto mb-3 h-1.5 w-12 rounded-full" style={{ background: 'rgba(255,255,255,0.14)' }} />
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--color-accent-hover)' }}>
+        <div ref={headerRef} className="min-h-0">
+          <div
+            className="sticky top-0 z-20 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] sm:hidden"
+            style={{
+              borderColor: 'rgba(144, 178, 221, 0.12)',
+              background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.99) 0%, rgba(11, 22, 37, 0.98) 100%)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+            }}
+          >
+            <div className="mx-auto mb-3 h-1.5 w-12 rounded-full" style={{ background: 'rgba(255,255,255,0.14)' }} />
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--color-accent-hover)' }}>
+                  Metadata detail
+                </div>
+                <div className="mt-1 truncate text-base font-semibold" style={{ color: 'var(--color-text)' }}>
+                  {item.title}
+                </div>
+              </div>
+              <button
+                onClick={handleClose}
+                className="flex size-10 flex-shrink-0 items-center justify-center rounded-full text-sm transition-colors hover:bg-black/40"
+                style={{ background: 'rgba(0,0,0,0.45)', color: 'var(--color-text)', border: '1px solid rgba(255,255,255,0.08)' }}
+                aria-label="关闭详情"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          <div className="relative h-[108px] overflow-hidden sm:h-40">
+            {item.backdrop_url
+              ? <img src={item.backdrop_url} alt="" className="absolute inset-0 h-full w-full object-cover transition-opacity duration-300" style={{ opacity: loadingSlot ? 0.3 : 1 }} />
+              : <div className="absolute inset-0" style={{ background: 'var(--color-surface-2)' }} />
+            }
+            <div className="absolute inset-0"
+              style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.08) 10%, rgba(7, 17, 31, 0.88) 100%)' }} />
+          </div>
+
+          <div
+            className="flex flex-col gap-3 px-4 pt-3 transition-opacity duration-300 sm:flex-row sm:items-end sm:gap-4 sm:px-6 sm:pt-4"
+            style={{ position: 'relative', zIndex: 10, opacity: loadingSlot ? 0.5 : 1 }}
+          >
+            {item.poster_url && (
+              <img
+                src={item.poster_url}
+                alt={item.title}
+                className="h-[112px] w-[76px] flex-shrink-0 rounded-lg shadow-xl sm:h-[132px] sm:w-[88px]"
+                style={{
+                  objectFit: 'cover',
+                  border: '2px solid rgba(255,255,255,0.08)',
+                  display: 'block',
+                }}
+              />
+            )}
+
+            <div className="min-w-0 flex-1 pb-2 sm:pb-3 sm:pr-4">
+              <div className="mb-2 hidden text-[11px] font-semibold uppercase tracking-[0.22em] sm:block" style={{ color: 'var(--color-accent-hover)' }}>
                 Metadata detail
               </div>
-              <div className="mt-1 truncate text-base font-semibold" style={{ color: 'var(--color-text)' }}>
-                {item.title}
+              <div className="mb-1">
+                <h2 className="text-[18px] font-bold leading-snug sm:text-[28px]" style={{ color: 'var(--color-text)' }}>
+                  {item.title}
+                </h2>
               </div>
-            </div>
-            <button
-              onClick={handleClose}
-              className="flex size-10 flex-shrink-0 items-center justify-center rounded-full text-sm transition-colors hover:bg-black/40"
-              style={{ background: 'rgba(0,0,0,0.45)', color: 'var(--color-text)', border: '1px solid rgba(255,255,255,0.08)' }}
-              aria-label="关闭详情"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-
-        <div className="relative h-[108px] overflow-hidden sm:h-40">
-          {item.backdrop_url
-            ? <img src={item.backdrop_url} alt="" className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300" style={{ opacity: loadingSlot ? 0.3 : 1 }} />
-            : <div className="absolute inset-0" style={{ background: 'var(--color-surface-2)' }} />
-          }
-          <div className="absolute inset-0"
-            style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.08) 10%, rgba(7, 17, 31, 0.88) 100%)' }} />
-        </div>
-
-        <div
-          className="flex flex-col gap-3 px-4 pt-3 transition-opacity duration-300 sm:flex-row sm:items-end sm:gap-4 sm:px-6 sm:pt-4"
-          style={{ position: 'relative', zIndex: 10, opacity: loadingSlot ? 0.5 : 1 }}
-        >
-          {item.poster_url && (
-            <img
-              src={item.poster_url}
-              alt={item.title}
-              className="h-[112px] w-[76px] rounded-lg shadow-xl flex-shrink-0 sm:h-[132px] sm:w-[88px]"
-              style={{
-                objectFit: 'cover',
-                border: '2px solid rgba(255,255,255,0.08)',
-                display: 'block',
-              }}
-            />
-          )}
-
-          <div className="min-w-0 flex-1 pb-2 sm:pb-3 sm:pr-4">
-            <div className="mb-2 hidden text-[11px] font-semibold uppercase tracking-[0.22em] sm:block" style={{ color: 'var(--color-accent-hover)' }}>
-              Metadata detail
-            </div>
-            <div className="mb-1">
-              <h2 className="text-[18px] font-bold leading-snug sm:text-[28px]" style={{ color: 'var(--color-text)' }}>
-                {item.title}
-              </h2>
-            </div>
-            {item.original_title && item.original_title !== item.title && (
-              <p className="mb-2 text-[13px] leading-snug sm:mb-3 sm:text-sm" style={{ color: 'var(--color-muted)' }}>
-                {item.original_title}
-              </p>
-            )}
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {item.year && (
-                <span className="text-xs px-2 py-0.5 rounded-full"
-                  style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }}>
-                  {item.year}
-                </span>
+              {item.original_title && item.original_title !== item.title && (
+                <p className="mb-2 text-[13px] leading-snug sm:mb-3 sm:text-sm" style={{ color: 'var(--color-muted)' }}>
+                  {item.original_title}
+                </p>
               )}
-              {item.rating > 0 && (
-                <span className="text-xs px-2 py-0.5 rounded-full"
-                  style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-warning)', border: '1px solid var(--color-border)' }}>
-                  ★ {item.rating}
-                </span>
-              )}
-              {item.status && (
-                <span className="text-xs px-2 py-0.5 rounded-full"
-                  style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-accent-hover)', border: '1px solid var(--color-border)' }}>
-                  {formatStatus(item.status)}
-                </span>
-              )}
-              {isTV && item.in_library_episodes !== undefined && item.in_library && (
-                <span className="text-xs px-2 py-0.5 rounded-full"
-                  style={{ background: 'rgba(74,222,128,0.15)', color: 'var(--color-success)', border: '1px solid var(--color-success)' }}>
-                  {item.in_library_episodes}/{item.total_episodes || '?'} 集已入库
-                </span>
-              )}
-              {!isTV && item.in_library && (
-                <span className="text-xs px-2 py-0.5 rounded-full"
-                  style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-success)', border: '1px solid var(--color-border)' }}>
-                  已入库
-                </span>
-              )}
-              {item.tmdb_id && (
-                <div className="flex items-center gap-1.5">
-                  <a
-                    href={`https://www.themoviedb.org/${isTV ? 'tv' : 'movie'}/${item.tmdb_id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs px-2 py-0.5 rounded-full transition-all duration-150"
-                    style={{
-                      background: 'rgba(1, 180, 228, 0.08)',
-                      color: '#01b4e4',
-                      border: '1px solid rgba(1, 180, 228, 0.35)',
-                      textDecoration: 'none',
-                      cursor: 'pointer',
-                    }}
-                    onMouseEnter={e => {
-                      e.currentTarget.style.background = 'rgba(1, 180, 228, 0.18)'
-                      e.currentTarget.style.borderColor = 'rgba(1, 180, 228, 0.65)'
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.background = 'rgba(1, 180, 228, 0.08)'
-                      e.currentTarget.style.borderColor = 'rgba(1, 180, 228, 0.35)'
-                    }}
-                  >
-                    TMDB {item.tmdb_id}
-                  </a>
-                  {titleActionSlot}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {item.year && (
+                  <span className="rounded-full px-2 py-0.5 text-xs"
+                    style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }}>
+                    {item.year}
+                  </span>
+                )}
+                {item.rating > 0 && (
+                  <span className="rounded-full px-2 py-0.5 text-xs"
+                    style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-warning)', border: '1px solid var(--color-border)' }}>
+                    ★ {item.rating}
+                  </span>
+                )}
+                {item.status && (
+                  <span className="rounded-full px-2 py-0.5 text-xs"
+                    style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-accent-hover)', border: '1px solid var(--color-border)' }}>
+                    {formatStatus(item.status)}
+                  </span>
+                )}
+                {isTV && item.in_library_episodes !== undefined && item.in_library && (
+                  <span className="rounded-full px-2 py-0.5 text-xs"
+                    style={{ background: 'rgba(74,222,128,0.15)', color: 'var(--color-success)', border: '1px solid var(--color-success)' }}>
+                    {item.in_library_episodes}/{item.total_episodes || '?'} 集已入库
+                  </span>
+                )}
+                {!isTV && item.in_library && (
+                  <span className="rounded-full px-2 py-0.5 text-xs"
+                    style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-success)', border: '1px solid var(--color-border)' }}>
+                    已入库
+                  </span>
+                )}
+                {item.tmdb_id && (
+                  <div className="flex items-center gap-1.5">
+                    <a
+                      href={`https://www.themoviedb.org/${isTV ? 'tv' : 'movie'}/${item.tmdb_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-full px-2 py-0.5 text-xs transition-all duration-150"
+                      style={{
+                        background: 'rgba(1, 180, 228, 0.08)',
+                        color: '#01b4e4',
+                        border: '1px solid rgba(1, 180, 228, 0.35)',
+                        textDecoration: 'none',
+                        cursor: 'pointer',
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.background = 'rgba(1, 180, 228, 0.18)'
+                        e.currentTarget.style.borderColor = 'rgba(1, 180, 228, 0.65)'
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.background = 'rgba(1, 180, 228, 0.08)'
+                        e.currentTarget.style.borderColor = 'rgba(1, 180, 228, 0.35)'
+                      }}
+                    >
+                      TMDB {item.tmdb_id}
+                    </a>
+                    {titleActionSlot}
+                  </div>
+                )}
+              </div>
+              {headerRightSlot && (
+                <div className="mt-2 flex items-center gap-2 sm:hidden">
+                  {headerRightSlot}
                 </div>
               )}
             </div>
+
             {headerRightSlot && (
-              <div className="mt-2 flex items-center gap-2 sm:hidden">
+              <div className="hidden flex-shrink-0 self-start pb-3 sm:block sm:self-center sm:pr-2">
                 {headerRightSlot}
               </div>
             )}
           </div>
-          
-          {headerRightSlot && (
-            <div className="hidden pb-3 flex-shrink-0 self-start sm:block sm:self-center sm:pr-2">
-              {headerRightSlot}
-            </div>
-          )}
         </div>
 
-        <div className="relative mt-2 px-4 pb-4 sm:mt-4 sm:px-6 sm:pb-6" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
+        <div
+          className={`relative mt-2 px-4 pb-4 sm:mt-4 sm:px-6 sm:pb-6 ${
+            hasFooter ? 'min-h-0 flex-1 overflow-y-auto' : 'overflow-y-auto'
+          }`}
+          style={{
+            paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)',
+            overscrollBehavior: 'contain',
+            WebkitOverflowScrolling: 'touch',
+            maxHeight: hasFooter ? undefined : contentMaxHeight ?? 'calc(100dvh - env(safe-area-inset-top) - 18rem)',
+          }}
+        >
           {loadingSlot && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#0B1625]/50 backdrop-blur-sm">
                <span className="text-white/40 text-sm animate-pulse flex items-center gap-2">
@@ -362,10 +423,23 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
               暂无季集信息
             </div>
           ) : null}
+
+          {contentSlot ? (
+            <div className="mt-5">
+              {contentSlot}
+            </div>
+          ) : null}
+
         </div>
 
-        {footerSlot && (
-          <div className="mt-2 px-4 pb-4 sm:px-6 sm:pb-6">
+        {hasFooter && (
+          <div
+            className="border-t px-4 pb-4 pt-3 sm:px-6 sm:pb-6"
+            style={{
+              borderColor: 'rgba(144, 178, 221, 0.12)',
+              background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.96) 0%, rgba(11, 22, 37, 0.99) 100%)',
+            }}
+          >
             {footerSlot}
           </div>
         )}
