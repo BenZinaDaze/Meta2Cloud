@@ -24,8 +24,10 @@ function EpisodePill({ ep }) {
 }
 
 function SeasonBlock({ season }) {
-  const pct = season.episode_count > 0
-    ? Math.round(season.in_library_count / season.episode_count * 100) : 0
+  const episodeCount = season.episode_count || season.episodes?.length || 0
+  const inLibraryCount = season.in_library_count ?? 0
+  const pct = episodeCount > 0
+    ? Math.round(inLibraryCount / episodeCount * 100) : 0
   const barColor = pct >= 100 ? 'var(--color-success)' : pct > 50 ? 'var(--color-accent)' : 'var(--color-warning)'
 
   return (
@@ -41,7 +43,7 @@ function SeasonBlock({ season }) {
               {season.season_name}
             </span>
             <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
-              {season.in_library_count} / {season.episode_count} 集 · {pct}%
+              {inLibraryCount} / {episodeCount} 集 · {pct}%
             </span>
           </div>
           <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--color-border)' }}>
@@ -51,7 +53,7 @@ function SeasonBlock({ season }) {
         </div>
       </div>
       <div className="flex flex-wrap gap-1.5">
-        {season.episodes.map(ep => (
+        {(season.episodes || []).map(ep => (
           <EpisodePill key={ep.episode_number} ep={ep} />
         ))}
       </div>
@@ -334,7 +336,7 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
             </>
           )}
 
-          {isTV && item.seasons && item.seasons.length > 0 && (
+          {isTV && item.seasons && item.seasons.length > 0 ? (
             <div>
               <h3 className="text-sm font-semibold mb-3 pb-2 border-b"
                 style={{ color: 'var(--color-text)', borderColor: 'var(--color-border)' }}>
@@ -351,11 +353,15 @@ export default function DetailModal({ item, onClose, footerSlot, loadingSlot, he
                   </span>
                 ))}
               </div>
-              {item.seasons.map(season => (
+              {(item.seasons || []).map(season => (
                 <SeasonBlock key={season.season_number} season={season} />
               ))}
             </div>
-          )}
+          ) : isTV ? (
+            <div className="text-sm" style={{ color: 'var(--color-muted)' }}>
+              暂无季集信息
+            </div>
+          ) : null}
         </div>
 
         {footerSlot && (

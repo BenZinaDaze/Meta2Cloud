@@ -282,7 +282,43 @@ def tmdb_detail_payload(tmdb_id: int, media_type: str):
     try:
         store = get_library_store()
         joined = store.get_joined_media_item(media_type, tmdb_id)
-        if joined:
+        # TV 类型必须有 seasons，否则缓存不完整，需要重新获取
+        if joined and (media_type != "tv" or joined.get("seasons")):
+            # 如果是 TV 且 seasons 没有 episodes 详情，需要补充
+            if media_type == "tv" and joined.get("seasons"):
+                needs_detail = False
+                for s in joined["seasons"]:
+                    if not s.get("episodes") or len(s["episodes"]) != s.get("episode_count", 0):
+                        needs_detail = True
+                        break
+                if needs_detail:
+                    seasons_data = []
+                    for season in joined["seasons"]:
+                        season_number = season.get("season_number")
+                        if season_number is None:
+                            continue
+                        season_detail = tmdb_get(f"/tv/{tmdb_id}/season/{season_number}")
+                        episodes = []
+                        if season_detail and season_detail.get("episodes"):
+                            for ep in season_detail["episodes"]:
+                                episodes.append({
+                                    "episode_number": ep.get("episode_number", 0),
+                                    "episode_title": ep.get("name") or f"第 {ep.get('episode_number', 0)} 集",
+                                    "air_date": ep.get("air_date") or "",
+                                    "in_library": ep.get("in_library", False),
+                                })
+                        else:
+                            count = season.get("episode_count", 0)
+                            episodes = [{"episode_number": i, "episode_title": f"第 {i} 集", "air_date": "", "in_library": False} for i in range(1, count + 1)]
+                        seasons_data.append({
+                            "season_number": season_number,
+                            "season_name": season.get("season_name") or f"季 {season_number}",
+                            "poster_url": season.get("poster_url"),
+                            "episode_count": len(episodes),
+                            "in_library_count": season.get("in_library_count", 0),
+                            "episodes": episodes,
+                        })
+                    joined["seasons"] = seasons_data
             return {"ok": True, "detail": joined}
         cfg = get_config()
         if not cfg.tmdb or not cfg.tmdb.api_key:
@@ -298,6 +334,35 @@ def tmdb_detail_payload(tmdb_id: int, media_type: str):
         serialized = serialize_tmdb_result(raw)
         if not serialized:
             raise ValueError("解析详情失败")
+        # TV 类型需要补充每季每集详情
+        if media_type == "tv" and raw.get("seasons"):
+            seasons_data = []
+            for season in raw["seasons"]:
+                season_number = season.get("season_number")
+                if season_number is None:
+                    continue
+                season_detail = tmdb_get(f"/tv/{tmdb_id}/season/{season_number}")
+                episodes = []
+                if season_detail and season_detail.get("episodes"):
+                    for ep in season_detail["episodes"]:
+                        episodes.append({
+                            "episode_number": ep.get("episode_number", 0),
+                            "episode_title": ep.get("name") or f"第 {ep.get('episode_number', 0)} 集",
+                            "air_date": ep.get("air_date") or "",
+                            "in_library": False,
+                        })
+                else:
+                    count = season.get("episode_count", 0)
+                    episodes = [{"episode_number": i, "episode_title": f"第 {i} 集", "air_date": "", "in_library": False} for i in range(1, count + 1)]
+                seasons_data.append({
+                    "season_number": season_number,
+                    "season_name": season.get("name") or f"季 {season_number}",
+                    "poster_url": f"https://image.tmdb.org/t/p/w500{season['poster_path']}" if season.get("poster_path") else None,
+                    "episode_count": len(episodes),
+                    "in_library_count": 0,
+                    "episodes": episodes,
+                })
+            serialized["seasons"] = seasons_data
         serialized["in_library"] = False
         return {"ok": True, "detail": serialized}
     except Exception as exc:

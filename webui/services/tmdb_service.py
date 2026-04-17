@@ -113,15 +113,15 @@ def serialize_tmdb_result(info: Optional[Dict[str, Any]]) -> Optional[Dict[str, 
             if season_number is None:
                 continue
             count = season.get("episode_count", 0)
-            episodes = [{"episode_number": i, "in_library": False} for i in range(1, count + 1)]
+            episodes = [{"episode_number": i, "episode_title": f"第 {i} 集", "air_date": "", "in_library": False} for i in range(1, count + 1)]
             seasons_data.append(
                 {
                     "season_number": season_number,
                     "season_name": season.get("name") or f"季 {season_number}",
                     "poster_url": TmdbClient.image_url(season.get("poster_path")),
                     "air_date": season.get("air_date"),
-                    "total_episodes": count,
-                    "in_library_episodes": 0,
+                    "episode_count": count,
+                    "in_library_count": 0,
                     "episodes": episodes,
                 }
             )
