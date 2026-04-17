@@ -115,8 +115,8 @@ def scan_tv_shows(client: StorageProvider, cfg: Config) -> List[MediaItem]:
         in_lib_eps = 0
         if tmdb_info:
             for season_raw in (tmdb_info.get("seasons") or []):
-                season_num = season_raw.get("season_number", 0)
-                if season_num == 0:
+                season_num = season_raw.get("season_number")
+                if season_num is None:
                     continue
                 ep_count = season_raw.get("episode_count", 0)
                 total_eps += ep_count

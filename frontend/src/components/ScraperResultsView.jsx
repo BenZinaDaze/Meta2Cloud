@@ -191,7 +191,7 @@ export default function ScraperResultsView({ item, onBack, onToast, aria2Enabled
           if (!src) continue
           try {
             const epRes = await getEpisodes(src.site, src.media_id, src.subgroup_id)
-            const episodes = epRes.data.episodes.map(e => ({ ...e, _site: src.site }))
+            const episodes = (epRes.data.episodes || []).map(e => ({ ...e, _site: src.site }))
             setGroupedEpisodes(prev => {
               const updated = [...prev]
               updated[idx] = { ...updated[idx], episodes, loading: false, src }
@@ -228,7 +228,7 @@ export default function ScraperResultsView({ item, onBack, onToast, aria2Enabled
     if (!src) return
     try {
       const epRes = await getEpisodes(src.site, src.media_id, src.subgroup_id)
-      const episodes = epRes.data.episodes.map(e => ({ ...e, _site: src.site }))
+      const episodes = (epRes.data.episodes || []).map(e => ({ ...e, _site: src.site }))
       setGroupedEpisodes(prev => {
         const updated = [...prev]
         updated[index] = { ...updated[index], episodes, loading: false }
