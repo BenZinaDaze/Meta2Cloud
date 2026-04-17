@@ -79,6 +79,12 @@ def parser_test_payload(filename: str):
                 cache=get_tmdb_cache(),
             )
             tmdb_payload = serialize_tmdb_result(tmdb_client.recognize(meta))
+            # 从 TMDB 结果回填 tmdbid 和 year
+            if tmdb_payload:
+                if tmdb_payload.get("tmdb_id") and not payload.get("tmdbid"):
+                    payload["tmdbid"] = tmdb_payload["tmdb_id"]
+                if tmdb_payload.get("year") and not payload.get("year"):
+                    payload["year"] = tmdb_payload["year"]
         except Exception as exc:
             logger.warning("解析测试 TMDB 查询失败：%s", exc)
 

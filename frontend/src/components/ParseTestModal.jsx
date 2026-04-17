@@ -36,7 +36,7 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState(null)
-  const [showDetails, setShowDetails] = useState(false)
+  const [showDetails, setShowDetails] = useState(true)
   const [showOverview, setShowOverview] = useState(false)
 
   const handleClose = useCallback(() => {
@@ -67,7 +67,6 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
     try {
       const res = await testParse(value)
       setResult(res.data)
-      setShowDetails(false)
       setShowOverview(false)
     } catch (err) {
       setResult(null)
@@ -91,7 +90,6 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
         if (!cancelled) {
           setFilename(value)
           setResult(res.data)
-          setShowDetails(false)
           setShowOverview(false)
         }
       } catch (err) {
@@ -228,51 +226,24 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
               className="mt-5 rounded-[24px] px-4 py-4 sm:px-5"
               style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)' }}
             >
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>解析摘要</h3>
-                  <p className="mt-1 text-xs leading-5" style={{ color: 'var(--color-muted)' }}>
-                    先看这几个字段，确认识别方向对不对。
-                  </p>
-                </div>
-                <span
-                  className="rounded-full px-2.5 py-1 text-xs font-semibold"
-                  style={{
-                    background: result.tmdb ? 'rgba(74, 201, 126, 0.12)' : 'rgba(255,255,255,0.04)',
-                    color: result.tmdb ? 'var(--color-success)' : 'var(--color-muted)',
-                    border: result.tmdb ? '1px solid rgba(74, 201, 126, 0.2)' : '1px solid rgba(255,255,255,0.08)',
-                  }}
-                >
-                  {result.tmdb ? '已命中 TMDB' : '未命中 TMDB'}
-                </span>
-              </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <InfoCard label="识别名称" value={result.name || '-'} />
-                <InfoCard label="媒体类型" value={result.type_label || '-'} />
-                <InfoCard label="年份" value={result.year || '-'} />
-                <InfoCard label="季 / 集" value={`${result.season || '-'} / ${result.episode || '-'}`} />
-                <InfoCard label="资源项" value={result.resource_term || '-'} />
-                <InfoCard label="TMDB ID" value={result.tmdbid ?? '-'} />
-              </div>
-            </section>
-          ) : null}
-
-          <div className="mt-5 grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
-            <section
-              className="rounded-[24px] px-4 py-4 sm:px-5 sm:py-5"
-              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)' }}
-            >
               <button
                 type="button"
                 onClick={() => setShowDetails((value) => !value)}
                 className="flex w-full items-center justify-between gap-3 text-left"
                 aria-expanded={showDetails}
               >
-                <div>
+                <div className="flex items-center gap-3">
                   <h3 className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>详细字段</h3>
-                  <p className="mt-1 text-xs leading-5" style={{ color: 'var(--color-muted)' }}>
-                    手机端默认收起，确认摘要没问题后再看完整解析字段。
-                  </p>
+                  <span
+                    className="rounded-full px-2.5 py-1 text-xs font-semibold"
+                    style={{
+                      background: result.tmdb ? 'rgba(74, 201, 126, 0.12)' : 'rgba(255,255,255,0.04)',
+                      color: result.tmdb ? 'var(--color-success)' : 'var(--color-muted)',
+                      border: result.tmdb ? '1px solid rgba(74, 201, 126, 0.2)' : '1px solid rgba(255,255,255,0.08)',
+                    }}
+                  >
+                    {result.tmdb ? '已命中 TMDB' : '未命中 TMDB'}
+                  </span>
                 </div>
                 <span
                   className="flex size-9 shrink-0 items-center justify-center rounded-full"
@@ -293,38 +264,34 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
                   </svg>
                 </span>
               </button>
-              {result ? (
-                showDetails ? (
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    {[
-                      ['识别名称', result.name || '-'],
-                      ['媒体类型', result.type_label || '-'],
-                      ['年份', result.year || '-'],
-                      ['季', result.season || '-'],
-                      ['集', result.episode || '-'],
-                      ['资源项', result.resource_term || '-'],
-                      ['视频编码', result.video_term || '-'],
-                      ['音频编码', result.audio_term || '-'],
-                      ['字幕组', result.release_group || '-'],
-                      ['TMDB ID', result.tmdbid ?? '-'],
-                      ['豆瓣 ID', result.doubanid || '-'],
-                      ['应用规则', result.apply_words?.join(', ') || '-'],
-                    ].map(([label, value]) => (
-                      <InfoCard key={label} label={label} value={value} />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mt-4 rounded-[20px] px-4 py-4 text-sm leading-6" style={{ color: 'var(--color-muted)', background: 'rgba(6, 13, 24, 0.5)' }}>
-                    已收起 12 个解析字段，按需展开查看完整结果。
-                  </div>
-                )
+              {showDetails ? (
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {[
+                    ['识别名称', result.name || '-'],
+                    ['媒体类型', result.type_label || '-'],
+                    ['年份', result.year || '-'],
+                    ['季', result.season || '-'],
+                    ['集', result.episode || '-'],
+                    ['资源项', result.resource_term || '-'],
+                    ['视频编码', result.video_term || '-'],
+                    ['音频编码', result.audio_term || '-'],
+                    ['字幕组', result.release_group || '-'],
+                    ['TMDB ID', result.tmdbid ?? '-'],
+                    ['豆瓣 ID', result.doubanid || '-'],
+                    ['应用规则', result.apply_words?.join(', ') || '-'],
+                  ].map(([label, value]) => (
+                    <InfoCard key={label} label={label} value={value} />
+                  ))}
+                </div>
               ) : (
-                <div className="mt-4 rounded-[20px] px-4 py-6 text-sm" style={{ color: 'var(--color-muted)', background: 'rgba(6, 13, 24, 0.5)' }}>
-                  还没有解析结果。
+                <div className="mt-4 rounded-[20px] px-4 py-4 text-sm leading-6" style={{ color: 'var(--color-muted)', background: 'rgba(6, 13, 24, 0.5)' }}>
+                  已收起 12 个解析字段，点击展开查看。
                 </div>
               )}
             </section>
+          ) : null}
 
+          <div className="mt-5">
             <section
               className="rounded-[24px] px-4 py-4 sm:px-5 sm:py-5"
               style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)' }}
