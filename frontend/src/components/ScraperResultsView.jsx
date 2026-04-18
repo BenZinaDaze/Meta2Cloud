@@ -75,16 +75,45 @@ export default function ScraperResultsView({ item, onBack, onToast, aria2Enabled
   }
 
   /**
+   * 计算两个字符串的字符级 Jaccard 相似度。
+   * 用于容忍「女生→女孩」「我」字增减等差异。
+   */
+  const jaccardSimilarity = (a, b) => {
+    const setA = new Set(a)
+    const setB = new Set(b)
+    if (setA.size === 0 && setB.size === 0) return 1
+    const intersection = new Set([...setA].filter(x => setB.has(x)))
+    const union = new Set([...setA, ...setB])
+    return intersection.size / union.size
+  }
+
+  /**
    * 用别名搜索返回结果时，过滤掉与当前作品无关的条目。
-   * 策略：只保留名字与已知名称存在包含关系的条目。
+   * 策略：
+   *   1. 去掉 [字幕组] 后缀
+   *   2. 先尝试包含关系检查
+   *   3. 若失败，计算字符级相似度，超过 55% 则通过
    */
   const filterByKnownNames = (candidates, knownNames) => {
     const normalize = (s) => s.toLowerCase().replace(/\s+/g, ' ').trim()
+    // 去掉 [字幕组] 后缀，如 "番剧名 [LoliHouse]" → "番剧名"
+    const stripSubgroup = (s) => s.replace(/\s*\[[^\]]+\]\s*$/, '').trim()
     const normalizedKnown = knownNames.map(normalize).filter(Boolean)
     if (normalizedKnown.length === 0) return candidates
+
     return candidates.filter(agg => {
-      const aggName = normalize(agg.name)
-      return normalizedKnown.some(k => aggName.includes(k) || k.includes(aggName))
+      const rawName = normalize(agg.name)
+      const cleanName = normalize(stripSubgroup(agg.name))
+
+      return normalizedKnown.some(k => {
+        // 策略 1: 包含关系（原始名称）
+        if (rawName.includes(k) || k.includes(rawName)) return true
+        // 策略 2: 包含关系（去掉字幕组后缀）
+        if (cleanName.includes(k) || k.includes(cleanName)) return true
+        // 策略 3: 字符级相似度（容忍「女生→女孩」等同义替换）
+        if (jaccardSimilarity(cleanName, k) >= 0.50) return true
+        return false
+      })
     })
   }
 
