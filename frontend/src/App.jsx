@@ -73,7 +73,7 @@ const MobileNavIcons = {
   ),
 }
 
-function MobileNav({ active, onSelect, onToggleSidebar }) {
+function MobileNav({ active, onSelect, onToggleSidebar, u115Authorized }) {
   const isLibrary = ['all', 'movies', 'tv'].includes(active)
   const isMore = ['downloads', 'downloads-active', 'downloads-waiting', 'downloads-stopped', 'logs', 'config', 'config-filename-rules'].includes(active)
 
@@ -81,7 +81,7 @@ function MobileNav({ active, onSelect, onToggleSidebar }) {
     { key: 'all', label: '媒体库', icon: MobileNavIcons.library, isActive: isLibrary },
     { key: 'scraper-search', label: '检索', icon: MobileNavIcons.search, isActive: active === 'scraper-search' },
     { key: 'calendar', label: '新番', icon: MobileNavIcons.calendar, isActive: active === 'calendar' },
-    { key: 'u115-offline', label: '云下载', icon: MobileNavIcons.cloudDownload, isActive: active === 'u115-offline' },
+    ...(u115Authorized ? [{ key: 'u115-offline', label: '云下载', icon: MobileNavIcons.cloudDownload, isActive: active === 'u115-offline' }] : []),
   ]
 
   return (
@@ -365,6 +365,8 @@ export default function App() {
         onSelect={(key) => { setActiveNav(key); setMobileSidebarOpen(false) }}
         aria2Overview={aria2Overview}
         aria2ConnectionStatus={aria2ConnectionStatus}
+        aria2Enabled={aria2Enabled}
+        u115Authorized={u115Authorized}
         mobileOpen={mobileSidebarOpen}
         onMobileClose={() => setMobileSidebarOpen(false)}
         onLogout={handleLogout}
@@ -457,6 +459,7 @@ export default function App() {
         active={activeNav}
         onSelect={setActiveNav}
         onToggleSidebar={() => setMobileSidebarOpen(o => !o)}
+        u115Authorized={u115Authorized}
       />
 
       {showParseTest ? <ParseTestModal onClose={() => setShowParseTest(false)} /> : null}

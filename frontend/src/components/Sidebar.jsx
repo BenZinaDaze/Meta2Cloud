@@ -154,7 +154,7 @@ function NavItem({ icon, label, active, onClick, indent = false, right, bold = f
   )
 }
 
-export default function Sidebar({ active, onSelect, aria2Overview = null, aria2ConnectionStatus = 'connecting', mobileOpen = false, onMobileClose, onLogout }) {
+export default function Sidebar({ active, onSelect, aria2Overview = null, aria2ConnectionStatus = 'connecting', aria2Enabled = null, u115Authorized = false, mobileOpen = false, onMobileClose, onLogout }) {
   const [libraryExpanded, setLibraryExpanded] = useState(true)
   const [downloadsExpanded, setDownloadsExpanded] = useState(false)
   const [configExpanded, setConfigExpanded] = useState(false)
@@ -220,6 +220,8 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
   const stoppedCount = aria2Overview?.summary?.stoppedCount ?? 0
   const totalDownloadCount = activeCount + waitingCount + stoppedCount
   const aria2Connected = !!aria2Overview
+  const showDownloads = aria2Enabled !== false
+  const showCloudDownload = u115Authorized
   const connectionState = {
     connected: {
       label: '已连接',
@@ -421,55 +423,61 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
           />
         </div>
 
-        <NavItem
-          icon={Icons.download}
-          label="下载管理"
-          active={active === 'downloads'}
-          onClick={handleDownloadsClick}
-          bold
-          meta={aria2Connected ? totalDownloadCount : null}
-          right={downloadsStatus}
-        />
-
-        <div
-          className="overflow-hidden transition-all duration-200 ease-in-out"
-          style={{ maxHeight: isDownloadsExpanded ? '180px' : '0px', opacity: isDownloadsExpanded ? 1 : 0 }}
-        >
-          <div className="relative">
-            <div className="absolute bottom-0 top-0" style={{ left: 38, width: 1, background: 'rgba(144, 178, 221, 0.16)' }} />
-            {[
-              { key: 'downloads-active', label: '下载中', icon: Icons.bolt },
-              { key: 'downloads-waiting', label: '等待中', icon: Icons.queue },
-              { key: 'downloads-stopped', label: '已停止', icon: Icons.archive },
-            ].map(({ key, label, icon }) => (
-              <NavItem
-                key={key}
-                icon={icon}
-                label={label}
-                active={active === key}
-                onClick={() => onSelect(key)}
-                indent
-                meta={
-                  key === 'downloads-active'
-                    ? activeCount
-                    : key === 'downloads-waiting'
-                      ? waitingCount
-                      : stoppedCount
-                }
-              />
-            ))}
-          </div>
-        </div>
-
-        <div className="hidden lg:block">
+        {showDownloads && (
           <NavItem
-            icon={Icons.cloudDownload}
-            label="云下载"
-            active={active === 'u115-offline'}
-            onClick={() => onSelect('u115-offline')}
+            icon={Icons.download}
+            label="下载管理"
+            active={active === 'downloads'}
+            onClick={handleDownloadsClick}
             bold
+            meta={aria2Connected ? totalDownloadCount : null}
+            right={downloadsStatus}
           />
-        </div>
+        )}
+
+        {showDownloads && (
+          <div
+            className="overflow-hidden transition-all duration-200 ease-in-out"
+            style={{ maxHeight: isDownloadsExpanded ? '180px' : '0px', opacity: isDownloadsExpanded ? 1 : 0 }}
+          >
+            <div className="relative">
+              <div className="absolute bottom-0 top-0" style={{ left: 38, width: 1, background: 'rgba(144, 178, 221, 0.16)' }} />
+              {[
+                { key: 'downloads-active', label: '下载中', icon: Icons.bolt },
+                { key: 'downloads-waiting', label: '等待中', icon: Icons.queue },
+                { key: 'downloads-stopped', label: '已停止', icon: Icons.archive },
+              ].map(({ key, label, icon }) => (
+                <NavItem
+                  key={key}
+                  icon={icon}
+                  label={label}
+                  active={active === key}
+                  onClick={() => onSelect(key)}
+                  indent
+                  meta={
+                    key === 'downloads-active'
+                      ? activeCount
+                      : key === 'downloads-waiting'
+                        ? waitingCount
+                        : stoppedCount
+                  }
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {showCloudDownload && (
+          <div className="hidden lg:block">
+            <NavItem
+              icon={Icons.cloudDownload}
+              label="云下载"
+              active={active === 'u115-offline'}
+              onClick={() => onSelect('u115-offline')}
+              bold
+            />
+          </div>
+        )}
 
         <NavItem
           icon={Icons.activity}
