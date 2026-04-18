@@ -604,6 +604,8 @@ class Pipeline:
         if not self._notify_items:
             return
 
+        logger.info("准备发送 TG 入库通知，共 %d 个条目", len(self._notify_items))
+
         # 按 tmdb_id 分组（同一剧/电影合并为一条消息）
         groups: dict = defaultdict(list)
         poster_map: dict = {}
@@ -614,6 +616,7 @@ class Pipeline:
                 poster_map[key] = item.poster_path
 
         for key, items in groups.items():
+            logger.info("TG 通知分组 | key=%s | 条目数=%d", key, len(items))
             first = items[0]
             # 封面选择：TV 单季推送优先用季封面，多季混合或电影用整剧/整片封面
             if first.is_tv:
@@ -656,6 +659,7 @@ class Pipeline:
                 caption = f"🎬 <b>{first.title} ({first.year})</b>\n已入库"
 
             self._send_tg_photo(tg.bot_token, tg.chat_id, poster, caption)
+            logger.info("TG 通知已发送 | key=%s | caption前30字=%s", key, caption[:30])
 
     def _send_tg_photo(self, token: str, chat_id: str, poster_path: str, caption: str) -> None:
         """发送带封面图的 Telegram 消息，无封面时降级为纯文字消息。"""
