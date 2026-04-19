@@ -31,17 +31,6 @@ _aria2_http.mount("https://", HTTPAdapter(max_retries=_ARIA2_NO_RETRY))
 _aria2_http.mount("http://", HTTPAdapter(max_retries=_ARIA2_NO_RETRY))
 
 
-def infer_pipeline_log_level(line: str) -> str:
-    text = line.lower()
-    if "❌" in line or "失败" in line or "异常" in line or "error" in text:
-        return "ERROR"
-    if "✓" in line or "完成" in line or "已上传" in line or "移动：" in line:
-        return "SUCCESS"
-    if "⚠" in line or "warning" in text or "跳过" in line:
-        return "WARNING"
-    return "INFO"
-
-
 def _aria2_rpc_url() -> str:
     cfg = get_config().aria2
     scheme = "https" if cfg.secure else "http"

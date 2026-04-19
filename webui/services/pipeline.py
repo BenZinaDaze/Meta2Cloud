@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -11,7 +12,31 @@ from webui.core.runtime import _ROOT_DIR, get_config, get_storage_provider, logg
 from webui.library_store import get_library_store
 from webui.services.telegram import send_telegram
 from webui.services.library_data import scan_movies, scan_tv_shows
-from webui.services.aria2_core import infer_pipeline_log_level
+
+
+def infer_pipeline_log_level(line: str) -> str:
+    """根据 pipeline 输出行内容推断日志级别。"""
+    text = line.lower()
+    # 汇总行格式：✓ 成功：N    ⚠ 跳过：N    ✗ 失败：N
+    # 根据实际数值判断级别：失败>0 → ERROR，跳过>0 → WARNING，否则 SUCCESS
+    match = re.search(r"成功[：:]\s*(\d+).*跳过[：:]\s*(\d+).*失败[：:]\s*(\d+)", line)
+    if match:
+        ok, skipped, failed = int(match.group(1)), int(match.group(2)), int(match.group(3))
+        if failed > 0:
+            return "ERROR"
+        if skipped > 0:
+            return "WARNING"
+        if ok > 0:
+            return "SUCCESS"
+        return "INFO"
+    # 非汇总行：按标记判断
+    if "✓" in line or "完成" in line or "已上传" in line or "移动：" in line:
+        return "SUCCESS"
+    if "⚠" in line or "warning" in text or "跳过" in line:
+        return "WARNING"
+    if "❌" in line or "失败" in line or "异常" in line or "error" in text:
+        return "ERROR"
+    return "INFO"
 
 
 _pl_lock = threading.Lock()
@@ -62,7 +87,7 @@ def _do_run_pipeline() -> None:
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
         process = subprocess.Popen(
-            [sys.executable, "pipeline.py"],
+            [sys.executable, "-m", "core"],
             cwd=_ROOT_DIR,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,

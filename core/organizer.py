@@ -10,7 +10,7 @@ organizer.py —— 媒体文件夹整理器
   剧集：  {剧名} ({年份})/Season {季号}/
 
 用法：
-    from organizer import MediaOrganizer
+    from core.organizer import MediaOrganizer
     from storage import get_provider
 
     provider = get_provider("google_drive", cfg)
@@ -22,7 +22,7 @@ organizer.py —— 媒体文件夹整理器
 
     # 只获取路径字符串（不操作 Drive）
     path = org.folder_path_for("Inception.2010.1080p.mkv")
-    print(path)     # \"Inception (2010)\"
+    print(path)     # "Inception (2010)"
 """
 
 import logging
