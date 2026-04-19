@@ -146,14 +146,16 @@ def _u115_auto_organize_loop() -> None:
             logger.warning("115 自动整理状态处理失败：%s", exc)
             _u115_auto_organize_last_poll_error = str(exc)
         except Exception as exc:
-            logger.warning("115 自动整理轮询失败：%s", exc)
-            _u115_auto_organize_last_poll_error = str(exc)
+            exc_type = type(exc).__name__
+            exc_msg = str(exc) or repr(exc)
+            logger.warning("115 自动整理轮询失败 [%s]: %s", exc_type, exc_msg)
+            _u115_auto_organize_last_poll_error = f"[{exc_type}] {exc_msg}"
             app_log(
                 "u115",
                 "auto_organize_poll_failed",
-                "115 自动整理轮询失败",
+                f"115 自动整理轮询失败 [{exc_type}]: {exc_msg}",
                 level="ERROR",
-                details={"error": str(exc)},
+                details={"error": exc_msg, "error_type": exc_type},
             )
         _u115_auto_organize_stop.wait(timeout=sleep_seconds)
     logger.info("115 自动整理监听线程已停止")
