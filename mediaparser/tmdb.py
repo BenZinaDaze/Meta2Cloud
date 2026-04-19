@@ -228,13 +228,27 @@ class TmdbClient:
 
     # ── 详情获取 ─────────────────────────────────────────
 
+    @staticmethod
+    def _check_append_fields(data: dict, append_fields: str) -> bool:
+        """检查 append_to_response 的所有字段是否完整"""
+        if not append_fields:
+            return True
+        for field in append_fields.split(","):
+            if not data.get(field):
+                return False
+        return True
+
     def _get_movie_detail(self, tmdbid: int) -> Optional[Dict]:
-        data = self._get(
-            "/movie/%d" % tmdbid,
-            extra_params={"append_to_response": "credits,alternative_titles,translations,external_ids"},
-        )
+        append_fields = "credits,alternative_titles,translations,external_ids"
+        extra_params = {"append_to_response": append_fields}
+        data = self._get("/movie/%d" % tmdbid, extra_params=extra_params)
         if not data:
             return None
+        # 缓存数据可能不完整，缺少任意 append 字段时强制重新请求
+        if not self._check_append_fields(data, append_fields):
+            data = self._get("/movie/%d" % tmdbid, extra_params=extra_params, use_cache=False)
+            if not data:
+                return None
         data["media_type"] = MediaType.MOVIE
         data["tmdb_id"] = data.get("id")
         data["names"] = self._extract_names(data, MediaType.MOVIE)
@@ -243,12 +257,16 @@ class TmdbClient:
         return data
 
     def _get_tv_detail(self, tmdbid: int) -> Optional[Dict]:
-        data = self._get(
-            "/tv/%d" % tmdbid,
-            extra_params={"append_to_response": "credits,alternative_titles,translations,external_ids"},
-        )
+        append_fields = "credits,alternative_titles,translations,external_ids"
+        extra_params = {"append_to_response": append_fields}
+        data = self._get("/tv/%d" % tmdbid, extra_params=extra_params)
         if not data:
             return None
+        # 缓存数据可能不完整，缺少任意 append 字段时强制重新请求
+        if not self._check_append_fields(data, append_fields):
+            data = self._get("/tv/%d" % tmdbid, extra_params=extra_params, use_cache=False)
+            if not data:
+                return None
         data["media_type"] = MediaType.TV
         data["tmdb_id"] = data.get("id")
         data["names"] = self._extract_names(data, MediaType.TV)
