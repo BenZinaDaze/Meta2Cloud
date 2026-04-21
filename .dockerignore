@@ -21,3 +21,6 @@ data
 
 .env
 .env.*
+
+# 不再需要 requirements.txt，使用 pyproject.toml + uv.lock
+requirements.txt

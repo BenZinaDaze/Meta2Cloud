@@ -1,0 +1,26 @@
+[project]
+name = "meta2cloud"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "anitopy>=2.1.0",
+    "beautifulsoup4>=4.12.0",
+    "cn2an>=0.5.22",
+    "fastapi>=0.100.0",
+    "google-api-python-client>=2.100.0",
+    "google-auth>=2.23.0",
+    "google-auth-httplib2>=0.2.0",
+    "google-auth-oauthlib>=1.1.0",
+    "lxml>=4.9.0",
+    "oss2>=2.18.0",
+    "pinyin2hanzi>=0.1.1",
+    "pyjwt>=2.8.0",
+    "pyyaml>=6.0",
+    "qrcode[pil]>=7.4.2",
+    "regex>=2023.6.3",
+    "requests>=2.31.0",
+    "uvicorn[standard]>=0.23.0",
+    "zhconv>=1.4.3",
+]

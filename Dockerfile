@@ -14,7 +14,7 @@ COPY frontend/ ./
 RUN VITE_APP_VERSION=${APP_VERSION} npm run build
 
 
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
@@ -24,11 +24,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# 安装 uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
 WORKDIR /app
 
 # 先复制依赖文件，利用 Docker 层缓存
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
 
 # 复制项目源码；通过 .dockerignore 排除不需要进入运行镜像的内容。
 # 这样新增顶层 Python 包时不需要再手动更新 Dockerfile。
@@ -44,4 +47,4 @@ RUN mkdir -p /app/data
 EXPOSE 38765
 
 # 单进程启动：WebUI API + Webhook /trigger 均在 38765
-CMD ["uvicorn", "webui.app:app", "--host", "0.0.0.0", "--port", "38765"]
+CMD ["uv", "run", "uvicorn", "webui.app:app", "--host", "0.0.0.0", "--port", "38765"]
