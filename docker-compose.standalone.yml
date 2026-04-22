@@ -1,0 +1,16 @@
+version: "3.8"
+services:
+  meta2cloud:
+    container_name: meta2cloud
+    image: benz1/meta2cloud:latest
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ${PWD}/config:/app/config
+    ports:
+      - "38765:38765"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 1m
