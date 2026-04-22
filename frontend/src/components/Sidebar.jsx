@@ -413,15 +413,13 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
           />
         </div>
 
-        <div className="hidden lg:block">
-          <NavItem
-            icon={Icons.rss}
-            label="订阅列表"
-            active={active === 'subscriptions'}
-            onClick={() => onSelect('subscriptions')}
-            bold
-          />
-        </div>
+        <NavItem
+          icon={Icons.rss}
+          label="订阅列表"
+          active={active === 'subscriptions'}
+          onClick={() => onSelect('subscriptions')}
+          bold
+        />
 
         {showDownloads && (
           <NavItem

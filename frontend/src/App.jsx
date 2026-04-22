@@ -75,7 +75,7 @@ const MobileNavIcons = {
 
 function MobileNav({ active, onSelect, onToggleSidebar, u115Authorized }) {
   const isLibrary = ['all', 'movies', 'tv'].includes(active)
-  const isMore = ['downloads', 'downloads-active', 'downloads-waiting', 'downloads-stopped', 'logs', 'config', 'config-filename-rules'].includes(active)
+  const isMore = ['subscriptions', 'downloads', 'downloads-active', 'downloads-waiting', 'downloads-stopped', 'logs', 'config', 'config-filename-rules'].includes(active)
 
   const tabs = [
     { key: 'all', label: '媒体库', icon: MobileNavIcons.library, isActive: isLibrary },
