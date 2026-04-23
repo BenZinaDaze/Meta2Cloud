@@ -19,7 +19,7 @@ function formatStatus(status) {
 
 function InfoCard({ label, value }) {
   return (
-    <div className="rounded-2xl px-3 py-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+    <div className="rounded-2xl px-3 py-3" style={{ background: 'var(--surface-1)', border: '1px solid var(--surface-3)' }}>
       <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-muted)' }}>
         {label}
       </div>
@@ -110,8 +110,8 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
     <div
       className="fixed inset-0 z-[140] flex items-end justify-center overflow-y-auto p-0 sm:items-start sm:p-4 sm:pt-24"
       style={{
-        background: 'rgba(2, 8, 18, 0.78)',
-        backdropFilter: 'blur(10px)',
+        background: 'var(--overlay-backdrop)',
+        backdropFilter: 'var(--blur-md)',
         opacity: show ? 1 : 0,
         transition: 'opacity 0.2s',
       }}
@@ -120,7 +120,7 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
       <div
         className="relative flex h-[100dvh] w-full flex-col overflow-hidden rounded-none sm:h-auto sm:max-w-4xl sm:rounded-[30px]"
         style={{
-          background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.98) 0%, rgba(11, 22, 37, 0.98) 100%)',
+          background: 'var(--gradient-panel)',
           border: '1px solid var(--color-border)',
           transform: show ? 'translateY(0)' : 'translateY(20px)',
           transition: 'transform 0.2s',
@@ -131,9 +131,9 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
       >
         <div
           className="sticky top-0 z-10 border-b px-4 pb-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] sm:px-6 sm:py-5"
-          style={{ borderColor: 'var(--color-border)', background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.99) 0%, rgba(11, 22, 37, 0.98) 100%)' }}
+          style={{ borderColor: 'var(--color-border)', background: 'var(--gradient-header)' }}
         >
-          <div className="mx-auto mb-3 h-1.5 w-12 rounded-full sm:hidden" style={{ background: 'rgba(255,255,255,0.14)' }} />
+          <div className="mx-auto mb-3 h-1.5 w-12 rounded-full sm:hidden" style={{ background: 'var(--drag-handle)' }} />
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--color-accent-hover)' }}>
@@ -150,7 +150,7 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
               type="button"
               onClick={handleClose}
               className="flex size-11 items-center justify-center rounded-2xl transition-all duration-150"
-              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
               aria-label="关闭解析测试"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
@@ -165,7 +165,7 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
           <form
             onSubmit={handleSubmit}
             className="overflow-hidden rounded-[24px]"
-            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)' }}
+            style={{ background: 'var(--surface-2)', border: '1px solid var(--color-border)' }}
           >
             <div className="px-4 pb-4 pt-4 sm:px-5">
               <div className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-muted)' }}>
@@ -177,8 +177,8 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
                 placeholder="例如：Breaking.Bad.S01E03.1080p.BluRay.HEVC.mkv"
                 className="mt-3 min-h-28 w-full rounded-[20px] px-4 py-3 text-sm outline-none transition-all"
                 style={{
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(255,255,255,0.06)',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--surface-5)',
                   color: 'var(--color-text)',
                   resize: 'none',
                 }}
@@ -188,8 +188,8 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
             <div
               className="sticky bottom-0 flex items-center justify-between gap-3 border-t px-4 py-3 sm:px-5"
               style={{
-                borderColor: 'rgba(255,255,255,0.06)',
-                background: 'linear-gradient(180deg, rgba(11, 22, 37, 0.72) 0%, rgba(11, 22, 37, 0.96) 100%)',
+                borderColor: 'var(--surface-5)',
+                background: 'linear-gradient(180deg, var(--overlay-content) 0%, var(--surface-dark-80) 100%)',
                 backdropFilter: 'blur(8px)',
               }}
             >
@@ -215,7 +215,7 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
           {error ? (
             <div
               className="mt-4 rounded-[22px] px-4 py-3 text-sm"
-              style={{ background: 'rgba(239,125,117,0.08)', border: '1px solid rgba(239,125,117,0.2)', color: 'var(--color-danger)' }}
+              style={{ background: 'var(--danger-soft)', border: '1px solid var(--danger-border)', color: 'var(--color-danger)' }}
             >
               {error}
             </div>
@@ -224,7 +224,7 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
           {result ? (
             <section
               className="mt-5 rounded-[24px] px-4 py-4 sm:px-5"
-              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)' }}
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--color-border)' }}
             >
               <button
                 type="button"
@@ -237,9 +237,9 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
                   <span
                     className="rounded-full px-2.5 py-1 text-xs font-semibold"
                     style={{
-                      background: result.tmdb ? 'rgba(74, 201, 126, 0.12)' : 'rgba(255,255,255,0.04)',
+                      background: result.tmdb ? 'var(--success-solid)' : 'var(--surface-2)',
                       color: result.tmdb ? 'var(--color-success)' : 'var(--color-muted)',
-                      border: result.tmdb ? '1px solid rgba(74, 201, 126, 0.2)' : '1px solid rgba(255,255,255,0.08)',
+                      border: result.tmdb ? '1px solid var(--success-border-30)' : '1px solid var(--surface-5)',
                     }}
                   >
                     {result.tmdb ? '已命中 TMDB' : '未命中 TMDB'}
@@ -247,7 +247,7 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
                 </div>
                 <span
                   className="flex size-9 shrink-0 items-center justify-center rounded-full"
-                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'var(--color-text)' }}
+                  style={{ background: 'var(--surface-2)', border: '1px solid var(--surface-5)', color: 'var(--color-text)' }}
                 >
                   <svg
                     width="16"
@@ -284,7 +284,7 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
                   ))}
                 </div>
               ) : (
-                <div className="mt-4 rounded-[20px] px-4 py-4 text-sm leading-6" style={{ color: 'var(--color-muted)', background: 'rgba(6, 13, 24, 0.5)' }}>
+                <div className="mt-4 rounded-[20px] px-4 py-4 text-sm leading-6" style={{ color: 'var(--color-muted)', background: 'var(--surface-dark)' }}>
                   已收起 12 个解析字段，点击展开查看。
                 </div>
               )}
@@ -294,15 +294,15 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
           <div className="mt-5">
             <section
               className="rounded-[24px] px-4 py-4 sm:px-5 sm:py-5"
-              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)' }}
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--color-border)' }}
             >
               <h3 className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>TMDB 信息</h3>
               {!result ? (
-                <div className="mt-4 rounded-[20px] px-4 py-6 text-sm" style={{ color: 'var(--color-muted)', background: 'rgba(6, 13, 24, 0.5)' }}>
+                <div className="mt-4 rounded-[20px] px-4 py-6 text-sm" style={{ color: 'var(--color-muted)', background: 'var(--surface-dark)' }}>
                   等待解析结果…
                 </div>
               ) : !result.tmdb ? (
-                <div className="mt-4 rounded-[20px] px-4 py-6 text-sm" style={{ color: 'var(--color-muted)', background: 'rgba(6, 13, 24, 0.5)' }}>
+                <div className="mt-4 rounded-[20px] px-4 py-6 text-sm" style={{ color: 'var(--color-muted)', background: 'var(--surface-dark)' }}>
                   没有匹配到 TMDB 结果。请检查文件名，或确认已配置 TMDB API Key。
                 </div>
               ) : (
@@ -310,8 +310,8 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
                     <div
                       className="relative overflow-hidden rounded-[22px]"
                     style={{
-                      background: 'rgba(6, 13, 24, 0.72)',
-                      border: '1px solid rgba(255,255,255,0.05)',
+                      background: 'var(--surface-dark-72)',
+                      border: '1px solid var(--surface-4)',
                     }}
                   >
                     {result.tmdb.backdrop_url ? (
@@ -332,7 +332,7 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
                           src={result.tmdb.poster_url}
                           alt={result.tmdb.title}
                           className="h-36 w-24 rounded-xl object-cover sm:h-40 sm:w-28"
-                          style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+                          style={{ border: '1px solid var(--border-default)' }}
                         />
                       ) : null}
                       <div className="min-w-0 flex-1">
@@ -350,19 +350,19 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
                         <div className="mt-3 flex flex-wrap gap-2">
                           {result.tmdb.year && (
                             <span className="rounded-full px-2 py-1 text-xs"
-                              style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-muted)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                              style={{ background: 'var(--surface-2)', color: 'var(--color-muted)', border: '1px solid var(--surface-5)' }}>
                               {result.tmdb.year}
                             </span>
                           )}
                           {result.tmdb.rating > 0 && (
                             <span className="rounded-full px-2 py-1 text-xs"
-                              style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-warning)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                              style={{ background: 'var(--surface-2)', color: 'var(--color-warning)', border: '1px solid var(--surface-5)' }}>
                               ★ {result.tmdb.rating}
                             </span>
                           )}
                           {result.tmdb.status && (
                             <span className="rounded-full px-2 py-1 text-xs"
-                              style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-accent-hover)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                              style={{ background: 'var(--surface-2)', color: 'var(--color-accent-hover)', border: '1px solid var(--surface-5)' }}>
                               {formatStatus(result.tmdb.status)}
                             </span>
                           )}
@@ -373,19 +373,19 @@ export default function ParseTestModal({ onClose, initialFilename = '' }) {
                               rel="noopener noreferrer"
                               className="rounded-full px-2 py-1 text-xs transition-all duration-150"
                               style={{
-                                background: 'rgba(1, 180, 228, 0.08)',
-                                color: '#01b4e4',
-                                border: '1px solid rgba(1, 180, 228, 0.35)',
+                                background: 'var(--tmdb-bg)',
+                                color: 'var(--tmdb)',
+                                border: '1px solid var(--tmdb-border)',
                                 textDecoration: 'none',
                                 cursor: 'pointer',
                               }}
                               onMouseEnter={e => {
-                                e.currentTarget.style.background = 'rgba(1, 180, 228, 0.18)'
-                                e.currentTarget.style.borderColor = 'rgba(1, 180, 228, 0.65)'
+                                e.currentTarget.style.background = 'var(--tmdb-bg-hover)'
+                                e.currentTarget.style.borderColor = 'var(--tmdb-border-hover)'
                               }}
                               onMouseLeave={e => {
-                                e.currentTarget.style.background = 'rgba(1, 180, 228, 0.08)'
-                                e.currentTarget.style.borderColor = 'rgba(1, 180, 228, 0.35)'
+                                e.currentTarget.style.background = 'var(--tmdb-bg)'
+                                e.currentTarget.style.borderColor = 'var(--tmdb-border)'
                               }}
                             >
                               TMDB {result.tmdb.tmdb_id}

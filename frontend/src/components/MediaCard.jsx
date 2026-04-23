@@ -32,9 +32,9 @@ export default function MediaCard({ item, onClick, compact = false }) {
       onClick={() => onClick?.(item)}
       className="group relative flex cursor-pointer flex-col overflow-hidden rounded-[20px] transition-all duration-200 hover:-translate-y-1 sm:rounded-[22px]"
       style={{
-        background: 'linear-gradient(180deg, rgba(20, 37, 59, 0.96) 0%, rgba(13, 26, 44, 0.98) 100%)',
+        background: 'var(--gradient-panel-subtle)',
         border: '1px solid var(--color-border)',
-        boxShadow: '0 18px 38px rgba(3, 11, 22, 0.22)',
+        boxShadow: 'var(--shadow-soft)',
       }}
     >
       <div className="relative aspect-[2/3] overflow-hidden bg-gray-800">
@@ -54,26 +54,26 @@ export default function MediaCard({ item, onClick, compact = false }) {
 
         {item.rating > 0 && (
           <div className="absolute right-2.5 top-2.5 rounded-full px-2 py-1 text-[10px] font-bold sm:right-3 sm:top-3 sm:text-[11px]"
-            style={{ background: 'rgba(4, 11, 21, 0.84)', color: 'var(--color-warning)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            style={{ background: 'var(--pill-default-bg)', color: 'var(--color-warning)', border: '1px solid var(--border-default)' }}>
             ★ {item.rating}
           </div>
         )}
 
         <div className="absolute left-2.5 top-2.5 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] sm:left-3 sm:top-3 sm:text-[11px]"
-          style={{ background: 'rgba(4, 11, 21, 0.84)', color: 'var(--color-muted)', border: '1px solid rgba(255,255,255,0.08)' }}>
+          style={{ background: 'var(--pill-default-bg)', color: 'var(--color-muted)', border: '1px solid var(--border-default)' }}>
           {isTV ? 'TV' : '电影'}
         </div>
 
         {isTV && pct !== null && (
           <div className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full sm:bottom-2.5 sm:right-2.5"
-            style={{ background: 'rgba(4, 11, 21, 0.78)', padding: '2px 4px', border: '1px solid rgba(255,255,255,0.06)' }}>
+            style={{ background: 'var(--surface-dark-80)', padding: '2px 4px', border: '1px solid var(--surface-5)' }}>
             <RingProgress value={item.in_library_episodes} max={item.total_episodes} />
             <span className="text-[10px] font-semibold tabular-nums" style={{ color: 'var(--color-text)' }}>{pct}%</span>
           </div>
         )}
 
         <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-          style={{ background: 'linear-gradient(to top, rgba(3, 9, 17, 0.72) 0%, transparent 56%)' }} />
+          style={{ background: 'linear-gradient(to top, var(--overlay-content) 0%, transparent 56%)' }} />
       </div>
 
       <div

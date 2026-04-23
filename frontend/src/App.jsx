@@ -88,10 +88,10 @@ function MobileNav({ active, onSelect, onToggleSidebar, u115Authorized }) {
     <nav
       className="fixed bottom-0 left-0 right-0 z-40 lg:hidden"
       style={{
-        background: 'linear-gradient(180deg, rgba(10, 19, 32, 0.97) 0%, rgba(7, 14, 24, 1) 100%)',
-        borderTop: '1px solid rgba(144, 178, 221, 0.18)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
+        background: 'var(--gradient-panel-overlay)',
+        borderTop: '1px solid var(--color-border)',
+        backdropFilter: 'var(--blur-lg)',
+        WebkitBackdropFilter: 'var(--blur-lg)',
         minHeight: 'var(--mobile-nav-height)',
         paddingBottom: 'env(safe-area-inset-bottom)',
       }}
@@ -376,7 +376,7 @@ export default function App() {
       {mobileSidebarOpen && (
         <div
           className="fixed inset-0 z-[35] lg:hidden"
-          style={{ background: 'rgba(3,10,19,0.65)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
+          style={{ background: 'var(--overlay-backdrop)', backdropFilter: 'var(--blur-sm)', WebkitBackdropFilter: 'var(--blur-sm)' }}
           onClick={() => setMobileSidebarOpen(false)}
         />
       )}

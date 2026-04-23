@@ -8,15 +8,15 @@ export function StatePanel({
 }) {
   const tones = {
     neutral: {
-      background: 'rgba(255,255,255,0.03)',
+      background: 'var(--surface-2)',
       border: '1px solid var(--color-border)',
       title: 'var(--color-text)',
       description: 'var(--color-muted)',
       icon: 'var(--color-muted-soft)',
     },
     danger: {
-      background: 'rgba(239,125,117,0.08)',
-      border: '1px solid rgba(239,125,117,0.2)',
+      background: 'var(--danger-bg)',
+      border: '1px solid var(--danger-border)',
       title: 'var(--color-danger)',
       description: 'var(--color-muted)',
       icon: 'var(--color-danger)',
@@ -33,7 +33,7 @@ export function StatePanel({
       {icon ? (
         <div
           className={`mb-4 flex items-center justify-center rounded-full ${compact ? 'size-14 text-3xl' : 'size-20 text-5xl'}`}
-          style={{ background: 'rgba(255,255,255,0.03)', color: palette.icon }}
+          style={{ background: 'var(--surface-2)', color: palette.icon }}
         >
           {icon}
         </div>
@@ -55,14 +55,14 @@ export function SkeletonPanel({ rows = 3, compact = false }) {
   return (
     <div
       className={`rounded-[24px] border px-5 ${compact ? 'py-8' : 'py-10'}`}
-      style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--color-border)' }}
+      style={{ background: 'var(--surface-2)', borderColor: 'var(--color-border)' }}
     >
       <div className="animate-pulse space-y-4">
         {Array.from({ length: rows }).map((_, index) => (
           <div
             key={index}
             className="h-5 rounded-full"
-            style={{ width: `${72 - index * 10}%`, background: 'rgba(255,255,255,0.08)' }}
+            style={{ width: `${72 - index * 10}%`, background: 'var(--surface-3)' }}
           />
         ))}
       </div>

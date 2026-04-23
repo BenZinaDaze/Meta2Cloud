@@ -13,7 +13,7 @@ function Dropdown({ value, onChange, options, label = '' }) {
         onClick={() => setOpen((prev) => !prev)}
         className="flex min-w-[148px] items-center justify-between gap-3 rounded-full px-4 py-2 text-sm outline-none transition-all duration-150"
         style={{
-          background: 'rgba(255,255,255,0.03)',
+          background: 'var(--surface-2)',
           border: '1px solid var(--color-border)',
           color: 'var(--color-text)',
         }}
@@ -34,10 +34,10 @@ function Dropdown({ value, onChange, options, label = '' }) {
           <div
             className="absolute right-0 z-20 mt-2 min-w-full overflow-hidden rounded-[20px] p-2"
             style={{
-              background: 'linear-gradient(180deg, rgba(20, 37, 59, 0.98) 0%, rgba(14, 28, 46, 0.99) 100%)',
+              background: 'var(--gradient-panel-subtle)',
               border: '1px solid var(--color-border)',
               boxShadow: 'var(--shadow-soft)',
-              backdropFilter: 'blur(18px)',
+              backdropFilter: 'var(--blur-lg)',
             }}
           >
             {options.map((option) => {
@@ -53,8 +53,8 @@ function Dropdown({ value, onChange, options, label = '' }) {
                   className="flex w-full items-center rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all duration-150"
                   style={{
                     color: active ? 'var(--color-accent-hover)' : 'var(--color-text)',
-                    background: active ? 'rgba(200, 146, 77, 0.14)' : 'transparent',
-                    border: active ? '1px solid rgba(200, 146, 77, 0.22)' : '1px solid transparent',
+                    background: active ? 'var(--accent-medium)' : 'transparent',
+                    border: active ? '1px solid var(--accent-border)' : '1px solid transparent',
                   }}
                 >
                   {option.label}
@@ -84,7 +84,7 @@ function SearchField({ value, onChange }) {
       placeholder="搜索日志"
       className="w-full flex-1 rounded-full px-4 py-2 text-sm outline-none sm:min-w-[240px]"
       style={{
-        background: 'rgba(255,255,255,0.03)',
+        background: 'var(--surface-2)',
         border: '1px solid var(--color-border)',
         color: 'var(--color-text)',
       }}
@@ -280,9 +280,9 @@ export default function LogsPage() {
               <span
                 className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold"
                 style={{
-                  background: 'rgba(74, 222, 128, 0.12)',
-                  border: '1px solid rgba(74, 222, 128, 0.35)',
-                  color: '#4ade80',
+                  background: 'var(--success-bg)',
+                  border: '1px solid var(--success-border)',
+                  color: 'var(--color-success)',
                   animation: 'pulse 1.5s ease-in-out infinite',
                 }}
               >
@@ -291,7 +291,7 @@ export default function LogsPage() {
                     width: 7,
                     height: 7,
                     borderRadius: '50%',
-                    background: '#4ade80',
+                    background: 'var(--color-success)',
                     display: 'inline-block',
                     animation: 'pulse 1.5s ease-in-out infinite',
                   }}
@@ -323,7 +323,7 @@ export default function LogsPage() {
               disabled={refreshing || loading}
               className="flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all duration-150"
               style={{
-                background: 'rgba(255,255,255,0.05)',
+                background: 'var(--surface-3)',
                 border: '1px solid var(--color-border)',
                 color: 'var(--color-text)',
                 opacity: refreshing || loading ? 0.5 : 1,
@@ -353,7 +353,7 @@ export default function LogsPage() {
       <section
         className="rounded-[28px] px-6 py-6"
         style={{
-          background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.96) 0%, rgba(10, 19, 32, 0.98) 100%)',
+          background: 'var(--gradient-panel)',
           border: '1px solid var(--color-border)',
           boxShadow: 'var(--shadow-soft)',
         }}
@@ -363,7 +363,7 @@ export default function LogsPage() {
             <h2 className="text-lg font-semibold" style={{ color: 'var(--color-text)' }}>日志内容</h2>
             <p className="mt-1 text-sm" style={{ color: 'var(--color-muted)' }}>
               最新 500 条日志，当前显示 {filteredLines.length} 条
-              {isLive && <span style={{ color: '#4ade80' }}> · 整理中，每 2 秒自动刷新</span>}
+              {isLive && <span style={{ color: 'var(--color-success)' }}> · 整理中，每 2 秒自动刷新</span>}
             </p>
           </div>
         </div>
@@ -393,7 +393,7 @@ export default function LogsPage() {
           <div
             className="overflow-x-auto rounded-[22px] px-5 py-4"
             style={{
-              background: 'rgba(6, 13, 24, 0.72)',
+              background: 'var(--surface-dark-72)',
               border: '1px solid var(--color-border)',
             }}
           >

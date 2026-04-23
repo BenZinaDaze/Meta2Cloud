@@ -20,7 +20,7 @@ function StatCard({ label, value, sub, action }) {
     <div
       className="flex items-center justify-between gap-2 rounded-[20px] px-4 py-3 sm:rounded-[24px] sm:px-5 sm:py-5"
       style={{
-        background: 'linear-gradient(180deg, rgba(20, 37, 59, 0.96) 0%, rgba(14, 28, 46, 0.98) 100%)',
+        background: 'var(--gradient-panel-subtle)',
         border: '1px solid var(--color-border)',
         boxShadow: 'var(--shadow-soft)',
       }}
@@ -49,14 +49,14 @@ function SectionRow({ title, count, items, onSelect, onViewAll }) {
       <div className="mb-5 flex items-center gap-3">
         <h2 className="shrink-0 text-[22px] font-bold" style={{ color: 'var(--color-text)' }}>{title}</h2>
         <span className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em]"
-          style={{ background: 'rgba(255,255,255,0.03)', color: 'var(--color-muted)' }}>
+          style={{ background: 'var(--surface-2)', color: 'var(--color-muted)' }}>
           {count}
         </span>
         <div className="h-px flex-1" style={{ background: 'linear-gradient(90deg, rgba(144, 178, 221, 0.2) 0%, rgba(144, 178, 221, 0.02) 100%)' }} />
         <button
           onClick={onViewAll}
           className="flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-150 hover:opacity-80"
-          style={{ background: 'rgba(255,255,255,0.03)', color: 'var(--color-accent-hover)', border: '1px solid var(--color-border)' }}
+          style={{ background: 'var(--surface-2)', color: 'var(--color-accent-hover)', border: '1px solid var(--color-border)' }}
         >
           查看全部
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -192,7 +192,7 @@ export default function LibraryPage({ filter, onChangeFilter, onRefresh, refresh
             onChange={e => setSearch(e.target.value)}
             className="min-h-11 w-full rounded-full py-3 pl-10 pr-4 text-sm outline-none transition-all sm:w-72"
             style={{
-              background: 'rgba(255,255,255,0.03)',
+              background: 'var(--surface-2)',
               border: '1px solid var(--color-border)',
               color: 'var(--color-text)',
             }}
@@ -216,12 +216,12 @@ export default function LibraryPage({ filter, onChangeFilter, onRefresh, refresh
                 width: 38,
                 height: 38,
                 background: refreshing
-                  ? 'rgba(200, 146, 77, 0.16)'
-                  : 'linear-gradient(135deg, var(--color-accent) 0%, #b37533 100%)',
+                  ? 'var(--accent-medium)'
+                  : 'var(--gradient-accent-dark)',
                 color: '#fff',
                 cursor: refreshing ? 'not-allowed' : 'pointer',
                 border: 'none',
-                boxShadow: refreshing ? 'none' : '0 6px 16px rgba(200, 146, 77, 0.3)',
+                boxShadow: refreshing ? 'none' : 'var(--shadow-accent)',
                 flexShrink: 0,
               }}
             >

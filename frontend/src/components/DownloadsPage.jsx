@@ -57,7 +57,7 @@ function SummaryCard({ label, value, sub }) {
     <div
       className="relative flex min-h-[132px] flex-col justify-between gap-3 rounded-[24px] px-5 py-5"
       style={{
-        background: 'linear-gradient(180deg, rgba(20, 37, 59, 0.96) 0%, rgba(14, 28, 46, 0.98) 100%)',
+        background: 'var(--gradient-panel-subtle)',
         border: '1px solid var(--color-border)',
         boxShadow: 'var(--shadow-soft)',
       }}
@@ -78,8 +78,8 @@ function ToolButton({ children, onClick, danger = false, disabled = false, loadi
       disabled={disabled || loading}
       className="min-h-11 rounded-full px-3.5 py-2 text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40"
       style={{
-        background: danger ? 'rgba(239, 125, 117, 0.12)' : 'rgba(255,255,255,0.03)',
-        border: danger ? '1px solid rgba(239, 125, 117, 0.28)' : '1px solid var(--color-border)',
+        background: danger ? 'var(--danger-soft)' : 'var(--surface-2)',
+        border: danger ? '1px solid var(--danger-strong)' : '1px solid var(--color-border)',
         color: danger ? 'var(--color-danger)' : 'var(--color-text)',
       }}
     >
@@ -102,8 +102,8 @@ function QueueTab({ active, label, count, onClick }) {
       className="min-h-11 rounded-full px-4 py-2 text-sm font-medium transition-all duration-150"
       style={{
         color: active ? 'var(--color-accent-hover)' : 'var(--color-muted)',
-        background: active ? 'rgba(200, 146, 77, 0.14)' : 'rgba(255,255,255,0.03)',
-        border: active ? '1px solid rgba(200, 146, 77, 0.22)' : '1px solid var(--color-border)',
+        background: active ? 'var(--accent-medium)' : 'var(--surface-2)',
+        border: active ? '1px solid var(--accent-border)' : '1px solid var(--color-border)',
       }}
     >
       {label} · {count}
@@ -113,7 +113,7 @@ function QueueTab({ active, label, count, onClick }) {
 
 function DetailRow({ label, value }) {
   return (
-    <div className="rounded-2xl px-4 py-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)' }}>
+    <div className="rounded-2xl px-4 py-3" style={{ background: 'var(--surface-2)', border: '1px solid var(--color-border)' }}>
       <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: 'var(--color-muted-soft)' }}>{label}</div>
       <div className="mt-1 text-sm break-all" style={{ color: 'var(--color-text)' }}>{value || '-'}</div>
     </div>
@@ -126,7 +126,7 @@ function ConfirmModal({ open, title, message, confirmLabel, onConfirm, onCancel,
   return createPortal(
     <div
       className="fixed inset-0 z-[130] flex items-center justify-center px-5"
-      style={{ background: 'rgba(2,8,18,0.78)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}
+      style={{ background: 'rgba(2,8,18,0.78)', backdropFilter: 'var(--blur-md)', WebkitBackdropFilter: 'var(--blur-md)' }}
       onClick={loading ? undefined : onCancel}
     >
       <div
@@ -171,13 +171,13 @@ function TaskDetailModal({ task, onClose, onPause, onResume, onRemove, onRetry, 
   return createPortal(
     <div
       className="fixed inset-0 z-[120] flex items-end justify-center overflow-y-auto p-0 sm:items-start sm:p-4 sm:pt-24"
-      style={{ background: 'rgba(2,8,18,0.78)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}
+      style={{ background: 'rgba(2,8,18,0.78)', backdropFilter: 'var(--blur-md)', WebkitBackdropFilter: 'var(--blur-md)' }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
         className="relative flex w-full max-w-[1180px] flex-col overflow-hidden rounded-t-[28px] sm:rounded-[32px]"
         style={{
-          background: 'linear-gradient(180deg, rgba(15,27,45,0.98) 0%, rgba(11,22,37,0.98) 100%)',
+          background: 'var(--gradient-panel)',
           border: '1px solid var(--color-border)',
           boxShadow: 'var(--shadow-strong)',
           maxHeight: 'calc(100dvh - env(safe-area-inset-top) - 0.75rem)',
@@ -197,7 +197,7 @@ function TaskDetailModal({ task, onClose, onPause, onResume, onRemove, onRetry, 
               type="button"
               onClick={onClose}
               className="flex size-11 items-center justify-center rounded-2xl transition-all duration-150"
-              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
+              style={{ background: 'var(--surface-3)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
               aria-label="关闭下载详情"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
@@ -213,7 +213,7 @@ function TaskDetailModal({ task, onClose, onPause, onResume, onRemove, onRetry, 
             <div className="mb-1.5 flex flex-wrap items-center gap-2">
               <span className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.14em]"
                 style={{
-                  background: errored ? 'rgba(239,125,117,0.12)' : 'rgba(200,146,77,0.12)',
+                  background: errored ? 'var(--danger-soft)' : 'var(--accent-soft)',
                   color: errored ? 'var(--color-danger)' : 'var(--color-accent-hover)',
                 }}>
                 {statusLabel(task.status)}
@@ -235,12 +235,12 @@ function TaskDetailModal({ task, onClose, onPause, onResume, onRemove, onRetry, 
               <span>{formatBytes(task.completedLength)} / {formatBytes(task.totalLength)}</span>
               <span>{task.progress.toFixed(1)}%</span>
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
+            <div className="h-1.5 overflow-hidden rounded-full" style={{ background: 'var(--surface-5)' }}>
               <div className="h-full rounded-full" style={{
                 width: `${Math.max(task.progress, task.status === 'complete' ? 100 : 0)}%`,
                 background: errored
                   ? 'linear-gradient(90deg,rgba(239,125,117,.9),rgba(239,125,117,.65))'
-                  : 'linear-gradient(90deg,var(--color-accent),#dfb36f)',
+                  : 'var(--gradient-accent)',
               }} />
             </div>
           </div>
@@ -259,7 +259,7 @@ function TaskDetailModal({ task, onClose, onPause, onResume, onRemove, onRetry, 
 
           {task.errorMessage && (
             <div className="mb-5 rounded-2xl px-4 py-3 text-sm"
-              style={{ background: 'rgba(239,125,117,0.08)', border: '1px solid rgba(239,125,117,0.2)', color: 'var(--color-danger)' }}>
+              style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-border)', color: 'var(--color-danger)' }}>
               {task.errorMessage}
             </div>
           )}
@@ -280,7 +280,7 @@ function TaskDetailModal({ task, onClose, onPause, onResume, onRemove, onRetry, 
                       <button
                         onClick={(e) => { e.stopPropagation(); onParseFile?.(getFileName(file.path) || `文件 ${index + 1}`) }}
                         className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-all hover:opacity-80"
-                        style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--color-border)', color: 'var(--color-accent-hover)' }}
+                        style={{ background: 'var(--surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-accent-hover)' }}
                         title="解析此文件"
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -306,7 +306,7 @@ function TaskDetailModal({ task, onClose, onPause, onResume, onRemove, onRetry, 
               <div className="space-y-2">
                 {task.uris.map((uri) => (
                   <div key={uri} className="rounded-2xl px-4 py-3 text-sm break-all"
-                    style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                    style={{ background: 'var(--surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
                     {uri}
                   </div>
                 ))}
@@ -333,7 +333,7 @@ function TaskCard({ task, onPause, onResume, onRemove, onRetry, onOpen, pendingA
       className="rounded-[22px] px-4 py-4 transition-all duration-150 sm:rounded-[24px] sm:px-5 sm:py-5"
       onClick={() => onOpen(task)}
       style={{
-        background: 'linear-gradient(180deg, rgba(20, 37, 59, 0.82) 0%, rgba(13, 24, 39, 0.96) 100%)',
+        background: 'var(--gradient-panel-subtle)',
         border: '1px solid var(--color-border)',
         cursor: 'pointer',
       }}
@@ -350,10 +350,10 @@ function TaskCard({ task, onPause, onResume, onRemove, onRetry, onOpen, pendingA
               style={{
                 width: 20,
                 height: 20,
-                background: selected ? 'var(--color-accent)' : 'rgba(255,255,255,0.06)',
+                background: selected ? 'var(--color-accent)' : 'var(--surface-5)',
                 border: selected ? 'none' : '1px solid var(--color-border)',
                 color: '#fff',
-                boxShadow: selected ? '0 0 10px rgba(200,146,77,0.3)' : 'none',
+                boxShadow: selected ? 'var(--shadow-accent)' : 'none',
               }}
             >
               {selected && (
@@ -385,33 +385,33 @@ function TaskCard({ task, onPause, onResume, onRemove, onRetry, onOpen, pendingA
               <span>{formatBytes(task.completedLength)} / {formatBytes(task.totalLength)}</span>
               <span>{task.progress.toFixed(1)}%</span>
             </div>
-            <div className="h-2 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
+            <div className="h-2 overflow-hidden rounded-full" style={{ background: 'var(--surface-5)' }}>
               <div
                 className="h-full rounded-full"
                 style={{
                   width: `${Math.max(task.progress, task.status === 'complete' ? 100 : 0)}%`,
                   background: errored
                     ? 'linear-gradient(90deg, rgba(239,125,117,0.9) 0%, rgba(239,125,117,0.65) 100%)'
-                    : 'linear-gradient(90deg, var(--color-accent) 0%, #dfb36f 100%)',
+                    : 'var(--gradient-accent)',
                 }}
               />
             </div>
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:mt-4 sm:gap-3 md:grid-cols-4">
-            <div className="rounded-2xl px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}>
+            <div className="rounded-2xl px-3 py-2.5" style={{ background: 'var(--surface-2)', border: '1px solid var(--color-border)' }}>
               <div className="text-[11px]" style={{ color: 'var(--color-muted-soft)' }}>下载速度</div>
               <div className="mt-1 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{formatSpeed(task.downloadSpeed)}</div>
             </div>
-            <div className="hidden rounded-2xl px-3 py-2.5 md:block" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}>
+            <div className="hidden rounded-2xl px-3 py-2.5 md:block" style={{ background: 'var(--surface-2)', border: '1px solid var(--color-border)' }}>
               <div className="text-[11px]" style={{ color: 'var(--color-muted-soft)' }}>上传速度</div>
               <div className="mt-1 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{formatSpeed(task.uploadSpeed)}</div>
             </div>
-            <div className="rounded-2xl px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}>
+            <div className="rounded-2xl px-3 py-2.5" style={{ background: 'var(--surface-2)', border: '1px solid var(--color-border)' }}>
               <div className="text-[11px]" style={{ color: 'var(--color-muted-soft)' }}>文件数</div>
               <div className="mt-1 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{task.fileCount}</div>
             </div>
-            <div className="hidden rounded-2xl px-3 py-2.5 md:block" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}>
+            <div className="hidden rounded-2xl px-3 py-2.5 md:block" style={{ background: 'var(--surface-2)', border: '1px solid var(--color-border)' }}>
               <div className="text-[11px]" style={{ color: 'var(--color-muted-soft)' }}>连接数</div>
               <div className="mt-1 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{task.connections}</div>
             </div>
@@ -419,7 +419,7 @@ function TaskCard({ task, onPause, onResume, onRemove, onRetry, onOpen, pendingA
 
           {task.errorMessage && (
             <div className="mt-4 rounded-2xl px-4 py-3 text-sm"
-              style={{ background: 'rgba(239,125,117,0.08)', border: '1px solid rgba(239,125,117,0.2)', color: 'var(--color-danger)' }}>
+              style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-border)', color: 'var(--color-danger)' }}>
               {task.errorMessage}
             </div>
           )}
@@ -460,7 +460,7 @@ function ActionPanel({ uriInput, setUriInput, onSubmitUri, onTorrentChange, torr
         <button
           onClick={onSubmitUri}
           className="min-h-11 rounded-full px-4 py-2 text-sm font-semibold"
-          style={{ background: 'linear-gradient(135deg, var(--color-accent) 0%, #b37533 100%)', color: '#fff', border: 'none' }}
+          style={{ background: 'var(--gradient-accent-dark)', color: '#fff', border: 'none' }}
         >
           添加链接下载
         </button>

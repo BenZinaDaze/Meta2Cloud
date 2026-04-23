@@ -7,11 +7,11 @@ export default function Topbar({ onOpenParseTest, onToggleSidebar, onToast }) {
       className="app-topbar fixed left-3 right-3 top-3 z-50 flex h-14 items-center justify-between rounded-[22px] px-3 sm:left-5 sm:right-5 sm:top-5 sm:h-16 sm:rounded-[26px] sm:px-5"
       style={{
         top: 'var(--mobile-topbar-offset)',
-        background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.995) 0%, rgba(10, 19, 32, 1) 100%)',
+        background: 'var(--gradient-panel)',
         border: '1px solid var(--color-border-strong)',
-        boxShadow: '0 20px 48px rgba(2, 8, 18, 0.58)',
-        backdropFilter: 'blur(24px)',
-        WebkitBackdropFilter: 'blur(24px)',
+        boxShadow: 'var(--shadow-strong)',
+        backdropFilter: 'var(--blur-lg)',
+        WebkitBackdropFilter: 'var(--blur-lg)',
       }}
     >
       <div className="flex items-center gap-3">
@@ -20,7 +20,7 @@ export default function Topbar({ onOpenParseTest, onToggleSidebar, onToast }) {
           onClick={onToggleSidebar}
           className="hidden h-11 w-11 items-center justify-center rounded-2xl transition-all duration-150 sm:flex lg:hidden"
           style={{
-            background: 'rgba(255,255,255,0.04)',
+            background: 'var(--surface-3)',
             border: '1px solid var(--color-border)',
             color: 'var(--color-muted)',
           }}
@@ -36,7 +36,7 @@ export default function Topbar({ onOpenParseTest, onToggleSidebar, onToast }) {
 
         <div
           className="flex size-9 items-center justify-center rounded-xl sm:size-10 sm:rounded-2xl"
-          style={{ boxShadow: '0 10px 24px rgba(200, 146, 77, 0.22)' }}
+          style={{ boxShadow: 'var(--logo-shadow)' }}
         >
           <BrandMark className="size-9 sm:size-10" compact />
         </div>
@@ -54,7 +54,7 @@ export default function Topbar({ onOpenParseTest, onToggleSidebar, onToast }) {
         <div
           className="hidden rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] md:block"
           style={{
-            background: 'rgba(255,255,255,0.03)',
+            background: 'var(--surface-2)',
             border: '1px solid var(--color-border)',
             color: 'var(--color-muted)',
           }}
@@ -73,8 +73,8 @@ export default function Topbar({ onOpenParseTest, onToggleSidebar, onToast }) {
           className="flex min-h-11 items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold transition-all duration-150 sm:px-4"
           style={{
             color: 'var(--color-accent-hover)',
-            background: 'linear-gradient(135deg, rgba(200, 146, 77, 0.16) 0%, rgba(200, 146, 77, 0.05) 100%)',
-            border: '1px solid rgba(200, 146, 77, 0.3)',
+            background: 'linear-gradient(135deg, var(--accent-medium) 0%, var(--accent-bg) 100%)',
+            border: '1px solid var(--accent-border)',
           }}
           title="触发整理"
         >
@@ -89,7 +89,7 @@ export default function Topbar({ onOpenParseTest, onToggleSidebar, onToast }) {
           className="hidden min-h-11 items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold transition-all duration-150 min-[430px]:flex sm:px-4"
           style={{
             color: 'var(--color-text)',
-            background: 'rgba(255,255,255,0.03)',
+            background: 'var(--surface-2)',
             border: '1px solid var(--color-border)',
           }}
           title="解析测试"

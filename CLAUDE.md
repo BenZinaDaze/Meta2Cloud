@@ -10,18 +10,22 @@ Meta2Cloud is a media organization tool that automatically organizes movies and 
 
 ### Backend (Python/FastAPI)
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies (using uv)
+uv sync
 
 # Run development server
-uvicorn webui.app:app --host 0.0.0.0 --port 38765 --reload
+uv run uvicorn webui.app:app --host 0.0.0.0 --port 38765 --reload
 
 # Run pipeline (media organization)
-python pipeline.py                    # Production run
-python pipeline.py --dry-run          # Preview without changes
-python pipeline.py --storage pan115   # Use 115 cloud drive
-python pipeline.py --no-tmdb          # Skip TMDB lookup
-python pipeline.py --no-images        # Skip image downloads
+uv run python -m core                    # Production run
+uv run python -m core --dry-run          # Preview without changes
+uv run python -m core --storage pan115   # Use 115 cloud drive
+uv run python -m core --no-tmdb          # Skip TMDB lookup
+uv run python -m core --no-images        # Skip image downloads
+
+# Run tests
+uv run pytest test/                      # All tests
+uv run pytest test/test_parser.py -v     # Single test file with verbose
 ```
 
 ### Frontend (React/Vite)
@@ -37,7 +41,7 @@ npm run lint     # ESLint
 ```bash
 docker compose up -d                  # Start container
 docker logs -f meta2cloud             # View logs
-docker exec meta2cloud python pipeline.py --dry-run  # Run pipeline in container
+docker exec meta2cloud python -m core --dry-run  # Run pipeline in container
 ```
 
 ## Architecture
@@ -75,7 +79,7 @@ docker exec meta2cloud python pipeline.py --dry-run  # Run pipeline in container
 - `mediaparser/tmdb.py` - TMDB API client
 
 ### Pipeline Flow
-`pipeline.py` orchestrates: Scan → Parse → TMDB → NFO → Images → Move files
+`core/pipeline.py` orchestrates: Scan → Parse → TMDB → NFO → Images → Move files
 
 ## Key Patterns
 
@@ -98,3 +102,4 @@ Config stored in YAML files (`config/config.yaml`, `config/parser-rules.yaml`). 
 - Backend runs on port 38765
 - Frontend dev server proxies `/api` to backend
 - Database files stored in `data/` directory at runtime
+- Project uses uv for Python package management (migrated from pip)

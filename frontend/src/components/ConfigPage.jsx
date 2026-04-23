@@ -326,7 +326,7 @@ function ListField({ value = [], onChange }) {
               <button
                 onClick={() => onChange(value.filter((_, j) => j !== i))}
                 className="flex-shrink-0 flex items-center justify-center w-5 h-5 rounded-md transition-all hover:opacity-70"
-                style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: 'none' }}
+                style={{ background: 'var(--danger-bg)', color: 'var(--color-danger)', border: 'none' }}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -806,11 +806,11 @@ export default function ConfigPage({ onAria2EnabledChange = null, page = 'genera
         <div className="ml-auto flex items-center gap-2">
           {isDirty && !saving && (
             <span className="text-xs px-2 py-1 rounded-full"
-              style={{ background: 'rgba(234,179,8,0.15)', color: '#eab308' }}>未保存</span>
+              style={{ background: 'var(--warning-bg)', color: 'var(--warning-bright)' }}>未保存</span>
           )}
           {saved && (
             <span className="text-xs px-2 py-1 rounded-full"
-              style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>✓ 已保存</span>
+              style={{ background: 'var(--success-bg)', color: 'var(--color-success)' }}>✓ 已保存</span>
           )}
           <button onClick={() => { setCfg(original); setError(null) }}
             disabled={!isDirty || saving}
@@ -837,7 +837,7 @@ export default function ConfigPage({ onAria2EnabledChange = null, page = 'genera
 
       {error && (
         <div className="mb-5 px-4 py-3 rounded-lg text-sm"
-          style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444' }}>
+          style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-border)', color: 'var(--color-danger)' }}>
           {error}
         </div>
       )}
@@ -857,7 +857,7 @@ export default function ConfigPage({ onAria2EnabledChange = null, page = 'genera
               </div>
               <div
                 className="text-xs px-3 py-2 rounded-xl"
-                style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }}
+                style={{ background: 'var(--surface-3)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }}
               >
                 当前 {cfg?.parser?.custom_words?.length ?? 0} 条规则
               </div>
@@ -915,9 +915,9 @@ export default function ConfigPage({ onAria2EnabledChange = null, page = 'genera
                     <span className="text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5"
                       style={{
                         background: (cfg?.storage?.primary || 'google_drive') === 'google_drive'
-                          ? 'rgba(66,133,244,0.12)' : 'rgba(34,197,94,0.12)',
+                          ? 'var(--info-bg)' : 'var(--success-bg)',
                         color: (cfg?.storage?.primary || 'google_drive') === 'google_drive'
-                          ? '#4285f4' : '#22c55e',
+                          ? 'var(--info)' : 'var(--color-success)',
                       }}>
                       <span style={{
                         width: 6, height: 6, borderRadius: '50%',
@@ -961,8 +961,8 @@ export default function ConfigPage({ onAria2EnabledChange = null, page = 'genera
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs px-2 py-1 rounded-full"
                     style={{
-                      background: driveOauth?.authorized ? 'rgba(34,197,94,0.15)' : 'rgba(148,163,184,0.14)',
-                      color: driveOauth?.authorized ? '#22c55e' : 'var(--color-muted)',
+                      background: driveOauth?.authorized ? 'var(--success-bg)' : 'var(--surface-2)',
+                      color: driveOauth?.authorized ? 'var(--color-success)' : 'var(--color-muted)',
                     }}>
                     {driveOauth?.authorized ? '已授权' : '未授权'}
                   </span>
@@ -971,7 +971,7 @@ export default function ConfigPage({ onAria2EnabledChange = null, page = 'genera
                     disabled={driveTestBusy || driveOauth?.credentials_exists === false}
                     className="text-xs px-3 py-1 rounded-full transition-all disabled:opacity-40"
                     style={{
-                      background: 'linear-gradient(135deg, var(--color-accent) 0%, #b37533 100%)',
+                      background: 'var(--gradient-accent-dark)',
                       border: 'none',
                       color: '#fff',
                     }}
@@ -980,13 +980,13 @@ export default function ConfigPage({ onAria2EnabledChange = null, page = 'genera
                   </button>
                   {driveOauth?.credentials_exists === false && (
                     <span className="text-xs px-2 py-1 rounded-full"
-                      style={{ background: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>
+                      style={{ background: 'var(--danger-bg)', color: 'var(--color-danger)' }}>
                       未找到 credentials.json
                     </span>
                   )}
                   {driveOauth?.token_exists && !driveOauth?.authorized && (
                     <span className="text-xs px-2 py-1 rounded-full"
-                      style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>
+                      style={{ background: 'var(--warning-bg)', color: 'var(--warning-bright)' }}>
                       token 存在但当前不可用
                     </span>
                   )}
@@ -995,9 +995,9 @@ export default function ConfigPage({ onAria2EnabledChange = null, page = 'genera
                 {driveOauthMessage && (
                   <div className="px-3 py-2 rounded-lg text-xs"
                     style={{
-                      background: driveOauthMessage.type === 'success' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.1)',
-                      border: `1px solid ${driveOauthMessage.type === 'success' ? 'rgba(34,197,94,0.28)' : 'rgba(239,68,68,0.25)'}`,
-                      color: driveOauthMessage.type === 'success' ? '#22c55e' : '#ef4444',
+                      background: driveOauthMessage.type === 'success' ? 'var(--success-bg)' : 'var(--danger-bg)',
+                      border: `1px solid ${driveOauthMessage.type === 'success' ? 'var(--success-border)' : 'var(--danger-border)'}`,
+                      color: driveOauthMessage.type === 'success' ? 'var(--color-success)' : 'var(--color-danger)',
                     }}>
                     {driveOauthMessage.text}
                   </div>
@@ -1032,14 +1032,14 @@ export default function ConfigPage({ onAria2EnabledChange = null, page = 'genera
                     onClick={handleU115CookieTest}
                     disabled={u115CookieTestBusy || !cfg?.u115?.cookie?.trim()}
                     className="text-xs px-3 py-1 rounded-full transition-all disabled:opacity-40"
-                    style={{ background: 'linear-gradient(135deg, var(--color-accent) 0%, #b37533 100%)', border: 'none', color: '#fff' }}
+                    style={{ background: 'var(--gradient-accent-dark)', border: 'none', color: '#fff' }}
                   >
                     {u115CookieTestBusy ? '测试中…' : '测试 Cookie'}
                   </button>
                   {u115CookieMessage && (
                     <span
                       className="text-xs"
-                      style={{ color: u115CookieMessage.type === 'success' ? '#22c55e' : '#ef4444' }}
+                      style={{ color: u115CookieMessage.type === 'success' ? 'var(--color-success)' : 'var(--color-danger)' }}
                     >
                       {u115CookieMessage.text}
                     </span>
@@ -1059,11 +1059,11 @@ export default function ConfigPage({ onAria2EnabledChange = null, page = 'genera
                   <span className="text-xs px-2 py-1 rounded-full"
                     style={{
                       background: u115StatusLoading
-                        ? 'rgba(59,130,246,0.12)'
-                        : (u115Oauth?.authorized ? 'rgba(34,197,94,0.15)' : 'rgba(148,163,184,0.14)'),
+                        ? 'var(--info-bg)'
+                        : (u115Oauth?.authorized ? 'var(--success-bg)' : 'var(--surface-2)'),
                       color: u115StatusLoading
-                        ? '#3b82f6'
-                        : (u115Oauth?.authorized ? '#22c55e' : 'var(--color-muted)'),
+                        ? 'var(--info)'
+                        : (u115Oauth?.authorized ? 'var(--color-success)' : 'var(--color-muted)'),
                     }}>
                     {u115StatusLoading ? '刷新授权中' : (u115Oauth?.authorized ? '已授权' : '未授权')}
                   </span>
@@ -1071,7 +1071,7 @@ export default function ConfigPage({ onAria2EnabledChange = null, page = 'genera
                     onClick={handleU115CreateQr}
                     disabled={u115AuthBusy || !cfg?.u115?.client_id}
                     className="text-xs px-3 py-1 rounded-full transition-all disabled:opacity-40"
-                    style={{ background: 'linear-gradient(135deg, var(--color-accent) 0%, #b37533 100%)', border: 'none', color: '#fff' }}
+                    style={{ background: 'var(--gradient-accent-dark)', border: 'none', color: '#fff' }}
                   >
                     {u115AuthBusy ? '处理中…' : (u115Polling ? '等待扫码中…' : '开始授权')}
                   </button>
@@ -1093,7 +1093,7 @@ export default function ConfigPage({ onAria2EnabledChange = null, page = 'genera
                       <img src={u115QrPreviewUrl} alt="115 OAuth QR Code" className="w-44 h-44 rounded-lg" />
                     ) : u115QrPreviewError ? (
                       <div className="w-44 h-44 rounded-lg flex items-center justify-center text-xs text-center p-3"
-                        style={{ background: 'rgba(239,68,68,0.08)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.18)' }}>
+                        style={{ background: 'var(--danger-bg)', color: 'var(--color-danger)', border: '1px solid var(--danger-border)' }}>
                         {u115QrPreviewError}
                       </div>
                     ) : (
@@ -1108,9 +1108,9 @@ export default function ConfigPage({ onAria2EnabledChange = null, page = 'genera
                 {u115OauthMessage && (
                   <div className="px-3 py-2 rounded-lg text-xs"
                     style={{
-                      background: u115OauthMessage.type === 'success' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.1)',
-                      border: `1px solid ${u115OauthMessage.type === 'success' ? 'rgba(34,197,94,0.28)' : 'rgba(239,68,68,0.25)'}`,
-                      color: u115OauthMessage.type === 'success' ? '#22c55e' : '#ef4444',
+                      background: u115OauthMessage.type === 'success' ? 'var(--success-bg)' : 'var(--danger-bg)',
+                      border: `1px solid ${u115OauthMessage.type === 'success' ? 'var(--success-border)' : 'var(--danger-border)'}`,
+                      color: u115OauthMessage.type === 'success' ? 'var(--color-success)' : 'var(--color-danger)',
                     }}>
                     {u115OauthMessage.text}
                   </div>

@@ -114,7 +114,7 @@ export default function ScraperSearch({ onToast, initialSearchItem, onClearIniti
               placeholder="搜索任何电影或电视剧..."
               className="min-h-12 w-full rounded-full py-3.5 pl-12 pr-[88px] text-sm outline-none transition-all min-[430px]:pr-[100px]"
               style={{
-                background: 'rgba(255,255,255,0.03)',
+                background: 'var(--surface-2)',
                 border: '1px solid var(--color-border)',
                 color: 'var(--color-text)',
               }}
@@ -124,7 +124,8 @@ export default function ScraperSearch({ onToast, initialSearchItem, onClearIniti
             <button
               type="submit"
               disabled={loading}
-              className="absolute right-1.5 top-1.5 bottom-1.5 flex min-w-[72px] items-center justify-center rounded-full bg-[linear-gradient(135deg,#e3b778,#c8924d)] px-5 text-sm font-bold text-[#0A1320] shadow-[0_2px_8px_rgba(200,146,77,0.3)] transition-all hover:opacity-90 disabled:opacity-50 min-[430px]:min-w-[84px] min-[430px]:px-8"
+              className="absolute right-1.5 top-1.5 bottom-1.5 flex min-w-[72px] items-center justify-center rounded-full px-5 text-sm font-bold shadow-[0_2px_8px_rgba(200,146,77,0.3)] transition-all hover:opacity-90 disabled:opacity-50 min-[430px]:min-w-[84px] min-[430px]:px-8"
+              style={{ background: 'var(--gradient-accent)', color: 'var(--color-bg)' }}
             >
               {loading ? '搜索中...' : '搜索'}
             </button>

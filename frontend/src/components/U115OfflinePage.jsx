@@ -40,10 +40,10 @@ function formatTime(ts) {
 }
 
 function statusMeta(status) {
-  if (status === 2) return { label: '已完成', color: '#22c55e', bg: 'rgba(34,197,94,0.12)' }
-  if (status === 1) return { label: '下载中', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' }
-  if (status === -1) return { label: '失败', color: '#ef4444', bg: 'rgba(239,68,68,0.12)' }
-  return { label: '等待中', color: '#94a3b8', bg: 'rgba(148,163,184,0.12)' }
+  if (status === 2) return { label: '已完成', color: 'var(--color-success)', bg: 'var(--success-bg)' }
+  if (status === 1) return { label: '下载中', color: 'var(--info)', bg: 'var(--info-bg)' }
+  if (status === -1) return { label: '失败', color: 'var(--color-danger)', bg: 'var(--danger-soft)' }
+  return { label: '等待中', color: 'var(--color-muted)', bg: 'var(--surface-2)' }
 }
 
 function SummaryCard({ label, value, sub }) {
@@ -51,7 +51,7 @@ function SummaryCard({ label, value, sub }) {
     <div
       className="relative flex min-h-[132px] flex-col justify-between gap-3 rounded-[24px] px-5 py-5"
       style={{
-        background: 'linear-gradient(180deg, rgba(20, 37, 59, 0.96) 0%, rgba(14, 28, 46, 0.98) 100%)',
+        background: 'var(--gradient-panel-subtle)',
         border: '1px solid var(--color-border)',
         boxShadow: 'var(--shadow-soft)',
       }}
@@ -72,8 +72,8 @@ function ToolButton({ children, onClick, danger = false, disabled = false }) {
       disabled={disabled}
       className="rounded-full px-3 py-2 text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40"
       style={{
-        background: danger ? 'rgba(239, 125, 117, 0.12)' : 'rgba(255,255,255,0.03)',
-        border: danger ? '1px solid rgba(239, 125, 117, 0.28)' : '1px solid var(--color-border)',
+        background: danger ? 'var(--danger-soft)' : 'var(--surface-2)',
+        border: danger ? '1px solid var(--danger-strong)' : '1px solid var(--color-border)',
         color: danger ? 'var(--color-danger)' : 'var(--color-text)',
       }}
     >
@@ -117,7 +117,7 @@ function DeleteConfirmModal({ task, busy = false, onDeleteKeepSource, onDeleteSo
       className="fixed inset-0 z-[140] flex items-center justify-center p-4"
       style={{
         background: 'rgba(2, 8, 18, 0.78)',
-        backdropFilter: 'blur(10px)',
+        backdropFilter: 'var(--blur-md)',
         opacity: show ? 1 : 0,
         transition: 'opacity 0.2s',
       }}
@@ -125,7 +125,7 @@ function DeleteConfirmModal({ task, busy = false, onDeleteKeepSource, onDeleteSo
       <div
         className="relative w-full max-w-lg overflow-hidden rounded-[30px]"
         style={{
-          background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.98) 0%, rgba(11, 22, 37, 0.98) 100%)',
+          background: 'var(--gradient-panel)',
           border: '1px solid var(--color-border)',
           transform: show ? 'translateY(0)' : 'translateY(20px)',
           transition: 'transform 0.2s',
@@ -147,7 +147,7 @@ function DeleteConfirmModal({ task, busy = false, onDeleteKeepSource, onDeleteSo
         <div className="px-6 py-5">
           <div
             className="rounded-[22px] px-4 py-4 text-sm break-all"
-            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
+            style={{ background: 'var(--surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
           >
             {task.name || task.url || task.info_hash}
           </div>
@@ -158,7 +158,7 @@ function DeleteConfirmModal({ task, busy = false, onDeleteKeepSource, onDeleteSo
               disabled={busy}
               className="rounded-full px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-40"
               style={{
-                background: 'rgba(255,255,255,0.04)',
+                background: 'var(--surface-3)',
                 border: '1px solid var(--color-border)',
                 color: 'var(--color-text)',
               }}
@@ -170,8 +170,8 @@ function DeleteConfirmModal({ task, busy = false, onDeleteKeepSource, onDeleteSo
               disabled={busy}
               className="rounded-full px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-40"
               style={{
-                background: 'rgba(239, 125, 117, 0.12)',
-                border: '1px solid rgba(239, 125, 117, 0.28)',
+                background: 'var(--danger-soft)',
+                border: '1px solid var(--danger-strong)',
                 color: 'var(--color-danger)',
               }}
             >
@@ -183,7 +183,7 @@ function DeleteConfirmModal({ task, busy = false, onDeleteKeepSource, onDeleteSo
               className="rounded-full px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-40"
               style={{
                 background: 'transparent',
-                border: '1px solid rgba(255,255,255,0.08)',
+                border: '1px solid var(--border-default)',
                 color: 'var(--color-muted)',
               }}
             >
@@ -304,28 +304,28 @@ export default function U115OfflinePage({ onToast }) {
   const autoOrganizeState = !autoOrganizeStatus?.enabled
     ? {
         label: '已关闭',
-        color: '#94a3b8',
-        bg: 'rgba(148,163,184,0.12)',
+        color: 'var(--color-muted)',
+        bg: 'var(--surface-2)',
         desc: '自动整理未启用',
       }
     : !autoOrganizeStatus?.authorized
       ? {
           label: '未授权',
-          color: '#f59e0b',
-          bg: 'rgba(245,158,11,0.14)',
+          color: 'var(--warning-bright)',
+          bg: 'var(--warning-bg)',
           desc: '115 尚未授权，自动整理监听不会开始轮询',
         }
       : autoOrganizeStatus?.last_poll_error
         ? {
             label: '异常',
-            color: '#ef4444',
-            bg: 'rgba(239,68,68,0.12)',
+            color: 'var(--color-danger)',
+            bg: 'var(--danger-soft)',
             desc: '自动整理已启用，但最近一次轮询失败',
           }
         : {
             label: '运行中',
-            color: '#3b82f6',
-            bg: 'rgba(59,130,246,0.12)',
+            color: 'var(--info)',
+            bg: 'var(--info-bg)',
             desc: `每 ${autoOrganizeStatus?.poll_seconds ?? '-'} 秒检查一次，完成后等待 ${autoOrganizeStatus?.stable_seconds ?? '-'} 秒触发整理`,
           }
 
@@ -440,7 +440,7 @@ export default function U115OfflinePage({ onToast }) {
       <div
         className="rounded-[24px] px-5 py-5"
         style={{
-          background: 'linear-gradient(180deg, rgba(20, 37, 59, 0.88) 0%, rgba(13, 24, 39, 0.96) 100%)',
+          background: 'var(--gradient-panel-subtle)',
           border: '1px solid var(--color-border)',
           boxShadow: 'var(--shadow-soft)',
         }}
@@ -496,7 +496,7 @@ export default function U115OfflinePage({ onToast }) {
         </div>
         {autoOrganizeStatus?.last_poll_error ? (
           <div className="mt-3 rounded-[18px] px-4 py-3 text-xs break-all"
-            style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.24)', color: '#ef4444' }}>
+            style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-border)', color: 'var(--color-danger)' }}>
             最近一次轮询错误：{autoOrganizeStatus.last_poll_error}
           </div>
         ) : null}
@@ -539,7 +539,7 @@ export default function U115OfflinePage({ onToast }) {
               onClick={handleAddUrls}
               disabled={busy}
               className="rounded-full px-4 py-2 text-sm font-semibold transition-all disabled:opacity-40"
-              style={{ background: 'linear-gradient(135deg, var(--color-accent) 0%, #b37533 100%)', color: '#fff', border: 'none' }}
+              style={{ background: 'var(--gradient-accent-dark)', color: '#fff', border: 'none' }}
             >
               {busy ? '提交中…' : '提交链接'}
             </button>
@@ -584,7 +584,7 @@ export default function U115OfflinePage({ onToast }) {
                   key={task.info_hash}
                   className="rounded-[24px] px-5 py-5 transition-all duration-150"
                   style={{
-                    background: 'linear-gradient(180deg, rgba(20, 37, 59, 0.82) 0%, rgba(13, 24, 39, 0.96) 100%)',
+                    background: 'var(--gradient-panel-subtle)',
                     border: '1px solid var(--color-border)',
                     boxShadow: 'none',
                   }}
@@ -607,14 +607,14 @@ export default function U115OfflinePage({ onToast }) {
                           <span>{formatBytes(task.size)}</span>
                           <span>{Math.round(Number(task.percent_done) || 0)}%</span>
                         </div>
-                        <div className="h-1.5 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                        <div className="h-1.5 overflow-hidden rounded-full" style={{ background: 'var(--surface-5)' }}>
                           <div
                             className="h-full rounded-full"
                             style={{
                               width: `${Math.max(Math.min(Number(task.percent_done) || 0, 100), task.status === 2 ? 100 : 0)}%`,
                               background: task.status === -1
                                 ? 'linear-gradient(90deg,rgba(239,125,117,.9),rgba(239,125,117,.65))'
-                                : 'linear-gradient(90deg,var(--color-accent),#dfb36f)',
+                                : 'var(--gradient-accent)',
                             }}
                           />
                         </div>
@@ -627,10 +627,10 @@ export default function U115OfflinePage({ onToast }) {
                           onClick={() => setParseTestFile(task.name || task.url || task.info_hash || '')}
                           className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-all hover:opacity-80"
                           style={{
-                            background: 'linear-gradient(135deg, #e3b778, #c8924d)',
+                            background: 'var(--gradient-accent)',
                             border: '1px solid rgba(227,183,120,0.35)',
-                            color: '#0A1320',
-                            boxShadow: '0 4px 16px rgba(200,146,77,0.22)',
+                            color: 'var(--color-bg)',
+                            boxShadow: 'var(--shadow-accent)',
                           }}
                           title="解析此任务"
                         >

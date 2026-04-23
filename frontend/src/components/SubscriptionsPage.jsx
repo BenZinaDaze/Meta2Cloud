@@ -7,24 +7,24 @@ import { StatePanel } from './StatePanel'
 function TinyPill({ children, tone = 'default' }) {
   const styles = {
     default: {
-      background: 'rgba(4, 11, 21, 0.82)',
+      background: 'var(--pill-default-bg)',
       color: 'rgba(255,255,255,0.94)',
-      border: '1px solid rgba(255,255,255,0.12)',
+      border: '1px solid var(--pill-default-border)',
     },
     success: {
       background: 'rgba(8, 45, 28, 0.84)',
-      color: '#7ee2a8',
-      border: '1px solid rgba(74,201,126,0.3)',
+      color: 'var(--color-success)',
+      border: '1px solid var(--success-border-30)',
     },
     warning: {
-      background: 'rgba(58, 42, 8, 0.84)',
-      color: '#f5cf78',
-      border: '1px solid rgba(245,196,81,0.32)',
+      background: 'var(--warning-bg-84)',
+      color: 'var(--color-warning)',
+      border: '1px solid var(--warning-border-32)',
     },
     danger: {
-      background: 'rgba(63, 22, 20, 0.84)',
-      color: '#ff9f97',
-      border: '1px solid rgba(239,125,117,0.32)',
+      background: 'var(--danger-bg-84)',
+      color: 'var(--color-danger)',
+      border: '1px solid var(--danger-border-32)',
     },
   }[tone]
 
@@ -50,9 +50,9 @@ function SubscriptionMiniCard({ item, onEdit }) {
       onClick={() => onEdit(item)}
       className="group relative flex cursor-pointer flex-col overflow-hidden rounded-[20px] transition-all duration-200 sm:rounded-[22px]"
       style={{
-        background: 'linear-gradient(180deg, rgba(20, 37, 59, 0.96) 0%, rgba(13, 26, 44, 0.98) 100%)',
+        background: 'var(--gradient-panel-subtle)',
         border: '1px solid var(--color-border)',
-        boxShadow: '0 18px 38px rgba(3, 11, 22, 0.22)',
+        boxShadow: 'var(--shadow-soft)',
       }}
     >
       <div className="relative aspect-[2/3] overflow-hidden bg-gray-800">
@@ -83,7 +83,7 @@ function SubscriptionMiniCard({ item, onEdit }) {
 
         <div
           className="absolute inset-x-0 bottom-0 z-10 p-2.5 sm:p-3"
-          style={{ background: 'linear-gradient(to top, rgba(3, 9, 17, 0.88) 0%, rgba(3, 9, 17, 0.18) 100%)' }}
+          style={{ background: 'var(--gradient-card-overlay)' }}
         >
           <div
             className="flex items-center justify-between gap-3 text-[11px] font-semibold sm:text-xs"
@@ -116,7 +116,7 @@ function InfoBlock({ label, value, tone = 'default' }) {
   return (
     <div
       className="rounded-[18px] px-4 py-3"
-      style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
+      style={{ background: 'var(--surface-2)', border: '1px solid var(--surface-5)' }}
     >
       <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-muted)' }}>
         {label}
@@ -164,7 +164,7 @@ function SubscriptionDetailContent({ item }) {
               <div
                 key={hit.id}
                 className="rounded-[18px] px-4 py-3"
-                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--surface-5)' }}
               >
                 <div className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{hit.episode_title}</div>
                 <div className="mt-1 text-xs" style={{ color: 'var(--color-muted)' }}>
@@ -353,7 +353,7 @@ export default function SubscriptionsPage({ onToast, aria2Enabled = false, u115A
           <button
             onClick={loadData}
             className="min-h-11 rounded-full px-5 py-2.5 text-sm font-semibold self-start lg:self-auto"
-            style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+            style={{ background: 'var(--surface-4)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
           >
             刷新列表
           </button>
@@ -376,9 +376,9 @@ export default function SubscriptionsPage({ onToast, aria2Enabled = false, u115A
               onClick={() => setFilter(value)}
               className="rounded-full px-3 py-2 text-xs font-semibold transition-colors"
               style={{
-                background: filter === value ? 'rgba(227,183,120,0.14)' : 'rgba(255,255,255,0.04)',
+                background: filter === value ? 'var(--accent-medium)' : 'var(--surface-3)',
                 color: filter === value ? 'var(--color-accent-hover)' : 'var(--color-muted)',
-                border: filter === value ? '1px solid rgba(227,183,120,0.24)' : '1px solid rgba(255,255,255,0.06)',
+                border: filter === value ? '1px solid var(--accent-border)' : '1px solid var(--surface-5)',
               }}
             >
               {label}
@@ -443,9 +443,9 @@ export default function SubscriptionsPage({ onToast, aria2Enabled = false, u115A
                 disabled={detailActionLoading !== ''}
                 className="rounded-full px-4 py-2 text-xs font-semibold transition-all duration-150 disabled:opacity-50"
                 style={{
-                  background: 'rgba(227,183,120,0.14)',
+                  background: 'var(--accent-medium)',
                   color: 'var(--color-accent-hover)',
-                  border: '1px solid rgba(227,183,120,0.24)',
+                  border: '1px solid var(--accent-border)',
                 }}
               >
                 编辑订阅
@@ -456,9 +456,9 @@ export default function SubscriptionsPage({ onToast, aria2Enabled = false, u115A
                 disabled={detailActionLoading !== ''}
                 className="rounded-full px-4 py-2 text-xs font-semibold transition-all duration-150 disabled:opacity-50"
                 style={{
-                  background: 'rgba(255,255,255,0.05)',
+                  background: 'var(--surface-4)',
                   color: 'var(--color-text)',
-                  border: '1px solid rgba(255,255,255,0.08)',
+                  border: '1px solid var(--border-default)',
                 }}
               >
                 {detailActionLoading === 'check' ? '检查中…' : '立即检查'}
@@ -469,9 +469,9 @@ export default function SubscriptionsPage({ onToast, aria2Enabled = false, u115A
                 disabled={detailActionLoading !== ''}
                 className="rounded-full px-4 py-2 text-xs font-semibold transition-all duration-150 disabled:opacity-50"
                 style={{
-                  background: selectedItem.enabled ? 'rgba(245,196,81,0.12)' : 'rgba(74,201,126,0.12)',
+                  background: selectedItem.enabled ? 'var(--warning-bg)' : 'var(--success-bg)',
                   color: selectedItem.enabled ? 'var(--color-warning)' : 'var(--color-success)',
-                  border: `1px solid ${selectedItem.enabled ? 'rgba(245,196,81,0.18)' : 'rgba(74,201,126,0.18)'}`,
+                  border: `1px solid ${selectedItem.enabled ? 'var(--warning-bg)' : 'var(--success-bg)'}`,
                 }}
               >
                 {detailActionLoading === 'toggle' ? '处理中…' : (selectedItem.enabled ? '暂停订阅' : '启用订阅')}
@@ -482,9 +482,9 @@ export default function SubscriptionsPage({ onToast, aria2Enabled = false, u115A
                 disabled={detailActionLoading !== ''}
                 className="rounded-full px-4 py-2 text-xs font-semibold transition-all duration-150 disabled:opacity-50"
                 style={{
-                  background: 'rgba(239,125,117,0.12)',
+                  background: 'var(--danger-soft)',
                   color: 'var(--color-danger)',
-                  border: '1px solid rgba(239,125,117,0.18)',
+                  border: '1px solid var(--danger-border)',
                 }}
               >
                 {detailActionLoading === 'delete' ? '删除中…' : '删除订阅'}

@@ -13,7 +13,7 @@ function EpisodePill({ ep }) {
       title={`E${String(ep.episode_number).padStart(2, '0')} ${ep.episode_title}${ep.air_date ? ' · ' + ep.air_date : ''}`}
       className="w-8 h-8 rounded flex items-center justify-center text-xs font-bold cursor-default transition-transform hover:scale-110"
       style={{
-        background: ep.in_library ? 'rgba(74,222,128,0.15)' : 'var(--color-surface)',
+        background: ep.in_library ? 'var(--success-bg-15)' : 'var(--color-surface)',
         border: `1.5px solid ${color}`,
         color,
       }}
@@ -152,8 +152,8 @@ export default function DetailModal({ item, onClose, contentSlot, footerSlot, lo
     <div
       className="fixed inset-0 z-[100] flex items-end justify-center overflow-hidden p-0 sm:items-start sm:p-4 sm:pt-28"
       style={{
-        background: 'rgba(2, 8, 18, 0.78)',
-        backdropFilter: 'blur(10px)',
+        background: 'var(--overlay-backdrop)',
+        backdropFilter: 'var(--blur-md)',
         opacity: show ? 1 : 0,
         transition: 'opacity 0.2s',
       }}
@@ -166,7 +166,7 @@ export default function DetailModal({ item, onClose, contentSlot, footerSlot, lo
             : 'flex max-h-[calc(100dvh-env(safe-area-inset-top)-0.75rem)] flex-col sm:max-h-[calc(100dvh-7.5rem)]'
         }`}
         style={{
-          background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.98) 0%, rgba(11, 22, 37, 0.98) 100%)',
+          background: 'var(--gradient-panel)',
           border: '1px solid var(--color-border)',
           transform: show ? 'translateY(0)' : 'translateY(20px)',
           transition: 'transform 0.2s',
@@ -178,13 +178,13 @@ export default function DetailModal({ item, onClose, contentSlot, footerSlot, lo
           <div
             className="sticky top-0 z-20 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] sm:hidden"
             style={{
-              borderColor: 'rgba(144, 178, 221, 0.12)',
-              background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.99) 0%, rgba(11, 22, 37, 0.98) 100%)',
+              borderColor: 'var(--divider-border)',
+              background: 'var(--gradient-header)',
               backdropFilter: 'blur(12px)',
               WebkitBackdropFilter: 'blur(12px)',
             }}
           >
-            <div className="mx-auto mb-3 h-1.5 w-12 rounded-full" style={{ background: 'rgba(255,255,255,0.14)' }} />
+            <div className="mx-auto mb-3 h-1.5 w-12 rounded-full" style={{ background: 'var(--drag-handle)' }} />
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--color-accent-hover)' }}>
@@ -197,7 +197,7 @@ export default function DetailModal({ item, onClose, contentSlot, footerSlot, lo
               <button
                 onClick={handleClose}
                 className="flex size-10 flex-shrink-0 items-center justify-center rounded-full text-sm transition-colors hover:bg-black/40"
-                style={{ background: 'rgba(0,0,0,0.45)', color: 'var(--color-text)', border: '1px solid rgba(255,255,255,0.08)' }}
+                style={{ background: 'var(--btn-dark-bg)', color: 'var(--color-text)', border: '1px solid var(--border-default)' }}
                 aria-label="关闭详情"
               >
                 ✕
@@ -211,7 +211,7 @@ export default function DetailModal({ item, onClose, contentSlot, footerSlot, lo
               : <div className="absolute inset-0" style={{ background: 'var(--color-surface-2)' }} />
             }
             <div className="absolute inset-0"
-              style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.08) 10%, rgba(7, 17, 31, 0.88) 100%)' }} />
+              style={{ background: 'var(--gradient-backdrop)' }} />
           </div>
 
           <div
@@ -225,7 +225,7 @@ export default function DetailModal({ item, onClose, contentSlot, footerSlot, lo
                 className="h-[112px] w-[76px] flex-shrink-0 rounded-lg shadow-xl sm:h-[132px] sm:w-[88px]"
                 style={{
                   objectFit: 'cover',
-                  border: '2px solid rgba(255,255,255,0.08)',
+                  border: '2px solid var(--border-default)',
                   display: 'block',
                 }}
               />
@@ -248,31 +248,31 @@ export default function DetailModal({ item, onClose, contentSlot, footerSlot, lo
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {item.year && (
                   <span className="rounded-full px-2 py-0.5 text-xs"
-                    style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }}>
+                    style={{ background: 'var(--surface-2)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }}>
                     {item.year}
                   </span>
                 )}
                 {item.rating > 0 && (
                   <span className="rounded-full px-2 py-0.5 text-xs"
-                    style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-warning)', border: '1px solid var(--color-border)' }}>
+                    style={{ background: 'var(--surface-2)', color: 'var(--color-warning)', border: '1px solid var(--color-border)' }}>
                     ★ {item.rating}
                   </span>
                 )}
                 {item.status && (
                   <span className="rounded-full px-2 py-0.5 text-xs"
-                    style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-accent-hover)', border: '1px solid var(--color-border)' }}>
+                    style={{ background: 'var(--surface-2)', color: 'var(--color-accent-hover)', border: '1px solid var(--color-border)' }}>
                     {formatStatus(item.status)}
                   </span>
                 )}
                 {isTV && item.in_library_episodes !== undefined && item.in_library && (
                   <span className="rounded-full px-2 py-0.5 text-xs"
-                    style={{ background: 'rgba(74,222,128,0.15)', color: 'var(--color-success)', border: '1px solid var(--color-success)' }}>
+                    style={{ background: 'var(--success-bg-15)', color: 'var(--color-success)', border: '1px solid var(--color-success)' }}>
                     {item.in_library_episodes}/{item.total_episodes || '?'} 集已入库
                   </span>
                 )}
                 {!isTV && item.in_library && (
                   <span className="rounded-full px-2 py-0.5 text-xs"
-                    style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-success)', border: '1px solid var(--color-border)' }}>
+                    style={{ background: 'var(--surface-2)', color: 'var(--color-success)', border: '1px solid var(--color-border)' }}>
                     已入库
                   </span>
                 )}
@@ -284,19 +284,19 @@ export default function DetailModal({ item, onClose, contentSlot, footerSlot, lo
                       rel="noopener noreferrer"
                       className="rounded-full px-2 py-0.5 text-xs transition-all duration-150"
                       style={{
-                        background: 'rgba(1, 180, 228, 0.08)',
-                        color: '#01b4e4',
-                        border: '1px solid rgba(1, 180, 228, 0.35)',
+                        background: 'var(--tmdb-bg)',
+                        color: 'var(--tmdb)',
+                        border: '1px solid var(--tmdb-border)',
                         textDecoration: 'none',
                         cursor: 'pointer',
                       }}
                       onMouseEnter={e => {
-                        e.currentTarget.style.background = 'rgba(1, 180, 228, 0.18)'
-                        e.currentTarget.style.borderColor = 'rgba(1, 180, 228, 0.65)'
+                        e.currentTarget.style.background = 'var(--tmdb-bg-hover)'
+                        e.currentTarget.style.borderColor = 'var(--tmdb-border-hover)'
                       }}
                       onMouseLeave={e => {
-                        e.currentTarget.style.background = 'rgba(1, 180, 228, 0.08)'
-                        e.currentTarget.style.borderColor = 'rgba(1, 180, 228, 0.35)'
+                        e.currentTarget.style.background = 'var(--tmdb-bg)'
+                        e.currentTarget.style.borderColor = 'var(--tmdb-border)'
                       }}
                     >
                       TMDB {item.tmdb_id}
@@ -346,7 +346,7 @@ export default function DetailModal({ item, onClose, contentSlot, footerSlot, lo
                 <div
                   key={label}
                   className="rounded-2xl px-3 py-2.5"
-                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}
+                  style={{ background: 'var(--surface-2)', border: '1px solid var(--surface-4)' }}
                 >
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-muted)' }}>
                     {label}
@@ -363,7 +363,7 @@ export default function DetailModal({ item, onClose, contentSlot, footerSlot, lo
             <>
               <div
                 className="mb-4 rounded-[22px] px-4 py-3.5 sm:hidden"
-                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--surface-4)' }}
               >
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-muted)' }}>
                   内容简介
@@ -405,7 +405,7 @@ export default function DetailModal({ item, onClose, contentSlot, footerSlot, lo
               </h3>
               <div className="mb-3 flex flex-wrap gap-3 text-xs" style={{ color: 'var(--color-muted)' }}>
                 {[
-                  { style: { border: '1.5px solid var(--color-success)', background: 'rgba(74,222,128,0.15)' }, label: '已入库' },
+                  { style: { border: '1.5px solid var(--color-success)', background: 'var(--success-bg-15)' }, label: '已入库' },
                   { style: { border: '1.5px solid var(--color-danger)', background: 'var(--color-surface)' }, label: '未入库' },
                   { style: { border: '1.5px solid var(--color-muted)', background: 'var(--color-surface)' }, label: '未播出' },
                 ].map(({ style, label }) => (
@@ -436,8 +436,8 @@ export default function DetailModal({ item, onClose, contentSlot, footerSlot, lo
           <div
             className="border-t px-4 pb-4 pt-3 sm:px-6 sm:pb-6"
             style={{
-              borderColor: 'rgba(144, 178, 221, 0.12)',
-              background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.96) 0%, rgba(11, 22, 37, 0.99) 100%)',
+              borderColor: 'var(--divider-border)',
+              background: 'var(--gradient-footer)',
             }}
           >
             {footerSlot}
@@ -447,7 +447,7 @@ export default function DetailModal({ item, onClose, contentSlot, footerSlot, lo
         <button
           onClick={handleClose}
           className="absolute right-4 top-4 hidden size-9 items-center justify-center rounded-full text-sm transition-colors hover:bg-black/40 z-50 sm:flex"
-          style={{ background: 'rgba(0,0,0,0.45)', color: 'var(--color-text)', border: '1px solid rgba(255,255,255,0.08)' }}
+          style={{ background: 'var(--btn-dark-bg)', color: 'var(--color-text)', border: '1px solid var(--border-default)' }}
         >
           ✕
         </button>

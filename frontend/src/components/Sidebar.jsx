@@ -121,14 +121,14 @@ function NavItem({ icon, label, active, onClick, indent = false, right, bold = f
         margin: '4px 12px',
         width: 'calc(100% - 24px)', // Fix: 100% minus 12px*2 margin
         borderRadius: 20,
-        background: active ? 'linear-gradient(90deg, rgba(200, 146, 77, 0.16) 0%, rgba(200, 146, 77, 0.04) 100%)' : 'transparent',
-        border: active ? '1px solid rgba(200, 146, 77, 0.22)' : '1px solid transparent',
+        background: active ? 'linear-gradient(90deg, var(--accent-medium) 0%, rgba(200, 146, 77, 0.04) 100%)' : 'transparent',
+        border: active ? '1px solid var(--accent-border)' : '1px solid transparent',
         color: active ? 'var(--color-accent-hover)' : (bold ? 'var(--color-text)' : 'var(--color-muted)'),
       }}
     >
       <span
         className="absolute inset-0 rounded-[20px] opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-        style={{ background: active ? 'rgba(200, 146, 77, 0.06)' : 'rgba(255,255,255,0.035)' }}
+        style={{ background: active ? 'var(--accent-bg)' : 'var(--surface-1)' }}
       />
       <span className="relative flex-shrink-0" style={{ color: active ? 'var(--color-accent)' : 'inherit' }}>
         {icon}
@@ -141,7 +141,7 @@ function NavItem({ icon, label, active, onClick, indent = false, right, bold = f
           <span
             className="flex-shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold"
             style={{
-              background: active ? 'rgba(200, 146, 77, 0.18)' : 'rgba(255,255,255,0.05)',
+              background: active ? 'var(--accent-soft)' : 'var(--surface-2)',
               color: active ? 'var(--color-accent-hover)' : 'var(--color-muted)',
             }}
           >
@@ -233,7 +233,7 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
     },
     connecting: {
       label: '连接中',
-      color: '#f5c451',
+      color: 'var(--warning-bright)',
     },
     error: {
       label: '未连接',
@@ -307,10 +307,10 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
     <aside
       className="fixed bottom-0 left-0 top-0 flex w-[17rem] flex-col overflow-hidden pt-5 pb-5 lg:bottom-5 lg:left-5 lg:top-[96px] lg:w-72 lg:rounded-[30px]"
       style={{
-        background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.95) 0%, rgba(10, 19, 32, 0.98) 100%)',
+        background: 'var(--gradient-panel)',
         border: '1px solid var(--color-border)',
         boxShadow: 'var(--shadow-soft)',
-        backdropFilter: 'blur(18px)',
+        backdropFilter: 'var(--blur-lg)',
         zIndex: 45,
         width: 'min(20rem, calc(100vw - 2rem))',
         top: 'calc(var(--mobile-topbar-offset) + var(--mobile-topbar-height) + 0.5rem)',
@@ -325,9 +325,9 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
     >
       <div className="sticky top-0 z-10 px-5 pb-4 pt-5 sm:px-6"
         style={{
-          background: 'linear-gradient(180deg, rgba(15, 27, 45, 0.98) 0%, rgba(15, 27, 45, 0.92) 75%, rgba(15, 27, 45, 0) 100%)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
+          background: 'var(--gradient-header)',
+          backdropFilter: 'var(--blur-md)',
+          WebkitBackdropFilter: 'var(--blur-md)',
         }}
       >
         <div className="flex items-start justify-between gap-4">
@@ -347,7 +347,7 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
             onClick={() => onMobileClose?.()}
             className="flex size-11 items-center justify-center rounded-2xl transition-all duration-150 lg:hidden"
             style={{
-              background: 'rgba(255,255,255,0.04)',
+              background: 'var(--surface-3)',
               border: '1px solid var(--color-border)',
               color: 'var(--color-text)',
             }}
@@ -376,7 +376,7 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
           style={{ maxHeight: isLibraryExpanded ? '120px' : '0px', opacity: isLibraryExpanded ? 1 : 0 }}
         >
           <div className="relative">
-            <div className="absolute bottom-0 top-0" style={{ left: 38, width: 1, background: 'rgba(144, 178, 221, 0.16)' }} />
+            <div className="absolute bottom-0 top-0" style={{ left: 38, width: 1, background: 'var(--color-border)' }} />
             {[
               { key: 'movies', label: '电影', icon: Icons.movie },
               { key: 'tv', label: '电视剧', icon: Icons.tv },
@@ -439,7 +439,7 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
             style={{ maxHeight: isDownloadsExpanded ? '180px' : '0px', opacity: isDownloadsExpanded ? 1 : 0 }}
           >
             <div className="relative">
-              <div className="absolute bottom-0 top-0" style={{ left: 38, width: 1, background: 'rgba(144, 178, 221, 0.16)' }} />
+              <div className="absolute bottom-0 top-0" style={{ left: 38, width: 1, background: 'var(--color-border)' }} />
               {[
                 { key: 'downloads-active', label: '下载中', icon: Icons.bolt },
                 { key: 'downloads-waiting', label: '等待中', icon: Icons.queue },
@@ -510,7 +510,7 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
           style={{ maxHeight: isConfigExpanded ? '120px' : '0px', opacity: isConfigExpanded ? 1 : 0 }}
         >
           <div className="relative">
-            <div className="absolute bottom-0 top-0" style={{ left: 38, width: 1, background: 'rgba(144, 178, 221, 0.16)' }} />
+            <div className="absolute bottom-0 top-0" style={{ left: 38, width: 1, background: 'var(--color-border)' }} />
             <NavItem
               icon={Icons.settings}
               label="基础配置"
@@ -532,10 +532,10 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
       <div
         className="sticky bottom-0 z-10 border-t px-4 pb-2 pt-3 sm:px-5"
         style={{
-          borderColor: 'rgba(144, 178, 221, 0.12)',
-          background: 'linear-gradient(180deg, rgba(15, 27, 45, 0) 0%, rgba(15, 27, 45, 0.94) 18%, rgba(10, 19, 32, 0.98) 100%)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
+          borderColor: 'var(--color-border)',
+          background: 'var(--gradient-footer)',
+          backdropFilter: 'var(--blur-md)',
+          WebkitBackdropFilter: 'var(--blur-md)',
         }}
       >
         {onLogout ? (
@@ -548,8 +548,8 @@ export default function Sidebar({ active, onSelect, aria2Overview = null, aria2C
               onClick={handleLogoutClick}
               className="flex min-h-12 w-full items-center gap-3 rounded-[18px] px-4 py-3 text-left font-semibold transition-all duration-150"
               style={{
-                background: confirmingLogout ? 'rgba(239, 125, 117, 0.14)' : 'rgba(239, 125, 117, 0.08)',
-                border: confirmingLogout ? '1px solid rgba(239, 125, 117, 0.34)' : '1px solid rgba(239, 125, 117, 0.22)',
+                background: confirmingLogout ? 'var(--danger-soft)' : 'var(--danger-bg)',
+                border: confirmingLogout ? '1px solid var(--danger-strong)' : '1px solid var(--danger-border)',
                 color: 'var(--color-danger)',
               }}
             >
