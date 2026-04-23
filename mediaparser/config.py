@@ -31,6 +31,27 @@ _DEFAULT_SEARCH_PATHS = [
 _PARSER_RULES_FILENAME = "parser-rules.yaml"
 
 
+class ConfigParseError(Exception):
+    """配置解析错误"""
+    pass
+
+
+def _parse_bool_str(val, key: str = "") -> bool:
+    """解析布尔值，支持 bool、字符串 'true'/'false'/'yes'/'no'/'1'/'0'、整数 0/1"""
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        s = val.strip().lower()
+        if s in ("true", "yes", "1"):
+            return True
+        if s in ("false", "no", "0"):
+            return False
+        raise ConfigParseError(f"配置项 {key} 无法解析布尔值: '{val}'")
+    if isinstance(val, int) and val in (0, 1):
+        return val == 1
+    raise ConfigParseError(f"配置项 {key} 必须是布尔值，实际类型: {type(val).__name__}")
+
+
 # ─────────────────────────────────────────────────────────
 # 配置数据类
 # ─────────────────────────────────────────────────────────
@@ -149,13 +170,15 @@ class PipelineConfig:
     skip_tmdb: bool = False
     move_on_tmdb_miss: bool = False
     dry_run: bool = False
+    replace_existing_video: bool = False  # 替换目标同名视频文件
 
     @classmethod
     def from_dict(cls, d: dict) -> "PipelineConfig":
         return cls(
-            skip_tmdb=bool(d.get("skip_tmdb", False)),
-            move_on_tmdb_miss=bool(d.get("move_on_tmdb_miss", False)),
-            dry_run=bool(d.get("dry_run", False)),
+            skip_tmdb=_parse_bool_str(d.get("skip_tmdb", False), "pipeline.skip_tmdb"),
+            move_on_tmdb_miss=_parse_bool_str(d.get("move_on_tmdb_miss", False), "pipeline.move_on_tmdb_miss"),
+            dry_run=_parse_bool_str(d.get("dry_run", False), "pipeline.dry_run"),
+            replace_existing_video=_parse_bool_str(d.get("replace_existing_video", False), "pipeline.replace_existing_video"),
         )
 
 
@@ -277,6 +300,9 @@ class Config:
             data["parser"] = parser_data
             logger.info("已加载配置文件：%s", config_path)
             return cls.from_dict(data)
+        except ConfigParseError as e:
+            logger.error("配置解析失败: %s", e)
+            raise
         except Exception as e:
             logger.error("读取配置文件失败：%s，将使用默认配置。", e)
             return cls()

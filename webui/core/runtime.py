@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import yaml
+from fastapi import HTTPException
 
 from drive.client import DriveClient
 from mediaparser import Config
@@ -66,8 +67,6 @@ def _extract_parser_rules(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _parse_int_field(section: Dict[str, Any], key: str, label: str, minimum: int, maximum: int) -> None:
-    from fastapi import HTTPException
-
     if key not in section or section.get(key) in (None, ""):
         return
     try:
@@ -77,6 +76,28 @@ def _parse_int_field(section: Dict[str, Any], key: str, label: str, minimum: int
     if value < minimum or value > maximum:
         raise HTTPException(status_code=400, detail=f"{label} 必须在 {minimum} 到 {maximum} 之间")
     section[key] = value
+
+
+def _validate_pipeline_bool_field(normalized: dict, key: str) -> None:
+    """验证并规范化 pipeline 布尔字段"""
+    pipeline_data = dict(normalized.get("pipeline") or {})
+    if key in pipeline_data:
+        val = pipeline_data[key]
+        if isinstance(val, bool):
+            return
+        if isinstance(val, str):
+            s = val.strip().lower()
+            if s in ("true", "yes", "1"):
+                pipeline_data[key] = True
+            elif s in ("false", "no", "0"):
+                pipeline_data[key] = False
+            else:
+                raise HTTPException(status_code=400, detail=f"pipeline.{key} 无法解析为布尔值")
+        elif isinstance(val, int) and val in (0, 1):
+            pipeline_data[key] = val == 1
+        else:
+            raise HTTPException(status_code=400, detail=f"pipeline.{key} 必须是布尔值")
+    normalized["pipeline"] = pipeline_data
 
 
 def _validate_main_config_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -96,6 +117,8 @@ def _validate_main_config_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     _parse_int_field(rss, "poll_seconds", "RSS 订阅轮询间隔", 10, 3600)
     _parse_int_field(aria2, "port", "Aria2 RPC 端口", 1, 65535)
     _parse_int_field(telegram, "debounce_seconds", "Telegram 防抖延时", 0, 600)
+    for key in ["skip_tmdb", "move_on_tmdb_miss", "dry_run", "replace_existing_video"]:
+        _validate_pipeline_bool_field(normalized, key)
 
     normalized["webui"] = webui
     normalized["tmdb"] = tmdb

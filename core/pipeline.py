@@ -97,6 +97,7 @@ class Pipeline:
         self._dry_run = dry_run or cfg.pipeline.dry_run
         self._skip_tmdb = skip_tmdb or cfg.pipeline.skip_tmdb
         self._skip_images = skip_images
+        self._replace_existing_video = cfg.pipeline.replace_existing_video
 
         self._organizer = MediaOrganizer(
             client=client,
@@ -379,133 +380,173 @@ class Pipeline:
             folder_path = self._organizer.folder_path_for_meta(meta)
             print(f"      文件夹：{folder_path}  [dry-run，不创建]")
 
-        # ── Step 7: 上传单集/电影 NFO ──────────────────────
-        if nfo_content and nfo_name:
-            if not self._dry_run and target_folder:
-                try:
-                    self._client.upload_text(
-                        content=nfo_content,
-                        name=nfo_name,
-                        parent_id=target_folder.id,
-                        mime_type="text/xml",
-                        overwrite=True,
-                    )
-                    result.nfo_uploaded = True
-                    print(f"      NFO：{nfo_name}  ✓")
-                except Exception as e:
-                    logger.warning("上传单集 NFO 失败：%s", e)
-                    print(f"      NFO：上传失败 — {e}")
-            else:
-                print(f"      NFO：{nfo_name}  [dry-run，不上传]")
-        elif not self._skip_tmdb and not tmdb_info:
-            print("      NFO：跳过（TMDB 无数据）")
+        # ── Step 7.5: 同名文件预检 ─────────────────────────
+        pending_replace_id: Optional[str] = None
 
-        # ── Step 8: tvshow.nfo → 剧名文件夹 ────────────────
-        if is_tv and tmdb_info:
-            if not self._dry_run and top_folder_id and top_folder_id not in self._tvshow_nfo_done:
-                try:
-                    xml = self._nfo_gen.generate_tvshow(tmdb_info)
-                    self._client.upload_text(xml, "tvshow.nfo", parent_id=top_folder_id,
-                                             mime_type="text/xml", overwrite=True)
-                    self._tvshow_nfo_done.add(top_folder_id)
-                    print(f"      tvshow.nfo：→ 剧名文件夹  ✓")
-                except Exception as e:
-                    logger.warning("上传 tvshow.nfo 失败：%s", e)
-                    print(f"      tvshow.nfo：失败 — {e}")
-            elif top_folder_id and top_folder_id in self._tvshow_nfo_done:
-                pass  # 已上传，静默跳过
-            elif self._dry_run:
-                print(f"      tvshow.nfo：→ 剧名文件夹  [dry-run]")
-
-        # ── Step 9: season.nfo → Season 文件夹 ─────────────
-        if is_tv and tmdb_info and target_folder:
-            season_folder_id = target_folder.id
-            if not self._dry_run and season_folder_id not in self._season_nfo_done:
-                try:
-                    season_detail = self._get_season_detail_cached(
-                        tmdb_info.get("tmdb_id") or tmdb_info.get("id"), season_num
-                    )
-                    xml = self._nfo_gen.generate_season(season_detail, season_num)
-                    self._client.upload_text(xml, "season.nfo", parent_id=season_folder_id,
-                                             mime_type="text/xml", overwrite=True)
-                    self._season_nfo_done.add(season_folder_id)
-                    print(f"      season.nfo：→ Season {season_num} 文件夹  ✓")
-                except Exception as e:
-                    logger.warning("上传 season.nfo 失败：%s", e)
-                    print(f"      season.nfo：失败 — {e}")
-            elif season_folder_id in self._season_nfo_done:
-                pass  # 已上传，静默跳过
-            elif self._dry_run:
-                print(f"      season.nfo：→ Season {season_num} 文件夹  [dry-run]")
-
-        # ── Step 10: poster.jpg / fanart.jpg ────────────────
-        if tmdb_info and self._img_uploader and target_folder:
-            # TV 的 poster/fanart 上传到剧名文件夹（顶层），使用 Step 6 缓存的 top_folder_id
-            img_top_id = top_folder_id or target_folder.id
-
-            if img_top_id not in self._poster_done:
-                poster = tmdb_info.get("poster_path")
-                fanart = tmdb_info.get("backdrop_path")
-                uploaded_any = False
-                if poster:
-                    f = self._img_uploader.upload_poster(poster, img_top_id)
-                    if f:
-                        print(f"      poster.jpg：✓")
-                        uploaded_any = True
-                if fanart:
-                    f = self._img_uploader.upload_fanart(fanart, img_top_id)
-                    if f:
-                        print(f"      fanart.jpg：✓")
-                        uploaded_any = True
-                if uploaded_any:
-                    self._poster_done.add(img_top_id)
-
-        elif tmdb_info and not self._img_uploader and not self._skip_images and not self._dry_run:
-            pass  # img_uploader 未初始化时静默跳过
-        elif tmdb_info and self._dry_run:
-            print(f"      poster.jpg / fanart.jpg：[dry-run，不下载]")
-
-        # ── Step 11: season poster（季封面）────────────────
-        if is_tv and tmdb_info and self._img_uploader and target_folder and top_folder_id:
-            season_poster_key = f"{top_folder_id}:s{season_num}"
-            if season_poster_key not in self._season_poster_done:
-                _sp_key = f"{tmdb_info.get('tmdb_id') or tmdb_info.get('id')}:{season_num}"
-                season_detail_for_img = self._get_season_detail_cached(
-                    tmdb_info.get("tmdb_id") or tmdb_info.get("id"), season_num
-                )
-                sp = season_detail_for_img.get("poster_path")
-                if sp:
-                    f = self._img_uploader.upload_season_poster(sp, season_num, top_folder_id)
-                    if f:
-                        print(f"      season{season_num:02d}-poster.jpg：✓")
-                self._season_poster_done.add(season_poster_key)
-
-        # ── Step 12: 移动视频文件（同时改名为标准格式）────────
-        if not self._dry_run and target_folder:
+        if target_folder and not self._dry_run:
             target_name = clean_name or video.name
             existing = self._client.find_file(target_name, folder_id=target_folder.id)
+
             if existing:
-                print(f"      移动：跳过（目标位置已存在同名文件）")
-            else:
-                try:
-                    self._client.move_file(
-                        video.id,
-                        new_folder_id=target_folder.id,
-                        new_name=clean_name,  # 同时改名，None 时保持原名
+                if existing.id == video.id:
+                    result.status = "skipped"
+                    result.reason = "文件已在目标位置"
+                    print(f"      同名预检：文件已在目标位置，跳过")
+                    return result
+                elif self._replace_existing_video:
+                    pending_replace_id = existing.id
+                    print(f"      同名预检：将替换已有文件")
+                else:
+                    result.status = "skipped"
+                    result.reason = "目标位置已存在同名文件"
+                    print(f"      同名预检：跳过（目标位置已存在同名文件）")
+                    return result
+
+        def upload_metadata() -> None:
+            # ── Step 8: 上传单集/电影 NFO ──────────────────
+            if nfo_content and nfo_name:
+                if not self._dry_run and target_folder:
+                    try:
+                        self._client.upload_text(
+                            content=nfo_content,
+                            name=nfo_name,
+                            parent_id=target_folder.id,
+                            mime_type="text/xml",
+                            overwrite=True,
+                        )
+                        result.nfo_uploaded = True
+                        print(f"      NFO：{nfo_name}  ✓")
+                    except Exception as e:
+                        logger.warning("上传单集 NFO 失败：%s", e)
+                        print(f"      NFO：上传失败 — {e}")
+                else:
+                    print(f"      NFO：{nfo_name}  [dry-run，不上传]")
+            elif not self._skip_tmdb and not tmdb_info:
+                print("      NFO：跳过（TMDB 无数据）")
+
+            # ── Step 9: tvshow.nfo → 剧名文件夹 ────────────
+            if is_tv and tmdb_info:
+                if not self._dry_run and top_folder_id and top_folder_id not in self._tvshow_nfo_done:
+                    try:
+                        xml = self._nfo_gen.generate_tvshow(tmdb_info)
+                        self._client.upload_text(xml, "tvshow.nfo", parent_id=top_folder_id,
+                                                 mime_type="text/xml", overwrite=True)
+                        self._tvshow_nfo_done.add(top_folder_id)
+                        print(f"      tvshow.nfo：→ 剧名文件夹  ✓")
+                    except Exception as e:
+                        logger.warning("上传 tvshow.nfo 失败：%s", e)
+                        print(f"      tvshow.nfo：失败 — {e}")
+                elif top_folder_id and top_folder_id in self._tvshow_nfo_done:
+                    pass  # 已上传，静默跳过
+                elif self._dry_run:
+                    print(f"      tvshow.nfo：→ 剧名文件夹  [dry-run]")
+
+            # ── Step 10: season.nfo → Season 文件夹 ───────
+            if is_tv and tmdb_info and target_folder:
+                season_folder_id = target_folder.id
+                if not self._dry_run and season_folder_id not in self._season_nfo_done:
+                    try:
+                        season_detail = self._get_season_detail_cached(
+                            tmdb_info.get("tmdb_id") or tmdb_info.get("id"), season_num
+                        )
+                        xml = self._nfo_gen.generate_season(season_detail, season_num)
+                        self._client.upload_text(xml, "season.nfo", parent_id=season_folder_id,
+                                                 mime_type="text/xml", overwrite=True)
+                        self._season_nfo_done.add(season_folder_id)
+                        print(f"      season.nfo：→ Season {season_num} 文件夹  ✓")
+                    except Exception as e:
+                        logger.warning("上传 season.nfo 失败：%s", e)
+                        print(f"      season.nfo：失败 — {e}")
+                elif season_folder_id in self._season_nfo_done:
+                    pass  # 已上传，静默跳过
+                elif self._dry_run:
+                    print(f"      season.nfo：→ Season {season_num} 文件夹  [dry-run]")
+
+            # ── Step 11: poster.jpg / fanart.jpg ──────────
+            if tmdb_info and self._img_uploader and target_folder:
+                # TV 的 poster/fanart 上传到剧名文件夹（顶层），使用 Step 6 缓存的 top_folder_id
+                img_top_id = top_folder_id or target_folder.id
+
+                if img_top_id not in self._poster_done:
+                    poster = tmdb_info.get("poster_path")
+                    fanart = tmdb_info.get("backdrop_path")
+                    uploaded_any = False
+                    if poster:
+                        f = self._img_uploader.upload_poster(poster, img_top_id)
+                        if f:
+                            print(f"      poster.jpg：✓")
+                            uploaded_any = True
+                    if fanart:
+                        f = self._img_uploader.upload_fanart(fanart, img_top_id)
+                        if f:
+                            print(f"      fanart.jpg：✓")
+                            uploaded_any = True
+                    if uploaded_any:
+                        self._poster_done.add(img_top_id)
+
+            elif tmdb_info and not self._img_uploader and not self._skip_images and not self._dry_run:
+                pass  # img_uploader 未初始化时静默跳过
+            elif tmdb_info and self._dry_run:
+                print(f"      poster.jpg / fanart.jpg：[dry-run，不下载]")
+
+            # ── Step 11.5: season poster（季封面）──────────
+            if is_tv and tmdb_info and self._img_uploader and target_folder and top_folder_id:
+                season_poster_key = f"{top_folder_id}:s{season_num}"
+                if season_poster_key not in self._season_poster_done:
+                    _sp_key = f"{tmdb_info.get('tmdb_id') or tmdb_info.get('id')}:{season_num}"
+                    season_detail_for_img = self._get_season_detail_cached(
+                        tmdb_info.get("tmdb_id") or tmdb_info.get("id"), season_num
                     )
-                    result.moved = True
-                    if clean_name and clean_name != video.name:
-                        print(f"      移动+改名：{clean_name}  ✓")
-                    else:
-                        print(f"      移动：✓")
+                    sp = season_detail_for_img.get("poster_path")
+                    if sp:
+                        f = self._img_uploader.upload_season_poster(sp, season_num, top_folder_id)
+                        if f:
+                            print(f"      season{season_num:02d}-poster.jpg：✓")
+                    self._season_poster_done.add(season_poster_key)
+
+        # ── Step 8-11: 元数据上传（替换模式下延后）──────────
+        if not pending_replace_id:
+            upload_metadata()
+
+        # ── Step 12: 移动视频文件（同时改名为标准格式）────────
+        if not self._dry_run and target_folder and result.status not in ("skipped", "failed"):
+            if pending_replace_id:
+                try:
+                    self._client.trash_file(pending_replace_id)
+                    print(f"      移动：已移除同名文件")
                 except Exception as e:
-                    logger.error("移动文件失败：%s", e)
-                    print(f"      移动：失败 — {e}")
+                    logger.error("移除同名文件失败：%s", e)
                     result.status = "failed"
-                    result.reason = f"移动失败：{e}"
+                    result.reason = f"移除同名文件失败：{e}"
+                    print(f"      移动：失败 — 无法移除同名文件")
+                    return result
+            try:
+                self._client.move_file(
+                    video.id,
+                    new_folder_id=target_folder.id,
+                    new_name=clean_name,  # 同时改名，None 时保持原名
+                )
+                result.moved = True
+                result.status = "ok"
+                if clean_name and clean_name != video.name:
+                    print(f"      移动+改名：{clean_name}  ✓")
+                else:
+                    print(f"      移动：✓")
+            except Exception as e:
+                logger.error("移动文件失败：%s", e)
+                result.status = "failed"
+                result.reason = f"移动失败：{e}"
+                if pending_replace_id:
+                    result.reason += f"（已移除的旧文件 ID: {pending_replace_id}）"
+                print(f"      移动：失败 — {e}")
+                return result
         else:
             target_name = clean_name or video.name
             print(f"      移动：{target_name}  [dry-run，不移动]")
+
+        # ── Step 12.5: 替换模式下移动成功后上传元数据 ───────
+        if pending_replace_id and result.moved:
+            upload_metadata()
 
         print()
 

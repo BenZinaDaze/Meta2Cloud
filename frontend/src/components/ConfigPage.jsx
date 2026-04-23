@@ -1206,6 +1206,15 @@ export default function ConfigPage({ onAria2EnabledChange = null, page = 'genera
                 <FieldRow label="Dry Run 模式" description="只打印计划，不实际操作 Drive">
                   <Toggle value={cfg?.pipeline?.dry_run} onChange={v => set('pipeline', 'dry_run', v)} />
                 </FieldRow>
+                <FieldRow
+                  label="替换同名视频"
+                  description="开启后会先移除目标位置的同名视频，再移动新文件。移除的文件可在网盘回收站中恢复。"
+                >
+                  <Toggle
+                    value={cfg?.pipeline?.replace_existing_video === true}
+                    onChange={v => set('pipeline', 'replace_existing_video', v)}
+                  />
+                </FieldRow>
               </Section>
 
               <Section title="Aria2 下载设置">

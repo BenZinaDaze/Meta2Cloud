@@ -455,6 +455,7 @@ pipeline:
   skip_tmdb: false
   move_on_tmdb_miss: false
   dry_run: false
+  replace_existing_video: false
 
 aria2:
   enabled: true
@@ -469,6 +470,10 @@ telegram:
   chat_id: ""
   debounce_seconds: 60
 ```
+
+Pipeline 配置：
+- `replace_existing_video`: 替换同名视频文件。开启后会先移除目标位置的同名视频，再移动新文件。
+  移除的文件可在网盘回收站中恢复。
 
 ---
 
