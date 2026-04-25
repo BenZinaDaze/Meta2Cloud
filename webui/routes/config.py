@@ -32,8 +32,8 @@ async def read_parser_rules_config():
 
 
 @router.post("/api/parser/test")
-async def parser_test(body: ParserTestBody):
-    return parser_test_payload(body.filename)
+async def parser_test(body: ParserTestBody, skip_tmdb: bool = False):
+    return parser_test_payload(body.filename, skip_tmdb=skip_tmdb)
 
 
 @router.put("/api/config")

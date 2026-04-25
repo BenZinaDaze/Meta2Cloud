@@ -7,6 +7,8 @@ __pycache__
 
 frontend/node_modules
 frontend/dist
+frontend/.vite
+frontend-archive
 
 test
 doc

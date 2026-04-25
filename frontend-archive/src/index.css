@@ -1,0 +1,355 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Noto+Serif+SC:wght@500;700&display=swap');
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* === 基础色 === */
+    --color-bg: oklch(17.4% 0.0344 269.0);
+    --color-surface: oklch(21.8% 0.0414 271.0);
+    --color-surface-2: oklch(25.8% 0.0493 268.2);
+    --color-surface-3: oklch(31.0% 0.0638 268.2);
+
+    /* === 表面透明度层级 === */
+    --surface-1: oklch(99.4% 0.0189 342.4 / 0.02);
+    --surface-2: oklch(99.4% 0.0189 342.4 / 0.03);
+    --surface-3: oklch(99.4% 0.0189 342.4 / 0.04);
+    --surface-4: oklch(99.4% 0.0189 342.4 / 0.05);
+    --surface-5: oklch(99.4% 0.0189 342.4 / 0.06);
+    /* 表面层级别名（语义化命名） */
+    --surface-border: var(--surface-5);
+
+    /* === 边框 === */
+    --color-border: oklch(74.7% 0.0768 271.6 / 0.18);
+    --color-border-strong: oklch(80.9% 0.0664 272.7 / 0.32);
+    --border-default: oklch(99.4% 0.0189 342.4 / 0.08);
+
+    /* === 强调色 === */
+    --color-accent: oklch(69.7% 0.1081 68.9);
+    --color-accent-hover: oklch(78.2% 0.0977 72.0);
+    --accent-bg: oklch(69.7% 0.1081 68.9 / 0.06);
+    --accent-soft: oklch(69.7% 0.1081 68.9 / 0.12);
+    --accent-medium: oklch(69.7% 0.1081 68.9 / 0.14);
+    --accent-border: oklch(69.7% 0.1081 68.9 / 0.22);
+    --accent-glow: oklch(69.7% 0.1081 68.9 / 0.30);
+
+    /* === 文本色 === */
+    --color-text: oklch(95.6% 0.0237 310.6);
+    --color-muted: oklch(71.3% 0.0518 276.9);
+    --color-muted-soft: oklch(59.4% 0.0552 272.5);
+
+    /* === 状态色 === */
+    --color-success: oklch(78.1% 0.1246 159.4);
+    --color-warning: oklch(83.9% 0.1176 80.8);
+    --color-danger: oklch(71.4% 0.1471 23.4);
+    --success-bg: oklch(78.1% 0.1246 159.4 / 0.12);
+    --success-border: oklch(78.1% 0.1246 159.4 / 0.20);
+    --warning-bright: oklch(76.8% 0.1646 69.4);
+    --warning-bg: oklch(76.8% 0.1646 69.4 / 0.12);
+    --danger-bg: oklch(71.4% 0.1471 23.4 / 0.08);
+    --danger-soft: oklch(71.4% 0.1471 23.4 / 0.12);
+    --danger-border: oklch(71.4% 0.1471 23.4 / 0.20);
+    --danger-strong: oklch(71.4% 0.1471 23.4 / 0.28);
+    --info: oklch(61.1% 0.197 271.2);
+    --info-bg: oklch(61.1% 0.197 271.2 / 0.12);
+    --info-border: oklch(61.1% 0.197 271.2 / 0.20);
+
+    /* === 阴影 === */
+    --shadow-soft: 0 18px 45px oklch(13.9% 0.0248 261.8 / 0.35);
+    --shadow-strong: 0 32px 80px oklch(13.0% 0.0275 264.0 / 0.52);
+    --shadow-accent: 0 6px 16px oklch(69.7% 0.1081 68.9 / 0.30);
+
+    /* === 渐变 === */
+    --gradient-panel: linear-gradient(180deg, oklch(21.8% 0.0414 271.0 / 0.98) 0%, oklch(19.6% 0.0359 269.4 / 0.98) 100%);
+    --gradient-panel-subtle: linear-gradient(180deg, oklch(25.8% 0.0493 268.2 / 0.96) 0%, oklch(21.3% 0.0419 269.4 / 0.98) 100%);
+    --gradient-panel-overlay: linear-gradient(180deg, oklch(13.0% 0.0275 264.0 / 0.78) 0%, oklch(13.0% 0.0275 264.0 / 0.96) 100%);
+    --gradient-accent: linear-gradient(135deg, oklch(80.3% 0.0949 71.5) 0%, oklch(69.7% 0.1081 68.9) 100%);
+    --gradient-accent-dark: linear-gradient(135deg, var(--color-accent) 0%, oklch(58.1% 0.107 65.2) 100%);
+    --gradient-header: linear-gradient(180deg, oklch(21.8% 0.0414 271.0 / 0.99) 0%, oklch(19.6% 0.0359 269.4 / 0.98) 100%);
+    --gradient-footer: linear-gradient(180deg, oklch(21.8% 0.0414 271.0 / 0.96) 0%, oklch(19.6% 0.0359 269.4 / 0.99) 100%);
+    --gradient-backdrop: linear-gradient(to bottom, oklch(0.0% 0.0 0.0 / 0.08) 10%, oklch(17.4% 0.0344 269.0 / 0.88) 100%);
+    --gradient-card-overlay: linear-gradient(to top, oklch(13.5% 0.0224 261.9 / 0.88) 0%, oklch(13.5% 0.0224 261.9 / 0.18) 100%);
+    --gradient-login-top: linear-gradient(90deg, oklch(53.2% 0.1224 269.5 / 1) 0%, var(--color-accent) 100%);
+
+    /* === 模态框遮罩 === */
+    --overlay-backdrop: oklch(13.0% 0.0275 264.0 / 0.78);
+    --overlay-content: oklch(13.0% 0.0275 264.0 / 0.72);
+
+    /* === 表面背景（带颜色） === */
+    --surface-dark: oklch(15.6% 0.0277 270.6 / 0.5);
+    --surface-dark-72: oklch(15.6% 0.0277 270.6 / 0.72);
+    --surface-dark-80: oklch(15.6% 0.0277 270.6 / 0.80);
+    --surface-login: linear-gradient(180deg, oklch(23.4% 0.0434 269.2 / 0.9) 0%, oklch(18.7% 0.0338 270.0 / 0.96) 100%);
+
+    /* === TMDB 品牌色 === */
+    --tmdb: oklch(70.9% 0.127 236.1);
+    --tmdb-bg: oklch(70.9% 0.127 236.1 / 0.08);
+    --tmdb-bg-hover: oklch(70.9% 0.127 236.1 / 0.18);
+    --tmdb-border: oklch(70.9% 0.127 236.1 / 0.35);
+    --tmdb-border-hover: oklch(70.9% 0.127 236.1 / 0.65);
+
+    /* === 成功色变体 === */
+    --success-bg-15: oklch(79.8% 0.1745 151.2 / 0.15);
+    --success-border-30: oklch(74.4% 0.1481 153.5 / 0.30);
+    --success-solid: oklch(74.4% 0.1481 153.5 / 0.12);
+    --success-bg-08: oklch(74.4% 0.1481 153.5 / 0.08);
+    --success-border-18: oklch(74.4% 0.1481 153.5 / 0.18);
+
+    /* === 强调色变体（用于 toggle/选中状态）=== */
+    --accent-toggle-bg: oklch(80.3% 0.0949 71.5 / 0.1);
+    --accent-toggle-border: oklch(80.3% 0.0949 71.5 / 0.22);
+    --accent-toggle-border-strong: oklch(80.3% 0.0949 71.5 / 0.45);
+
+    /* === 警告色变体 === */
+    --warning-bg-84: oklch(29.6% 0.0531 81.1 / 0.84);
+    --warning-border-32: oklch(84.2% 0.1402 83.9 / 0.32);
+
+    /* === 危险色变体 === */
+    --danger-bg-84: oklch(26.3% 0.0665 23.9 / 0.84);
+    --danger-border-32: oklch(71.4% 0.1471 23.4 / 0.32);
+
+    /* === 默认徽章色 === */
+    --pill-default-bg: oklch(14.5% 0.0263 266.1 / 0.82);
+    --pill-default-border: oklch(99.4% 0.0189 342.4 / 0.12);
+
+    /* === 输入框样式 === */
+    --input-bg: oklch(99.4% 0.0189 342.4 / 0.035);
+    --input-border: oklch(99.4% 0.0189 342.4 / 0.1);
+    --input-border-focus: oklch(57.2% 0.2254 287.1 / 0.6);
+
+    /* === 分隔线 === */
+    --divider-border: oklch(74.7% 0.0768 271.6 / 0.12);
+
+    /* === 按钮/卡片背景 === */
+    --btn-dark-bg: oklch(0.0% 0.0 0.0 / 0.45);
+
+    /* === Toast 背景 === */
+    --toast-bg: oklch(19.9% 0.0214 282.0 / 0.85);
+    --toast-shadow: 0 8px 32px oklch(0.0% 0.0 0.0 / 0.24);
+
+    /* === 拖拽指示条 === */
+    --drag-handle: oklch(99.4% 0.0189 342.4 / 0.14);
+
+    /* === 登录页装饰 === */
+    --login-glow-blue: oklch(53.2% 0.1224 269.5 / 0.16);
+    --login-glow-accent: oklch(69.7% 0.1081 68.9 / 0.10);
+    --login-radial-blue: oklch(53.2% 0.1224 269.5 / 0.22);
+    --login-radial-accent: oklch(69.7% 0.1081 68.9 / 0.16);
+
+    /* === Logo 阴影 === */
+    --logo-shadow: 0 10px 24px oklch(69.7% 0.1081 68.9 / 0.22);
+    --logo-shadow-lg: 0 12px 28px oklch(69.7% 0.1081 68.9 / 0.24);
+
+    /* === 模糊效果 === */
+    --blur-sm: blur(4px);
+    --blur-md: blur(10px);
+    --blur-lg: blur(18px);
+
+    /* === 布局 === */
+    --mobile-topbar-offset: calc(env(safe-area-inset-top) + 0.75rem);
+    --mobile-topbar-height: 3.5rem;
+    --mobile-nav-height: calc(4.5rem + env(safe-area-inset-bottom));
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    background: var(--color-bg);
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    color: var(--color-text);
+    font-family: 'Manrope', 'PingFang SC', 'Noto Sans SC', sans-serif;
+    background:
+      radial-gradient(circle at top left, oklch(53.2% 0.1224 269.5 / 0.22), transparent 30%),
+      radial-gradient(circle at 80% 0%, oklch(69.7% 0.1081 68.9 / 0.16), transparent 26%),
+      linear-gradient(180deg, oklch(18.2% 0.0344 267.7) 0%, oklch(17.4% 0.0344 269.0) 45%, oklch(19.1% 0.0364 267.5) 100%);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(oklch(99.4% 0.0189 342.4 / 0.018) 1px, transparent 1px),
+      linear-gradient(90deg, oklch(99.4% 0.0189 342.4 / 0.018) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: radial-gradient(circle at center, black 35%, transparent 90%);
+    opacity: 0.38;
+  }
+
+  h1, h2, h3 {
+    margin: 0;
+    font-family: 'Noto Serif SC', serif;
+    font-weight: 700;
+    text-wrap: balance;
+  }
+
+  p {
+    margin: 0;
+    text-wrap: pretty;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-muted-soft);
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid oklch(69.7% 0.1081 68.9 / 0.7);
+    outline-offset: 2px;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  ::selection {
+    background: oklch(69.7% 0.1081 68.9 / 0.28);
+    color: var(--color-text);
+  }
+
+  ::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: oklch(74.7% 0.0768 271.6 / 0.24);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: oklch(69.7% 0.1081 68.9 / 0.36);
+    background-clip: padding-box;
+  }
+}
+
+@layer components {
+  .app-shell {
+    min-height: 100dvh;
+    position: relative;
+  }
+
+  .app-shell::after {
+    content: '';
+    position: fixed;
+    inset: auto 0 0;
+    height: 180px;
+    pointer-events: none;
+    background: linear-gradient(180deg, transparent 0%, oklch(17.4% 0.0344 269.0 / 0.7) 65%, oklch(17.4% 0.0344 269.0 / 0.96) 100%);
+  }
+
+  .panel-surface {
+    background: linear-gradient(180deg, oklch(25.8% 0.0493 268.2 / 0.96) 0%, oklch(20.4% 0.0379 268.9 / 0.98) 100%);
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(18px);
+  }
+
+  .page-panel {
+    min-height: calc(100dvh - var(--mobile-topbar-offset) - var(--mobile-topbar-height) - var(--mobile-nav-height) - 1rem);
+  }
+
+  /* 移动端触摸滚动优化 */
+  main, .overflow-y-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 桌面端侧边栏始终可见（覆盖JS控制的transform抽屉动画） */
+  @media (min-width: 1024px) {
+    aside[class*="fixed"] {
+      width: 18rem !important;
+      left: 1.25rem !important;
+      top: 96px !important;
+      bottom: 1.25rem !important;
+      border-radius: 30px !important;
+      transform: translateX(0) !important;
+      transition: none !important;
+    }
+  }
+
+  /* 配置页面：小屏单列，大屏双列 */
+  .config-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  @media (min-width: 768px) {
+    .config-grid {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+  }
+
+  /* 主内容区 top 响应式：移动端配合小 Topbar，桌面端配合大 Topbar */
+  .main-scrollable {
+    top: calc(var(--mobile-topbar-offset) + var(--mobile-topbar-height) + 0.5rem);
+  }
+
+  @media (min-width: 640px) {
+    .main-scrollable {
+      top: 96px;
+    }
+  }
+
+  /* 桌面端主内容区底部填充覆盖（无底部导航） */
+  @media (min-width: 1024px) {
+    .app-topbar {
+      top: 1.25rem !important;
+    }
+
+    .main-pad {
+      padding-bottom: 1.25rem !important;
+    }
+
+    .page-panel {
+      min-height: calc(100dvh - 128px);
+    }
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(110%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}

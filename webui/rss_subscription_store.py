@@ -184,14 +184,18 @@ class RSSSubscriptionStore:
             "library": {"in_library": bool(row["lib_drive_folder_id"])} if "lib_drive_folder_id" in row.keys() else None,
         }
         if row["tm_title"] is not None:
+            poster_path = row["tm_poster_path"] or ""
+            backdrop_path = row["tm_backdrop_path"] or ""
             payload["tmdb"] = {
                 "tmdb_id": row["tmdb_id"],
                 "media_type": row["media_type"],
                 "title": row["tm_title"] or "",
                 "original_title": row["tm_original_title"] or "",
                 "overview": row["tm_overview"] or "",
-                "poster_path": row["tm_poster_path"] or "",
-                "backdrop_path": row["tm_backdrop_path"] or "",
+                "poster_path": poster_path,
+                "poster_url": f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None,
+                "backdrop_path": backdrop_path,
+                "backdrop_url": f"https://image.tmdb.org/t/p/original{backdrop_path}" if backdrop_path else None,
                 "release_date": row["tm_release_date"] or row["tm_first_air_date"] or "",
                 "status": row["tm_status"] or "",
                 "rating": round(row["tm_vote_average"] or 0, 1),

@@ -279,6 +279,12 @@ def tmdb_search_multi_payload(keyword: str):
 
 
 def tmdb_detail_payload(tmdb_id: int, media_type: str):
+    # 参数验证
+    if not tmdb_id or tmdb_id <= 0:
+        raise HTTPException(status_code=400, detail="tmdb_id 无效")
+    if media_type not in ("movie", "tv"):
+        raise HTTPException(status_code=400, detail=f"media_type 必须是 movie 或 tv，当前值：{media_type}")
+
     try:
         store = get_library_store()
         joined = store.get_joined_media_item(media_type, tmdb_id)

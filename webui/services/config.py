@@ -51,7 +51,7 @@ def looks_like_file_path(text: str) -> bool:
     return "/" in text or "\\" in text
 
 
-def parser_test_payload(filename: str):
+def parser_test_payload(filename: str, skip_tmdb: bool = False):
     filename = filename.strip()
     if not filename:
         raise HTTPException(status_code=400, detail="文件名不能为空")
@@ -68,6 +68,10 @@ def parser_test_payload(filename: str):
         meta = MetaInfo(filename, isfile=True, **parser_kwargs)
 
     payload = serialize_meta(meta)
+
+    # 如果只需要解析结果，直接返回
+    if skip_tmdb:
+        return {"ok": True, "parsed": payload, "tmdb": None}
     tmdb_payload = None
     if cfg.tmdb.api_key:
         try:

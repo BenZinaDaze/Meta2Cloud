@@ -86,14 +86,18 @@ def _serialize_subscription(record: SubscriptionRecord, *, include_hits: bool = 
         library_entry = library_store.get_library_item_by_tmdb(record.media_type, record.tmdb_id)
         if tmdb_entry:
             raw = tmdb_entry.get("raw_json") or {}
+            poster_path = raw.get("poster_path") or tmdb_entry.get("poster_path") or ""
+            backdrop_path = raw.get("backdrop_path") or tmdb_entry.get("backdrop_path") or ""
             payload["tmdb"] = {
                 "tmdb_id": record.tmdb_id,
                 "media_type": record.media_type,
                 "title": raw.get("title") or raw.get("name") or tmdb_entry.get("title") or "",
                 "original_title": raw.get("original_title") or raw.get("original_name") or tmdb_entry.get("original_title") or "",
                 "overview": raw.get("overview") or tmdb_entry.get("overview") or "",
-                "poster_path": raw.get("poster_path") or tmdb_entry.get("poster_path") or "",
-                "backdrop_path": raw.get("backdrop_path") or tmdb_entry.get("backdrop_path") or "",
+                "poster_path": poster_path,
+                "poster_url": f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None,
+                "backdrop_path": backdrop_path,
+                "backdrop_url": f"https://image.tmdb.org/t/p/original{backdrop_path}" if backdrop_path else None,
                 "release_date": raw.get("release_date") or raw.get("first_air_date") or "",
                 "status": raw.get("status") or tmdb_entry.get("status") or "",
                 "rating": round(raw.get("vote_average") or tmdb_entry.get("vote_average") or 0, 1),

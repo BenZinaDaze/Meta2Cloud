@@ -59,12 +59,13 @@ docker exec meta2cloud python -m core --dry-run  # Run pipeline in container
 - `webui/tmdb_cache.py` - TMDB API response caching
 
 ### Frontend Structure
-- `frontend/src/App.jsx` - Main app with routing and state management
-- `frontend/src/api.js` - Axios API client
-- `frontend/src/components/` - React components (no TypeScript)
+- `frontend/src/App.tsx` - Main app with routing and state management
+- `frontend/src/api.ts` - Axios API client
+- `frontend/src/components/` - React components (TypeScript)
   - Page components: `LibraryPage`, `DownloadsPage`, `ConfigPage`, `SubscriptionsPage`, etc.
   - Modal components: `DetailModal`, `SubscriptionModal`, `ParseTestModal`
 - Uses Tailwind CSS v4 with `@tailwindcss/vite` plugin
+- Uses Radix UI primitives and shadcn-style components
 
 ### Storage Layer
 - `storage/base.py` - Abstract `StorageProvider` interface
@@ -97,7 +98,7 @@ Config stored in YAML files (`config/config.yaml`, `config/parser-rules.yaml`). 
 
 ## Important Notes
 
-- Frontend uses React 19 with JSX (no TypeScript)
+- Frontend uses React 19 with TypeScript
 - Tailwind CSS v4 syntax (uses `@tailwindcss/vite`, not `tailwind.config.js`)
 - Backend runs on port 38765
 - Frontend dev server proxies `/api` to backend
