@@ -26,7 +26,7 @@
 | 播放器 | 平台 | 支持网盘 | 特点 |
 |--------|------|----------|------|
 | [Infuse](https://firecore.com/infuse) | iOS / macOS / Apple TV | Google Drive、115 | Apple 生态体验最佳 |
-| [网易爆米花](https://bmh.163.com/) | iOS / macOS / Apple TV | 115、阿里云盘 | 对国内网盘支持好 |
+| [网易爆米花](https://bmh.163.com/) | 全平台 | 115、阿里云盘 | 对国内网盘支持好 |
 | [VidHub](https://vidhub.okaapps.com/) | 全平台 | Google Drive、115 等 | 免费、跨平台 |
 | [nPlayer](https://nplayer.com/) | iOS / macOS / Android | Google Drive 等 | 功能全面 |
 
