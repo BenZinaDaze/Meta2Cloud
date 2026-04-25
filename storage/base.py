@@ -73,6 +73,12 @@ class CloudFile:
         return self.extension in _VIDEO_EXTENSIONS
 
     @property
+    def is_subtitle(self) -> bool:
+        """判断是否为字幕文件"""
+        _SUBTITLE_EXTENSIONS = {".srt", ".ass", ".ssa"}
+        return not self.is_folder and self.extension in _SUBTITLE_EXTENSIONS
+
+    @property
     def extension(self) -> str:
         _, ext = os.path.splitext(self.name)
         return ext.lower()

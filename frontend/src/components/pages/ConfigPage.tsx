@@ -18,6 +18,7 @@ import {
   FileText,
   Users,
   BookOpen,
+  Captions,
 } from 'lucide-react'
 import {
   getMainConfig,
@@ -78,6 +79,7 @@ const CONFIG_TABS = [
   { key: 'rss', label: 'RSS', icon: Rss },
   { key: 'telegram', label: '通知', icon: Bell },
   { key: 'pipeline', label: '策略', icon: FolderSync },
+  { key: 'subtitle', label: '字幕', icon: Captions },
 ]
 
 function normalizeConfig(data: Record<string, unknown>): Record<string, unknown> {
@@ -1217,6 +1219,29 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                     />
                   </Field>
                 </FieldGroup>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="subtitle" className="mt-0">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">字幕整理</CardTitle>
+                <CardDescription>外挂字幕文件自动跟随视频整理</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <FieldGroup>
+                  <Field label="启用字幕整理" description="自动移动外挂字幕">
+                    <Toggle
+                      value={(cfg?.subtitle as Record<string, unknown>)?.enabled !== false}
+                      onChange={(v) => set('subtitle', 'enabled', v)}
+                    />
+                  </Field>
+                </FieldGroup>
+                <div className="mt-4 text-xs text-muted-foreground">
+                  <p>支持的字幕格式：<code className="rounded bg-muted px-1">.srt</code> <code className="rounded bg-muted px-1">.ass</code> <code className="rounded bg-muted px-1">.ssa</code></p>
+                  <p className="mt-1">语言代码标准化：简体中文 → <code className="rounded bg-muted px-1">zh-CN</code>，繁体中文 → <code className="rounded bg-muted px-1">zh-TW</code></p>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

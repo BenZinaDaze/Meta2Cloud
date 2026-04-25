@@ -24,6 +24,7 @@ import logging
 import os
 from collections import defaultdict
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Optional, Set
 
 import requests
@@ -199,7 +200,16 @@ class Pipeline:
         print("=" * 68)
 
         print(f"\n📂 扫描文件夹：{scan_folder}（含子文件夹）")
-        videos = [f for f in self._client.list_all_recursive(folder_id=scan_folder) if f.is_video]
+        all_files = list(self._client.list_all_recursive(folder_id=scan_folder))
+        videos = [f for f in all_files if f.is_video]
+        subtitles = [f for f in all_files if f.is_subtitle] if self._cfg.subtitle.enabled else []
+
+        # 构建字幕索引：parent_id -> [CloudFile]
+        subtitle_index: dict[str, List[CloudFile]] = {}
+        for sub in subtitles:
+            parent = sub.parent_id or (sub.parents[0] if sub.parents else "")
+            subtitle_index.setdefault(parent, []).append(sub)
+
         if not videos:
             print("  （未找到视频文件）")
             if scan_folder:
@@ -208,11 +218,14 @@ class Pipeline:
                 print("  空文件夹清理完毕。")
             return
 
-        print(f"  找到 {len(videos)} 个视频文件\n")
+        print(f"  找到 {len(videos)} 个视频文件")
+        if subtitles:
+            print(f"  找到 {len(subtitles)} 个字幕文件")
+        print()
 
         results = []
         for idx, video in enumerate(videos, 1):
-            result = self._process_one(video, idx, total=len(videos))
+            result = self._process_one(video, idx, total=len(videos), subtitle_index=subtitle_index)
             results.append(result)
 
         self._print_summary(results)
@@ -222,6 +235,99 @@ class Pipeline:
             print("\n🧹 检查并清理空子文件夹...")
             self._cleanup_empty_folders(scan_folder, is_root=True)
             print("  空文件夹清理完毕。")
+
+    def _move_subtitles_for_video(
+        self,
+        video: CloudFile,
+        clean_video_name: str,
+        target_folder: Optional[CloudFile],
+        subtitle_index: dict,
+    ) -> None:
+        """移动与视频关联的字幕文件，并从索引中移除已处理的字幕"""
+        from core.subtitle_matcher import SubtitleMatcher
+
+        # 获取同目录的候选字幕
+        video_parent = video.parent_id or (video.parents[0] if video.parents else "")
+        candidates = subtitle_index.get(video_parent, [])
+
+        if not candidates:
+            return
+
+        # 匹配字幕
+        matcher = SubtitleMatcher()
+        matches = matcher.find_subtitles_for_video(video, candidates)
+
+        if not matches:
+            return
+
+        # 构建候选字幕的索引
+        candidate_by_name: dict[str, CloudFile] = {}
+        for sub in candidates:
+            candidate_by_name[sub.name.lower()] = sub
+
+        # 记录需要从索引中移除的字幕文件
+        processed_ids: set[str] = set()
+
+        # 移动每个匹配的字幕
+        for match in matches:
+            try:
+                # 基于视频的目标名重命名字幕
+                target_subtitle_name = matcher.build_target_name(
+                    video_name=clean_video_name,
+                    subtitle_ext=match.subtitle_file.extension,
+                    language_tags=match.language_tags,
+                )
+
+                if self._dry_run or not target_folder:
+                    print(f"      字幕：{target_subtitle_name}  [dry-run，不移动]")
+                    continue
+
+                # 检查字幕是否已在目标位置
+                if (match.subtitle_file.parent_id == target_folder.id and
+                    match.subtitle_file.name == target_subtitle_name):
+                    processed_ids.add(match.subtitle_file.id)
+                    lang_str = '.'.join(match.language_tags) if match.language_tags else 'default'
+                    print(f"      字幕：{target_subtitle_name} ({lang_str}) [已就位]")
+                    continue
+
+                # 检查目标位置是否已存在同名字幕
+                existing_sub = self._client.find_file(target_subtitle_name, folder_id=target_folder.id)
+                if existing_sub:
+                    if existing_sub.id == match.subtitle_file.id:
+                        # 字幕已在目标位置，已在上面的检查中处理
+                        continue
+                    elif self._replace_existing_video:
+                        # 替换模式下，先移除现有字幕
+                        try:
+                            self._client.trash_file(existing_sub.id)
+                            print(f"      字幕：移除已存在的 {target_subtitle_name}")
+                        except Exception as e:
+                            logger.warning("移除已存在字幕失败 [%s]: %s", target_subtitle_name, e)
+                            continue
+                    else:
+                        # 跳过，不覆盖现有字幕
+                        logger.info("目标位置已存在字幕 %s，跳过", target_subtitle_name)
+                        continue
+
+                self._client.move_file(
+                    match.subtitle_file.id,
+                    new_folder_id=target_folder.id,
+                    new_name=target_subtitle_name,
+                )
+                processed_ids.add(match.subtitle_file.id)
+
+                lang_str = '.'.join(match.language_tags) if match.language_tags else 'default'
+                print(f"      字幕：{target_subtitle_name} ({lang_str}) ✓")
+
+            except Exception as e:
+                logger.warning("移动字幕失败 [%s]: %s", match.subtitle_file.name, e)
+
+        # 从索引中移除已处理的字幕，避免重复匹配
+        if processed_ids and video_parent in subtitle_index:
+            subtitle_index[video_parent] = [
+                sub for sub in subtitle_index[video_parent]
+                if sub.id not in processed_ids
+            ]
 
     def _cleanup_empty_folders(self, folder_id: str, folder_name: str = "", is_root: bool = False) -> bool:
         """
@@ -256,7 +362,13 @@ class Pipeline:
 
         return is_empty
 
-    def _process_one(self, video: CloudFile, idx: int, total: int) -> ProcessResult:
+    def _process_one(
+        self,
+        video: CloudFile,
+        idx: int,
+        total: int,
+        subtitle_index: Optional[dict] = None,
+    ) -> ProcessResult:
         print(f"[{idx}/{total}] 🎬  {video.name}")
         result = ProcessResult(file=video, status="ok")
 
@@ -392,7 +504,7 @@ class Pipeline:
                     result.status = "skipped"
                     result.reason = "文件已在目标位置"
                     print(f"      同名预检：文件已在目标位置，跳过")
-                    return result
+                    # 视频已在目标位置，可以继续处理字幕
                 elif self._replace_existing_video:
                     pending_replace_id = existing.id
                     print(f"      同名预检：将替换已有文件")
@@ -400,6 +512,7 @@ class Pipeline:
                     result.status = "skipped"
                     result.reason = "目标位置已存在同名文件"
                     print(f"      同名预检：跳过（目标位置已存在同名文件）")
+                    # 目标位置有其他同名文件，不处理字幕（避免与错误视频关联）
                     return result
 
         def upload_metadata() -> None:
@@ -505,7 +618,8 @@ class Pipeline:
                     self._season_poster_done.add(season_poster_key)
 
         # ── Step 8-11: 元数据上传（替换模式下延后）──────────
-        if not pending_replace_id:
+        # 对于已就位的视频（status=skipped），仍允许元数据回填
+        if not pending_replace_id and result.status not in ("failed",):
             upload_metadata()
 
         # ── Step 12: 移动视频文件（同时改名为标准格式）────────
@@ -547,6 +661,17 @@ class Pipeline:
         # ── Step 12.5: 替换模式下移动成功后上传元数据 ───────
         if pending_replace_id and result.moved:
             upload_metadata()
+
+        # ── Step 13: 移动关联的字幕文件 ──────────────────────
+        # dry-run 模式下也预览字幕移动
+        # 即使视频被跳过（已在目标位置或同名文件存在），也处理字幕
+        if subtitle_index and result.status != "failed":
+            self._move_subtitles_for_video(
+                video=video,
+                clean_video_name=clean_name or video.name,
+                target_folder=target_folder,
+                subtitle_index=subtitle_index,
+            )
 
         print()
 

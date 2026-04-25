@@ -183,6 +183,18 @@ class PipelineConfig:
 
 
 @dataclass
+class SubtitleConfig:
+    """字幕整理配置"""
+    enabled: bool = True  # 是否整理字幕
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "SubtitleConfig":
+        return cls(
+            enabled=_parse_bool_str(d.get("enabled", True), "subtitle.enabled"),
+        )
+
+
+@dataclass
 class TelegramConfig:
     bot_token: str = ""
     chat_id: str = ""
@@ -261,6 +273,7 @@ class Config:
     u115: U115Config = field(default_factory=U115Config)
     quark: QuarkConfig = field(default_factory=QuarkConfig)
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
+    subtitle: SubtitleConfig = field(default_factory=SubtitleConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     webui: WebUIConfig = field(default_factory=WebUIConfig)
     aria2: Aria2Config = field(default_factory=Aria2Config)
@@ -317,6 +330,7 @@ class Config:
             u115=U115Config.from_dict(d.get("u115") or {}),
             quark=QuarkConfig.from_dict(d.get("quark") or {}),
             pipeline=PipelineConfig.from_dict(d.get("pipeline") or {}),
+            subtitle=SubtitleConfig.from_dict(d.get("subtitle") or {}),
             telegram=TelegramConfig.from_dict(d.get("telegram") or {}),
             webui=WebUIConfig.from_dict(d.get("webui") or {}),
             aria2=Aria2Config.from_dict(d.get("aria2") or {}),
