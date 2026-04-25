@@ -133,11 +133,12 @@ uv run python -m core            # 正式整理
 
 ## Web UI 截图
 
-<img src="doc/image/Meta2Cloud_20260426_012947.png">
-<img src="doc/image/Meta2Cloud_20260426_013051.png">
-<img src="doc/image/Meta2Cloud_20260426_013101.png">
-<img src="doc/image/Meta2Cloud_20260426_013116.png">
-<img src="doc/image/Meta2Cloud_20260426_013131.png">
+<img src="doc/image/Meta2Cloud_20260426_014928.png">
+<img src="doc/image/Meta2Cloud_20260426_014934.png">
+<img src="doc/image/Meta2Cloud_20260426_014940.png">
+<img src="doc/image/Meta2Cloud_20260426_014947.png">
+<img src="doc/image/Meta2Cloud_20260426_014952.png">
+<img src="doc/image/Meta2Cloud_20260426_015000.png">
 
 ## 配置说明
 
@@ -262,3 +263,11 @@ python -m core --no-images
 ```bash
 python -m core --dry-run
 ```
+
+## 致谢
+
+识别词部分参考 [MoviePilot](https://github.com/jxxghp/MoviePilot) 项目。
+
+## 许可证
+
+[GPL v3](LICENSE)
