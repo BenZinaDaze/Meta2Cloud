@@ -3,6 +3,16 @@ import { RefreshCw, Pause, Play, Trash2, Edit, Rss } from 'lucide-react'
 import { checkSubscription, deleteSubscription, listSubscriptions, tmdbGetDetail, updateSubscription } from '@/api'
 import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import DetailModal from '@/components/modals/DetailModal'
 import SubscriptionModal from '@/components/modals/SubscriptionModal'
 import type { Subscription, MediaItem } from '@/types/api'
@@ -163,6 +173,7 @@ export default function SubscriptionsPage({
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailActionLoading, setDetailActionLoading] = useState('')
   const [filter, setFilter] = useState('all')
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   async function loadData() {
     setLoading(true)
@@ -274,13 +285,18 @@ export default function SubscriptionsPage({
 
   async function handleDeleteSelected() {
     if (!selectedItem) return
-    if (!window.confirm(`确认删除订阅「${selectedItem.name}」吗？`)) return
+    setConfirmDelete(true)
+  }
+
+  async function confirmDeleteSubscription() {
+    if (!selectedItem) return
     setDetailActionLoading('delete')
     try {
       await deleteSubscription(selectedItem.id)
       toast.success('订阅已删除', { description: selectedItem.name })
       setSelectedItem(null)
       setSelectedDetail(null)
+      setConfirmDelete(false)
       await loadData()
     } catch (err) {
       toast.error('删除失败', { description: (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '未知错误' })
@@ -420,6 +436,23 @@ export default function SubscriptionsPage({
         onOpenChange={(open) => { if (!open) setEditingItem(null) }}
         onSaved={async () => { await loadData() }}
       />
+
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除订阅</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除订阅「{selectedItem?.name}」吗？此操作无法撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteSubscription} className="bg-destructive text-destructive-foreground">
+              确认删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
