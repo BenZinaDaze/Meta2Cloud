@@ -52,7 +52,6 @@ docker exec meta2cloud python -m core --dry-run  # Run pipeline in container
 - `webui/services/` - Business logic layer
   - `media_actions.py` - TMDB lookups, media detail fetching
   - `library_data.py` - Library queries and statistics
-  - `config.py` - Configuration management
   - `subscriptions.py` - RSS subscription handling
   - `watcher.py` - Background tasks
 - `webui/library_store.py` - SQLite database for library state
@@ -68,21 +67,39 @@ docker exec meta2cloud python -m core --dry-run  # Run pipeline in container
 - Uses Radix UI primitives and shadcn-style components
 
 ### Storage Layer
-- `storage/base.py` - Abstract `StorageProvider` interface
+- `storage/base.py` - Abstract `StorageProvider` interface with `CloudFile` data model
 - `storage/google_drive.py` - Google Drive implementation
 - `storage/pan115.py` - 115网盘 implementation
 - `storage/quark.py` - 夸克网盘 implementation
+- `u115pan/` and `uquark/` - Low-level API clients for respective platforms
 
 ### Media Parsing
-- `mediaparser/metainfo.py` - Main entry point for filename parsing
+- `mediaparser/metainfo.py` - Main entry point: `MetaInfo()` for strings, `MetaInfoPath()` for file paths
 - `mediaparser/meta_video.py` - Video file parsing logic
-- `mediaparser/meta_anime.py` - Anime-specific parsing
+- `mediaparser/meta_anime.py` - Anime-specific parsing (uses anitopy)
 - `mediaparser/tmdb.py` - TMDB API client
+
+### NFO Generation
+- `nfo/generator.py` - Generates Plex/Kodi/Infuse compatible NFO XML
+- `nfo/image_uploader.py` - Downloads and uploads poster/fanart images
+
+### Scraper (RSS Subscriptions)
+- `scraper/core/base_spider.py` - Abstract spider interface
+- `scraper/strategies/mikan_spider.py` - Mikan Project RSS scraper for anime
 
 ### Pipeline Flow
 `core/pipeline.py` orchestrates: Scan → Parse → TMDB → NFO → Images → Move files
+- Supports subtitle matching and moving via `core/subtitle_matcher.py`
+- Empty folder cleanup after processing
+
+### Scripts
+- `scripts/organize_subtitles.py` - Standalone subtitle organization utility
+- `scripts/upload.example.sh` - Example upload script with `/trigger` webhook
 
 ## Key Patterns
+
+### Storage Provider Pattern
+All cloud storage implementations inherit from `StorageProvider` ABC in `storage/base.py`. The `CloudFile` dataclass provides a unified interface for files/folders across platforms. Use `get_provider(name, cfg)` from `storage/__init__.py` to instantiate the correct provider.
 
 ### Frontend Modal Pattern
 Modals use React portals (`createPortal`) to render at `document.body`. They typically include:
@@ -96,6 +113,9 @@ Backend uses JWT tokens. Frontend stores token in localStorage, includes in `Aut
 ### Configuration
 Config stored in YAML files (`config/config.yaml`, `config/parser-rules.yaml`). Can be edited via Web UI or directly. Environment variable `META2CLOUD_CONFIG_DIR` overrides config directory location.
 
+### TMDB Caching
+WebUI uses SQLite cache (`webui/tmdb_cache.py`) to store TMDB responses. Pipeline writes to this cache, WebUI reads from it to avoid redundant API calls.
+
 ## Important Notes
 
 - Frontend uses React 19 with TypeScript
@@ -104,3 +124,4 @@ Config stored in YAML files (`config/config.yaml`, `config/parser-rules.yaml`). 
 - Frontend dev server proxies `/api` to backend
 - Database files stored in `data/` directory at runtime
 - Project uses uv for Python package management (migrated from pip)
+- Test files go in `test/`, utility scripts go in `scripts/`
