@@ -137,6 +137,23 @@ export const getLogs = (params?: { limit?: number; offset?: number }) =>
 export const getPipelineStatus = () => api.get('/pipeline/status')
 export const triggerPipeline = () => api.post('/pipeline/trigger')
 
+// ── 入库历史 ──
+export const getIngestHistory = (params?: {
+  page?: number
+  page_size?: number
+  media_type?: string
+  status?: string
+  start_date?: string
+  end_date?: string
+  keyword?: string
+}) => api.get('/ingest/history', { params })
+
+export const getIngestStats = (days?: number) =>
+  api.get('/ingest/stats', { params: { days } })
+
+export const getRecentIngests = (limit?: number) =>
+  api.get('/ingest/recent', { params: { limit } })
+
 // ── Google Drive ──
 export const getDriveOauthStatus = () => api.get('/drive/oauth/status')
 export const testDriveConnection = () => api.post('/drive/test')

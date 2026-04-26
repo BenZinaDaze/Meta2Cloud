@@ -11,6 +11,7 @@ import {
   List,
   Archive,
   Activity,
+  History,
   Calendar,
   ChevronDown,
   Settings,
@@ -323,6 +324,13 @@ export default function Sidebar({
             />
           </div>
         )}
+
+        <NavItem
+          icon={<History className="size-4" />}
+          label="入库记录"
+          active={active === 'ingest-history'}
+          onClick={() => onSelect('ingest-history')}
+        />
 
         <NavItem
           icon={<Activity className="size-4" />}

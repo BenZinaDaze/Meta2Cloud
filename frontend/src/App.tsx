@@ -12,12 +12,13 @@ import DownloadsPage from '@/components/pages/DownloadsPage'
 import CalendarPage from '@/components/pages/CalendarPage'
 import SubscriptionsPage from '@/components/pages/SubscriptionsPage'
 import LogsPage from '@/components/pages/LogsPage'
+import IngestHistoryPage from '@/components/pages/IngestHistoryPage'
 import U115OfflinePage from '@/components/pages/U115OfflinePage'
 import ScraperSearch from '@/components/pages/ScraperSearch'
 import ParseTestModal from '@/components/modals/ParseTestModal'
 import { toast } from 'sonner'
 
-type NavKey = 'all' | 'movies' | 'tv' | 'config' | 'config-filename-rules' | 'calendar' | 'scraper-search' | 'subscriptions' | 'logs' | 'u115-offline' | 'downloads' | 'downloads-active' | 'downloads-waiting' | 'downloads-stopped'
+type NavKey = 'all' | 'movies' | 'tv' | 'config' | 'config-filename-rules' | 'calendar' | 'scraper-search' | 'subscriptions' | 'ingest-history' | 'logs' | 'u115-offline' | 'downloads' | 'downloads-active' | 'downloads-waiting' | 'downloads-stopped'
 
 const DOWNLOAD_QUEUE_MAP: Record<string, string | undefined> = {
   downloads: 'all',
@@ -228,6 +229,8 @@ export default function App() {
                 aria2Enabled={aria2Enabled ?? false}
                 u115Authorized={u115Authorized}
               />
+            ) : activeNav === 'ingest-history' ? (
+              <IngestHistoryPage onToast={handleToast} />
             ) : activeNav === 'logs' ? (
               <LogsPage />
             ) : activeNav === 'u115-offline' ? (

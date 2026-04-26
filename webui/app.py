@@ -9,6 +9,7 @@ from webui.core.runtime import _ROOT_DIR
 from webui.routes.aria2 import router as aria2_router
 from webui.routes.auth import router as auth_router
 from webui.routes.config import router as config_router
+from webui.routes.ingest import router as ingest_router
 from webui.routes.library import router as library_router
 from webui.routes.logs import router as logs_router
 from webui.routes.media_actions import router as media_actions_router
@@ -60,6 +61,7 @@ if os.path.exists(_ASSETS_DIR):
 app.include_router(auth_router)
 app.include_router(aria2_router)
 app.include_router(config_router)
+app.include_router(ingest_router)
 app.include_router(pages_router)
 app.include_router(library_router)
 app.include_router(logs_router)

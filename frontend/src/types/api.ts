@@ -157,3 +157,45 @@ export interface StatsResponse {
 export interface User {
   username: string
 }
+
+// 入库记录
+export interface IngestRecord {
+  id: number
+  media_type: 'movie' | 'tv'
+  tmdb_id: number
+  title: string
+  original_title: string
+  year: string
+  season?: number
+  episode?: number
+  episode_title: string
+  poster_path: string
+  poster_url?: string
+  drive_folder_id: string
+  original_name: string
+  status: 'success' | 'failed' | 'no_tmdb'
+  error_message: string
+  ingested_at: string
+}
+
+export interface IngestPagination {
+  page: number
+  page_size: number
+  total: number
+  total_pages: number
+}
+
+export interface IngestHistoryResponse {
+  items: IngestRecord[]
+  pagination: IngestPagination
+}
+
+export interface IngestStatsResponse {
+  days: number
+  total: number
+  movies: number
+  tv_episodes: number
+  success: number
+  failed: number
+  no_tmdb: number
+}

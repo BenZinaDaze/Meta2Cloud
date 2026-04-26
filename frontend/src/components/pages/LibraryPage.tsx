@@ -7,17 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import ScraperDetailModal from '@/components/modals/ScraperDetailModal'
 import type { MediaItem, LibraryResponse } from '@/types/api'
-
-function relativeTime(isoStr: string | undefined): string {
-  if (!isoStr) return '从未刷新'
-  const diff = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000)
-  if (diff < 60) return '刚刚'
-  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`
-  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`
-  if (diff < 86400 * 30) return `${Math.floor(diff / 86400)} 天前`
-  return new Date(isoStr).toLocaleDateString('zh-CN')
-}
-
+import { relativeTime } from '@/lib/time'
 function StatCard({ label, value, sub, action }: {
   label: string
   value: string | number
@@ -209,7 +199,7 @@ export default function LibraryPage({
           <div className={filter === 'all' ? 'col-span-2 sm:col-span-1' : 'col-span-1'}>
             <StatCard
               label="最后刷新"
-              value={relativeTime(data?.scanned_at)}
+              value={relativeTime(data?.scanned_at, { fallback: '从未刷新', dayThreshold: 30 })}
               sub={
                 data?.scanned_at
                   ? new Date(data.scanned_at).toLocaleString('zh-CN', { hour12: false })

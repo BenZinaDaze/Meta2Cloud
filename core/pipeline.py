@@ -40,6 +40,11 @@ try:
 except ImportError:
     _WebUiCache = None  # type: ignore
 
+try:
+    from webui.ingest_store import get_ingest_store as _get_ingest_store
+except ImportError:
+    _get_ingest_store = None  # type: ignore
+
 logging.basicConfig(
     level=logging.WARNING,
     format="%(levelname)-8s %(name)s: %(message)s",
@@ -675,6 +680,10 @@ class Pipeline:
 
         print()
 
+        self._record_ingest(result=result, meta=meta, tmdb_info=tmdb_info,
+                            season_num=season_num, episode_num=episode_num,
+                            episode_detail=episode_detail)
+
         # 收集入库通知数据（成功且有 TMDB 元数据时；无 TMDB 的情况已在 miss 分支提前收集）
         if result.status == "ok" and tmdb_info:
             # 获取季封面（优先用于 TG 通知）
@@ -699,6 +708,53 @@ class Pipeline:
             ))
 
         return result
+
+    def _record_ingest(self, *, result, meta, tmdb_info, season_num, episode_num, episode_detail):
+        if _get_ingest_store is None:
+            return
+        try:
+            store = _get_ingest_store()
+            is_tv = meta.type == MediaType.TV
+            if result.status == "ok" and tmdb_info:
+                store.record_ingest(
+                    media_type="tv" if is_tv else "movie",
+                    tmdb_id=int(tmdb_info.get("tmdb_id") or tmdb_info.get("id") or 0),
+                    title=tmdb_info.get("name") or tmdb_info.get("title") or meta.name,
+                    original_title=tmdb_info.get("original_name") or tmdb_info.get("original_title") or "",
+                    year=(tmdb_info.get("first_air_date") or tmdb_info.get("release_date") or "")[:4],
+                    season=season_num if is_tv else None,
+                    episode=episode_num if is_tv else None,
+                    episode_title=(episode_detail or {}).get("name") or "",
+                    poster_path=tmdb_info.get("poster_path") or "",
+                    drive_folder_id=result.target_folder.id if result.target_folder else "",
+                    original_name=result.file.name,
+                    status="success",
+                )
+            elif result.status == "ok" and not tmdb_info:
+                store.record_ingest(
+                    media_type="tv" if is_tv else "movie",
+                    tmdb_id=0,
+                    title=meta.name,
+                    year=meta.year or "",
+                    season=season_num if is_tv else None,
+                    episode=episode_num if is_tv else None,
+                    original_name=result.file.name,
+                    status="no_tmdb",
+                )
+            elif result.status == "failed":
+                store.record_ingest(
+                    media_type="tv" if is_tv else "movie",
+                    tmdb_id=int(tmdb_info.get("tmdb_id") or tmdb_info.get("id") or 0) if tmdb_info else 0,
+                    title=meta.name,
+                    year=meta.year or "",
+                    season=season_num if is_tv else None,
+                    episode=episode_num if is_tv else None,
+                    original_name=result.file.name,
+                    status="failed",
+                    error_message=result.reason,
+                )
+        except Exception as e:
+            logger.warning("记录入库历史失败：%s", e)
 
     @staticmethod
     def _safe_filename(name: str) -> str:
