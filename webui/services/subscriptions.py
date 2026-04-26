@@ -20,6 +20,7 @@ from webui.schemas.aria2 import Aria2AddUriBody
 from webui.schemas.config import U115OfflineAddUrlsBody
 from webui.services.aria2 import aria2_add_uri_payload
 from webui.services.u115 import u115_oauth_status_payload, u115_offline_add_urls_sync
+from webui.services.media_actions import tmdb_search_multi_payload
 
 
 _store_lock = threading.Lock()
@@ -468,3 +469,65 @@ def subscriptions_status_payload() -> dict[str, Any]:
         "total_count": len(store.list_subscriptions()),
         "poll_seconds": get_subscription_poll_seconds(),
     }
+
+
+def _detect_site_from_url(rss_url: str) -> str:
+    """从 RSS URL 识别站点"""
+    parsed = urlparse(rss_url)
+    host = (parsed.netloc or "").lower()
+    if "mikanani" in host or "mikan" in host:
+        return "mikan"
+    raise HTTPException(status_code=400, detail=f"不支持的 RSS 站点：{host}")
+
+
+def parse_subscription_rss_payload(body) -> dict[str, Any]:
+    """解析 RSS，返回建议的订阅字段值"""
+    try:
+        site = _detect_site_from_url(body.rss_url)
+        items = _fetch_feed_items(site, body.rss_url)
+        if not items:
+            return {"success": False, "error": "RSS 源中没有找到任何条目"}
+
+        first_item = items[0]
+        title = first_item.get("title") or ""
+        analysis = _analyze_title(title)
+
+        if not analysis["parse_success"]:
+            return {"success": False, "error": f"无法解析标题：{title}"}
+
+        media_title = analysis["name"] or ""
+        tmdb_id = None
+        poster_url = None
+        media_type = "tv"
+
+        if media_title:
+            try:
+                tmdb_res = tmdb_search_multi_payload(media_title)
+                tmdb_results = tmdb_res.get("results") or []
+                if tmdb_results:
+                    first_tmdb = tmdb_results[0]
+                    tmdb_id = first_tmdb.get("tmdb_id") or first_tmdb.get("id")
+                    poster_url = first_tmdb.get("poster_url")
+                    media_type = first_tmdb.get("media_type") or "tv"
+            except Exception:
+                pass
+
+        subgroup_name = analysis["resource_team"] or ""
+        name = f"{media_title} [{subgroup_name}]" if subgroup_name else media_title
+
+        return {
+            "success": True,
+            "name": name,
+            "media_title": media_title,
+            "subgroup_name": subgroup_name,
+            "season_number": analysis["season_number"],
+            "start_episode": analysis["episode_number"] or 1,
+            "media_type": media_type,
+            "tmdb_id": tmdb_id,
+            "poster_url": poster_url,
+            "site": site,
+        }
+    except HTTPException as e:
+        return {"success": False, "error": e.detail}
+    except Exception as e:
+        return {"success": False, "error": str(e)}

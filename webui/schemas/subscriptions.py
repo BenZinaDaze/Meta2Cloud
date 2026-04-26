@@ -35,3 +35,7 @@ class SubscriptionTestBody(BaseModel):
     season_number: int = Field(default=1, ge=1, le=99)
     start_episode: int = Field(default=1, ge=1, le=9999)
     keyword_all: list[str] = Field(default_factory=list)
+
+
+class SubscriptionParseRssBody(BaseModel):
+    rss_url: str = Field(..., min_length=1)

@@ -11,8 +11,9 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
-import { Loader2 } from 'lucide-react'
-import { createSubscription, testSubscription, updateSubscription } from '@/api'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Loader2, Wand2 } from 'lucide-react'
+import { createSubscription, testSubscription, updateSubscription, parseSubscriptionRss } from '@/api'
 import { toast } from 'sonner'
 import type { Subscription } from '@/types/api'
 
@@ -59,6 +60,7 @@ export default function SubscriptionModal({
   }))
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [parsing, setParsing] = useState(false)
   const [testResult, setTestResult] = useState<{
     summary?: {
       total_items: number
@@ -86,7 +88,8 @@ export default function SubscriptionModal({
 
   // Reset form when initialValue changes (e.g., opening modal with new draft)
   useEffect(() => {
-    if (open && initialValue) {
+    if (!open) return
+    if (initialValue) {
       setForm({
         name: initialValue.name || '',
         media_title: initialValue.media_title || '',
@@ -102,10 +105,26 @@ export default function SubscriptionModal({
         push_target: initialValue.push_target || (u115Authorized ? 'u115' : 'aria2'),
         enabled: initialValue.enabled ?? true,
       })
-      setTestResult(null)
-      setError('')
+    } else if (mode === 'create') {
+      setForm({
+        name: '',
+        media_title: '',
+        media_type: 'tv',
+        tmdb_id: null,
+        poster_url: null,
+        site: 'mikan',
+        rss_url: '',
+        subgroup_name: '',
+        season_number: 1,
+        start_episode: 1,
+        keyword_text: '',
+        push_target: u115Authorized ? 'u115' : 'aria2',
+        enabled: true,
+      })
     }
-  }, [open, initialValue, u115Authorized])
+    setTestResult(null)
+    setError('')
+  }, [open, initialValue, u115Authorized, mode])
 
   useEffect(() => {
     if (availableTargets.length === 0) return
@@ -151,11 +170,45 @@ export default function SubscriptionModal({
     }
   }
 
+  async function handleParseRss() {
+    if (!form.rss_url.trim()) return
+    setParsing(true)
+    setError('')
+    try {
+      const res = await parseSubscriptionRss(form.rss_url.trim())
+      if (res.data?.success) {
+        const data = res.data
+        setForm((prev) => ({
+          ...prev,
+          name: prev.name || data.name || '',
+          media_title: prev.media_title || data.media_title || '',
+          media_type: data.media_type || prev.media_type,
+          tmdb_id: data.tmdb_id || prev.tmdb_id,
+          poster_url: data.poster_url || prev.poster_url,
+          site: data.site || prev.site,
+          subgroup_name: prev.subgroup_name || data.subgroup_name || '',
+          season_number: data.season_number || prev.season_number,
+          start_episode: data.start_episode || prev.start_episode,
+        }))
+        toast.success('RSS 解析成功', { description: data.media_title })
+      } else {
+        setError(res.data?.error || '解析失败')
+      }
+    } catch (err) {
+      const message = (err as { response?: { data?: { detail?: string } }; message?: string })?.response?.data?.detail ||
+        (err as { message?: string })?.message ||
+        '解析失败'
+      setError(message)
+    } finally {
+      setParsing(false)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim() || !form.rss_url.trim() || !form.media_title.trim()) return
     if (availableTargets.length === 0) {
-      setError('当前没有可用的推送目标，请先连接下载器或授权 115')
+      setError('当前没有可用的推送方式，请先连接下载器或授权 115')
       return
     }
     setSaving(true)
@@ -226,13 +279,23 @@ export default function SubscriptionModal({
             {/* Left: Form */}
             <section className="rounded-2xl p-4 sm:p-5 border bg-card">
               <div className="grid gap-4">
-                <div>
-                  <Label>订阅名称</Label>
-                  <Input
-                    value={form.name}
-                    onChange={(e) => updateField('name', e.target.value)}
-                    className="mt-2"
-                  />
+                <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
+                  <div>
+                    <Label>订阅名称</Label>
+                    <Input
+                      value={form.name}
+                      onChange={(e) => updateField('name', e.target.value)}
+                      className="mt-2"
+                    />
+                  </div>
+                  <div className="w-24">
+                    <Label>站点</Label>
+                    <Input
+                      value={form.site}
+                      onChange={(e) => updateField('site', e.target.value)}
+                      className="mt-2"
+                    />
+                  </div>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
@@ -252,8 +315,56 @@ export default function SubscriptionModal({
                     />
                   </div>
                 </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label>TMDB ID</Label>
+                    <Input
+                      type="number"
+                      placeholder="可选，手动填写"
+                      value={form.tmdb_id ?? ''}
+                      onChange={(e) => updateField('tmdb_id', e.target.value ? Number(e.target.value) : null)}
+                      className="mt-2"
+                    />
+                  </div>
+                  <div>
+                    <Label>关键字</Label>
+                    <Input
+                      value={form.keyword_text}
+                      onChange={(e) => updateField('keyword_text', e.target.value)}
+                      placeholder="例如：1080p, 简中"
+                      className="mt-2"
+                    />
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground -mt-2">
+                  TMDB ID 留空则无法关联媒体库；关键字用逗号分隔，必须全部命中才会推送。
+                </div>
                 <div>
-                  <Label>RSS 地址</Label>
+                  <div className="flex items-center justify-between gap-2">
+                    <Label>RSS 地址</Label>
+                    {mode === 'create' && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleParseRss}
+                        disabled={parsing || !form.rss_url.trim()}
+                        className="gap-1.5 h-6 text-xs"
+                      >
+                        {parsing ? (
+                          <>
+                            <Loader2 className="size-3 animate-spin" />
+                            解析中…
+                          </>
+                        ) : (
+                          <>
+                            <Wand2 className="size-3" />
+                            解析 RSS
+                          </>
+                        )}
+                      </Button>
+                    )}
+                  </div>
                   <Textarea
                     value={form.rss_url}
                     onChange={(e) => updateField('rss_url', e.target.value)}
@@ -261,7 +372,19 @@ export default function SubscriptionModal({
                     className="mt-2 resize-none"
                   />
                 </div>
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div>
+                    <Label>媒体类型</Label>
+                    <Select value={form.media_type} onValueChange={(v) => updateField('media_type', v)}>
+                      <SelectTrigger className="mt-2">
+                        <SelectValue placeholder="选择类型" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="tv">电视剧</SelectItem>
+                        <SelectItem value="movie">电影</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div>
                     <Label>第几季</Label>
                     <Input
@@ -284,20 +407,7 @@ export default function SubscriptionModal({
                   </div>
                 </div>
                 <div>
-                  <Label>关键字</Label>
-                  <Textarea
-                    value={form.keyword_text}
-                    onChange={(e) => updateField('keyword_text', e.target.value)}
-                    rows={3}
-                    placeholder="例如：1080p, 简中"
-                    className="mt-2 resize-none"
-                  />
-                  <div className="mt-2 text-xs text-muted-foreground">
-                    用逗号分隔。这里填写的关键字必须全部命中，测试结果会展示最终会下哪些。
-                  </div>
-                </div>
-                <div>
-                  <Label>推送目标</Label>
+                  <Label>推送方式</Label>
                   <div className="grid gap-2 sm:grid-cols-2 mt-2">
                     {availableTargets.length > 0 ? (
                       availableTargets.map((target) => (
@@ -312,7 +422,7 @@ export default function SubscriptionModal({
                       ))
                     ) : (
                       <div className="rounded-xl px-4 py-3 text-sm bg-destructive/10 text-destructive border border-destructive/20 col-span-2">
-                        当前没有可用推送目标
+                        当前没有可用推送方式
                       </div>
                     )}
                   </div>

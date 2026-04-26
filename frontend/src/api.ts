@@ -70,6 +70,8 @@ export const updateSubscription = (id: number, data: Record<string, unknown>) =>
 export const deleteSubscription = (id: number) => api.delete(`/subscriptions/${id}`)
 export const testSubscription = (data: Record<string, unknown>) =>
   api.post('/subscriptions/test', data)
+export const parseSubscriptionRss = (rss_url: string) =>
+  api.post('/subscriptions/parse-rss', { rss_url })
 export const checkSubscription = (id: number) =>
   api.post(`/subscriptions/${id}/check`)
 

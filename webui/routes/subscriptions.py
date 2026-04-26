@@ -3,6 +3,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from webui.schemas.subscriptions import (
     SubscriptionCreateBody,
+    SubscriptionParseRssBody,
     SubscriptionTestBody,
     SubscriptionUpdateBody,
 )
@@ -12,6 +13,7 @@ from webui.services.subscriptions import (
     delete_subscription_payload,
     get_subscription_payload,
     list_subscriptions_payload,
+    parse_subscription_rss_payload,
     test_subscription_payload,
     update_subscription_payload,
 )
@@ -32,6 +34,11 @@ async def create_subscription(body: SubscriptionCreateBody):
 @router.post("/api/subscriptions/test")
 async def test_subscription(body: SubscriptionTestBody):
     return await run_in_threadpool(test_subscription_payload, body)
+
+
+@router.post("/api/subscriptions/parse-rss")
+async def parse_subscription_rss(body: SubscriptionParseRssBody):
+    return await run_in_threadpool(parse_subscription_rss_payload, body)
 
 
 @router.get("/api/subscriptions/{subscription_id}")

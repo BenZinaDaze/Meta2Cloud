@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { RefreshCw, Pause, Play, Trash2, Edit, Rss } from 'lucide-react'
+import { RefreshCw, Pause, Play, Trash2, Edit, Rss, Plus } from 'lucide-react'
 import { checkSubscription, deleteSubscription, listSubscriptions, tmdbGetDetail, updateSubscription } from '@/api'
 import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
@@ -34,7 +34,7 @@ function TinyPill({ children, tone = 'default' }: { children: React.ReactNode; t
 }
 
 function SubscriptionMiniCard({ item, onEdit }: { item: Subscription; onEdit: (item: Subscription) => void }) {
-  const posterUrl = item.library?.poster_url || item.tmdb?.poster_url || item.poster_url
+  const posterUrl = item.library?.poster_url || item.tmdb?.poster_url || item.poster_url || null
   const displayTitle = item.tmdb?.title || item.media_title
   const completionText = item.library?.total_episodes
     ? `${item.library?.in_library_episodes || 0}/${item.library.total_episodes}`
@@ -174,6 +174,7 @@ export default function SubscriptionsPage({
   const [detailActionLoading, setDetailActionLoading] = useState('')
   const [filter, setFilter] = useState('all')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [creatingItem, setCreatingItem] = useState(false)
 
   async function loadData() {
     setLoading(true)
@@ -318,10 +319,16 @@ export default function SubscriptionsPage({
               RSS 订阅详情
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={loadData} className="gap-2">
-            <RefreshCw className="size-4" />
-            刷新列表
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => setCreatingItem(true)} className="gap-2">
+              <Plus className="size-4" />
+              添加订阅
+            </Button>
+            <Button variant="outline" size="sm" onClick={loadData} className="gap-2">
+              <RefreshCw className="size-4" />
+              刷新列表
+            </Button>
+          </div>
         </div>
 
         <div className="mb-4 flex flex-wrap gap-2 sm:mb-5">
@@ -435,6 +442,15 @@ export default function SubscriptionsPage({
         open={!!editingItem}
         onOpenChange={(open) => { if (!open) setEditingItem(null) }}
         onSaved={async () => { await loadData() }}
+      />
+
+      <SubscriptionModal
+        mode="create"
+        aria2Enabled={aria2Enabled}
+        u115Authorized={u115Authorized}
+        open={creatingItem}
+        onOpenChange={(open) => { if (!open) setCreatingItem(false) }}
+        onSaved={async () => { await loadData(); setCreatingItem(false) }}
       />
 
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
