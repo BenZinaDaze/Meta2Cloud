@@ -11,6 +11,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
 
   return (
     <Sonner
+      closeButton
       position="top-right"
       theme={sonnerTheme}
       toastOptions={{
