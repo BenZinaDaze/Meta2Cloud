@@ -347,6 +347,18 @@ export default function U115OfflinePage({ onToast }: U115OfflinePageProps) {
                         <span className="text-xs text-muted-foreground">
                           {Math.round(Number(task.percent_done) || 0)}%
                         </span>
+                        <div className="ml-auto">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => setDeleteConfirmTask(task)}
+                            disabled={busy}
+                            aria-label="删除任务"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
                       </div>
                       <div className="mb-3">
                         <div className="mb-1.5 flex justify-between text-xs text-muted-foreground">
@@ -385,10 +397,6 @@ export default function U115OfflinePage({ onToast }: U115OfflinePageProps) {
                         {task.url && <div className="break-all">链接：{task.url}</div>}
                       </div>
                     </div>
-                    <Button variant="destructive" size="sm" onClick={() => setDeleteConfirmTask(task)} disabled={busy}>
-                      <Trash2 className="size-4" />
-                      删除
-                    </Button>
                   </div>
                 </div>
               )

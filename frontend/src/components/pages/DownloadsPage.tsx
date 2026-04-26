@@ -169,6 +169,18 @@ function TaskCard({
                 {statusLabel(task.status)}
               </span>
               <span className="text-xs font-mono text-muted-foreground">{task.gid}</span>
+              <div className="ml-auto">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                  onClick={(e) => { e.stopPropagation(); onRemove(task.gid) }}
+                  disabled={pendingAction === 'remove'}
+                  aria-label="移除任务"
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
             </div>
 
             <div className="line-clamp-2 text-base font-semibold leading-snug sm:text-lg">
@@ -222,7 +234,7 @@ function TaskCard({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap xl:max-w-[220px] xl:justify-end">
+        <div className="flex flex-wrap gap-2 xl:ml-auto xl:max-w-[180px] xl:justify-end">
           {pausable && (
             <Button
               variant="outline"
@@ -253,14 +265,6 @@ function TaskCard({
               {pendingAction === 'retry' ? '重试中…' : '重试'}
             </Button>
           )}
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={(e) => { e.stopPropagation(); onRemove(task.gid) }}
-            disabled={pendingAction === 'remove'}
-          >
-            {pendingAction === 'remove' ? '移除中…' : '移除'}
-          </Button>
         </div>
       </div>
     </div>
