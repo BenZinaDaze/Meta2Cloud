@@ -83,6 +83,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             APP_VERSION=${{ env.APP_VERSION }}
-          # 使用 GitHub Actions 缓存加速构建
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # 使用 Docker Hub registry 做缓存（无 10GB / 7 天限制，多平台友好）
+          cache-from: type=registry,ref=benz1/meta2cloud:buildcache
+          cache-to: type=registry,ref=benz1/meta2cloud:buildcache,mode=max
