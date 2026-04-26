@@ -1,4 +1,6 @@
 import re
+import ssl
+import socket
 
 import yaml
 from fastapi import HTTPException
@@ -203,6 +205,9 @@ def drive_test_connection_payload():
             "usage": quota.get("usage"),
             "usage_in_drive": quota.get("usageInDrive"),
         }
+    except (socket.timeout, ssl.SSLError, OSError) as exc:
+        logger.warning(f"Google API 网络不通: {exc}")
+        raise HTTPException(status_code=400, detail="无法连接 Google 服务器，请检查网络") from exc
     except Exception as exc:
         logger.exception("Google Drive 连接测试失败")
         raise HTTPException(status_code=400, detail=f"Drive 连接测试失败：{exc}") from exc

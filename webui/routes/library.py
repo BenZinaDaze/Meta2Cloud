@@ -43,7 +43,7 @@ async def refresh_library():
         diff = await asyncio.get_event_loop().run_in_executor(None, _do_refresh_library)
         return diff
     except Exception as exc:
-        logger.exception("刷新媒体库失败")
+        logger.error(f"刷新媒体库失败: {exc}")
         app_log(
             "library",
             "refresh_failed",
@@ -61,7 +61,7 @@ async def get_movies():
         cfg = get_config()
         return scan_movies(client, cfg)
     except Exception as exc:
-        logger.exception("获取电影列表失败")
+        logger.error(f"获取电影列表失败: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -72,7 +72,7 @@ async def get_tv_shows():
         cfg = get_config()
         return scan_tv_shows(client, cfg)
     except Exception as exc:
-        logger.exception("获取电视剧列表失败")
+        logger.error(f"获取电视剧列表失败: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -92,5 +92,5 @@ async def get_tv_detail(tmdb_id: int):
     except HTTPException:
         raise
     except Exception as exc:
-        logger.exception("获取剧集详情失败")
+        logger.error(f"获取剧集详情失败: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))

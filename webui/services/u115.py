@@ -2,6 +2,7 @@ import io
 import json
 from dataclasses import asdict
 
+import requests
 from fastapi import HTTPException
 from fastapi.responses import Response
 import webui.core.runtime as runtime
@@ -164,6 +165,9 @@ def u115_oauth_create_sync(body=None):
         session = client.create_device_code()
         save_u115_device_session(session, resolve_config_path(session_json))
         return {"ok": True, "qrcode": session.qrcode, "uid": session.uid, "session_path": session_json, "status": u115_oauth_status_payload()}
+    except (requests.Timeout, requests.ConnectionError) as exc:
+        logger.warning(f"115 API 网络不通: {exc}")
+        raise HTTPException(status_code=400, detail="无法连接 115 服务器，请检查网络或服务器是否在国内") from exc
     except Exception as exc:
         logger.exception("115 创建扫码会话失败")
         raise HTTPException(status_code=400, detail=f"115 创建扫码会话失败：{exc}") from exc
@@ -183,8 +187,8 @@ def u115_oauth_qrcode_sync():
         image.save(buffer, format="PNG")
         return Response(content=buffer.getvalue(), media_type="image/png")
     except Exception as exc:
-        logger.exception("115 二维码代理失败")
-        raise HTTPException(status_code=400, detail=f"115 二维码代理失败：{exc}") from exc
+        logger.warning(f"115 二维码生成失败: {exc}")
+        raise HTTPException(status_code=400, detail=f"115 二维码生成失败：{exc}") from exc
 
 
 def u115_oauth_poll_sync():
@@ -210,8 +214,11 @@ def u115_oauth_poll_sync():
                 except (FileNotFoundError, Exception):
                     pass
                 return {"ok": True, "status": status.status, "message": "已确认并完成授权", "confirmed": True, "authorized": True, "raw": status.raw}
+            except (requests.Timeout, requests.ConnectionError) as exc:
+                logger.warning(f"115 API 网络不通: {exc}")
+                return {"ok": False, "status": status.status, "message": "无法连接 115 服务器", "confirmed": True, "raw": status.raw}
             except Exception as exc:
-                logger.exception("115 换取 token 失败")
+                logger.error(f"115 换取 token 失败: {exc}")
                 return {"ok": False, "status": status.status, "message": f"换取 token 失败：{exc}", "confirmed": True, "raw": status.raw}
         return {
             "ok": True,
@@ -222,6 +229,9 @@ def u115_oauth_poll_sync():
         }
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (requests.Timeout, requests.ConnectionError) as exc:
+        logger.warning(f"115 API 网络不通: {exc}")
+        raise HTTPException(status_code=400, detail="无法连接 115 服务器，请检查网络或服务器是否在国内") from exc
     except Exception as exc:
         logger.exception("115 查询扫码状态失败")
         raise HTTPException(status_code=400, detail=f"115 查询扫码状态失败：{exc}") from exc
@@ -256,6 +266,9 @@ def u115_oauth_exchange_sync(body=None):
         }
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (requests.Timeout, requests.ConnectionError) as exc:
+        logger.warning(f"115 API 网络不通: {exc}")
+        raise HTTPException(status_code=400, detail="无法连接 115 服务器，请检查网络或服务器是否在国内") from exc
     except Exception as exc:
         logger.exception("115 换取 token 失败")
         raise HTTPException(status_code=400, detail=f"115 换取 token 失败：{exc}") from exc
@@ -269,6 +282,9 @@ def u115_test_connection_sync():
     except Pan115AuthError as exc:
         logger.warning(f"115 认证失效: {exc}")
         raise HTTPException(status_code=400, detail="115 Token 已失效，请重新扫码授权") from exc
+    except (requests.Timeout, requests.ConnectionError) as exc:
+        logger.warning(f"115 API 网络不通 (proapi.115.com): {exc}")
+        raise HTTPException(status_code=400, detail="无法连接 115 服务器，请检查网络或服务器是否在国内") from exc
     except Exception as exc:
         logger.exception("115 连接测试失败")
         raise HTTPException(status_code=400, detail=f"115 连接测试失败：{exc}") from exc
@@ -289,6 +305,9 @@ def u115_test_cookie_sync():
         raise HTTPException(status_code=400, detail="115 Token 已失效，请重新扫码授权") from exc
     except HTTPException:
         raise
+    except (requests.Timeout, requests.ConnectionError) as exc:
+        logger.warning(f"115 API 网络不通 (proapi.115.com): {exc}")
+        raise HTTPException(status_code=400, detail="无法连接 115 服务器，请检查网络或服务器是否在国内") from exc
     except Exception as exc:
         logger.exception("115 Cookie 测试失败")
         raise HTTPException(status_code=400, detail=f"115 Cookie 测试失败：{exc}") from exc
@@ -313,6 +332,9 @@ def u115_offline_overview_sync(page: int):
     except Pan115AuthError as exc:
         logger.warning(f"115 认证失效: {exc}")
         raise HTTPException(status_code=400, detail="115 Token 已失效，请重新扫码授权") from exc
+    except (requests.Timeout, requests.ConnectionError) as exc:
+        logger.warning(f"115 API 网络不通: {exc}")
+        raise HTTPException(status_code=400, detail="无法连接 115 服务器，请检查网络或服务器是否在国内") from exc
     except Exception as exc:
         logger.exception("115 云下载概览获取失败")
         raise HTTPException(status_code=400, detail=f"115 云下载概览获取失败：{exc}") from exc
@@ -326,6 +348,9 @@ def u115_offline_quota_sync():
     except Pan115AuthError as exc:
         logger.warning(f"115 认证失效: {exc}")
         raise HTTPException(status_code=400, detail="115 Token 已失效，请重新扫码授权") from exc
+    except (requests.Timeout, requests.ConnectionError) as exc:
+        logger.warning(f"115 API 网络不通: {exc}")
+        raise HTTPException(status_code=400, detail="无法连接 115 服务器，请检查网络或服务器是否在国内") from exc
     except Exception as exc:
         logger.exception("115 云下载配额获取失败")
         raise HTTPException(status_code=400, detail=f"115 云下载配额获取失败：{exc}") from exc
@@ -344,6 +369,9 @@ def u115_offline_add_urls_sync(body):
     except Pan115AuthError as exc:
         logger.warning(f"115 认证失效: {exc}")
         raise HTTPException(status_code=400, detail="115 Token 已失效，请重新扫码授权") from exc
+    except (requests.Timeout, requests.ConnectionError) as exc:
+        logger.warning(f"115 API 网络不通: {exc}")
+        raise HTTPException(status_code=400, detail="无法连接 115 服务器，请检查网络或服务器是否在国内") from exc
     except Exception as exc:
         logger.exception("115 云下载添加链接失败")
         raise HTTPException(status_code=400, detail=f"115 云下载添加链接失败：{exc}") from exc
@@ -361,6 +389,9 @@ def u115_offline_delete_tasks_sync(body):
     except Pan115AuthError as exc:
         logger.warning(f"115 认证失效: {exc}")
         raise HTTPException(status_code=400, detail="115 Token 已失效，请重新扫码授权") from exc
+    except (requests.Timeout, requests.ConnectionError) as exc:
+        logger.warning(f"115 API 网络不通: {exc}")
+        raise HTTPException(status_code=400, detail="无法连接 115 服务器，请检查网络或服务器是否在国内") from exc
     except Exception as exc:
         logger.exception("115 云下载删除任务失败")
         raise HTTPException(status_code=400, detail=f"115 云下载删除任务失败：{exc}") from exc
@@ -374,6 +405,9 @@ def u115_offline_clear_tasks_sync(body):
     except Pan115AuthError as exc:
         logger.warning(f"115 认证失效: {exc}")
         raise HTTPException(status_code=400, detail="115 Token 已失效，请重新扫码授权") from exc
+    except (requests.Timeout, requests.ConnectionError) as exc:
+        logger.warning(f"115 API 网络不通: {exc}")
+        raise HTTPException(status_code=400, detail="无法连接 115 服务器，请检查网络或服务器是否在国内") from exc
     except Exception as exc:
         logger.exception("115 云下载清空任务失败")
         raise HTTPException(status_code=400, detail=f"115 云下载清空任务失败：{exc}") from exc

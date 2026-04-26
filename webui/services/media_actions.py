@@ -228,7 +228,7 @@ def refresh_item_payload(body) -> dict:
     except HTTPException:
         raise
     except Exception as exc:
-        logger.exception("刷新单条目失败")
+        logger.error(f"刷新单条目失败 (tmdb_id={body.tmdb_id}): {exc}")
         app_log(
             "library",
             "refresh_item_failed",

@@ -12,5 +12,5 @@ async def get_stats():
     try:
         return StatsResponse(**get_library_store().get_stats())
     except Exception as exc:
-        logger.exception("获取统计信息失败")
+        logger.error(f"获取统计信息失败: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))
