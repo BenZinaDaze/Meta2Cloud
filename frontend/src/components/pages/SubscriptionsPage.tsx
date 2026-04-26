@@ -59,16 +59,12 @@ function SubscriptionMiniCard({ item, onEdit }: { item: Subscription; onEdit: (i
           </div>
         )}
 
-        <div className="absolute left-2.5 top-2.5 flex flex-wrap gap-2">
-          <TinyPill tone={item.enabled ? 'success' : 'warning'}>
-            {item.enabled ? '启用' : '暂停'}
-          </TinyPill>
-          <TinyPill>
-            {item.push_target === 'u115' ? '云下载' : '下载'}
-          </TinyPill>
-          <TinyPill tone="warning">
-            {item.hit_count || 0} 命中
-          </TinyPill>
+        <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 to-transparent p-2.5">
+          <div className="flex items-center justify-between gap-3 text-[11px] font-semibold text-white">
+            <span className="min-w-0 flex-1 text-left">{item.enabled ? '启用' : '暂停'}</span>
+            <span className="min-w-0 flex-1 text-center">{item.push_target === 'u115' ? '云下载' : '下载'}</span>
+            <span className="min-w-0 flex-1 text-right">{item.hit_count || 0} 命中</span>
+          </div>
         </div>
 
         <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 to-transparent p-2.5">
