@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from fastapi.responses import Response
 import webui.core.runtime as runtime
 from webui.core.runtime import get_config, logger
+from u115pan.errors import Pan115AuthError
 
 
 def resolve_config_path(path_str: str) -> str:
@@ -193,8 +194,7 @@ def u115_oauth_poll_sync():
         session_path = resolve_config_path(cfg.session_json)
         session = load_u115_device_session(session_path)
         status = client.get_qrcode_status(session)
-        exchange_error = None
-        if not status.confirmed and int(status.status) >= 1:
+        if status.confirmed:
             try:
                 token = client.exchange_device_token(session)
                 runtime._u115_runtime.sync_token(
@@ -211,14 +211,14 @@ def u115_oauth_poll_sync():
                     pass
                 return {"ok": True, "status": status.status, "message": "已确认并完成授权", "confirmed": True, "authorized": True, "raw": status.raw}
             except Exception as exc:
-                exchange_error = str(exc)
+                logger.exception("115 换取 token 失败")
+                return {"ok": False, "status": status.status, "message": f"换取 token 失败：{exc}", "confirmed": True, "raw": status.raw}
         return {
             "ok": True,
             "status": status.status,
             "message": status.message,
             "confirmed": status.confirmed,
             "raw": status.raw,
-            "exchange_error": exchange_error,
         }
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -266,6 +266,9 @@ def u115_test_connection_sync():
         client = u115_client()
         space = client.get_space_info()
         return {"ok": True, "total_space": space.total_size, "remain_space": space.remain_size}
+    except Pan115AuthError as exc:
+        logger.warning(f"115 认证失效: {exc}")
+        raise HTTPException(status_code=400, detail="115 Token 已失效，请重新扫码授权") from exc
     except Exception as exc:
         logger.exception("115 连接测试失败")
         raise HTTPException(status_code=400, detail=f"115 连接测试失败：{exc}") from exc
@@ -281,6 +284,9 @@ def u115_test_cookie_sync():
         if not user_info:
             raise HTTPException(status_code=400, detail="Cookie 不可用")
         return {"ok": True, **user_info}
+    except Pan115AuthError as exc:
+        logger.warning(f"115 认证失效: {exc}")
+        raise HTTPException(status_code=400, detail="115 Token 已失效，请重新扫码授权") from exc
     except HTTPException:
         raise
     except Exception as exc:
@@ -304,6 +310,9 @@ def u115_offline_overview_sync(page: int):
                 "has_next": task_page.page < max(task_page.page_count, 1),
             },
         }
+    except Pan115AuthError as exc:
+        logger.warning(f"115 认证失效: {exc}")
+        raise HTTPException(status_code=400, detail="115 Token 已失效，请重新扫码授权") from exc
     except Exception as exc:
         logger.exception("115 云下载概览获取失败")
         raise HTTPException(status_code=400, detail=f"115 云下载概览获取失败：{exc}") from exc
@@ -314,6 +323,9 @@ def u115_offline_quota_sync():
         offline = u115_offline_client()
         quota = offline.get_quota_info()
         return {"ok": True, "quota": serialize_u115_offline_quota(quota)}
+    except Pan115AuthError as exc:
+        logger.warning(f"115 认证失效: {exc}")
+        raise HTTPException(status_code=400, detail="115 Token 已失效，请重新扫码授权") from exc
     except Exception as exc:
         logger.exception("115 云下载配额获取失败")
         raise HTTPException(status_code=400, detail=f"115 云下载配额获取失败：{exc}") from exc
@@ -329,6 +341,9 @@ def u115_offline_add_urls_sync(body):
         target_path_id = (body.wp_path_id.strip() if body.wp_path_id else "") or (cfg.download_folder_id.strip() if cfg.download_folder_id else "") or None
         results = offline.add_task_urls(url_lines, wp_path_id=target_path_id)
         return {"ok": True, "count": len(results), "results": [asdict(item) for item in results], "wp_path_id": target_path_id}
+    except Pan115AuthError as exc:
+        logger.warning(f"115 认证失效: {exc}")
+        raise HTTPException(status_code=400, detail="115 Token 已失效，请重新扫码授权") from exc
     except Exception as exc:
         logger.exception("115 云下载添加链接失败")
         raise HTTPException(status_code=400, detail=f"115 云下载添加链接失败：{exc}") from exc
@@ -343,6 +358,9 @@ def u115_offline_delete_tasks_sync(body):
         for info_hash in info_hashes:
             offline.del_task(info_hash, del_source_file=body.del_source_file)
         return {"ok": True, "deleted": len(info_hashes)}
+    except Pan115AuthError as exc:
+        logger.warning(f"115 认证失效: {exc}")
+        raise HTTPException(status_code=400, detail="115 Token 已失效，请重新扫码授权") from exc
     except Exception as exc:
         logger.exception("115 云下载删除任务失败")
         raise HTTPException(status_code=400, detail=f"115 云下载删除任务失败：{exc}") from exc
@@ -353,6 +371,9 @@ def u115_offline_clear_tasks_sync(body):
         offline = u115_offline_client()
         offline.clear_tasks(body.flag)
         return {"ok": True, "flag": body.flag}
+    except Pan115AuthError as exc:
+        logger.warning(f"115 认证失效: {exc}")
+        raise HTTPException(status_code=400, detail="115 Token 已失效，请重新扫码授权") from exc
     except Exception as exc:
         logger.exception("115 云下载清空任务失败")
         raise HTTPException(status_code=400, detail=f"115 云下载清空任务失败：{exc}") from exc

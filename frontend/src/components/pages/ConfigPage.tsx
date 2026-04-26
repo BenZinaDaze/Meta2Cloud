@@ -400,22 +400,32 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
         if (cancelled) return
         const data = res?.data || {}
         if (data.confirmed) {
-          setU115OauthMessage({ type: 'success', text: '115 授权成功，token 已写入本地。' })
-          finishPolling()
-          loadU115OauthStatus()
+          if (data.ok) {
+            setU115OauthMessage({ type: 'success', text: '115 授权成功，token 已写入本地。' })
+            finishPolling()
+            loadU115OauthStatus()
+          } else {
+            setU115OauthMessage({ type: 'error', text: data.message || '115 换取 token 失败' })
+            finishPolling()
+          }
           return
         }
         const statusCode = Number(data.status)
+        const msg = String(data.message || '')
         if (Number.isFinite(statusCode) && statusCode < 0) {
-          setU115OauthMessage({ type: 'error', text: data.message || `115 扫码授权已失效：${data.status}` })
+          setU115OauthMessage({ type: 'error', text: msg || `115 扫码授权已失效：${data.status}` })
+          finishPolling()
+          return
+        }
+        // 检查 message 是否包含错误关键词
+        if (msg && (msg.includes('失败') || msg.includes('错误') || msg.includes('拒绝') || msg.includes('取消'))) {
+          setU115OauthMessage({ type: 'error', text: `115 扫码失败：${msg}` })
           finishPolling()
           return
         }
         setU115OauthMessage({
-          type: data.exchange_error ? 'error' : 'success',
-          text: data.exchange_error
-            ? `115 已扫码，等待手机确认…（${data.exchange_error}）`
-            : (data.status >= 1 ? (data.message || '已扫码，等待手机确认…') : `等待扫码：${data.message || data.status}`),
+          type: 'success',
+          text: statusCode >= 1 ? '已扫码，等待手机确认…' : `等待扫码…`,
         })
         scheduleNextPoll()
       } catch (e) {
