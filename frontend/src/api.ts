@@ -157,3 +157,6 @@ export const getRecentIngests = (limit?: number) =>
 // ── Google Drive ──
 export const getDriveOauthStatus = () => api.get('/drive/oauth/status')
 export const testDriveConnection = () => api.post('/drive/test')
+
+// ── Bangumi 新番 ──
+export const getBangumiCalendar = () => api.get('/bangumi/calendar')

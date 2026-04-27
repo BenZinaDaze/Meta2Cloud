@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { RefreshCw, Star, ChevronDown, Film } from 'lucide-react'
-import { testParse } from '@/api'
+import { getBangumiCalendar, testParse } from '@/api'
 import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 
@@ -36,11 +36,8 @@ function normalizeBangumiUrl(url: string | undefined): string | undefined {
 }
 
 async function fetchCalendar(): Promise<BangumiWeekday[]> {
-  const res = await fetch('https://api.bgm.tv/calendar', {
-    headers: { 'User-Agent': 'Meta2Cloud/1.0 (https://github.com/BenZinaDaze/Meta2Cloud)' },
-  })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const json: BangumiWeekday[] = await res.json()
+  const res = await getBangumiCalendar()
+  const json: BangumiWeekday[] = res.data
 
   return json.map((day) => ({
     ...day,
