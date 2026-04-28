@@ -464,22 +464,10 @@ class LibraryStore:
         })
         # 处理 TV 剧集的 seasons 数据
         if media_type == "tv" and raw.get("seasons"):
-            seasons_data = []
-            for season in raw["seasons"]:
-                season_number = season.get("season_number")
-                if season_number is None:
-                    continue
-                count = season.get("episode_count", 0)
-                seasons_data.append({
-                    "season_number": season_number,
-                    "season_name": season.get("name") or f"季 {season_number}",
-                    "poster_url": f"{_TMDB_IMG_BASE}{season['poster_path']}" if season.get("poster_path") else None,
-                    "episode_count": count,
-                    "in_library_count": 0,
-                    "episodes": [{"episode_number": i, "episode_title": f"第 {i} 集", "air_date": "", "in_library": False} for i in range(1, count + 1)],
-                })
-            payload["seasons"] = seasons_data
-            payload["total_episodes"] = raw.get("number_of_episodes") or sum(s["episode_count"] for s in seasons_data)
+            from webui.services.library_data import build_seasons_status
+            seasons_status, total_eps, _ = build_seasons_status(tmdb_id, raw)
+            payload["seasons"] = [s.model_dump() for s in seasons_status]
+            payload["total_episodes"] = raw.get("number_of_episodes") or total_eps
         return payload
 
     def get_stats(self) -> dict[str, Any]:

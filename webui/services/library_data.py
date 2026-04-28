@@ -1,11 +1,138 @@
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 from storage.base import StorageProvider
 from mediaparser import Config
 from webui.schemas.library import EpisodeStatus, MediaItem, SeasonStatus
 from webui.services.tmdb_service import TMDB_IMG_BASE, TMDB_IMG_ORIG, tmdb_get
 from webui.core.runtime import logger
+
+
+def build_seasons_status(
+    tmdb_id: int,
+    tmdb_info: dict,
+    drive_episodes: Optional[Set[tuple]] = None,
+) -> tuple[List[SeasonStatus], int, int]:
+    """
+    根据 TMDB 信息构建 seasons 状态列表。
+
+    Args:
+        tmdb_id: TMDB ID
+        tmdb_info: TMDB 剧集详情
+        drive_episodes: 已入库的剧集集合 {(season, episode)}
+
+    Returns:
+        (seasons_status, total_episodes, in_library_episodes)
+    """
+    if drive_episodes is None:
+        drive_episodes = set()
+
+    seasons_status: List[SeasonStatus] = []
+    total_eps = 0
+    in_lib_eps = 0
+
+    for season_raw in tmdb_info.get("seasons") or []:
+        season_num = season_raw.get("season_number")
+        if season_num is None:
+            continue
+
+        ep_count = season_raw.get("episode_count", 0)
+        total_eps += ep_count
+
+        season_detail = tmdb_get(f"/tv/{tmdb_id}/season/{season_num}")
+        episodes_status: List[EpisodeStatus] = []
+
+        if season_detail:
+            for ep_raw in season_detail.get("episodes") or []:
+                ep_num = ep_raw.get("episode_number", 0)
+                in_lib = (season_num, ep_num) in drive_episodes
+                if in_lib:
+                    in_lib_eps += 1
+                episodes_status.append(
+                    EpisodeStatus(
+                        episode_number=ep_num,
+                        episode_title=ep_raw.get("name") or f"第 {ep_num} 集",
+                        air_date=ep_raw.get("air_date") or "",
+                        in_library=in_lib,
+                    )
+                )
+        else:
+            for ep_num in range(1, ep_count + 1):
+                in_lib = (season_num, ep_num) in drive_episodes
+                if in_lib:
+                    in_lib_eps += 1
+                episodes_status.append(
+                    EpisodeStatus(
+                        episode_number=ep_num,
+                        episode_title=f"第 {ep_num} 集",
+                        air_date="",
+                        in_library=in_lib,
+                    )
+                )
+
+        s_in_lib = sum(1 for ep in episodes_status if ep.in_library)
+        seasons_status.append(
+            SeasonStatus(
+                season_number=season_num,
+                season_name=season_raw.get("name") or f"Season {season_num}",
+                poster_url=f"{TMDB_IMG_BASE}{season_raw['poster_path']}" if season_raw.get("poster_path") else None,
+                episode_count=len(episodes_status),
+                in_library_count=s_in_lib,
+                episodes=episodes_status,
+            )
+        )
+
+    return seasons_status, total_eps, in_lib_eps
+
+
+def fill_seasons_episodes(
+    tmdb_id: int,
+    existing_seasons: List[dict],
+) -> List[dict]:
+    """
+    补充已有 seasons 数据中缺失的 episodes 详情。
+
+    Args:
+        tmdb_id: TMDB ID
+        existing_seasons: 已有的 seasons 数据（可能缺少 episodes）
+
+    Returns:
+        完整的 seasons 数据（包含 episodes）
+    """
+    seasons_data = []
+    for season in existing_seasons:
+        season_number = season.get("season_number")
+        if season_number is None:
+            continue
+
+        season_detail = tmdb_get(f"/tv/{tmdb_id}/season/{season_number}")
+        episodes = []
+
+        if season_detail and season_detail.get("episodes"):
+            for ep in season_detail["episodes"]:
+                episodes.append({
+                    "episode_number": ep.get("episode_number", 0),
+                    "episode_title": ep.get("name") or f"第 {ep.get('episode_number', 0)} 集",
+                    "air_date": ep.get("air_date") or "",
+                    "in_library": ep.get("in_library", False),
+                })
+        else:
+            count = season.get("episode_count", 0)
+            episodes = [
+                {"episode_number": i, "episode_title": f"第 {i} 集", "air_date": "", "in_library": False}
+                for i in range(1, count + 1)
+            ]
+
+        seasons_data.append({
+            "season_number": season_number,
+            "season_name": season.get("season_name") or f"季 {season_number}",
+            "poster_url": season.get("poster_url"),
+            "episode_count": len(episodes),
+            "in_library_count": season.get("in_library_count", 0),
+            "episodes": episodes,
+        })
+
+    return seasons_data
 
 
 def parse_tmdb_id_from_nfo(nfo_content: str) -> Optional[int]:
@@ -98,7 +225,7 @@ def scan_tv_shows(client: StorageProvider, cfg: Config) -> List[MediaItem]:
                 tmdb_id = parse_tmdb_id_from_nfo(content)
         tmdb_info = tmdb_get(f"/tv/{tmdb_id}") if tmdb_id else None
         season_folders = [f for f in show_files if f.is_folder and f.name.startswith("Season")]
-        drive_episodes: Dict[tuple, str] = {}
+        drive_episodes: Set[tuple] = set()
         for season_folder in season_folders:
             season_match = re.search(r"Season\s+(\d+)", season_folder.name, re.IGNORECASE)
             if not season_match:
@@ -109,50 +236,14 @@ def scan_tv_shows(client: StorageProvider, cfg: Config) -> List[MediaItem]:
                 if file.is_video:
                     episode = parse_episode_from_filename(file.name)
                     if episode and episode[0] == season_num:
-                        drive_episodes[(episode[0], episode[1])] = file.name
+                        drive_episodes.add((episode[0], episode[1]))
         seasons_status: List[SeasonStatus] = []
         total_eps = 0
         in_lib_eps = 0
         if tmdb_info:
-            for season_raw in (tmdb_info.get("seasons") or []):
-                season_num = season_raw.get("season_number")
-                if season_num is None:
-                    continue
-                ep_count = season_raw.get("episode_count", 0)
-                total_eps += ep_count
-                season_detail = tmdb_get(f"/tv/{tmdb_id}/season/{season_num}")
-                episodes_status = []
-                if season_detail:
-                    for ep_raw in (season_detail.get("episodes") or []):
-                        ep_num = ep_raw.get("episode_number", 0)
-                        in_lib = (season_num, ep_num) in drive_episodes
-                        if in_lib:
-                            in_lib_eps += 1
-                        episodes_status.append(
-                            EpisodeStatus(
-                                episode_number=ep_num,
-                                episode_title=ep_raw.get("name") or f"第 {ep_num} 集",
-                                air_date=ep_raw.get("air_date") or "",
-                                in_library=in_lib,
-                            )
-                        )
-                else:
-                    for ep_num in range(1, ep_count + 1):
-                        in_lib = (season_num, ep_num) in drive_episodes
-                        if in_lib:
-                            in_lib_eps += 1
-                        episodes_status.append(EpisodeStatus(episode_number=ep_num, episode_title=f"第 {ep_num} 集", air_date="", in_library=in_lib))
-                s_in_lib = sum(1 for episode in episodes_status if episode.in_library)
-                seasons_status.append(
-                    SeasonStatus(
-                        season_number=season_num,
-                        season_name=season_raw.get("name") or f"Season {season_num}",
-                        poster_url=f"{TMDB_IMG_BASE}{season_raw['poster_path']}" if season_raw.get("poster_path") else None,
-                        episode_count=len(episodes_status),
-                        in_library_count=s_in_lib,
-                        episodes=episodes_status,
-                    )
-                )
+            seasons_status, total_eps, in_lib_eps = build_seasons_status(
+                tmdb_id, tmdb_info, drive_episodes
+            )
         else:
             season_map: Dict[int, List[int]] = {}
             for season_num, ep_num in drive_episodes:

@@ -9,6 +9,7 @@ from nfo import ImageUploader, NfoGenerator
 from webui.core.app_logging import app_log
 from webui.core.runtime import get_config, get_storage_provider, logger
 from webui.library_store import get_library_store
+from webui.services.library_data import build_seasons_status, fill_seasons_episodes
 from webui.services.tmdb_service import get_tmdb_cache, serialize_tmdb_result, tmdb_get
 
 try:
@@ -177,6 +178,7 @@ def do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str, title: 
 
     updates = {
         "tmdb_id": tmdb_id,
+        "media_type": media_type,
         "title": info.get("name") if media_type == "tv" else info.get("title"),
         "original_title": info.get("original_name") if media_type == "tv" else info.get("original_title"),
         "overview": info.get("overview") or "",
@@ -193,20 +195,11 @@ def do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str, title: 
             updates["total_episodes"] = info.get("number_of_episodes")
         # 更新 seasons 数据
         if info.get("seasons"):
-            seasons_data = []
-            for season in info["seasons"]:
-                season_number = season.get("season_number")
-                if season_number is None or season_number == 0:
-                    continue
-                seasons_data.append({
-                    "season_number": season_number,
-                    "season_name": season.get("name") or f"季 {season_number}",
-                    "poster_url": f"https://image.tmdb.org/t/p/w500{season['poster_path']}" if season.get("poster_path") else None,
-                    "episode_count": season.get("episode_count", 0),
-                    "in_library_count": 0,
-                })
-            if seasons_data:
-                updates["seasons"] = seasons_data
+            seasons_status, total_eps, _ = build_seasons_status(tmdb_id, info)
+            if seasons_status:
+                updates["seasons"] = [s.model_dump() for s in seasons_status]
+            if total_eps:
+                updates["total_episodes"] = total_eps
     else:
         updates["year"] = (info.get("release_date") or "")[:4]
     return {"ok": len(errors) == 0, "uploaded": uploaded, "errors": errors, "tmdb_id": tmdb_id, "updates": updates}
@@ -314,33 +307,7 @@ def tmdb_detail_payload(tmdb_id: int, media_type: str):
                         needs_detail = True
                         break
                 if needs_detail:
-                    seasons_data = []
-                    for season in joined["seasons"]:
-                        season_number = season.get("season_number")
-                        if season_number is None:
-                            continue
-                        season_detail = tmdb_get(f"/tv/{tmdb_id}/season/{season_number}")
-                        episodes = []
-                        if season_detail and season_detail.get("episodes"):
-                            for ep in season_detail["episodes"]:
-                                episodes.append({
-                                    "episode_number": ep.get("episode_number", 0),
-                                    "episode_title": ep.get("name") or f"第 {ep.get('episode_number', 0)} 集",
-                                    "air_date": ep.get("air_date") or "",
-                                    "in_library": ep.get("in_library", False),
-                                })
-                        else:
-                            count = season.get("episode_count", 0)
-                            episodes = [{"episode_number": i, "episode_title": f"第 {i} 集", "air_date": "", "in_library": False} for i in range(1, count + 1)]
-                        seasons_data.append({
-                            "season_number": season_number,
-                            "season_name": season.get("season_name") or f"季 {season_number}",
-                            "poster_url": season.get("poster_url"),
-                            "episode_count": len(episodes),
-                            "in_library_count": season.get("in_library_count", 0),
-                            "episodes": episodes,
-                        })
-                    joined["seasons"] = seasons_data
+                    joined["seasons"] = fill_seasons_episodes(tmdb_id, joined["seasons"])
             return {"ok": True, "detail": joined}
         cfg = get_config()
         if not cfg.tmdb or not cfg.tmdb.api_key:
@@ -358,33 +325,8 @@ def tmdb_detail_payload(tmdb_id: int, media_type: str):
             raise ValueError("解析详情失败")
         # TV 类型需要补充每季每集详情
         if media_type == "tv" and raw.get("seasons"):
-            seasons_data = []
-            for season in raw["seasons"]:
-                season_number = season.get("season_number")
-                if season_number is None:
-                    continue
-                season_detail = tmdb_get(f"/tv/{tmdb_id}/season/{season_number}")
-                episodes = []
-                if season_detail and season_detail.get("episodes"):
-                    for ep in season_detail["episodes"]:
-                        episodes.append({
-                            "episode_number": ep.get("episode_number", 0),
-                            "episode_title": ep.get("name") or f"第 {ep.get('episode_number', 0)} 集",
-                            "air_date": ep.get("air_date") or "",
-                            "in_library": False,
-                        })
-                else:
-                    count = season.get("episode_count", 0)
-                    episodes = [{"episode_number": i, "episode_title": f"第 {i} 集", "air_date": "", "in_library": False} for i in range(1, count + 1)]
-                seasons_data.append({
-                    "season_number": season_number,
-                    "season_name": season.get("name") or f"季 {season_number}",
-                    "poster_url": f"https://image.tmdb.org/t/p/w500{season['poster_path']}" if season.get("poster_path") else None,
-                    "episode_count": len(episodes),
-                    "in_library_count": 0,
-                    "episodes": episodes,
-                })
-            serialized["seasons"] = seasons_data
+            seasons_status, total_eps, _ = build_seasons_status(tmdb_id, raw)
+            serialized["seasons"] = [s.model_dump() for s in seasons_status]
         serialized["in_library"] = False
         return {"ok": True, "detail": serialized}
     except Exception as exc:
