@@ -11,7 +11,12 @@ from webui.core.app_logging import app_log
 from webui.core.runtime import _ROOT_DIR, get_config, get_storage_provider, logger
 from webui.library_store import get_library_store
 from webui.services.telegram import send_telegram
-from webui.services.library_data import scan_movies, scan_tv_shows
+from webui.services.library_data import (
+    scan_movies,
+    scan_movies_incremental,
+    scan_tv_shows,
+    scan_tv_shows_incremental,
+)
 
 
 def infer_pipeline_log_level(line: str) -> str:
@@ -44,27 +49,38 @@ _debounce_timer: threading.Timer | None = None
 _pipeline_running = False
 
 
-def _do_refresh_library() -> dict:
+def _do_refresh_library(incremental: bool = True) -> dict:
     client = get_storage_provider()
     cfg = get_config()
+    store = get_library_store()
     app_log(
         "library",
         "refresh_scan_start",
-        "开始刷新媒体库快照",
+        f"开始{'增量' if incremental else '全量'}刷新媒体库",
         details={
             "provider": getattr(client, "provider_name", "unknown"),
             "movie_root_id": cfg.active_movie_root_id(),
             "tv_root_id": cfg.active_tv_root_id(),
             "root_folder_id": cfg.active_root_folder_id(),
+            "incremental": incremental,
         },
     )
-    movies = scan_movies(client, cfg)
-    tv_shows = scan_tv_shows(client, cfg)
-    diff = get_library_store().save_snapshot(movies, tv_shows)
+    if incremental:
+        stored_mtimes = store.get_all_folder_modified_times()
+        movies, movie_mtimes = scan_movies_incremental(client, cfg, stored_mtimes)
+        tv_shows, tv_mtimes = scan_tv_shows_incremental(client, cfg, stored_mtimes)
+        all_mtimes = {**movie_mtimes, **tv_mtimes}
+        diff = store.save_incremental(movies + tv_shows, all_mtimes)
+        existing_ids = set(all_mtimes.keys())
+        store.mark_missing_folders(existing_ids)
+    else:
+        movies = scan_movies(client, cfg)
+        tv_shows = scan_tv_shows(client, cfg)
+        diff = store.save_snapshot(movies, tv_shows)
     app_log(
         "library",
         "refresh_scan_finish",
-        "媒体库快照刷新完成",
+        "媒体库刷新完成",
         level="SUCCESS",
         details=diff,
     )

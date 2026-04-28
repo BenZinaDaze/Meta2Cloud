@@ -32,12 +32,14 @@ export const getMe = () => api.get('/auth/me')
 export const logout = () => api.post('/auth/logout')
 
 // ── 媒体库 ──
-export const getLibrary = () => api.get('/library')
+export const getLibrary = (sort_by?: string, sort_order?: string) =>
+  api.get('/library', { params: { sort_by, sort_order } })
 export const getMovies = () => api.get('/library/movies')
 export const getTvShows = () => api.get('/library/tv')
 export const getStats = () => api.get('/stats')
 export const getTvDetail = (tmdbId: number) => api.get(`/tv/${tmdbId}`)
 export const refreshLibrary = () => api.post('/library/refresh')
+export const refreshLibraryFull = () => api.post('/library/refresh/full')
 export const refreshMediaItem = (
   tmdb_id: number,
   media_type: string,

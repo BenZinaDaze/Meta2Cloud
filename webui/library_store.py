@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS library_media (
     in_library_episodes  INTEGER,
     raw_json             TEXT    NOT NULL DEFAULT '{}',
     in_library           INTEGER NOT NULL DEFAULT 1,
+    folder_modified_time INTEGER NOT NULL DEFAULT 0,
     last_scanned_at      TEXT    NOT NULL,
     updated_at           TEXT    NOT NULL
 );
@@ -93,12 +94,21 @@ class LibraryStore:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(_DDL)
+        self._run_migrations()
         self._conn.commit()
         logger.info("媒体实体存储启动：%s", db_path)
 
     @staticmethod
     def _utc_now() -> str:
         return datetime.now(timezone.utc).isoformat()
+
+    def _run_migrations(self) -> None:
+        columns = [r["name"] for r in self._conn.execute("PRAGMA table_info(library_media)").fetchall()]
+        if "folder_modified_time" not in columns:
+            self._conn.execute(
+                "ALTER TABLE library_media ADD COLUMN folder_modified_time INTEGER NOT NULL DEFAULT 0"
+            )
+            logger.info("已为 library_media 表新增 folder_modified_time 字段")
 
     def _set_state(self, key: str, value: str) -> None:
         self._conn.execute(
@@ -283,21 +293,26 @@ class LibraryStore:
 
     # ── 媒体库快照 ──────────────────────────────────────
 
-    def get_snapshot(self) -> Optional[dict]:
+    def get_snapshot(self, sort_by: str = "folder_modified_time", sort_order: str = "desc") -> Optional[dict]:
         scanned_at = self._get_state(_SCAN_AT_KEY)
         if scanned_at is None:
             return None
+        sort_column = {"updated_at": "updated_at", "year": "year", "title": "title", "folder_modified_time": "folder_modified_time"}.get(sort_by, "updated_at")
+        order = "DESC" if sort_order.lower() == "desc" else "ASC"
+        title_order = f"title COLLATE NOCASE {order}" if sort_column == "title" else "title COLLATE NOCASE ASC"
         rows = self._conn.execute(
-            """
+            f"""
             SELECT *
             FROM library_media
-            ORDER BY media_type ASC, year DESC, title COLLATE NOCASE ASC
+            ORDER BY media_type ASC, {sort_column} {order}, {title_order}
             """
         ).fetchall()
         movies: list[dict[str, Any]] = []
         tv_shows: list[dict[str, Any]] = []
         for row in rows:
             payload = json.loads(row["raw_json"] or "{}")
+            payload["updated_at"] = row["updated_at"] or ""
+            payload["folder_modified_time"] = row["folder_modified_time"] or 0
             target = movies if row["media_type"] == "movie" else tv_shows
             target.append(payload)
         return {
@@ -310,6 +325,12 @@ class LibraryStore:
 
     def last_scanned(self) -> Optional[str]:
         return self._get_state(_SCAN_AT_KEY)
+
+    def get_all_folder_modified_times(self) -> dict[str, int]:
+        rows = self._conn.execute(
+            "SELECT drive_folder_id, folder_modified_time FROM library_media"
+        ).fetchall()
+        return {row["drive_folder_id"]: row["folder_modified_time"] or 0 for row in rows}
 
     def save_snapshot(self, movies: list, tv_shows: list) -> dict:
         old_rows = self._conn.execute(
@@ -327,7 +348,8 @@ class LibraryStore:
 
         self._conn.execute("DELETE FROM library_media")
         for payload in movie_payloads + tv_payloads:
-            self._upsert_library_item(payload, now)
+            mtime = payload.get("folder_modified_time") or 0
+            self._upsert_library_item(payload, now, folder_modified_time=mtime)
         self._set_state(_SCAN_AT_KEY, now)
         self._conn.commit()
 
@@ -347,7 +369,7 @@ class LibraryStore:
         )
         return diff
 
-    def _upsert_library_item(self, payload: dict[str, Any], scanned_at: str) -> None:
+    def _upsert_library_item(self, payload: dict[str, Any], scanned_at: str, folder_modified_time: int = 0) -> None:
         drive_folder_id = payload.get("drive_folder_id") or ""
         if not drive_folder_id:
             return
@@ -357,8 +379,8 @@ class LibraryStore:
                 drive_folder_id, media_type, tmdb_id, title, original_title, year,
                 poster_url, backdrop_url, overview, rating, status,
                 total_episodes, in_library_episodes, raw_json, in_library,
-                last_scanned_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                folder_modified_time, last_scanned_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
             ON CONFLICT(drive_folder_id) DO UPDATE SET
                 media_type = excluded.media_type,
                 tmdb_id = excluded.tmdb_id,
@@ -374,6 +396,7 @@ class LibraryStore:
                 in_library_episodes = excluded.in_library_episodes,
                 raw_json = excluded.raw_json,
                 in_library = excluded.in_library,
+                folder_modified_time = excluded.folder_modified_time,
                 last_scanned_at = excluded.last_scanned_at,
                 updated_at = excluded.updated_at
             """,
@@ -392,10 +415,69 @@ class LibraryStore:
                 payload.get("total_episodes"),
                 payload.get("in_library_episodes"),
                 json.dumps(payload, ensure_ascii=False),
+                folder_modified_time,
                 scanned_at,
                 scanned_at,
             ),
         )
+
+    def save_incremental(self, items: list, folder_mtimes: dict[str, int]) -> dict:
+        now = self._utc_now()
+        item_records = []
+        for item in items:
+            payload = item if isinstance(item, dict) else item.model_dump()
+            drive_folder_id = payload.get("drive_folder_id") or ""
+            if not drive_folder_id:
+                continue
+            mtime = folder_mtimes.get(drive_folder_id, 0)
+            item_records.append((payload, mtime))
+
+        new_count = 0
+        updated_count = 0
+        for payload, mtime in item_records:
+            drive_folder_id = payload.get("drive_folder_id") or ""
+            existing = self._conn.execute(
+                "SELECT drive_folder_id FROM library_media WHERE drive_folder_id = ?",
+                (drive_folder_id,),
+            ).fetchone()
+            if existing:
+                updated_count += 1
+            else:
+                new_count += 1
+            self._upsert_library_item(payload, now, mtime)
+
+        self._set_state(_SCAN_AT_KEY, now)
+        self._conn.commit()
+        diff = {
+            "new_items": new_count,
+            "updated_items": updated_count,
+            "total": len(item_records),
+            "scanned_at": now,
+        }
+        logger.info(
+            "媒体库增量更新完成：%d 项（新增 %d，更新 %d）",
+            diff["total"],
+            diff["new_items"],
+            diff["updated_items"],
+        )
+        return diff
+
+    def mark_missing_folders(self, existing_folder_ids: set[str]) -> int:
+        if not existing_folder_ids:
+            # 空集合表示所有文件夹都不存在 -> 标记所有为不在库
+            self._conn.execute(
+                "UPDATE library_media SET in_library = 0, updated_at = ? WHERE in_library = 1",
+                (self._utc_now(),),
+            )
+            self._conn.commit()
+            return self._conn.total_changes
+        placeholders = ",".join("?" * len(existing_folder_ids))
+        self._conn.execute(
+            f"UPDATE library_media SET in_library = 0, updated_at = ? WHERE drive_folder_id NOT IN ({placeholders}) AND in_library = 1",
+            (self._utc_now(), *existing_folder_ids),
+        )
+        self._conn.commit()
+        return self._conn.total_changes
 
     def patch_item(self, drive_folder_id: str, updates: dict) -> bool:
         row = self._conn.execute(

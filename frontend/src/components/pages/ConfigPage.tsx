@@ -33,6 +33,7 @@ import {
   testU115Cookie,
   fetchU115QrCode,
   pollU115OauthStatus,
+  refreshLibraryFull,
 } from '@/api'
 import CustomWordsHelp from '@/components/config/CustomWordsHelp'
 import { Button } from '@/components/ui/button'
@@ -329,6 +330,8 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
   const [u115CookieTestBusy, setU115CookieTestBusy] = useState(false)
   const [u115Polling, setU115Polling] = useState(false)
   const u115PollAbortRef = useRef<AbortController | null>(null)
+  const [fullRefreshing, setFullRefreshing] = useState(false)
+  const [fullRefreshMessage, setFullRefreshMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const loadDriveOauthStatus = useCallback(async () => {
     try {
@@ -577,6 +580,26 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
     }
   }
 
+  async function handleFullRefresh() {
+    setFullRefreshing(true)
+    setFullRefreshMessage(null)
+    try {
+      const res = await refreshLibraryFull()
+      const data = res?.data || {}
+      setFullRefreshMessage({
+        type: 'success',
+        text: `全量刷新完成：电影 ${data.total_movies ?? '-'} 部，剧集 ${data.total_tv ?? '-'} 部`,
+      })
+    } catch (e) {
+      setFullRefreshMessage({
+        type: 'error',
+        text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '全量刷新失败',
+      })
+    } finally {
+      setFullRefreshing(false)
+    }
+  }
+
   function formatBytes(bytes: number): string {
     const value = Number(bytes)
     if (!Number.isFinite(value) || value < 0) return '-'
@@ -733,7 +756,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                 <CardTitle className="text-base">云存储选择</CardTitle>
                 <CardDescription>选择媒体文件存放在哪个网盘</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-6">
                 <FieldGroup>
                   <Field label="主存储">
                     <Select
@@ -750,6 +773,29 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                     </Select>
                   </Field>
                 </FieldGroup>
+
+                <Separator />
+
+                <div>
+                  <div className="mb-3 text-[13px] font-medium">媒体库全量刷新</div>
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    全量扫描所有文件并重建媒体库。日常使用无需操作，仅在增量刷新出现数据不一致时使用。
+                  </p>
+                  <Button
+                    variant="destructive"
+                    size="lg"
+                    onClick={handleFullRefresh}
+                    disabled={fullRefreshing}
+                  >
+                    <RefreshCw className={`size-5 ${fullRefreshing ? 'animate-spin' : ''}`} />
+                    {fullRefreshing ? '刷新中…' : '全量刷新媒体库'}
+                  </Button>
+                  {fullRefreshMessage && (
+                    <div className={`mt-3 rounded-md px-3 py-2 text-xs ${fullRefreshMessage.type === 'success' ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
+                      {fullRefreshMessage.text}
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

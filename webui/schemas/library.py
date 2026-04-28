@@ -34,6 +34,8 @@ class MediaItem(BaseModel):
     in_library_episodes: Optional[int] = None
     status: Optional[str] = None
     drive_folder_id: Optional[str] = None
+    updated_at: Optional[str] = None
+    folder_modified_time: Optional[int] = None
 
 
 class LibraryResponse(BaseModel):

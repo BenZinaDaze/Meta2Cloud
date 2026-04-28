@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Search, RefreshCw, ChevronRight } from 'lucide-react'
+import { Search, RefreshCw, ChevronRight, ArrowUpDown } from 'lucide-react'
 import { getLibrary } from '@/api'
 import MediaCard from '@/components/MediaCard'
 import { StatePanel } from '@/components/StatePanel'
@@ -117,14 +117,16 @@ export default function LibraryPage({
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<MediaItem | null>(null)
   const [search, setSearch] = useState('')
+  const [sortBy, setSortBy] = useState('folder_modified_time')
+  const [sortOrder, setSortOrder] = useState('desc')
   const [, setTick] = useState(0)
 
   useEffect(() => {
-    getLibrary()
+    getLibrary(sortBy, sortOrder)
       .then((res) => setData(res.data))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [refreshKey])
+  }, [refreshKey, sortBy, sortOrder])
 
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 60_000)
@@ -180,15 +182,38 @@ export default function LibraryPage({
           </p>
         </div>
 
-        <div className="relative w-full sm:w-auto">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="text"
-            placeholder="搜索标题..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-11 w-full rounded-full pl-10 pr-4 sm:w-72"
-          />
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 rounded-full border bg-card px-1.5 py-1">
+            <ArrowUpDown className="ml-1 size-3.5 text-muted-foreground" />
+            <select
+              value={`${sortBy}:${sortOrder}`}
+              onChange={(e) => {
+                const [by, order] = e.target.value.split(':')
+                setSortBy(by)
+                setSortOrder(order)
+              }}
+              className="h-8 min-w-0 rounded-full border-0 bg-transparent pr-7 pl-1 text-xs font-medium text-foreground focus:outline-none focus:ring-0"
+            >
+              <option value="folder_modified_time:desc">最近更新</option>
+              <option value="folder_modified_time:asc">最早更新</option>
+              <option value="updated_at:desc">最近入库</option>
+              <option value="updated_at:asc">最早入库</option>
+              <option value="year:desc">最新发行</option>
+              <option value="year:asc">最早发行</option>
+              <option value="title:asc">标题 A-Z</option>
+              <option value="title:desc">标题 Z-A</option>
+            </select>
+          </div>
+          <div className="relative w-full sm:w-auto">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="搜索标题..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-11 w-full rounded-full pl-10 pr-4 sm:w-72"
+            />
+          </div>
         </div>
       </div>
 

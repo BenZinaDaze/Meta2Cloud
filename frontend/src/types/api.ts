@@ -14,6 +14,8 @@ export interface MediaItem {
   in_library_episodes?: number
   status?: string
   drive_folder_id?: string
+  updated_at?: string
+  folder_modified_time?: number
   in_library?: boolean
   genre_names?: string[]
   original_language?: string

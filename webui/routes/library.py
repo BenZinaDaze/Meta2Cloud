@@ -14,9 +14,9 @@ router = APIRouter()
 
 
 @router.get("/api/library", response_model=LibraryResponse)
-async def get_library():
+async def get_library(sort_by: str = "folder_modified_time", sort_order: str = "desc"):
     store = get_library_store()
-    snapshot = store.get_snapshot()
+    snapshot = store.get_snapshot(sort_by=sort_by, sort_order=sort_order)
     if snapshot is None:
         return LibraryResponse(
             movies=[],
@@ -48,6 +48,25 @@ async def refresh_library():
             "library",
             "refresh_failed",
             "媒体库刷新失败",
+            level="ERROR",
+            details={"error": str(exc)},
+        )
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/api/library/refresh/full")
+async def refresh_library_full():
+    try:
+        diff = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: _do_refresh_library(incremental=False)
+        )
+        return diff
+    except Exception as exc:
+        logger.error(f"全量刷新媒体库失败: {exc}")
+        app_log(
+            "library",
+            "refresh_full_failed",
+            "媒体库全量刷新失败",
             level="ERROR",
             details={"error": str(exc)},
         )
