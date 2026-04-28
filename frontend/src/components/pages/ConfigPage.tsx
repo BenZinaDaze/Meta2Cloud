@@ -763,7 +763,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                       value={((cfg?.storage as Record<string, unknown>)?.primary as string) || 'google_drive'}
                       onValueChange={(v) => set('storage', 'primary', v)}
                     >
-                      <SelectTrigger className="w-full sm:w-48">
+                      <SelectTrigger className="w-full sm:w-48 focus:ring-0 focus:ring-offset-0">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>

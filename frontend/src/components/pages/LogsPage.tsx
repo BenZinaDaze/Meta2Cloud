@@ -211,7 +211,7 @@ export default function LogsPage() {
             />
           </div>
           <Select value={level} onValueChange={setLevel}>
-            <SelectTrigger className="h-11 w-36 rounded-full">
+            <SelectTrigger className="h-11 w-36 rounded-full focus:ring-0 focus:ring-offset-0">
               <SelectValue placeholder="级别: 全部" />
             </SelectTrigger>
             <SelectContent>
@@ -224,10 +224,9 @@ export default function LogsPage() {
           </Select>
           <Button
             variant="outline"
-            size="sm"
             onClick={handleRefresh}
             disabled={refreshing || loading}
-            className="gap-2"
+            className="h-11 gap-2 px-4"
           >
             <RefreshCw className={`size-4 ${refreshing ? 'animate-spin' : ''}`} />
             刷新

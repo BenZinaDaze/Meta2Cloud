@@ -5,6 +5,13 @@ import MediaCard from '@/components/MediaCard'
 import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import ScraperDetailModal from '@/components/modals/ScraperDetailModal'
 import type { MediaItem, LibraryResponse } from '@/types/api'
 import { relativeTime } from '@/lib/time'
@@ -183,27 +190,29 @@ export default function LibraryPage({
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-full border bg-card px-1.5 py-1">
-            <ArrowUpDown className="ml-1 size-3.5 text-muted-foreground" />
-            <select
-              value={`${sortBy}:${sortOrder}`}
-              onChange={(e) => {
-                const [by, order] = e.target.value.split(':')
-                setSortBy(by)
-                setSortOrder(order)
-              }}
-              className="h-8 min-w-0 rounded-full border-0 bg-transparent pr-7 pl-1 text-xs font-medium text-foreground focus:outline-none focus:ring-0"
-            >
-              <option value="folder_modified_time:desc">最近更新</option>
-              <option value="folder_modified_time:asc">最早更新</option>
-              <option value="updated_at:desc">最近入库</option>
-              <option value="updated_at:asc">最早入库</option>
-              <option value="year:desc">最新发行</option>
-              <option value="year:asc">最早发行</option>
-              <option value="title:asc">标题 A-Z</option>
-              <option value="title:desc">标题 Z-A</option>
-            </select>
-          </div>
+          <Select
+            value={`${sortBy}:${sortOrder}`}
+            onValueChange={(v) => {
+              const [by, order] = v.split(':')
+              setSortBy(by)
+              setSortOrder(order)
+            }}
+          >
+            <SelectTrigger className="h-11 min-w-0 gap-1 rounded-full border bg-card px-3 text-sm font-medium focus:ring-0 focus:ring-offset-0">
+              <ArrowUpDown className="size-3.5 text-muted-foreground" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl">
+              <SelectItem value="folder_modified_time:desc">最近更新</SelectItem>
+              <SelectItem value="folder_modified_time:asc">最早更新</SelectItem>
+              <SelectItem value="updated_at:desc">最近入库</SelectItem>
+              <SelectItem value="updated_at:asc">最早入库</SelectItem>
+              <SelectItem value="year:desc">最新发行</SelectItem>
+              <SelectItem value="year:asc">最早发行</SelectItem>
+              <SelectItem value="title:asc">标题 A-Z</SelectItem>
+              <SelectItem value="title:desc">标题 Z-A</SelectItem>
+            </SelectContent>
+          </Select>
           <div className="relative w-full sm:w-auto">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input

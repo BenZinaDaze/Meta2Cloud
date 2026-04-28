@@ -205,7 +205,7 @@ export default function IngestHistoryPage(_props: IngestHistoryPageProps) {
             />
           </div>
           <Select value={mediaType} onValueChange={(v) => { setMediaType(v); setPage(1) }}>
-            <SelectTrigger className="h-11 w-28 rounded-full">
+            <SelectTrigger className="h-11 w-28 rounded-full focus:ring-0 focus:ring-offset-0">
               <SelectValue placeholder="类型" />
             </SelectTrigger>
             <SelectContent>
@@ -215,7 +215,7 @@ export default function IngestHistoryPage(_props: IngestHistoryPageProps) {
             </SelectContent>
           </Select>
           <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1) }}>
-            <SelectTrigger className="h-11 w-28 rounded-full">
+            <SelectTrigger className="h-11 w-28 rounded-full focus:ring-0 focus:ring-offset-0">
               <SelectValue placeholder="状态" />
             </SelectTrigger>
             <SelectContent>
@@ -227,9 +227,8 @@ export default function IngestHistoryPage(_props: IngestHistoryPageProps) {
           </Select>
           <Button
             variant="outline"
-            size="sm"
             onClick={handleRefresh}
-            className="gap-2"
+            className="h-11 gap-2 px-4"
           >
             <RefreshCw className="size-4" />
             刷新
