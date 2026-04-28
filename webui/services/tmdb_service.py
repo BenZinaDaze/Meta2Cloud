@@ -129,7 +129,7 @@ def serialize_tmdb_result(info: Optional[Dict[str, Any]]) -> Optional[Dict[str, 
     return result
 
 
-def tmdb_get(path: str, extra: Optional[dict] = None) -> Optional[dict]:
+def tmdb_get(path: str, extra: Optional[dict] = None, use_cache: bool = True) -> Optional[dict]:
     cfg = get_config()
     language = cfg.tmdb.language
     cache = get_tmdb_cache()
@@ -138,13 +138,14 @@ def tmdb_get(path: str, extra: Optional[dict] = None) -> Optional[dict]:
         suffix = "&".join(f"{k}={v}" for k, v in sorted(extra.items()) if k != "api_key")
         if suffix:
             cache_path = f"{path}?{suffix}"
-    cached = cache.get(cache_path, language=language)
-    if cached is not None:
-        logger.debug("缓存命中：%s", cache_path)
-        return cached
-    if cache.is_failed(cache_path, language=language):
-        logger.debug("冷却中，跳过：%s", cache_path)
-        return None
+    if use_cache:
+        cached = cache.get(cache_path, language=language)
+        if cached is not None:
+            logger.debug("缓存命中：%s", cache_path)
+            return cached
+        if cache.is_failed(cache_path, language=language):
+            logger.debug("冷却中，跳过：%s", cache_path)
+            return None
     params = {"api_key": cfg.tmdb.api_key, "language": language}
     if extra:
         params.update(extra)

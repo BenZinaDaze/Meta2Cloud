@@ -47,14 +47,14 @@ def do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str, title: 
     errors: list[str] = []
 
     def _fetch_with_credits(path: str, extra_keys: str) -> dict:
-        info = tmdb_get(path, {"append_to_response": extra_keys})
+        info = tmdb_get(path, {"append_to_response": extra_keys}, use_cache=False)
         if not info:
-            logger.info("append_to_response 失败，回退到基础缓存：%s", path)
-            info = tmdb_get(path)
+            logger.info("append_to_response 失败，回退到基础请求：%s", path)
+            info = tmdb_get(path, use_cache=False)
         if not info:
             return {}
         if not info.get("credits"):
-            credits = tmdb_get(f"{path}/credits")
+            credits = tmdb_get(f"{path}/credits", use_cache=False)
             if credits:
                 info["credits"] = credits
         return info
@@ -156,7 +156,7 @@ def do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str, title: 
             if not match:
                 continue
             season_num = int(match.group(1))
-            season_detail = tmdb_get(f"/tv/{tmdb_id}/season/{season_num}")
+            season_detail = tmdb_get(f"/tv/{tmdb_id}/season/{season_num}", use_cache=False)
             if not season_detail:
                 logger.info("跳过 Season %d（TMDB 无数据）", season_num)
                 continue
@@ -191,6 +191,22 @@ def do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str, title: 
         updates["status"] = info.get("status") or ""
         if info.get("number_of_episodes") is not None:
             updates["total_episodes"] = info.get("number_of_episodes")
+        # 更新 seasons 数据
+        if info.get("seasons"):
+            seasons_data = []
+            for season in info["seasons"]:
+                season_number = season.get("season_number")
+                if season_number is None or season_number == 0:
+                    continue
+                seasons_data.append({
+                    "season_number": season_number,
+                    "season_name": season.get("name") or f"季 {season_number}",
+                    "poster_url": f"https://image.tmdb.org/t/p/w500{season['poster_path']}" if season.get("poster_path") else None,
+                    "episode_count": season.get("episode_count", 0),
+                    "in_library_count": 0,
+                })
+            if seasons_data:
+                updates["seasons"] = seasons_data
     else:
         updates["year"] = (info.get("release_date") or "")[:4]
     return {"ok": len(errors) == 0, "uploaded": uploaded, "errors": errors, "tmdb_id": tmdb_id, "updates": updates}

@@ -74,6 +74,18 @@ export default function ScraperDetailModal({
       } else {
         toast.warning(`部分文件上传失败（${errors.length} 个错误）`)
       }
+      // 刷新成功后重新获取详情
+      const tmdbId = initialItem.tmdb_id || (initialItem as MediaItem & { id?: number }).id
+      if (tmdbId) {
+        try {
+          const detailRes = await tmdbGetDetail(initialItem.media_type, tmdbId)
+          if (detailRes.data?.detail) {
+            setItem(detailRes.data.detail)
+          }
+        } catch {
+          // 忽略重新获取详情的错误
+        }
+      }
     } catch (e) {
       toast.error(
         `刷新失败：${(e as { response?: { data?: { detail?: string } }; message?: string })?.response?.data?.detail || (e as { message?: string })?.message}`
