@@ -1,6 +1,7 @@
 import logging
 import re
 from collections import defaultdict
+from typing import Set
 
 from fastapi import HTTPException
 from mediaparser import TmdbClient
@@ -9,7 +10,7 @@ from nfo import ImageUploader, NfoGenerator
 from webui.core.app_logging import app_log
 from webui.core.runtime import get_config, get_storage_provider, logger
 from webui.library_store import get_library_store
-from webui.services.library_data import build_seasons_status, fill_seasons_episodes
+from webui.services.library_data import build_seasons_status, fill_seasons_episodes, parse_episode_from_filename
 from webui.services.tmdb_service import get_tmdb_cache, serialize_tmdb_result, tmdb_get
 
 try:
@@ -193,13 +194,35 @@ def do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str, title: 
         updates["status"] = info.get("status") or ""
         if info.get("number_of_episodes") is not None:
             updates["total_episodes"] = info.get("number_of_episodes")
-        # 更新 seasons 数据
+        # 更新 seasons 数据，需要扫描 drive 文件夹获取已有的剧集信息
         if info.get("seasons"):
-            seasons_status, total_eps, _ = build_seasons_status(tmdb_id, info)
+            drive_episodes: Set[tuple] = set()
+            try:
+                season_folders = [
+                    f
+                    for f in client.list_files(folder_id=drive_folder_id, page_size=200)
+                    if f.is_folder and re.match(r"Season\s*\d+", f.name, re.IGNORECASE)
+                ]
+                for season_folder in season_folders:
+                    match = re.search(r"(\d+)", season_folder.name)
+                    if not match:
+                        continue
+                    season_num = int(match.group(1))
+                    season_files = client.list_files(folder_id=season_folder.id, page_size=500)
+                    for file in season_files:
+                        if file.is_video:
+                            episode = parse_episode_from_filename(file.name)
+                            if episode and episode[0] == season_num:
+                                drive_episodes.add((episode[0], episode[1]))
+            except Exception as exc:
+                logger.warning("扫描季文件夹失败，入库状态可能不准确: %s", exc)
+            seasons_status, total_eps, in_lib_eps = build_seasons_status(tmdb_id, info, drive_episodes)
             if seasons_status:
                 updates["seasons"] = [s.model_dump() for s in seasons_status]
             if total_eps:
                 updates["total_episodes"] = total_eps
+            if in_lib_eps:
+                updates["in_library_episodes"] = in_lib_eps
     else:
         updates["year"] = (info.get("release_date") or "")[:4]
     return {"ok": len(errors) == 0, "uploaded": uploaded, "errors": errors, "tmdb_id": tmdb_id, "updates": updates}
