@@ -33,7 +33,7 @@ import {
   testU115Cookie,
   fetchU115QrCode,
   pollU115OauthStatus,
-  refreshLibraryFull,
+  refreshLibrary,
 } from '@/api'
 import CustomWordsHelp from '@/components/config/CustomWordsHelp'
 import { Button } from '@/components/ui/button'
@@ -584,7 +584,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
     setFullRefreshing(true)
     setFullRefreshMessage(null)
     try {
-      const res = await refreshLibraryFull()
+      const res = await refreshLibrary(true)
       const data = res?.data || {}
       setFullRefreshMessage({
         type: 'success',

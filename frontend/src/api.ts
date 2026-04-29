@@ -26,41 +26,40 @@ api.interceptors.response.use(
 
 // ── 认证 ──
 export const login = (username: string, password: string) =>
-  axios.post('/api/auth/login', { username, password })
+  axios.post('/api/auth:login', { username, password })
 
 export const getMe = () => api.get('/auth/me')
-export const logout = () => api.post('/auth/logout')
+export const logout = () => api.post('/auth:logout')
 
 // ── 媒体库 ──
 export const getLibrary = (sort_by?: string, sort_order?: string) =>
   api.get('/library', { params: { sort_by, sort_order } })
-export const getMovies = () => api.get('/library/movies')
-export const getTvShows = () => api.get('/library/tv')
+export const getMovies = () => api.get('/movies')
+export const getTvShows = () => api.get('/tv-shows')
 export const getStats = () => api.get('/stats')
-export const getTvDetail = (tmdbId: number) => api.get(`/tv/${tmdbId}`)
-export const refreshLibrary = () => api.post('/library/refresh')
-export const refreshLibraryFull = () => api.post('/library/refresh/full')
+export const getTvDetail = (tmdbId: number) => api.get(`/tv-shows/${tmdbId}`)
+export const refreshLibrary = (full: boolean = false) => api.post('/library:refresh', null, { params: { full } })
 export const refreshMediaItem = (
   tmdb_id: number,
   media_type: string,
   drive_folder_id: string,
   title?: string,
   year?: string
-) => api.post('/library/refresh-item', { tmdb_id, media_type, drive_folder_id, title, year })
+) => api.post('/library:refresh-item', { tmdb_id, media_type, drive_folder_id, title, year })
 
 // ── TMDB/刮削 ──
 export const tmdbSearchMulti = (keyword: string, config?: { signal?: AbortSignal }) =>
-  api.get('/tmdb/search_multi', { params: { keyword }, ...config })
+  api.get('/tmdb/search', { params: { keyword }, ...config })
 export const tmdbGetDetail = (media_type: string, tmdb_id: number) =>
-  api.get('/tmdb/detail', { params: { media_type, tmdb_id } })
+  api.get(`/tmdb/${tmdb_id}`, { params: { media_type } })
 export const tmdbGetAlternativeNames = (media_type: string, tmdb_id: number, config?: { signal?: AbortSignal }) =>
-  api.get('/tmdb/alternative_names', { params: { media_type, tmdb_id }, ...config })
+  api.get(`/tmdb/${tmdb_id}/alternative-names`, { params: { media_type }, ...config })
 export const tmdbGetEpisodes = (id: number, season: number) =>
   api.get(`/tmdb/tv/${id}/season/${season}`)
 export const searchMedia = (keyword: string, config?: { signal?: AbortSignal }) =>
-  api.get('/scraper/search_media', { params: { keyword }, ...config })
+  api.get('/scraper/search', { params: { keyword }, ...config })
 export const getEpisodes = (site: string, media_id: string, subgroup_id?: string, config?: { signal?: AbortSignal }) =>
-  api.get('/scraper/get_episodes', { params: { site, media_id, subgroup_id }, ...config })
+  api.get('/scraper/episodes', { params: { site, media_id, subgroup_id }, ...config })
 
 // ── 订阅 ──
 export const listSubscriptions = () => api.get('/subscriptions')
@@ -71,11 +70,11 @@ export const updateSubscription = (id: number, data: Record<string, unknown>) =>
   api.put(`/subscriptions/${id}`, data)
 export const deleteSubscription = (id: number) => api.delete(`/subscriptions/${id}`)
 export const testSubscription = (data: Record<string, unknown>) =>
-  api.post('/subscriptions/test', data)
+  api.post('/subscriptions:test', data)
 export const parseSubscriptionRss = (rss_url: string) =>
-  api.post('/subscriptions/parse-rss', { rss_url })
+  api.post('/subscriptions:parse-rss', { rss_url })
 export const checkSubscription = (id: number) =>
-  api.post(`/subscriptions/${id}/check`)
+  api.post(`/subscriptions/${id}:check`)
 
 // ── 配置 ──
 export const getConfig = () => api.get('/config')

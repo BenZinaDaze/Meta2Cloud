@@ -7,7 +7,7 @@ from webui.schemas.auth import LoginRequest
 router = APIRouter()
 
 
-@router.post("/api/auth/login")
+@router.post("/api/auth:login")
 async def auth_login(body: LoginRequest):
     cfg = get_config()
     cfg_pass = cfg.webui.password or ""
@@ -32,6 +32,6 @@ async def auth_me(request: Request):
     return {"username": username}
 
 
-@router.post("/api/auth/logout")
+@router.post("/api/auth:logout")
 async def auth_logout():
     return {"ok": True}

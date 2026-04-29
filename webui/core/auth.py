@@ -76,7 +76,7 @@ def verify_token(token: str) -> Optional[str]:
 
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-    if path == "/api/auth/login" or path.startswith("/trigger") or not path.startswith("/api/"):
+    if path == "/api/auth:login" or path.startswith("/trigger") or not path.startswith("/api/"):
         return await call_next(request)
 
     auth = request.headers.get("Authorization", "")

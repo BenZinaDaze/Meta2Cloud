@@ -37,10 +37,12 @@ async def get_library(sort_by: str = "folder_modified_time", sort_order: str = "
     )
 
 
-@router.post("/api/library/refresh")
-async def refresh_library():
+@router.post("/api/library:refresh")
+async def refresh_library(full: bool = False):
     try:
-        diff = await asyncio.get_event_loop().run_in_executor(None, _do_refresh_library)
+        diff = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: _do_refresh_library(incremental=not full)
+        )
         return diff
     except Exception as exc:
         logger.error(f"刷新媒体库失败: {exc}")
@@ -54,26 +56,7 @@ async def refresh_library():
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.post("/api/library/refresh/full")
-async def refresh_library_full():
-    try:
-        diff = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: _do_refresh_library(incremental=False)
-        )
-        return diff
-    except Exception as exc:
-        logger.error(f"全量刷新媒体库失败: {exc}")
-        app_log(
-            "library",
-            "refresh_full_failed",
-            "媒体库全量刷新失败",
-            level="ERROR",
-            details={"error": str(exc)},
-        )
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@router.get("/api/library/movies", response_model=List[MediaItem])
+@router.get("/api/movies", response_model=List[MediaItem])
 async def get_movies():
     try:
         client = get_storage_provider()
@@ -84,7 +67,7 @@ async def get_movies():
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.get("/api/library/tv", response_model=List[MediaItem])
+@router.get("/api/tv-shows", response_model=List[MediaItem])
 async def get_tv_shows():
     try:
         client = get_storage_provider()
@@ -95,7 +78,7 @@ async def get_tv_shows():
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.get("/api/tv/{tmdb_id}", response_model=MediaItem)
+@router.get("/api/tv-shows/{tmdb_id}", response_model=MediaItem)
 async def get_tv_detail(tmdb_id: int):
     try:
         item = get_library_store().get_library_item_by_tmdb("tv", tmdb_id)

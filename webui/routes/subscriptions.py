@@ -31,12 +31,12 @@ async def create_subscription(body: SubscriptionCreateBody):
     return await run_in_threadpool(create_subscription_payload, body)
 
 
-@router.post("/api/subscriptions/test")
+@router.post("/api/subscriptions:test")
 async def test_subscription(body: SubscriptionTestBody):
     return await run_in_threadpool(test_subscription_payload, body)
 
 
-@router.post("/api/subscriptions/parse-rss")
+@router.post("/api/subscriptions:parse-rss")
 async def parse_subscription_rss(body: SubscriptionParseRssBody):
     return await run_in_threadpool(parse_subscription_rss_payload, body)
 
@@ -56,6 +56,6 @@ async def delete_subscription(subscription_id: int):
     return await run_in_threadpool(delete_subscription_payload, subscription_id)
 
 
-@router.post("/api/subscriptions/{subscription_id}/check")
+@router.post("/api/subscriptions/{subscription_id}:check")
 async def check_subscription(subscription_id: int):
     return await run_in_threadpool(check_subscription_payload, subscription_id)
