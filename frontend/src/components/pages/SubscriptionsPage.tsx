@@ -45,7 +45,7 @@ function SubscriptionMiniCard({ item, onEdit }: { item: Subscription; onEdit: (i
       onClick={() => onEdit(item)}
       className="group relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border bg-card transition-all hover:-translate-y-1"
     >
-      <div className="relative aspect-[2/3] overflow-hidden bg-muted">
+      <div className="relative aspect-[2/3] overflow-hidden rounded-t-2xl bg-muted">
         {posterUrl ? (
           <img
             src={posterUrl}
