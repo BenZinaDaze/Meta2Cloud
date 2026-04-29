@@ -6,12 +6,12 @@ ARG APP_VERSION=dev
 WORKDIR /frontend
 
 # 先复制依赖文件，利用 Docker 层缓存
-COPY frontend/package.json frontend/pnpm-lock.yaml ./
-RUN corepack enable pnpm && pnpm install --frozen-lockfile
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
 
 # 复制前端源码并构建
 COPY frontend/ ./
-RUN VITE_APP_VERSION=${APP_VERSION} pnpm run build
+RUN VITE_APP_VERSION=${APP_VERSION} npm run build
 
 
 FROM python:3.12-slim
