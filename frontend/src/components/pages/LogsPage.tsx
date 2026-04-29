@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useWebSocket, type WsMessage } from '@/hooks/useWebSocket'
 
 interface LogItem {
   ts: string
@@ -47,6 +48,8 @@ function formatEventDetails(item: LogItem): string {
       return details.error ? `原因：${details.error}` : ''
     case 'pipeline_finish':
       return details.returncode !== undefined ? `退出码 ${details.returncode}` : ''
+    case 'pipeline_output':
+      return ''
     case 'task_added_uri': {
       const parts: string[] = []
       if (details.name) parts.push(`任务名：${details.name}`)
@@ -106,7 +109,18 @@ function formatLogLine(item: LogItem): string {
   return `[${formatTime(item.ts)}] [${item.level}] ${item.message}${detailSuffix}`
 }
 
-const POLL_INTERVAL_MS = 2000
+function wsToLogItem(msg: WsMessage): LogItem {
+  return {
+    ts: msg.ts || new Date().toISOString(),
+    level: msg.level,
+    message: msg.message,
+    event: 'pipeline_output',
+    details: msg.runId ? { runId: msg.runId } : {},
+  }
+}
+
+const STATUS_POLL_MS = 5000
+const MAX_ITEMS = 1000
 
 export default function LogsPage() {
   const [items, setItems] = useState<LogItem[]>([])
@@ -117,8 +131,8 @@ export default function LogsPage() {
   const [isLive, setIsLive] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mountedRef = useRef(true)
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const fetchLogs = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true)
@@ -135,49 +149,58 @@ export default function LogsPage() {
     }
   }, [level])
 
-  const tick = useCallback(async () => {
+  const handleWsMessage = useCallback((msg: WsMessage) => {
     if (!mountedRef.current) return
-    try {
-      const res = await getPipelineStatus()
-      const running = res?.data?.running || res?.data?.debounce || false
-      if (!mountedRef.current) return
-      setIsLive(running)
-      await fetchLogs(false)
-      if (running && mountedRef.current) {
-        timerRef.current = setTimeout(tick, POLL_INTERVAL_MS)
-      } else {
-        timerRef.current = null
-      }
-    } catch {
-      if (mountedRef.current) setIsLive(false)
-      timerRef.current = null
-    }
-  }, [fetchLogs])
+    const item = wsToLogItem(msg)
+    setItems((prev) => {
+      const next = [item, ...prev]
+      return next.length > MAX_ITEMS ? next.slice(0, MAX_ITEMS) : next
+    })
+  }, [])
 
+  const { connected } = useWebSocket({ onMessage: handleWsMessage })
+
+  // Poll pipeline status to show LIVE badge
+  useEffect(() => {
+    let active = true
+    const tick = async () => {
+      if (!active) return
+      try {
+        const res = await getPipelineStatus()
+        if (!active) return
+        setIsLive(res?.data?.running || res?.data?.debounce || false)
+      } catch {
+        if (active) setIsLive(false)
+      }
+      if (active) {
+        statusTimerRef.current = setTimeout(tick, STATUS_POLL_MS)
+      }
+    }
+    tick()
+    return () => {
+      active = false
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current)
+    }
+  }, [])
+
+  // Initial load and re-fetch on level change
   useEffect(() => {
     mountedRef.current = true
     setLoading(true)
     fetchLogs(false).then(() => {
       if (mountedRef.current) setLoading(false)
     })
-    timerRef.current = setTimeout(tick, POLL_INTERVAL_MS)
 
     return () => {
       mountedRef.current = false
-      if (timerRef.current) {
-        clearTimeout(timerRef.current)
-        timerRef.current = null
-      }
     }
-  }, [fetchLogs, tick])
+  }, [fetchLogs])
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)
     await fetchLogs(false)
     setRefreshing(false)
-    if (timerRef.current) clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(tick, POLL_INTERVAL_MS)
-  }, [fetchLogs, tick])
+  }, [fetchLogs])
 
   const filteredLines = useMemo(() => {
     const needle = keyword.trim().toLowerCase()
@@ -190,11 +213,16 @@ export default function LogsPage() {
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold leading-tight sm:text-[34px]">日志</h1>
+          <h1 className="text-2xl font-bold leading-tight sm:text-[34px] flex items-center gap-2">
+            日志
+            {!isLive && (
+              <span className={`size-2 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+            )}
+          </h1>
           {isLive && (
             <span className="flex items-center gap-1.5 rounded-full bg-success/20 px-3 py-1 text-xs font-semibold text-success">
               <span className="size-2 animate-pulse rounded-full bg-success" />
-              LIVE
+              整理中
             </span>
           )}
         </div>
@@ -240,7 +268,6 @@ export default function LogsPage() {
             <h2 className="text-lg font-semibold">日志内容</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               最新 500 条日志，当前显示 {filteredLines.length} 条
-              {isLive && <span className="text-success"> · 整理中，每 2 秒自动刷新</span>}
             </p>
           </div>
         </div>

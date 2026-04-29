@@ -8,4 +8,5 @@ def logs_payload(limit: int, category: Optional[str], level: Optional[str]):
     return {
         "items": _log_store.read(limit=limit, category=category, level=level),
         "summary": _log_store.summary(),
+        "maxId": _log_store.max_id(),
     }

@@ -97,9 +97,11 @@ class Pipeline:
         dry_run: bool = False,
         skip_tmdb: bool = False,
         skip_images: bool = False,
+        log_callback=None,
     ):
         self._client = client
         self._cfg = cfg
+        self._log_callback = log_callback
         self._dry_run = dry_run or cfg.pipeline.dry_run
         self._skip_tmdb = skip_tmdb or cfg.pipeline.skip_tmdb
         self._skip_images = skip_images
@@ -160,6 +162,26 @@ class Pipeline:
         # 季详情本地缓存：key=f"{tmdb_id}:{season}" → dict，避免同一季第三次调用 TMDB
         self._season_detail_cache: dict = {}
 
+    # ── 日志回调 ──────────────────────────────────────────
+
+    @staticmethod
+    def _infer_level(message: str) -> str:
+        """根据日志内容推断级别。"""
+        if "❌" in message or "失败" in message or "异常" in message:
+            return "ERROR"
+        if "⚠" in message or "跳过" in message:
+            return "WARNING"
+        if "✓" in message or "完成" in message:
+            return "SUCCESS"
+        return "INFO"
+
+    def _log(self, message: str, level: str = "") -> None:
+        if not level:
+            level = self._infer_level(message)
+        print(message)
+        if self._log_callback:
+            self._log_callback(level, message)
+
     # ── 缓存工具 ──────────────────────────────────────────
 
     def _write_cache(self, path: str, data: dict) -> None:
@@ -188,23 +210,23 @@ class Pipeline:
     def run(self) -> None:
         scan_folder = self._cfg.active_scan_folder_id()
         if not scan_folder:
-            print("❌  配置错误：当前存储后端的扫描目录未设置")
+            self._log("❌  配置错误：当前存储后端的扫描目录未设置", "ERROR")
             return
         if not self._cfg.active_root_folder_id():
-            print("❌  配置错误：当前存储后端的媒体库根目录未设置")
+            self._log("❌  配置错误：当前存储后端的媒体库根目录未设置", "ERROR")
             return
 
-        print("=" * 68)
-        print("  Meta2Cloud 开始整理")
+        self._log("=" * 68)
+        self._log("  Meta2Cloud 开始整理")
         if self._dry_run:
-            print("  ⚠️  DRY-RUN 模式 — 不会操作 Drive")
+            self._log("  ⚠️  DRY-RUN 模式 — 不会操作 Drive", "WARNING")
         if self._skip_tmdb or not self._tmdb:
-            print("  ℹ️  跳过 TMDB — 不生成 NFO")
+            self._log("  ℹ️  跳过 TMDB — 不生成 NFO")
         if self._skip_images:
-            print("  ℹ️  跳过图片下载")
-        print("=" * 68)
+            self._log("  ℹ️  跳过图片下载")
+        self._log("=" * 68)
 
-        print(f"\n📂 扫描文件夹：{scan_folder}（含子文件夹）")
+        self._log(f"\n📂 扫描文件夹：{scan_folder}（含子文件夹）")
         all_files = list(self._client.list_all_recursive(folder_id=scan_folder))
         videos = [f for f in all_files if f.is_video]
         subtitles = [f for f in all_files if f.is_subtitle] if self._cfg.subtitle.enabled else []
@@ -216,17 +238,17 @@ class Pipeline:
             subtitle_index.setdefault(parent, []).append(sub)
 
         if not videos:
-            print("  （未找到视频文件）")
+            self._log("  （未找到视频文件）")
             if scan_folder:
-                print("\n🧹 检查并清理空子文件夹...")
+                self._log("\n🧹 检查并清理空子文件夹...")
                 self._cleanup_empty_folders(scan_folder, is_root=True)
-                print("  空文件夹清理完毕。")
+                self._log("  空文件夹清理完毕。")
             return
 
-        print(f"  找到 {len(videos)} 个视频文件")
+        self._log(f"  找到 {len(videos)} 个视频文件")
         if subtitles:
-            print(f"  找到 {len(subtitles)} 个字幕文件")
-        print()
+            self._log(f"  找到 {len(subtitles)} 个字幕文件")
+        self._log("")
 
         results = []
         for idx, video in enumerate(videos, 1):
@@ -237,9 +259,9 @@ class Pipeline:
         self._send_notifications()
 
         if scan_folder:
-            print("\n🧹 检查并清理空子文件夹...")
+            self._log("\n🧹 检查并清理空子文件夹...")
             self._cleanup_empty_folders(scan_folder, is_root=True)
-            print("  空文件夹清理完毕。")
+            self._log("  空文件夹清理完毕。")
 
     def _move_subtitles_for_video(
         self,
@@ -284,7 +306,7 @@ class Pipeline:
                 )
 
                 if self._dry_run or not target_folder:
-                    print(f"      字幕：{target_subtitle_name}  [dry-run，不移动]")
+                    self._log(f"      字幕：{target_subtitle_name}  [dry-run，不移动]")
                     continue
 
                 # 检查字幕是否已在目标位置
@@ -292,7 +314,7 @@ class Pipeline:
                     match.subtitle_file.name == target_subtitle_name):
                     processed_ids.add(match.subtitle_file.id)
                     lang_str = '.'.join(match.language_tags) if match.language_tags else 'default'
-                    print(f"      字幕：{target_subtitle_name} ({lang_str}) [已就位]")
+                    self._log(f"      字幕：{target_subtitle_name} ({lang_str}) [已就位]")
                     continue
 
                 # 检查目标位置是否已存在同名字幕
@@ -305,7 +327,7 @@ class Pipeline:
                         # 替换模式下，先移除现有字幕
                         try:
                             self._client.trash_file(existing_sub.id)
-                            print(f"      字幕：移除已存在的 {target_subtitle_name}")
+                            self._log(f"      字幕：移除已存在的 {target_subtitle_name}")
                         except Exception as e:
                             logger.warning("移除已存在字幕失败 [%s]: %s", target_subtitle_name, e)
                             continue
@@ -322,7 +344,7 @@ class Pipeline:
                 processed_ids.add(match.subtitle_file.id)
 
                 lang_str = '.'.join(match.language_tags) if match.language_tags else 'default'
-                print(f"      字幕：{target_subtitle_name} ({lang_str}) ✓")
+                self._log(f"      字幕：{target_subtitle_name} ({lang_str}) ✓", "SUCCESS")
 
             except Exception as e:
                 logger.warning("移动字幕失败 [%s]: %s", match.subtitle_file.name, e)
@@ -360,7 +382,7 @@ class Pipeline:
         if is_empty and not is_root:
             try:
                 self._client.trash_file(folder_id)
-                print(f"      🗑️  清理空文件夹：{folder_name}")
+                self._log(f"      🗑️  清理空文件夹：{folder_name}")
             except Exception as e:
                 logger.error("清理空文件夹失败 [%s]: %s", folder_name, e)
                 is_empty = False
@@ -374,7 +396,7 @@ class Pipeline:
         total: int,
         subtitle_index: Optional[dict] = None,
     ) -> ProcessResult:
-        print(f"[{idx}/{total}] 🎬  {video.name}")
+        self._log(f"[{idx}/{total}] 🎬  {video.name}")
         result = ProcessResult(file=video, status="ok")
 
         # ── Step 2: 解析文件名 ──────────────────────────────
@@ -383,7 +405,7 @@ class Pipeline:
                        release_group_matcher=self._rg_matcher)
         if not meta.name:
             msg = "解析失败（无法识别标题）"
-            print(f"      ⚠️   {msg}")
+            self._log(f"      ⚠️   {msg}", "WARNING")
             result.status = "skipped"
             result.reason = msg
             return result
@@ -393,7 +415,7 @@ class Pipeline:
         season_num = int(meta.season_seq) if meta.season_seq else 1
         episode_num = int(meta.episode_seq) if meta.episode_seq else None
         season_info = f"  S{season_num:02d}E{episode_num or '?'}" if is_tv else ""
-        print(f"      解析：{meta.name} ({meta.year or '?'})  [{media_label}]{season_info}")
+        self._log(f"      解析：{meta.name} ({meta.year or '?'})  [{media_label}]{season_info}")
 
         # ── Step 3: TMDB 整剧/整片元数据 ───────────────────
         tmdb_info = None
@@ -403,7 +425,7 @@ class Pipeline:
                 tmdb_title = tmdb_info.get("title") or tmdb_info.get("name") or ""
                 tmdb_id = tmdb_info.get("tmdb_id") or tmdb_info.get("id")
                 tmdb_year = (tmdb_info.get("release_date") or tmdb_info.get("first_air_date") or "")[:4]
-                print(f"      TMDB：{tmdb_title} ({tmdb_year})  tmdb_id={tmdb_id}")
+                self._log(f"      TMDB：{tmdb_title} ({tmdb_year})  tmdb_id={tmdb_id}", "SUCCESS")
                 if is_tv:
                     tmdb_info["_season"] = season_num
                     tmdb_info["_episode"] = episode_num
@@ -411,7 +433,7 @@ class Pipeline:
                 _cache_type = "tv" if is_tv else "movie"
                 self._write_cache(f"/{_cache_type}/{tmdb_id}", tmdb_info)
             else:
-                print("      TMDB：未找到元数据")
+                self._log("      TMDB：未找到元数据", "WARNING")
                 # 无论是否继续整理，都发 TG 提醒
                 self._notify_items.append(_NotifyItem(
                     title=meta.name,
@@ -437,7 +459,7 @@ class Pipeline:
             episode_detail = self._tmdb.get_episode_detail(tmdb_id, season_num, episode_num)
             if episode_detail:
                 ep_title = episode_detail.get("name") or ""
-                print(f"      单集：{ep_title}  (S{season_num:02d}E{episode_num:02d})")
+                self._log(f"      单集：{ep_title}  (S{season_num:02d}E{episode_num:02d})")
 
         # ── Step 5: 更新 Meta 使用 TMDB 数据以便 Organizer 创建正确的中文目录 ──
         if tmdb_info:
@@ -475,7 +497,7 @@ class Pipeline:
             target_folder = self._organizer.ensure_folder_for_meta(meta, label=video.name)
             if not target_folder:
                 msg = "文件夹创建失败"
-                print(f"      ❌  {msg}")
+                self._log(f"      ❌  {msg}", "ERROR")
                 result.status = "failed"
                 result.reason = msg
                 return result
@@ -492,10 +514,10 @@ class Pipeline:
             else:
                 top_folder_id = target_folder.id
             folder_path = self._organizer.folder_path_for_meta(meta)
-            print(f"      文件夹：{folder_path}  [{target_folder.id[:12]}...]")
+            self._log(f"      文件夹：{folder_path}  [{target_folder.id[:12]}...]", "SUCCESS")
         else:
             folder_path = self._organizer.folder_path_for_meta(meta)
-            print(f"      文件夹：{folder_path}  [dry-run，不创建]")
+            self._log(f"      文件夹：{folder_path}  [dry-run，不创建]")
 
         # ── Step 7.5: 同名文件预检 ─────────────────────────
         pending_replace_id: Optional[str] = None
@@ -508,15 +530,15 @@ class Pipeline:
                 if existing.id == video.id:
                     result.status = "skipped"
                     result.reason = "文件已在目标位置"
-                    print(f"      同名预检：文件已在目标位置，跳过")
+                    self._log(f"      同名预检：文件已在目标位置，跳过")
                     # 视频已在目标位置，可以继续处理字幕
                 elif self._replace_existing_video:
                     pending_replace_id = existing.id
-                    print(f"      同名预检：将替换已有文件")
+                    self._log(f"      同名预检：将替换已有文件")
                 else:
                     result.status = "skipped"
                     result.reason = "目标位置已存在同名文件"
-                    print(f"      同名预检：跳过（目标位置已存在同名文件）")
+                    self._log(f"      同名预检：跳过（目标位置已存在同名文件）", "WARNING")
                     # 目标位置有其他同名文件，不处理字幕（避免与错误视频关联）
                     return result
 
@@ -533,14 +555,14 @@ class Pipeline:
                             overwrite=True,
                         )
                         result.nfo_uploaded = True
-                        print(f"      NFO：{nfo_name}  ✓")
+                        self._log(f"      NFO：{nfo_name}  ✓", "SUCCESS")
                     except Exception as e:
                         logger.warning("上传单集 NFO 失败：%s", e)
-                        print(f"      NFO：上传失败 — {e}")
+                        self._log(f"      NFO：上传失败 — {e}", "ERROR")
                 else:
-                    print(f"      NFO：{nfo_name}  [dry-run，不上传]")
+                    self._log(f"      NFO：{nfo_name}  [dry-run，不上传]")
             elif not self._skip_tmdb and not tmdb_info:
-                print("      NFO：跳过（TMDB 无数据）")
+                self._log("      NFO：跳过（TMDB 无数据）")
 
             # ── Step 9: tvshow.nfo → 剧名文件夹 ────────────
             if is_tv and tmdb_info:
@@ -550,14 +572,14 @@ class Pipeline:
                         self._client.upload_text(xml, "tvshow.nfo", parent_id=top_folder_id,
                                                  mime_type="text/xml", overwrite=True)
                         self._tvshow_nfo_done.add(top_folder_id)
-                        print(f"      tvshow.nfo：→ 剧名文件夹  ✓")
+                        self._log(f"      tvshow.nfo：→ 剧名文件夹  ✓", "SUCCESS")
                     except Exception as e:
                         logger.warning("上传 tvshow.nfo 失败：%s", e)
-                        print(f"      tvshow.nfo：失败 — {e}")
+                        self._log(f"      tvshow.nfo：失败 — {e}", "ERROR")
                 elif top_folder_id and top_folder_id in self._tvshow_nfo_done:
                     pass  # 已上传，静默跳过
                 elif self._dry_run:
-                    print(f"      tvshow.nfo：→ 剧名文件夹  [dry-run]")
+                    self._log(f"      tvshow.nfo：→ 剧名文件夹  [dry-run]")
 
             # ── Step 10: season.nfo → Season 文件夹 ───────
             if is_tv and tmdb_info and target_folder:
@@ -571,14 +593,14 @@ class Pipeline:
                         self._client.upload_text(xml, "season.nfo", parent_id=season_folder_id,
                                                  mime_type="text/xml", overwrite=True)
                         self._season_nfo_done.add(season_folder_id)
-                        print(f"      season.nfo：→ Season {season_num} 文件夹  ✓")
+                        self._log(f"      season.nfo：→ Season {season_num} 文件夹  ✓", "SUCCESS")
                     except Exception as e:
                         logger.warning("上传 season.nfo 失败：%s", e)
-                        print(f"      season.nfo：失败 — {e}")
+                        self._log(f"      season.nfo：失败 — {e}", "ERROR")
                 elif season_folder_id in self._season_nfo_done:
                     pass  # 已上传，静默跳过
                 elif self._dry_run:
-                    print(f"      season.nfo：→ Season {season_num} 文件夹  [dry-run]")
+                    self._log(f"      season.nfo：→ Season {season_num} 文件夹  [dry-run]")
 
             # ── Step 11: poster.jpg / fanart.jpg ──────────
             if tmdb_info and self._img_uploader and target_folder:
@@ -592,12 +614,12 @@ class Pipeline:
                     if poster:
                         f = self._img_uploader.upload_poster(poster, img_top_id)
                         if f:
-                            print(f"      poster.jpg：✓")
+                            self._log(f"      poster.jpg：✓", "SUCCESS")
                             uploaded_any = True
                     if fanart:
                         f = self._img_uploader.upload_fanart(fanart, img_top_id)
                         if f:
-                            print(f"      fanart.jpg：✓")
+                            self._log(f"      fanart.jpg：✓", "SUCCESS")
                             uploaded_any = True
                     if uploaded_any:
                         self._poster_done.add(img_top_id)
@@ -605,7 +627,7 @@ class Pipeline:
             elif tmdb_info and not self._img_uploader and not self._skip_images and not self._dry_run:
                 pass  # img_uploader 未初始化时静默跳过
             elif tmdb_info and self._dry_run:
-                print(f"      poster.jpg / fanart.jpg：[dry-run，不下载]")
+                self._log(f"      poster.jpg / fanart.jpg：[dry-run，不下载]")
 
             # ── Step 11.5: season poster（季封面）──────────
             if is_tv and tmdb_info and self._img_uploader and target_folder and top_folder_id:
@@ -619,7 +641,7 @@ class Pipeline:
                     if sp:
                         f = self._img_uploader.upload_season_poster(sp, season_num, top_folder_id)
                         if f:
-                            print(f"      season{season_num:02d}-poster.jpg：✓")
+                            self._log(f"      season{season_num:02d}-poster.jpg：✓", "SUCCESS")
                     self._season_poster_done.add(season_poster_key)
 
         # ── Step 8-11: 元数据上传（替换模式下延后）──────────
@@ -632,12 +654,12 @@ class Pipeline:
             if pending_replace_id:
                 try:
                     self._client.trash_file(pending_replace_id)
-                    print(f"      移动：已移除同名文件")
+                    self._log(f"      移动：已移除同名文件")
                 except Exception as e:
                     logger.error("移除同名文件失败：%s", e)
                     result.status = "failed"
                     result.reason = f"移除同名文件失败：{e}"
-                    print(f"      移动：失败 — 无法移除同名文件")
+                    self._log(f"      移动：失败 — 无法移除同名文件", "ERROR")
                     return result
             try:
                 self._client.move_file(
@@ -648,20 +670,20 @@ class Pipeline:
                 result.moved = True
                 result.status = "ok"
                 if clean_name and clean_name != video.name:
-                    print(f"      移动+改名：{clean_name}  ✓")
+                    self._log(f"      移动+改名：{clean_name}  ✓", "SUCCESS")
                 else:
-                    print(f"      移动：✓")
+                    self._log(f"      移动：✓", "SUCCESS")
             except Exception as e:
                 logger.error("移动文件失败：%s", e)
                 result.status = "failed"
                 result.reason = f"移动失败：{e}"
                 if pending_replace_id:
                     result.reason += f"（已移除的旧文件 ID: {pending_replace_id}）"
-                print(f"      移动：失败 — {e}")
+                self._log(f"      移动：失败 — {e}", "ERROR")
                 return result
         else:
             target_name = clean_name or video.name
-            print(f"      移动：{target_name}  [dry-run，不移动]")
+            self._log(f"      移动：{target_name}  [dry-run，不移动]")
 
         # ── Step 12.5: 替换模式下移动成功后上传元数据 ───────
         if pending_replace_id and result.moved:
@@ -678,7 +700,7 @@ class Pipeline:
                 subtitle_index=subtitle_index,
             )
 
-        print()
+            self._log("")
 
         self._record_ingest(result=result, meta=meta, tmdb_info=tmdb_info,
                             season_num=season_num, episode_num=episode_num,
@@ -788,26 +810,26 @@ class Pipeline:
             year_str = f" ({year})" if year else ""
             return f"{cls._safe_filename(title)}{year_str}{ext}"
 
-    @staticmethod
-    def _print_summary(results: list) -> None:
+    def _print_summary(self, results: list) -> None:
         ok = sum(1 for r in results if r.status == "ok")
         skipped = sum(1 for r in results if r.status == "skipped")
         failed = sum(1 for r in results if r.status == "failed")
 
-        print("=" * 68)
-        print("  完成")
-        print(f"  ✓  成功：{ok}    ⚠  跳过：{skipped}    ✗  失败：{failed}")
+        self._log("=" * 68)
+        self._log("  完成")
+        summary_level = "ERROR" if failed > 0 else ("WARNING" if skipped > 0 else "SUCCESS")
+        self._log(f"  ✓  成功：{ok}    ⚠  跳过：{skipped}    ✗  失败：{failed}", summary_level)
         if skipped:
-            print("\n  跳过的文件：")
+            self._log("\n  跳过的文件：", "WARNING")
             for r in results:
                 if r.status == "skipped":
-                    print(f"    - {r.file.name}  （{r.reason}）")
+                    self._log(f"    - {r.file.name}  （{r.reason}）", "WARNING")
         if failed:
-            print("\n  失败的文件：")
+            self._log("\n  失败的文件：", "ERROR")
             for r in results:
                 if r.status == "failed":
-                    print(f"    - {r.file.name}  （{r.reason}）")
-        print("=" * 68)
+                    self._log(f"    - {r.file.name}  （{r.reason}）", "ERROR")
+        self._log("=" * 68)
 
     def _send_notifications(self) -> None:
         """按剧/电影分组，发送带封面的 Telegram 入库通知。"""

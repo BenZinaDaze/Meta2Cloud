@@ -19,6 +19,7 @@ from webui.routes.pipeline import router as pipeline_router
 from webui.routes.stats import router as stats_router
 from webui.routes.subscriptions import router as subscriptions_router
 from webui.routes.u115 import router as u115_router
+from webui.websocket import init_loop, router as websocket_router
 from webui.services.watcher import shutdown_background_watchers as _shutdown_background_watchers
 from webui.services.watcher import startup_background_watchers as _startup_background_watchers
 
@@ -32,6 +33,7 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def startup_background_watchers():
+    await init_loop()
     await _startup_background_watchers()
 
 
@@ -72,3 +74,4 @@ app.include_router(pipeline_router)
 app.include_router(stats_router)
 app.include_router(subscriptions_router)
 app.include_router(u115_router)
+app.include_router(websocket_router)

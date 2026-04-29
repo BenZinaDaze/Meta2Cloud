@@ -1,47 +1,22 @@
 import os
-import re
-import subprocess
 import sys
 import threading
 import uuid
 
+from core.pipeline import Pipeline
 from mediaparser import Config
 
 from webui.core.app_logging import app_log
-from webui.core.runtime import _ROOT_DIR, get_config, get_storage_provider, logger
+from webui.core.runtime import get_config, get_storage_provider, logger
 from webui.library_store import get_library_store
-from webui.services.telegram import send_telegram
 from webui.services.library_data import (
     scan_movies,
     scan_movies_incremental,
     scan_tv_shows,
     scan_tv_shows_incremental,
 )
-
-
-def infer_pipeline_log_level(line: str) -> str:
-    """根据 pipeline 输出行内容推断日志级别。"""
-    text = line.lower()
-    # 汇总行格式：✓ 成功：N    ⚠ 跳过：N    ✗ 失败：N
-    # 根据实际数值判断级别：失败>0 → ERROR，跳过>0 → WARNING，否则 SUCCESS
-    match = re.search(r"成功[：:]\s*(\d+).*跳过[：:]\s*(\d+).*失败[：:]\s*(\d+)", line)
-    if match:
-        ok, skipped, failed = int(match.group(1)), int(match.group(2)), int(match.group(3))
-        if failed > 0:
-            return "ERROR"
-        if skipped > 0:
-            return "WARNING"
-        if ok > 0:
-            return "SUCCESS"
-        return "INFO"
-    # 非汇总行：按标记判断
-    if "✓" in line or "完成" in line or "已上传" in line or "移动：" in line:
-        return "SUCCESS"
-    if "⚠" in line or "warning" in text or "跳过" in line:
-        return "WARNING"
-    if "❌" in line or "失败" in line or "异常" in line or "error" in text:
-        return "ERROR"
-    return "INFO"
+from webui.services.telegram import send_telegram
+from webui.websocket import get_broadcaster
 
 
 _pl_lock = threading.Lock()
@@ -99,65 +74,59 @@ def _do_run_pipeline() -> None:
         _pipeline_running = True
 
     app_log("pipeline", "pipeline_start", "整理流程启动", details={"runId": run_id})
-    try:
-        env = os.environ.copy()
-        env["PYTHONIOENCODING"] = "utf-8"
-        process = subprocess.Popen(
-            [sys.executable, "-m", "core"],
-            cwd=_ROOT_DIR,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            env=env,
-        )
-        assert process.stdout is not None
-        for line in process.stdout:
-            line = line.rstrip()
-            if not line:
-                continue
-            app_log(
-                "pipeline",
-                "pipeline_output",
-                line,
-                level=infer_pipeline_log_level(line),
-                details={"runId": run_id},
-            )
 
-        returncode = process.wait()
-        if returncode == 0:
-            app_log(
-                "pipeline",
-                "pipeline_finish",
-                "整理流程完成",
-                level="SUCCESS",
-                details={"runId": run_id, "returncode": returncode},
-            )
+    def log_callback(level: str, message: str) -> None:
+        app_log(
+            "pipeline",
+            "pipeline_output",
+            message,
+            level=level,
+            details={"runId": run_id},
+        )
+        try:
+            get_broadcaster().broadcast_sync({
+                "type": "log",
+                "ts": None,
+                "level": level,
+                "message": message,
+                "runId": run_id,
+            })
+        except Exception:
+            pass
+
+    try:
+        # Ensure stdout uses UTF-8 for emoji output in thread context
+        if hasattr(sys.stdout, "encoding") and (sys.stdout.encoding or "").lower() != "utf-8":
             try:
-                _do_refresh_library()
-            except Exception as exc:
-                logger.warning("媒体库刷新异常：%s", exc)
-                app_log(
-                    "pipeline",
-                    "pipeline_refresh_failed",
-                    "整理完成后刷新媒体库失败",
-                    level="ERROR",
-                    details={"runId": run_id, "error": str(exc)},
-                )
-        else:
-            logger.error("Pipeline 退出码 %d", returncode)
+                sys.stdout.reconfigure(encoding="utf-8")
+            except Exception:
+                pass
+
+        provider = get_storage_provider()
+        pipe = Pipeline(
+            client=provider,
+            cfg=cfg_obj,
+            log_callback=log_callback,
+        )
+        pipe.run()
+
+        app_log(
+            "pipeline",
+            "pipeline_finish",
+            "整理流程完成",
+            level="SUCCESS",
+            details={"runId": run_id},
+        )
+        try:
+            _do_refresh_library()
+        except Exception as exc:
+            logger.warning("媒体库刷新异常：%s", exc)
             app_log(
                 "pipeline",
-                "pipeline_finish",
-                "整理流程失败退出",
+                "pipeline_refresh_failed",
+                "整理完成后刷新媒体库失败",
                 level="ERROR",
-                details={"runId": run_id, "returncode": returncode},
-            )
-            send_telegram(
-                tg_token,
-                tg_chat_id,
-                f"❌ <b>Meta2Cloud</b>\n整理失败，退出码：<code>{returncode}</code>",
+                details={"runId": run_id, "error": str(exc)},
             )
     except Exception as exc:
         logger.error("Pipeline 异常：%s", exc)

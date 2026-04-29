@@ -36,6 +36,7 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:38765',
         changeOrigin: true,
+        ws: true,
       },
     },
   },
