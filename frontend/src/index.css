@@ -161,6 +161,16 @@
   }
 }
 
+/* === 移除数字输入框的调节按钮 === */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
 /* === 自定义滚动条 === */
 * {
   scrollbar-width: thin;
