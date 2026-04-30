@@ -17,6 +17,7 @@ import logging
 import os
 import tempfile
 import base64
+from datetime import datetime, timezone
 from typing import Callable, Iterator, List, Optional
 
 from u115pan.client import Pan115Client
@@ -83,12 +84,19 @@ class Pan115Provider(StorageProvider):
     def _to_cloud_file(pf: Pan115File) -> CloudFile:
         """将 Pan115File 转换为统一的 CloudFile"""
         parent_id = pf.parent_id
+        # 将 Unix 时间戳转换为 ISO 格式
+        modified_time = None
+        if pf.modified_time:
+            try:
+                modified_time = datetime.fromtimestamp(int(pf.modified_time), tz=timezone.utc).isoformat()
+            except (ValueError, TypeError):
+                modified_time = str(pf.modified_time)
         return CloudFile(
             id=pf.id,
             name=pf.name,
             file_type=FileType.FOLDER if pf.is_folder else FileType.FILE,
             size=pf.size,
-            modified_time=str(pf.modified_time) if pf.modified_time else None,
+            modified_time=modified_time,
             parent_id=parent_id,
             parents=[parent_id] if parent_id else [],
             mime_type=None,  # 115 API 不返回 MIME，依赖扩展名判断

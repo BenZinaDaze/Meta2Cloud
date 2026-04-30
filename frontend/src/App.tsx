@@ -8,6 +8,7 @@ import Topbar from '@/components/layout/Topbar'
 import MobileNav from '@/components/layout/MobileNav'
 import LibraryPage from '@/components/pages/LibraryPage'
 import ConfigPage from '@/components/pages/ConfigPage'
+import FileManagerPage from '@/components/pages/FileManagerPage'
 import DownloadsPage from '@/components/pages/DownloadsPage'
 import CalendarPage from '@/components/pages/CalendarPage'
 import SubscriptionsPage from '@/components/pages/SubscriptionsPage'
@@ -18,7 +19,7 @@ import ScraperSearch from '@/components/pages/ScraperSearch'
 import ParseTestModal from '@/components/modals/ParseTestModal'
 import { toast } from 'sonner'
 
-type NavKey = 'all' | 'movies' | 'tv' | 'config' | 'config-filename-rules' | 'calendar' | 'scraper-search' | 'subscriptions' | 'ingest-history' | 'logs' | 'u115-offline' | 'downloads' | 'downloads-active' | 'downloads-waiting' | 'downloads-stopped'
+type NavKey = 'all' | 'movies' | 'tv' | 'config' | 'config-filename-rules' | 'calendar' | 'scraper-search' | 'subscriptions' | 'files' | 'ingest-history' | 'logs' | 'u115-offline' | 'downloads' | 'downloads-active' | 'downloads-waiting' | 'downloads-stopped'
 
 const DOWNLOAD_QUEUE_MAP: Record<string, string | undefined> = {
   downloads: 'all',
@@ -229,6 +230,8 @@ export default function App() {
                 aria2Enabled={aria2Enabled ?? false}
                 u115Authorized={u115Authorized}
               />
+            ) : activeNav === 'files' ? (
+              <FileManagerPage />
             ) : activeNav === 'ingest-history' ? (
               <IngestHistoryPage onToast={handleToast} />
             ) : activeNav === 'logs' ? (

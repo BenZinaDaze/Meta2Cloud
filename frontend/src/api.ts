@@ -161,3 +161,22 @@ export const testDriveConnection = () => api.post('/drive/test')
 
 // ── Bangumi 新番 ──
 export const getBangumiCalendar = () => api.get('/bangumi/calendar')
+
+// ── 文件管理 ──
+export const listFiles = (params?: { folder_id?: string; folder_name?: string; search?: string }) =>
+  api.get('/files', { params })
+
+export const getFileDetail = (fileId: string, includePath?: boolean) =>
+  api.get(`/files/${fileId}`, { params: { include_path: includePath } })
+
+export const createFolder = (data: { name: string; parent_id?: string }) =>
+  api.post('/files', { ...data, file_type: 'folder' })
+
+export const updateFile = (fileId: string, data: { name?: string; parent_id?: string }) =>
+  api.patch(`/files/${fileId}`, data)
+
+export const deleteFile = (fileId: string) =>
+  api.delete(`/files/${fileId}`)
+
+export const batchAction = (data: { action: 'delete' | 'move'; file_ids: string[]; parent_id?: string }) =>
+  api.post('/files/batch', data)

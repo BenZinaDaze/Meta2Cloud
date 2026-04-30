@@ -12,3 +12,22 @@ export function relativeTime(
   if (diff < 86400 * dayThreshold) return `${Math.floor(diff / 86400)} 天前`
   return new Date(isoStr).toLocaleDateString('zh-CN')
 }
+
+export function formatDateTime(
+  dateStr?: string,
+  opts?: { locale?: string; fallback?: string }
+): string {
+  const fallback = opts?.fallback ?? '-'
+  if (!dateStr) return fallback
+  try {
+    return new Date(dateStr).toLocaleString(opts?.locale ?? 'zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch {
+    return dateStr
+  }
+}

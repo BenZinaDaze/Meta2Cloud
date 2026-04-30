@@ -10,6 +10,7 @@ from webui.routes.aria2 import router as aria2_router
 from webui.routes.auth import router as auth_router
 from webui.routes.bangumi import router as bangumi_router
 from webui.routes.config import router as config_router
+from webui.routes.file_manager import router as file_manager_router
 from webui.routes.ingest import router as ingest_router
 from webui.routes.library import router as library_router
 from webui.routes.logs import router as logs_router
@@ -65,6 +66,7 @@ app.include_router(auth_router)
 app.include_router(aria2_router)
 app.include_router(bangumi_router)
 app.include_router(config_router)
+app.include_router(file_manager_router)
 app.include_router(ingest_router)
 app.include_router(pages_router)
 app.include_router(library_router)

@@ -17,6 +17,7 @@ import {
   Settings,
   LogOut,
   Circle,
+  FolderOpen,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -324,6 +325,13 @@ export default function Sidebar({
             />
           </div>
         )}
+
+        <NavItem
+          icon={<FolderOpen className="size-4" />}
+          label="文件管理"
+          active={active === 'files'}
+          onClick={() => onSelect('files')}
+        />
 
         <NavItem
           icon={<History className="size-4" />}

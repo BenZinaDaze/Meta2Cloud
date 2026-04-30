@@ -201,3 +201,54 @@ export interface IngestStatsResponse {
   failed: number
   no_tmdb: number
 }
+
+// 文件管理
+export interface CloudFile {
+  id: string
+  name: string
+  file_type: 'file' | 'folder'
+  size?: number
+  modified_time?: string
+  parent_id?: string
+  mime_type?: string
+  is_video: boolean
+  is_subtitle: boolean
+  extension: string
+  extra: Record<string, unknown>
+}
+
+export interface PathBreadcrumbItem {
+  id: string
+  name: string
+}
+
+export interface ListFilesResponse {
+  items: CloudFile[]
+  folder_id: string
+  folder_name?: string
+  parent_id?: string
+  provider: string
+  root_id: string
+  path: PathBreadcrumbItem[]
+}
+
+export interface FileDetailResponse extends CloudFile {
+  path: PathBreadcrumbItem[]
+}
+
+export interface CreateFileBody {
+  name: string
+  parent_id?: string
+  file_type?: 'file' | 'folder'
+}
+
+export interface UpdateFileBody {
+  name?: string
+  parent_id?: string
+}
+
+export interface BatchActionBody {
+  action: 'delete' | 'move'
+  file_ids: string[]
+  parent_id?: string
+}
