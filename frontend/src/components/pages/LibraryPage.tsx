@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Search, RefreshCw, ChevronRight, ArrowUpDown } from 'lucide-react'
 import { getLibrary } from '@/api'
+import BackToTopButton from '@/components/BackToTopButton'
 import MediaCard from '@/components/MediaCard'
 import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
@@ -334,6 +335,7 @@ export default function LibraryPage({
           setSelected(null)
         }}
       />
+      <BackToTopButton />
     </div>
   )
 }

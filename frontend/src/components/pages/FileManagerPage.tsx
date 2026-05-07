@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import { listFiles, createFolder, updateFile, deleteFile, batchAction } from '@/api'
+import BackToTopButton from '@/components/BackToTopButton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -372,7 +373,7 @@ export default function FileManagerPage() {
       </div>
 
       {/* File List */}
-      <div className="flex-1 overflow-y-auto">
+      <div data-scroll-container="file-manager-list" className="flex-1 overflow-y-auto">
         {sortedItems.length === 0 ? (
           <div className="flex h-full items-center justify-center text-muted-foreground">
             {searchQuery ? '没有找到匹配的文件' : '文件夹为空'}
@@ -527,6 +528,7 @@ export default function FileManagerPage() {
         onOpenChange={setParseTestOpen}
         initialFilename={parseTestFilename}
       />
+      <BackToTopButton containerSelector='[data-scroll-container="file-manager-list"]' />
     </div>
   )
 }

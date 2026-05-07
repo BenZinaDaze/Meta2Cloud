@@ -179,7 +179,7 @@ export default function App() {
   const downloadQueue = DOWNLOAD_QUEUE_MAP[activeNav]
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="h-screen overflow-hidden bg-background">
       <Topbar
         onToggleSidebar={() => setMobileSidebarOpen((o) => !o)}
         onOpenParseTest={() => setShowParseTest(true)}
@@ -203,8 +203,8 @@ export default function App() {
         />
       )}
 
-      <main className="pt-14 pb-20 lg:pb-0 lg:ml-[260px]">
-        <div className="overflow-y-auto p-4 lg:p-8 min-h-[calc(100vh-3.5rem)]">
+      <main className="h-full pt-14 pb-20 lg:pb-0 lg:ml-[260px]">
+        <div data-main-scroll-container="true" className="h-full overflow-y-auto p-4 lg:p-8">
           {activeNav === 'config' ? (
               <ConfigPage onAria2EnabledChange={setAria2Enabled} page="general" />
             ) : activeNav === 'config-filename-rules' ? (

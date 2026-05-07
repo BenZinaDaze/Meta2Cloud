@@ -20,6 +20,7 @@ import {
   retryAria2Tasks,
   unpauseAria2Tasks,
 } from '@/api'
+import BackToTopButton from '@/components/BackToTopButton'
 import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -780,6 +781,7 @@ export default function DownloadsPage({
         onOpenChange={(open) => !open && setParseTestFile(null)}
         initialFilename={parseTestFile || ''}
       />
+      <BackToTopButton />
     </div>
   )
 }

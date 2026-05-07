@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { ChevronLeft, ChevronDown, RefreshCw, Rss, Copy, ArrowUp } from 'lucide-react'
+import { ChevronLeft, ChevronDown, RefreshCw, Rss, Copy } from 'lucide-react'
 import { searchMedia, getEpisodes, addAria2Uri, addU115OfflineUrls, getU115OauthStatus, tmdbGetAlternativeNames } from '@/api'
+import BackToTopButton from '@/components/BackToTopButton'
 import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 import SubscriptionModal from '@/components/modals/SubscriptionModal'
@@ -72,13 +73,11 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
   const [groupedEpisodes, setGroupedEpisodes] = useState<SubgroupGroup[]>(() => _resultsCache[searchKey]?.groupedEpisodes ?? [])
   const [stateSearchKey, setStateSearchKey] = useState(searchKey)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
-  const [showTop, setShowTop] = useState(false)
   const [usedSearchKey, setUsedSearchKey] = useState<string | null>(null)
   const [currentSearchKey, setCurrentSearchKey] = useState<string | null>(null)
   const [activeMediaTitle, setActiveMediaTitle] = useState<string | null>(null)
   const [u115Authorized, setU115Authorized] = useState(false)
   const [subscriptionDraft, setSubscriptionDraft] = useState<Partial<Subscription> | null>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
 
   // 同步状态到缓存
@@ -102,7 +101,6 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
     setUsedSearchKey(null)
     setCurrentSearchKey(null)
     setActiveMediaTitle(null)
-    setShowTop(false)
 
     if (!cached || cached.searchState === 'idle') {
       startSearch()
@@ -343,11 +341,7 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
   return (
     <div className="flex flex-1 flex-col">
       <section className="flex flex-1 flex-col rounded-2xl border bg-card p-4 sm:rounded-3xl sm:p-7">
-        <div
-          ref={scrollRef}
-          onScroll={(e) => setShowTop((e.target as HTMLDivElement).scrollTop > 300)}
-          className="flex-1 min-h-0 overflow-y-auto"
-        >
+        <div className="flex-1 min-h-0">
           {/* Header */}
           <div className="mb-6 flex items-center gap-4">
             <Button variant="outline" size="icon" onClick={onBack} className="shrink-0 rounded-full">
@@ -581,17 +575,9 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
           )}
         </div>
 
-        {/* Back to top button */}
-        {showTop && (
-          <Button
-            size="icon"
-            onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="absolute bottom-6 right-6 z-50 rounded-full shadow-lg"
-          >
-            <ArrowUp className="size-5" />
-          </Button>
-        )}
       </section>
+
+      <BackToTopButton />
 
       <SubscriptionModal
         mode="create"

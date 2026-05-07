@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Film, Tv, Search, RefreshCw, ChevronLeft, ChevronRight, AlertCircle, CheckCircle, HelpCircle, Clock } from 'lucide-react'
 import { getIngestHistory, getIngestStats } from '@/api'
+import BackToTopButton from '@/components/BackToTopButton'
 import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -101,7 +102,8 @@ interface IngestHistoryPageProps {
   onToast?: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void
 }
 
-export default function IngestHistoryPage(_props: IngestHistoryPageProps) {
+export default function IngestHistoryPage(props: IngestHistoryPageProps) {
+  void props
   const [data, setData] = useState<IngestHistoryResponse | null>(null)
   const [stats, setStats] = useState<IngestStatsResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -138,7 +140,7 @@ export default function IngestHistoryPage(_props: IngestHistoryPageProps) {
     } finally {
       if (mountedRef.current) setLoading(false)
     }
-  }, [page, mediaType, status, keyword, fetchKey])
+  }, [page, mediaType, status, keyword])
 
   const fetchStats = useCallback(async () => {
     try {
@@ -149,7 +151,7 @@ export default function IngestHistoryPage(_props: IngestHistoryPageProps) {
 
   useEffect(() => {
     fetchHistory(true)
-  }, [fetchHistory])
+  }, [fetchHistory, fetchKey])
 
   useEffect(() => {
     fetchStats()
@@ -299,6 +301,7 @@ export default function IngestHistoryPage(_props: IngestHistoryPageProps) {
           </>
         )}
       </section>
+      <BackToTopButton />
     </div>
   )
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw, Search } from 'lucide-react'
 import { getLogs, getPipelineStatus } from '@/api'
+import BackToTopButton from '@/components/BackToTopButton'
 import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -279,7 +280,7 @@ export default function LogsPage() {
         ) : filteredLines.length === 0 ? (
           <StatePanel icon="≡" title="当前筛选条件下没有日志" description="调整级别或关键词后再试一次。" compact />
         ) : (
-          <div className="h-[70vh] overflow-auto rounded-2xl border bg-muted/30 px-5 py-4">
+          <div data-scroll-container="logs-panel" className="h-[70vh] overflow-auto rounded-2xl border bg-muted/30 px-5 py-4">
             <div className="space-y-1 font-mono text-sm leading-7">
               {filteredLines.map((line, index) => (
                 <div key={`${index}-${line}`} className="break-all">
@@ -290,6 +291,7 @@ export default function LogsPage() {
           </div>
         )}
       </section>
+      <BackToTopButton containerSelector='[data-scroll-container="logs-panel"]' className="fixed right-6 bottom-24 z-50 rounded-full shadow-lg lg:bottom-6" />
     </div>
   )
 }

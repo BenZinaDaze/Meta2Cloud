@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { RefreshCw, Pause, Play, Trash2, Edit, Rss, Plus } from 'lucide-react'
 import { checkSubscription, deleteSubscription, listSubscriptions, tmdbGetDetail, updateSubscription } from '@/api'
+import BackToTopButton from '@/components/BackToTopButton'
 import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 import {
@@ -346,7 +347,7 @@ export default function SubscriptionsPage({
           ))}
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div data-scroll-container="subscriptions-grid" className="flex-1 min-h-0 overflow-y-auto">
           {loading ? (
             <StatePanel title="正在加载订阅列表" description="正在读取已保存的 RSS 订阅与命中状态。" compact />
           ) : error ? (
@@ -465,6 +466,8 @@ export default function SubscriptionsPage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <BackToTopButton containerSelector='[data-scroll-container="subscriptions-grid"]' />
     </div>
   )
 }

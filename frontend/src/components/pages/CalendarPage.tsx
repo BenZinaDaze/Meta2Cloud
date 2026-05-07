@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { RefreshCw, Star, ChevronDown, Film } from 'lucide-react'
 import { getBangumiCalendar, testParse } from '@/api'
+import BackToTopButton from '@/components/BackToTopButton'
 import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 
@@ -365,6 +366,8 @@ export default function CalendarPage({ onSearch }: CalendarPageProps) {
           </a>
         </div>
       )}
+
+      <BackToTopButton />
     </div>
   )
 }

@@ -8,6 +8,7 @@ import {
   getU115OfflineQuota,
   testU115Connection,
 } from '@/api'
+import BackToTopButton from '@/components/BackToTopButton'
 import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -465,6 +466,8 @@ export default function U115OfflinePage({ onToast }: U115OfflinePageProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <BackToTopButton />
     </div>
   )
 }

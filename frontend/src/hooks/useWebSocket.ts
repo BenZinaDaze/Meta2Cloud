@@ -15,10 +15,13 @@ interface UseWebSocketOptions {
 export function useWebSocket({ onMessage }: UseWebSocketOptions) {
   const [connected, setConnected] = useState(false)
   const onMessageRef = useRef(onMessage)
-  onMessageRef.current = onMessage
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mountedRef = useRef(false)
+
+  useEffect(() => {
+    onMessageRef.current = onMessage
+  }, [onMessage])
 
   const connect = useCallback(() => {
     if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) return
