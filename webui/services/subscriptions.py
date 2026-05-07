@@ -21,6 +21,7 @@ from webui.schemas.config import U115OfflineAddUrlsBody
 from webui.services.aria2 import aria2_add_uri_payload
 from webui.services.u115 import u115_oauth_status_payload, u115_offline_add_urls_sync
 from webui.services.media_actions import tmdb_search_multi_payload
+from webui.services.tmdb_service import tmdb_image_url
 
 
 _store_lock = threading.Lock()
@@ -76,6 +77,7 @@ def _normalize_keywords(keyword_all: list[str]) -> list[str]:
 def _serialize_subscription(record: SubscriptionRecord, *, include_hits: bool = True) -> dict[str, Any]:
     store = _resolve_store()
     payload = asdict(record)
+    payload["poster_url"] = tmdb_image_url(record.poster_url, size="w500")
     payload["enabled"] = bool(record.enabled)
     payload["keyword_all"] = json.loads(record.keyword_all or "[]")
     payload["hit_count"] = store.count_hits(record.id)
@@ -96,9 +98,9 @@ def _serialize_subscription(record: SubscriptionRecord, *, include_hits: bool = 
                 "original_title": raw.get("original_title") or raw.get("original_name") or tmdb_entry.get("original_title") or "",
                 "overview": raw.get("overview") or tmdb_entry.get("overview") or "",
                 "poster_path": poster_path,
-                "poster_url": f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None,
+                "poster_url": tmdb_image_url(poster_path, size="w500"),
                 "backdrop_path": backdrop_path,
-                "backdrop_url": f"https://image.tmdb.org/t/p/original{backdrop_path}" if backdrop_path else None,
+                "backdrop_url": tmdb_image_url(backdrop_path),
                 "release_date": raw.get("release_date") or raw.get("first_air_date") or "",
                 "status": raw.get("status") or tmdb_entry.get("status") or "",
                 "rating": round(raw.get("vote_average") or tmdb_entry.get("vote_average") or 0, 1),

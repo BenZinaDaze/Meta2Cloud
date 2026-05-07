@@ -112,6 +112,8 @@ def _validate_main_config_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     _parse_int_field(webui, "token_expire_hours", "Token 有效期", 1, 8760)
     _parse_int_field(webui, "log_retention_days", "日志保留天数", 1, 365)
     _parse_int_field(tmdb, "timeout", "TMDB 请求超时", 1, 120)
+    if "image_base_url" in tmdb:
+        tmdb["image_base_url"] = "" if tmdb.get("image_base_url") is None else str(tmdb.get("image_base_url")).strip()
     _parse_int_field(u115, "auto_organize_poll_seconds", "115 自动整理轮询间隔", 10, 600)
     _parse_int_field(u115, "auto_organize_stable_seconds", "115 完成稳定等待", 0, 600)
     _parse_int_field(rss, "poll_seconds", "RSS 订阅轮询间隔", 10, 3600)

@@ -162,6 +162,7 @@ webui:
 tmdb:
   api_key: "你的 TMDB API Key"
   language: "zh-CN"
+  image_base_url: ""  # 可选；仅填根域名，留空默认 https://image.tmdb.org
 ```
 
 ### Google Drive 配置

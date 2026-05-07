@@ -31,6 +31,7 @@ import requests
 
 from storage.base import StorageProvider, CloudFile
 from mediaparser import MetaInfo, TmdbClient, Config, MediaType
+from mediaparser.tmdb_image import build_tmdb_image_url
 from mediaparser.release_group import ReleaseGroupsMatcher
 from nfo import NfoGenerator, ImageUploader
 from core.organizer import MediaOrganizer
@@ -137,11 +138,11 @@ class Pipeline:
                 cache=self._tmdb_write_cache,
             )
 
-        self._nfo_gen = NfoGenerator()
+        self._nfo_gen = NfoGenerator(tmdb_image_base_url=cfg.tmdb_image_base_url)
 
         self._img_uploader: Optional[ImageUploader] = None
         if not self._skip_images and not self._dry_run:
-            self._img_uploader = ImageUploader(client)
+            self._img_uploader = ImageUploader(client, tmdb_image_base_url=cfg.tmdb_image_base_url)
 
         # 幂等去重集合
         self._tvshow_nfo_done: Set[str] = set()   # 已上传 tvshow.nfo 的剧名文件夹 ID
@@ -898,14 +899,13 @@ class Pipeline:
 
     def _send_tg_photo(self, token: str, chat_id: str, poster_path: str, caption: str) -> None:
         """发送带封面图的 Telegram 消息，无封面时降级为纯文字消息。"""
-        TMDB_IMG = "https://image.tmdb.org/t/p/w500"
         try:
             if poster_path:
                 resp = requests.post(
                     f"https://api.telegram.org/bot{token}/sendPhoto",
                     json={
                         "chat_id": chat_id,
-                        "photo": f"{TMDB_IMG}{poster_path}",
+                        "photo": build_tmdb_image_url(poster_path, size="w500", base_url=self._cfg.tmdb_image_base_url),
                         "caption": caption,
                         "parse_mode": "HTML",
                     },

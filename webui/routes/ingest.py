@@ -5,14 +5,14 @@ from fastapi.concurrency import run_in_threadpool
 
 from webui.ingest_store import get_ingest_store
 from webui.schemas.ingest import IngestHistoryResponse, IngestStatsResponse
-from webui.services.tmdb_service import TMDB_IMG_BASE
+from webui.services.tmdb_service import tmdb_image_url
 
 router = APIRouter()
 
 
 def _enrich_poster_url(item: dict) -> dict:
     if item.get("poster_path"):
-        item["poster_url"] = f"{TMDB_IMG_BASE}{item['poster_path']}"
+        item["poster_url"] = tmdb_image_url(item["poster_path"], size="w500")
     return item
 
 

@@ -20,12 +20,12 @@ import requests
 from mediaparser.zhconv_compat import zhconv
 
 from mediaparser.meta_base import MetaBase
+from mediaparser.tmdb_image import build_tmdb_image_url
 from mediaparser.string_utils import StringUtils
 from mediaparser.types import MediaType
 
 logger = logging.getLogger(__name__)
 
-TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/original"
 _RETRY_WAIT = 5  # 429 限流等待秒数
 
 
@@ -421,8 +421,11 @@ class TmdbClient:
     # ── 便利工具 ─────────────────────────────────────────
 
     @staticmethod
-    def image_url(path: Optional[str]) -> Optional[str]:
+    def image_url(
+        path: Optional[str],
+        *,
+        size: str = "original",
+        base_url: Optional[str] = None,
+    ) -> Optional[str]:
         """将 TMDB 图片相对路径转为完整 URL"""
-        if not path:
-            return None
-        return TMDB_IMAGE_BASE + path
+        return build_tmdb_image_url(path, size=size, base_url=base_url)

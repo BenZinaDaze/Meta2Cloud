@@ -14,11 +14,10 @@ from typing import Optional
 
 import requests
 
+from mediaparser.tmdb_image import build_tmdb_image_url
 from storage.base import StorageProvider, CloudFile
 
 logger = logging.getLogger(__name__)
-
-TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/original"
 
 # MIME 类型映射
 _EXT_MIME = {
@@ -47,11 +46,13 @@ class ImageUploader:
         session: Optional[requests.Session] = None,
         timeout: int = 15,
         overwrite: bool = True,
+        tmdb_image_base_url: Optional[str] = None,
     ):
         self._client = client
         self._session = session or requests.Session()
         self._timeout = timeout
         self._overwrite = overwrite
+        self._tmdb_image_base_url = tmdb_image_base_url
 
     # ── 公共接口 ────────────────────────────────────────────────────
 
@@ -133,7 +134,7 @@ class ImageUploader:
         if not tmdb_path:
             return None
 
-        url = TMDB_IMAGE_BASE + tmdb_path
+        url = build_tmdb_image_url(tmdb_path, base_url=self._tmdb_image_base_url)
         mime_type = self._guess_mime(filename)
 
         # 下载

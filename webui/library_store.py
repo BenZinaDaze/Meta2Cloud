@@ -16,9 +16,10 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from mediaparser.tmdb_image import build_tmdb_image_url, extract_tmdb_image_path
+from webui.core.runtime import get_config
+
 logger = logging.getLogger(__name__)
-_TMDB_IMG_BASE = "https://image.tmdb.org/t/p/w500"
-_TMDB_IMG_ORIG = "https://image.tmdb.org/t/p/original"
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS tmdb_media (
@@ -109,6 +110,87 @@ class LibraryStore:
                 "ALTER TABLE library_media ADD COLUMN folder_modified_time INTEGER NOT NULL DEFAULT 0"
             )
             logger.info("已为 library_media 表新增 folder_modified_time 字段")
+        self._migrate_library_media_image_paths()
+
+    @staticmethod
+    def _normalize_library_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(payload or {})
+        normalized["poster_url"] = extract_tmdb_image_path(normalized.get("poster_url"))
+        normalized["backdrop_url"] = extract_tmdb_image_path(normalized.get("backdrop_url"))
+        seasons = normalized.get("seasons")
+        if isinstance(seasons, list):
+            normalized["seasons"] = [
+                {
+                    **season,
+                    "poster_url": extract_tmdb_image_path(season.get("poster_url")),
+                }
+                if isinstance(season, dict)
+                else season
+                for season in seasons
+            ]
+        return normalized
+
+    @staticmethod
+    def _hydrate_library_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        hydrated = dict(payload or {})
+        hydrated["poster_url"] = build_tmdb_image_url(
+            extract_tmdb_image_path(hydrated.get("poster_url")),
+            size="w500",
+            base_url=get_config().tmdb_image_base_url,
+        )
+        hydrated["backdrop_url"] = build_tmdb_image_url(
+            extract_tmdb_image_path(hydrated.get("backdrop_url")),
+            base_url=get_config().tmdb_image_base_url,
+        )
+        seasons = hydrated.get("seasons")
+        if isinstance(seasons, list):
+            hydrated["seasons"] = [
+                {
+                    **season,
+                    "poster_url": build_tmdb_image_url(
+                        extract_tmdb_image_path(season.get("poster_url")),
+                        size="w500",
+                        base_url=get_config().tmdb_image_base_url,
+                    ),
+                }
+                if isinstance(season, dict)
+                else season
+                for season in seasons
+            ]
+        return hydrated
+
+    def _migrate_library_media_image_paths(self) -> None:
+        rows = self._conn.execute(
+            "SELECT drive_folder_id, poster_url, backdrop_url, raw_json FROM library_media"
+        ).fetchall()
+        migrated = 0
+        for row in rows:
+            payload = json.loads(row["raw_json"] or "{}")
+            normalized_payload = self._normalize_library_payload(payload)
+            poster_path = extract_tmdb_image_path(row["poster_url"])
+            backdrop_path = extract_tmdb_image_path(row["backdrop_url"])
+            if (
+                poster_path == (row["poster_url"] or "")
+                and backdrop_path == (row["backdrop_url"] or "")
+                and normalized_payload == payload
+            ):
+                continue
+            self._conn.execute(
+                """
+                UPDATE library_media
+                SET poster_url = ?, backdrop_url = ?, raw_json = ?
+                WHERE drive_folder_id = ?
+                """,
+                (
+                    poster_path,
+                    backdrop_path,
+                    json.dumps(normalized_payload, ensure_ascii=False),
+                    row["drive_folder_id"],
+                ),
+            )
+            migrated += 1
+        if migrated:
+            logger.info("已将 %d 条 library_media 图片字段迁移为相对路径", migrated)
 
     def _set_state(self, key: str, value: str) -> None:
         self._conn.execute(
@@ -310,7 +392,7 @@ class LibraryStore:
         movies: list[dict[str, Any]] = []
         tv_shows: list[dict[str, Any]] = []
         for row in rows:
-            payload = json.loads(row["raw_json"] or "{}")
+            payload = self._hydrate_library_payload(json.loads(row["raw_json"] or "{}"))
             payload["updated_at"] = row["updated_at"] or ""
             payload["folder_modified_time"] = row["folder_modified_time"] or 0
             target = movies if row["media_type"] == "movie" else tv_shows
@@ -370,6 +452,7 @@ class LibraryStore:
         return diff
 
     def _upsert_library_item(self, payload: dict[str, Any], scanned_at: str, folder_modified_time: int = 0) -> None:
+        payload = self._normalize_library_payload(payload)
         drive_folder_id = payload.get("drive_folder_id") or ""
         if not drive_folder_id:
             return
@@ -506,7 +589,7 @@ class LibraryStore:
         ).fetchone()
         if row is None:
             return None
-        return json.loads(row["raw_json"] or "{}")
+        return self._hydrate_library_payload(json.loads(row["raw_json"] or "{}"))
 
     def list_library_items(self, media_type: Optional[str] = None) -> list[dict[str, Any]]:
         if media_type:
@@ -518,7 +601,7 @@ class LibraryStore:
             rows = self._conn.execute(
                 "SELECT raw_json FROM library_media ORDER BY media_type ASC, year DESC, title COLLATE NOCASE ASC"
             ).fetchall()
-        return [json.loads(row["raw_json"] or "{}") for row in rows]
+        return [self._hydrate_library_payload(json.loads(row["raw_json"] or "{}")) for row in rows]
 
     def get_joined_media_item(self, media_type: str, tmdb_id: int) -> Optional[dict[str, Any]]:
         library_item = self.get_library_item_by_tmdb(media_type, tmdb_id)
@@ -527,6 +610,7 @@ class LibraryStore:
         tmdb_entry = self.get_tmdb_entry(media_type, tmdb_id)
         if not tmdb_entry:
             return None
+        tmdb_image_base_url = get_config().tmdb_image_base_url
         raw = tmdb_entry.get("raw_json") or {}
         poster_path = raw.get("poster_path") or tmdb_entry.get("poster_path") or ""
         backdrop_path = raw.get("backdrop_path") or tmdb_entry.get("backdrop_path") or ""
@@ -537,8 +621,8 @@ class LibraryStore:
             "title": raw.get("title") or raw.get("name") or tmdb_entry.get("title") or "",
             "original_title": raw.get("original_title") or raw.get("original_name") or tmdb_entry.get("original_title") or "",
             "year": (raw.get("release_date") or raw.get("first_air_date") or "")[:4],
-            "poster_url": f"{_TMDB_IMG_BASE}{poster_path}" if poster_path else None,
-            "backdrop_url": f"{_TMDB_IMG_ORIG}{backdrop_path}" if backdrop_path else None,
+            "poster_url": build_tmdb_image_url(poster_path, size="w500", base_url=tmdb_image_base_url),
+            "backdrop_url": build_tmdb_image_url(backdrop_path, base_url=tmdb_image_base_url),
             "overview": raw.get("overview") or tmdb_entry.get("overview") or "",
             "rating": round(raw.get("vote_average") or tmdb_entry.get("vote_average") or 0, 1),
             "status": raw.get("status") or tmdb_entry.get("status") or "",

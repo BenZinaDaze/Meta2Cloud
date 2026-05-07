@@ -77,6 +77,10 @@ tmdb:
   # 请求超时（秒）
   timeout: 10
 
+  # TMDB 图片代理根域名（可选）
+  # 只填根域名，不要带 /t/p；留空则使用默认 https://image.tmdb.org
+  image_base_url: ""
+
 # 文件名识别规则已独立到同目录的 parser-rules.yaml
 # 请复制 config/parser-rules.example.yaml 为 parser-rules.yaml 后单独维护
 

@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
+from mediaparser.tmdb_image import normalize_tmdb_image_base_url
+
 logger = logging.getLogger(__name__)
 
 # 默认配置文件查找路径（相对于调用方的工作目录 → 项目根）
@@ -62,6 +64,7 @@ class TmdbConfig:
     language: str = "zh-CN"
     proxy: str = ""
     timeout: int = 10
+    image_base_url: str = ""
 
     @classmethod
     def from_dict(cls, d: dict) -> "TmdbConfig":
@@ -70,6 +73,7 @@ class TmdbConfig:
             language=str(d.get("language") or "zh-CN"),
             proxy=str(d.get("proxy") or ""),
             timeout=int(d.get("timeout") or 10),
+            image_base_url=str(d.get("image_base_url") or ""),
         )
 
 
@@ -356,6 +360,10 @@ class Config:
     @property
     def tmdb_proxy(self) -> Optional[str]:
         return self.tmdb.proxy or None
+
+    @property
+    def tmdb_image_base_url(self) -> str:
+        return normalize_tmdb_image_base_url(self.tmdb.image_base_url)
 
     def is_tmdb_ready(self) -> bool:
         """是否具备 TMDB 查询条件（有 api_key）"""

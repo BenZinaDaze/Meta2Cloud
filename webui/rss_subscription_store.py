@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
+
+from mediaparser.tmdb_image import build_tmdb_image_url, extract_tmdb_image_path
+from webui.core.runtime import get_config
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -132,6 +138,22 @@ class RSSSubscriptionStore:
             if column in subscription_columns:
                 continue
             self._conn.execute(ddl)
+        self._migrate_subscription_image_paths()
+
+    def _migrate_subscription_image_paths(self) -> None:
+        rows = self._conn.execute("SELECT id, poster_url FROM rss_subscriptions").fetchall()
+        migrated = 0
+        for row in rows:
+            poster_path = extract_tmdb_image_path(row["poster_url"])
+            if poster_path == (row["poster_url"] or ""):
+                continue
+            self._conn.execute(
+                "UPDATE rss_subscriptions SET poster_url = ? WHERE id = ?",
+                (poster_path, row["id"]),
+            )
+            migrated += 1
+        if migrated:
+            logger.info("已将 %d 条 rss_subscriptions 图片字段迁移为相对路径", migrated)
 
     @staticmethod
     def _utc_now() -> str:
@@ -140,7 +162,9 @@ class RSSSubscriptionStore:
     def _row_to_subscription(self, row: sqlite3.Row | None) -> Optional[SubscriptionRecord]:
         if row is None:
             return None
-        return SubscriptionRecord(**dict(row))
+        payload = dict(row)
+        payload["poster_url"] = extract_tmdb_image_path(payload.get("poster_url"))
+        return SubscriptionRecord(**payload)
 
     def _row_to_hit(self, row: sqlite3.Row | None) -> Optional[SubscriptionHitRecord]:
         if row is None:
@@ -159,13 +183,18 @@ class RSSSubscriptionStore:
         return True
 
     def _serialize_joined_subscription_row(self, row: sqlite3.Row) -> dict[str, Any]:
+        tmdb_image_base_url = get_config().tmdb_image_base_url
         payload = {
             "id": row["id"],
             "name": row["name"],
             "media_title": row["media_title"],
             "media_type": row["media_type"],
             "tmdb_id": row["tmdb_id"],
-            "poster_url": row["poster_url"],
+            "poster_url": build_tmdb_image_url(
+                extract_tmdb_image_path(row["poster_url"]),
+                size="w500",
+                base_url=tmdb_image_base_url,
+            ),
             "site": row["site"],
             "rss_url": row["rss_url"],
             "subgroup_name": row["subgroup_name"],
@@ -193,9 +222,9 @@ class RSSSubscriptionStore:
                 "original_title": row["tm_original_title"] or "",
                 "overview": row["tm_overview"] or "",
                 "poster_path": poster_path,
-                "poster_url": f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None,
+                "poster_url": build_tmdb_image_url(poster_path, size="w500", base_url=tmdb_image_base_url),
                 "backdrop_path": backdrop_path,
-                "backdrop_url": f"https://image.tmdb.org/t/p/original{backdrop_path}" if backdrop_path else None,
+                "backdrop_url": build_tmdb_image_url(backdrop_path, base_url=tmdb_image_base_url),
                 "release_date": row["tm_release_date"] or row["tm_first_air_date"] or "",
                 "status": row["tm_status"] or "",
                 "rating": round(row["tm_vote_average"] or 0, 1),
@@ -206,7 +235,11 @@ class RSSSubscriptionStore:
                 "drive_folder_id": row["lib_drive_folder_id"],
                 "title": row["lib_title"] or "",
                 "year": row["lib_year"] or "",
-                "poster_url": row["lib_poster_url"],
+                "poster_url": build_tmdb_image_url(
+                    extract_tmdb_image_path(row["lib_poster_url"]),
+                    size="w500",
+                    base_url=tmdb_image_base_url,
+                ),
                 "total_episodes": row["lib_total_episodes"],
                 "in_library_episodes": row["lib_in_library_episodes"],
             }
@@ -261,7 +294,7 @@ class RSSSubscriptionStore:
                 payload["media_title"],
                 payload.get("media_type") or "tv",
                 payload.get("tmdb_id"),
-                payload.get("poster_url"),
+                extract_tmdb_image_path(payload.get("poster_url")),
                 payload["site"],
                 payload["rss_url"],
                 payload.get("subgroup_name") or "",
@@ -363,7 +396,7 @@ class RSSSubscriptionStore:
                 merged["media_title"],
                 merged["media_type"],
                 merged.get("tmdb_id"),
-                merged.get("poster_url"),
+                extract_tmdb_image_path(merged.get("poster_url")),
                 merged["site"],
                 merged["rss_url"],
                 merged.get("subgroup_name") or "",

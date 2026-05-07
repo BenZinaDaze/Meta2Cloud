@@ -5,7 +5,7 @@ from typing import Dict, List, Optional, Set
 from storage.base import StorageProvider
 from mediaparser import Config
 from webui.schemas.library import EpisodeStatus, MediaItem, SeasonStatus
-from webui.services.tmdb_service import TMDB_IMG_BASE, TMDB_IMG_ORIG, tmdb_get
+from webui.services.tmdb_service import tmdb_get, tmdb_image_url
 from webui.core.runtime import logger
 
 
@@ -101,7 +101,7 @@ def build_seasons_status(
             SeasonStatus(
                 season_number=season_num,
                 season_name=season_raw.get("name") or f"Season {season_num}",
-                poster_url=f"{TMDB_IMG_BASE}{season_raw['poster_path']}" if season_raw.get("poster_path") else None,
+                poster_url=tmdb_image_url(season_raw.get("poster_path"), size="w500"),
                 episode_count=len(episodes_status),
                 in_library_count=s_in_lib,
                 episodes=episodes_status,
@@ -198,8 +198,8 @@ def _scan_single_movie_folder(client: StorageProvider, folder) -> Optional[Media
             original_title=tmdb_info.get("original_title") or "",
             year=(tmdb_info.get("release_date") or "")[:4],
             media_type="movie",
-            poster_url=f"{TMDB_IMG_BASE}{tmdb_info['poster_path']}" if tmdb_info.get("poster_path") else None,
-            backdrop_url=f"{TMDB_IMG_ORIG}{tmdb_info['backdrop_path']}" if tmdb_info.get("backdrop_path") else None,
+            poster_url=tmdb_image_url(tmdb_info.get("poster_path"), size="w500"),
+            backdrop_url=tmdb_image_url(tmdb_info.get("backdrop_path")),
             overview=tmdb_info.get("overview") or "",
             rating=round(tmdb_info.get("vote_average") or 0, 1),
             drive_folder_id=folder.id,
@@ -293,8 +293,8 @@ def _scan_single_tv_folder(client: StorageProvider, show_folder) -> Optional[Med
         original_title=(tmdb_info.get("original_name") or "") if tmdb_info else "",
         year=((tmdb_info.get("first_air_date") or "")[:4]) if tmdb_info else (_m.group(1) if (_m := re.search(r"\((\d{4})\)", show_folder.name)) else ""),
         media_type="tv",
-        poster_url=f"{TMDB_IMG_BASE}{tmdb_info['poster_path']}" if tmdb_info and tmdb_info.get("poster_path") else None,
-        backdrop_url=f"{TMDB_IMG_ORIG}{tmdb_info['backdrop_path']}" if tmdb_info and tmdb_info.get("backdrop_path") else None,
+        poster_url=tmdb_image_url(tmdb_info.get("poster_path"), size="w500") if tmdb_info else None,
+        backdrop_url=tmdb_image_url(tmdb_info.get("backdrop_path")) if tmdb_info else None,
         overview=(tmdb_info.get("overview") or "") if tmdb_info else "",
         rating=round((tmdb_info.get("vote_average") or 0), 1) if tmdb_info else 0.0,
         seasons=seasons_status,

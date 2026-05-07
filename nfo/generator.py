@@ -25,9 +25,9 @@ import os
 from typing import Any, Dict, List, Optional
 from xml.dom import minidom
 
+from mediaparser.tmdb_image import build_tmdb_image_url
 from mediaparser.types import MediaType
 
-TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/original"
 TMDB_PERSON_BASE = "https://www.themoviedb.org/person/"
 
 
@@ -54,6 +54,9 @@ class NfoGenerator:
         name = gen.nfo_name_for("Breaking.Bad.S01E03.mkv")
         # → "Breaking.Bad.S01E03.nfo"
     """
+
+    def __init__(self, tmdb_image_base_url: Optional[str] = None):
+        self._tmdb_image_base_url = tmdb_image_base_url
 
     # ── 公共接口 ────────────────────────────────────────────────────
 
@@ -165,7 +168,7 @@ class NfoGenerator:
 
         # 季封面 URL（放进 NFO，Plex 可读）
         if poster := season_detail.get("poster_path"):
-            self._add(doc, root, "thumb", TMDB_IMAGE_BASE + poster)
+            self._add(doc, root, "thumb", build_tmdb_image_url(poster, base_url=self._tmdb_image_base_url))
 
         return self._to_xml(doc)
 
@@ -356,9 +359,9 @@ class NfoGenerator:
         # 封面：优先单集剧照（still_path），回退整剧 poster
         still = ep.get("still_path")
         if still:
-            self._add(doc, root, "thumb", TMDB_IMAGE_BASE + still)
+            self._add(doc, root, "thumb", build_tmdb_image_url(still, base_url=self._tmdb_image_base_url))
         elif poster := show_info.get("poster_path"):
-            self._add(doc, root, "thumb", TMDB_IMAGE_BASE + poster)
+            self._add(doc, root, "thumb", build_tmdb_image_url(poster, base_url=self._tmdb_image_base_url))
 
         return self._to_xml(doc)
 
@@ -427,7 +430,7 @@ class NfoGenerator:
             self._add(doc, xactor, "role", actor.get("character") or "")
             self._add(doc, xactor, "tmdbid", str(actor.get("id") or ""))
             if profile_path := actor.get("profile_path"):
-                self._add(doc, xactor, "thumb", TMDB_IMAGE_BASE + profile_path)
+                self._add(doc, xactor, "thumb", build_tmdb_image_url(profile_path, base_url=self._tmdb_image_base_url))
             if actor_id := actor.get("id"):
                 self._add(doc, xactor, "profile", f"{TMDB_PERSON_BASE}{actor_id}")
             root.appendChild(xactor)
@@ -441,10 +444,10 @@ class NfoGenerator:
 
     def _add_images(self, doc, root, info: Dict):
         if poster := info.get("poster_path"):
-            self._add(doc, root, "thumb", TMDB_IMAGE_BASE + poster)
+            self._add(doc, root, "thumb", build_tmdb_image_url(poster, base_url=self._tmdb_image_base_url))
         if backdrop := info.get("backdrop_path"):
             fanart = doc.createElement("fanart")
-            self._add(doc, fanart, "thumb", TMDB_IMAGE_BASE + backdrop)
+            self._add(doc, fanart, "thumb", build_tmdb_image_url(backdrop, base_url=self._tmdb_image_base_url))
             root.appendChild(fanart)
 
     # ── 底层工具 ────────────────────────────────────────────────────

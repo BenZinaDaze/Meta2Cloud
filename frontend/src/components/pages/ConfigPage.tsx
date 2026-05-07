@@ -106,6 +106,9 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   if (tmdb.timeout === undefined || tmdb.timeout === null || tmdb.timeout === '') {
     tmdb.timeout = 10
   }
+  if (tmdb.image_base_url === undefined || tmdb.image_base_url === null) {
+    tmdb.image_base_url = ''
+  }
   if (u115.auto_organize_poll_seconds === undefined || u115.auto_organize_poll_seconds === null || u115.auto_organize_poll_seconds === '') {
     u115.auto_organize_poll_seconds = 45
   }
@@ -890,6 +893,14 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                       value={(cfg?.tmdb as Record<string, unknown>)?.proxy as string | undefined}
                       onChange={(v) => set('tmdb', 'proxy', v)}
                       placeholder="http://127.0.0.1:7890"
+                      mono
+                    />
+                  </Field>
+                  <Field label="TMDB 图片代理域名" description="可选，仅填根域名" fullWidth>
+                    <TextInput
+                      value={(cfg?.tmdb as Record<string, unknown>)?.image_base_url as string | undefined}
+                      onChange={(v) => set('tmdb', 'image_base_url', v)}
+                      placeholder="https://image.tmdb.org"
                       mono
                     />
                   </Field>

@@ -6,13 +6,10 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from mediaparser import TmdbClient
+from mediaparser.tmdb_image import build_tmdb_image_url
 from webui.tmdb_cache import TmdbCache
 from webui.core.app_logging import app_log
 from webui.core.runtime import _LIBRARY_DB, get_config, logger
-
-
-TMDB_IMG_BASE = "https://image.tmdb.org/t/p/w500"
-TMDB_IMG_ORIG = "https://image.tmdb.org/t/p/original"
 
 _RETRY = Retry(
     total=3,
@@ -34,6 +31,10 @@ def get_tmdb_cache() -> TmdbCache:
         _tmdb_cache = TmdbCache(_LIBRARY_DB)
         _tmdb_cache.evict_expired()
     return _tmdb_cache
+
+
+def tmdb_image_url(path: Optional[str], *, size: str = "original") -> Optional[str]:
+    return build_tmdb_image_url(path, size=size, base_url=get_config().tmdb_image_base_url)
 
 
 def serialize_meta(meta: Any) -> Dict[str, Any]:
@@ -95,8 +96,15 @@ def serialize_tmdb_result(info: Optional[Dict[str, Any]]) -> Optional[Dict[str, 
         "release_date": release_date,
         "overview": info.get("overview") or "",
         "rating": round(info.get("vote_average") or 0, 1),
-        "poster_url": TmdbClient.image_url(info.get("poster_path")),
-        "backdrop_url": TmdbClient.image_url(info.get("backdrop_path")),
+        "poster_url": TmdbClient.image_url(
+            info.get("poster_path"),
+            size="w500",
+            base_url=get_config().tmdb_image_base_url,
+        ),
+        "backdrop_url": TmdbClient.image_url(
+            info.get("backdrop_path"),
+            base_url=get_config().tmdb_image_base_url,
+        ),
         "status": info.get("status") or "",
         "genres": [genre.get("name") for genre in (info.get("genres") or []) if genre.get("name")],
         "names": info.get("names") or [],

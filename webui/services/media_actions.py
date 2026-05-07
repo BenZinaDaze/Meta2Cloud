@@ -11,7 +11,7 @@ from webui.core.app_logging import app_log
 from webui.core.runtime import get_config, get_storage_provider, logger
 from webui.library_store import get_library_store
 from webui.services.library_data import build_seasons_status, fill_seasons_episodes, parse_episode_from_filename
-from webui.services.tmdb_service import get_tmdb_cache, serialize_tmdb_result, tmdb_get
+from webui.services.tmdb_service import get_tmdb_cache, serialize_tmdb_result, tmdb_get, tmdb_image_url
 
 try:
     from scraper.core.factory import SpiderFactory
@@ -20,10 +20,10 @@ except ImportError:
 
 
 def do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str, title: str | None = None, year: str | None = None) -> dict:
+    cfg = get_config()
     if not tmdb_id or tmdb_id <= 0:
         if not title:
             raise ValueError("该媒体项没有 TMDB ID 且未提供标题，无法搜索")
-        cfg = get_config()
         if not cfg.is_tmdb_ready():
             raise ValueError("TMDB API Key 未配置，无法搜索")
         from mediaparser.types import MediaType as MType
@@ -43,8 +43,8 @@ def do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str, title: 
         logger.info("按名称找到 tmdb_id=%s：%s", tmdb_id, found.get("name") or found.get("title"))
 
     client = get_storage_provider()
-    gen = NfoGenerator()
-    uploader = ImageUploader(client, overwrite=True)
+    gen = NfoGenerator(tmdb_image_base_url=cfg.tmdb_image_base_url)
+    uploader = ImageUploader(client, overwrite=True, tmdb_image_base_url=cfg.tmdb_image_base_url)
     uploaded: list[str] = []
     errors: list[str] = []
 
@@ -186,9 +186,9 @@ def do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str, title: 
         "rating": round(info.get("vote_average") or 0, 1),
     }
     if info.get("poster_path"):
-        updates["poster_url"] = f"https://image.tmdb.org/t/p/w500{info['poster_path']}"
+        updates["poster_url"] = tmdb_image_url(info["poster_path"], size="w500")
     if info.get("backdrop_path"):
-        updates["backdrop_url"] = f"https://image.tmdb.org/t/p/original{info['backdrop_path']}"
+        updates["backdrop_url"] = tmdb_image_url(info["backdrop_path"])
     if media_type == "tv":
         updates["year"] = (info.get("first_air_date") or "")[:4]
         updates["status"] = info.get("status") or ""
