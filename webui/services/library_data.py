@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 from typing import Dict, List, Optional, Set
 
 from storage.base import StorageProvider
@@ -6,6 +7,31 @@ from mediaparser import Config
 from webui.schemas.library import EpisodeStatus, MediaItem, SeasonStatus
 from webui.services.tmdb_service import TMDB_IMG_BASE, TMDB_IMG_ORIG, tmdb_get
 from webui.core.runtime import logger
+
+
+def _normalize_modified_time(value) -> int:
+    """将 CloudFile.modified_time 统一转换为秒级 Unix 时间戳。"""
+    if value in (None, ""):
+        return 0
+
+    if isinstance(value, (int, float)):
+        return int(value)
+
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return 0
+        if raw.isdigit():
+            return int(raw)
+        try:
+            iso = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+            return int(datetime.fromisoformat(iso).timestamp())
+        except ValueError:
+            logger.warning("无法解析 modified_time=%r，按 0 处理", value)
+            return 0
+
+    logger.warning("未知的 modified_time 类型 %s，按 0 处理", type(value).__name__)
+    return 0
 
 
 def build_seasons_status(
@@ -153,7 +179,7 @@ def parse_episode_from_filename(filename: str) -> Optional[tuple]:
 
 
 def _scan_single_movie_folder(client: StorageProvider, folder) -> Optional[MediaItem]:
-    mtime = int(folder.modified_time) if folder.modified_time else 0
+    mtime = _normalize_modified_time(folder.modified_time)
     nfo_files = [f for f in client.list_files(folder_id=folder.id, page_size=100) if f.name.endswith(".nfo") and f.name != "tvshow.nfo"]
     tmdb_id = None
     tmdb_info = None
@@ -213,7 +239,7 @@ def scan_movies(client: StorageProvider, cfg: Config) -> List[MediaItem]:
 
 
 def _scan_single_tv_folder(client: StorageProvider, show_folder) -> Optional[MediaItem]:
-    mtime = int(show_folder.modified_time) if show_folder.modified_time else 0
+    mtime = _normalize_modified_time(show_folder.modified_time)
     show_files = client.list_files(folder_id=show_folder.id, page_size=200)
     tvshow_nfo = next((f for f in show_files if f.name == "tvshow.nfo"), None)
     tmdb_id = None
@@ -307,7 +333,7 @@ def scan_movies_incremental(
     movie_folders = [f for f in client.list_files(folder_id=movie_root, page_size=500) if f.is_folder]
     logger.info("增量扫描到 %d 个电影文件夹", len(movie_folders))
     for folder in movie_folders:
-        current_mtime = int(folder.modified_time) if folder.modified_time else 0
+        current_mtime = _normalize_modified_time(folder.modified_time)
         current_mtimes[folder.id] = current_mtime
         stored_mtime = stored_mtimes.get(folder.id, 0)
         if stored_mtime > 0 and current_mtime > 0 and current_mtime <= stored_mtime:
@@ -333,7 +359,7 @@ def scan_tv_shows_incremental(
     show_folders = [f for f in client.list_files(folder_id=tv_root, page_size=500) if f.is_folder]
     logger.info("增量扫描到 %d 个剧集文件夹", len(show_folders))
     for show_folder in show_folders:
-        current_mtime = int(show_folder.modified_time) if show_folder.modified_time else 0
+        current_mtime = _normalize_modified_time(show_folder.modified_time)
         current_mtimes[show_folder.id] = current_mtime
         stored_mtime = stored_mtimes.get(show_folder.id, 0)
         if stored_mtime > 0 and current_mtime > 0 and current_mtime <= stored_mtime:
