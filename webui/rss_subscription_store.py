@@ -138,22 +138,6 @@ class RSSSubscriptionStore:
             if column in subscription_columns:
                 continue
             self._conn.execute(ddl)
-        self._migrate_subscription_image_paths()
-
-    def _migrate_subscription_image_paths(self) -> None:
-        rows = self._conn.execute("SELECT id, poster_url FROM rss_subscriptions").fetchall()
-        migrated = 0
-        for row in rows:
-            poster_path = extract_tmdb_image_path(row["poster_url"])
-            if poster_path == (row["poster_url"] or ""):
-                continue
-            self._conn.execute(
-                "UPDATE rss_subscriptions SET poster_url = ? WHERE id = ?",
-                (poster_path, row["id"]),
-            )
-            migrated += 1
-        if migrated:
-            logger.info("已将 %d 条 rss_subscriptions 图片字段迁移为相对路径", migrated)
 
     @staticmethod
     def _utc_now() -> str:

@@ -110,7 +110,6 @@ class LibraryStore:
                 "ALTER TABLE library_media ADD COLUMN folder_modified_time INTEGER NOT NULL DEFAULT 0"
             )
             logger.info("已为 library_media 表新增 folder_modified_time 字段")
-        self._migrate_library_media_image_paths()
 
     @staticmethod
     def _normalize_library_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -159,38 +158,6 @@ class LibraryStore:
             ]
         return hydrated
 
-    def _migrate_library_media_image_paths(self) -> None:
-        rows = self._conn.execute(
-            "SELECT drive_folder_id, poster_url, backdrop_url, raw_json FROM library_media"
-        ).fetchall()
-        migrated = 0
-        for row in rows:
-            payload = json.loads(row["raw_json"] or "{}")
-            normalized_payload = self._normalize_library_payload(payload)
-            poster_path = extract_tmdb_image_path(row["poster_url"])
-            backdrop_path = extract_tmdb_image_path(row["backdrop_url"])
-            if (
-                poster_path == (row["poster_url"] or "")
-                and backdrop_path == (row["backdrop_url"] or "")
-                and normalized_payload == payload
-            ):
-                continue
-            self._conn.execute(
-                """
-                UPDATE library_media
-                SET poster_url = ?, backdrop_url = ?, raw_json = ?
-                WHERE drive_folder_id = ?
-                """,
-                (
-                    poster_path,
-                    backdrop_path,
-                    json.dumps(normalized_payload, ensure_ascii=False),
-                    row["drive_folder_id"],
-                ),
-            )
-            migrated += 1
-        if migrated:
-            logger.info("已将 %d 条 library_media 图片字段迁移为相对路径", migrated)
 
     def _set_state(self, key: str, value: str) -> None:
         self._conn.execute(
