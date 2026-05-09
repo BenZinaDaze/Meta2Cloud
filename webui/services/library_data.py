@@ -238,9 +238,24 @@ def scan_movies(client: StorageProvider, cfg: Config) -> List[MediaItem]:
     return movies
 
 
-def _scan_single_tv_folder(client: StorageProvider, show_folder) -> Optional[MediaItem]:
-    mtime = _normalize_modified_time(show_folder.modified_time)
-    show_files = client.list_files(folder_id=show_folder.id, page_size=200)
+def _tv_leaf_modified_time(show_folder, show_files: List) -> int:
+    """剧集增量时间按 Season 叶子目录计算，缺失时退回剧名目录。"""
+    show_mtime = _normalize_modified_time(show_folder.modified_time)
+    season_mtimes = [
+        _normalize_modified_time(item.modified_time)
+        for item in show_files
+        if item.is_folder and item.name.startswith("Season")
+    ]
+    return max(season_mtimes, default=show_mtime)
+
+
+def _scan_single_tv_folder(
+    client: StorageProvider,
+    show_folder,
+    show_files: Optional[List] = None,
+) -> Optional[MediaItem]:
+    show_files = show_files or client.list_files(folder_id=show_folder.id, page_size=200)
+    mtime = _tv_leaf_modified_time(show_folder, show_files)
     tvshow_nfo = next((f for f in show_files if f.name == "tvshow.nfo"), None)
     tmdb_id = None
     if tvshow_nfo:
@@ -359,12 +374,13 @@ def scan_tv_shows_incremental(
     show_folders = [f for f in client.list_files(folder_id=tv_root, page_size=500) if f.is_folder]
     logger.info("增量扫描到 %d 个剧集文件夹", len(show_folders))
     for show_folder in show_folders:
-        current_mtime = _normalize_modified_time(show_folder.modified_time)
+        show_files = client.list_files(folder_id=show_folder.id, page_size=200)
+        current_mtime = _tv_leaf_modified_time(show_folder, show_files)
         current_mtimes[show_folder.id] = current_mtime
         stored_mtime = stored_mtimes.get(show_folder.id, 0)
         if stored_mtime > 0 and current_mtime > 0 and current_mtime <= stored_mtime:
             continue
-        show = _scan_single_tv_folder(client, show_folder)
+        show = _scan_single_tv_folder(client, show_folder, show_files=show_files)
         if show:
             shows.append(show)
     skipped = len(show_folders) - len(shows)
