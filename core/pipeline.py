@@ -142,7 +142,7 @@ class Pipeline:
         self._nfo_gen = NfoGenerator(tmdb_image_base_url=cfg.tmdb_image_base_url)
 
         self._img_uploader: Optional[ImageUploader] = None
-        if not self._skip_images and not self._skip_metadata_upload and not self._dry_run:
+        if not self._skip_images and not self._dry_run:
             self._img_uploader = ImageUploader(client, tmdb_image_base_url=cfg.tmdb_image_base_url)
 
         # 幂等去重集合
@@ -225,7 +225,7 @@ class Pipeline:
         if self._skip_tmdb or not self._tmdb:
             self._log("  ℹ️  跳过 TMDB — 不生成 NFO")
         if self._skip_metadata_upload:
-            self._log("  ℹ️  跳过元数据上传 — 不上传 NFO 和封面")
+            self._log("  ℹ️  跳过单集 NFO 上传")
         if self._skip_images:
             self._log("  ℹ️  跳过图片下载")
         self._log("=" * 68)
@@ -547,13 +547,11 @@ class Pipeline:
                     return result
 
         def upload_metadata() -> None:
-            if self._skip_metadata_upload:
-                self._log("      元数据：跳过（已禁用 NFO/封面上传）")
-                return
-
             # ── Step 8: 上传单集/电影 NFO ──────────────────
             if nfo_content and nfo_name:
-                if not self._dry_run and target_folder:
+                if self._skip_metadata_upload and is_tv:
+                    self._log("      NFO：跳过（单集 NFO 上传已禁用）")
+                elif not self._dry_run and target_folder:
                     try:
                         self._client.upload_text(
                             content=nfo_content,

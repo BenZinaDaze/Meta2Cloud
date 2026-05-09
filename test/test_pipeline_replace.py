@@ -66,9 +66,14 @@ class MetaInfo:
     def __init__(self, name, isfile=True, custom_words=None, release_group_matcher=None):
         self.name = Path(name).stem
         self.year = ""
-        self.type = MediaType.MOVIE
-        self.season_seq = None
-        self.episode_seq = None
+        if "S01E" in self.name:
+            self.type = MediaType.TV
+            self.season_seq = 1
+            self.episode_seq = 1
+        else:
+            self.type = MediaType.MOVIE
+            self.season_seq = None
+            self.episode_seq = None
 
 
 class TmdbClient:
@@ -76,6 +81,14 @@ class TmdbClient:
         pass
 
     def recognize(self, meta):
+        if meta.type == MediaType.TV:
+            return {
+                "name": meta.name,
+                "tmdb_id": 1,
+                "first_air_date": "",
+                "poster_path": "",
+                "backdrop_path": "",
+            }
         return {
             "title": meta.name,
             "tmdb_id": 1,
@@ -83,6 +96,12 @@ class TmdbClient:
             "poster_path": "",
             "backdrop_path": "",
         }
+
+    def get_season_detail(self, tmdb_id, season_num):
+        return {"name": f"Season {season_num}", "poster_path": ""}
+
+    def get_episode_detail(self, tmdb_id, season_num, episode_num):
+        return {"name": f"Episode {episode_num}"}
 
 
 mediaparser_stub = types.ModuleType("mediaparser")
@@ -190,11 +209,18 @@ def make_video(file_id, name, folder_id):
 
 class FakeOrganizer:
     def __init__(self):
+        self.top_folder = CloudFile(
+            id="show",
+            name="Show",
+            file_type=FileType.FOLDER,
+            parent_id="root",
+        )
         self.target_folder = CloudFile(
             id="target",
             name="Target",
             file_type=FileType.FOLDER,
-            parent_id="root",
+            parent_id="show",
+            parents=["show"],
         )
 
     def ensure_folder_for_meta(self, meta, label=""):
@@ -325,8 +351,8 @@ class TestReplaceExistingVideo:
         assert storage.uploaded == []
         assert not any(call[0].startswith("upload") for call in storage.calls)
 
-    def test_skip_metadata_upload_toggle_disables_all_metadata_uploads(self):
-        """开启总开关时不上传任何元数据，但仍移动视频"""
+    def test_skip_metadata_upload_keeps_show_and_season_nfo(self):
+        """开启开关时跳过单集 NFO，但仍上传 tvshow.nfo 和 season.nfo"""
         storage = FakeStorageProvider()
 
         result = make_pipeline(
@@ -334,7 +360,7 @@ class TestReplaceExistingVideo:
             replace_existing_video=False,
             skip_metadata_upload=True,
         )._process_one(
-            make_video("source", "video.mkv", "source"),
+            make_video("source", "Show.S01E01.mkv", "source"),
             1,
             1,
         )
@@ -342,8 +368,10 @@ class TestReplaceExistingVideo:
         assert result.status == "ok"
         assert result.moved is True
         assert result.nfo_uploaded is False
-        assert storage.uploaded == []
-        assert not any(call[0].startswith("upload") for call in storage.calls)
+        assert storage.uploaded == [
+            ("text", "tvshow.nfo", "show"),
+            ("text", "season.nfo", "target"),
+        ]
 
 
 class TestConfigParseBoolStr:

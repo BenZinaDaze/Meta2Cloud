@@ -119,7 +119,13 @@ def _validate_main_config_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     _parse_int_field(rss, "poll_seconds", "RSS 订阅轮询间隔", 10, 3600)
     _parse_int_field(aria2, "port", "Aria2 RPC 端口", 1, 65535)
     _parse_int_field(telegram, "debounce_seconds", "Telegram 防抖延时", 0, 600)
-    for key in ["skip_tmdb", "move_on_tmdb_miss", "dry_run", "replace_existing_video", "skip_metadata_upload"]:
+    for key in [
+        "skip_tmdb",
+        "move_on_tmdb_miss",
+        "dry_run",
+        "replace_existing_video",
+        "skip_metadata_upload",
+    ]:
         _validate_pipeline_bool_field(normalized, key)
 
     normalized["webui"] = webui
