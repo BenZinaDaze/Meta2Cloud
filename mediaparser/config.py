@@ -175,6 +175,7 @@ class PipelineConfig:
     move_on_tmdb_miss: bool = False
     dry_run: bool = False
     replace_existing_video: bool = False  # 替换目标同名视频文件
+    skip_metadata_upload: bool = False
 
     @classmethod
     def from_dict(cls, d: dict) -> "PipelineConfig":
@@ -183,6 +184,7 @@ class PipelineConfig:
             move_on_tmdb_miss=_parse_bool_str(d.get("move_on_tmdb_miss", False), "pipeline.move_on_tmdb_miss"),
             dry_run=_parse_bool_str(d.get("dry_run", False), "pipeline.dry_run"),
             replace_existing_video=_parse_bool_str(d.get("replace_existing_video", False), "pipeline.replace_existing_video"),
+            skip_metadata_upload=_parse_bool_str(d.get("skip_metadata_upload", False), "pipeline.skip_metadata_upload"),
         )
 
 

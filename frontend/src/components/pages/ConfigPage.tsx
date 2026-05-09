@@ -91,6 +91,7 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   const u115 = { ...(next.u115 as Record<string, unknown> || {}) }
   const rss = { ...(next.rss as Record<string, unknown> || {}) }
   const telegram = { ...(next.telegram as Record<string, unknown> || {}) }
+  const pipeline = { ...(next.pipeline as Record<string, unknown> || {}) }
 
   if (aria2.enabled === undefined) {
     aria2.enabled = aria2.auto_connect !== false
@@ -121,6 +122,9 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   if (telegram.debounce_seconds === undefined || telegram.debounce_seconds === null || telegram.debounce_seconds === '') {
     telegram.debounce_seconds = 60
   }
+  if (pipeline.skip_metadata_upload === undefined || pipeline.skip_metadata_upload === null) {
+    pipeline.skip_metadata_upload = false
+  }
 
   next.aria2 = aria2
   next.webui = webui
@@ -128,6 +132,7 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   next.u115 = u115
   next.rss = rss
   next.telegram = telegram
+  next.pipeline = pipeline
   return next
 }
 
@@ -1283,6 +1288,12 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                     <Toggle
                       value={(cfg?.pipeline as Record<string, unknown>)?.replace_existing_video === true}
                       onChange={(v) => set('pipeline', 'replace_existing_video', v)}
+                    />
+                  </Field>
+                  <Field label="跳过元数据上传" description="整理时不上传 NFO 和封面图片">
+                    <Toggle
+                      value={(cfg?.pipeline as Record<string, unknown>)?.skip_metadata_upload === true}
+                      onChange={(v) => set('pipeline', 'skip_metadata_upload', v)}
                     />
                   </Field>
                 </FieldGroup>

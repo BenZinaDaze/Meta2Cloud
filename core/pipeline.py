@@ -106,6 +106,7 @@ class Pipeline:
         self._dry_run = dry_run or cfg.pipeline.dry_run
         self._skip_tmdb = skip_tmdb or cfg.pipeline.skip_tmdb
         self._skip_images = skip_images
+        self._skip_metadata_upload = cfg.pipeline.skip_metadata_upload
         self._replace_existing_video = cfg.pipeline.replace_existing_video
 
         self._organizer = MediaOrganizer(
@@ -141,7 +142,7 @@ class Pipeline:
         self._nfo_gen = NfoGenerator(tmdb_image_base_url=cfg.tmdb_image_base_url)
 
         self._img_uploader: Optional[ImageUploader] = None
-        if not self._skip_images and not self._dry_run:
+        if not self._skip_images and not self._skip_metadata_upload and not self._dry_run:
             self._img_uploader = ImageUploader(client, tmdb_image_base_url=cfg.tmdb_image_base_url)
 
         # 幂等去重集合
@@ -223,6 +224,8 @@ class Pipeline:
             self._log("  ⚠️  DRY-RUN 模式 — 不会操作 Drive", "WARNING")
         if self._skip_tmdb or not self._tmdb:
             self._log("  ℹ️  跳过 TMDB — 不生成 NFO")
+        if self._skip_metadata_upload:
+            self._log("  ℹ️  跳过元数据上传 — 不上传 NFO 和封面")
         if self._skip_images:
             self._log("  ℹ️  跳过图片下载")
         self._log("=" * 68)
@@ -544,6 +547,10 @@ class Pipeline:
                     return result
 
         def upload_metadata() -> None:
+            if self._skip_metadata_upload:
+                self._log("      元数据：跳过（已禁用 NFO/封面上传）")
+                return
+
             # ── Step 8: 上传单集/电影 NFO ──────────────────
             if nfo_content and nfo_name:
                 if not self._dry_run and target_folder:

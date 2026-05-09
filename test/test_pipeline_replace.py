@@ -13,6 +13,19 @@ if str(ROOT) not in sys.path:
 
 
 def _load_config_module():
+    mediaparser_pkg = types.ModuleType("mediaparser")
+    mediaparser_pkg.__path__ = []
+    sys.modules["mediaparser"] = mediaparser_pkg
+
+    tmdb_image_spec = importlib.util.spec_from_file_location(
+        "mediaparser.tmdb_image",
+        ROOT / "mediaparser" / "tmdb_image.py",
+    )
+    tmdb_image_module = importlib.util.module_from_spec(tmdb_image_spec)
+    sys.modules[tmdb_image_spec.name] = tmdb_image_module
+    tmdb_image_spec.loader.exec_module(tmdb_image_module)
+    mediaparser_pkg.tmdb_image = tmdb_image_module
+
     spec = importlib.util.spec_from_file_location(
         "mediaparser.config",
         ROOT / "mediaparser" / "config.py",
@@ -20,6 +33,7 @@ def _load_config_module():
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
+    mediaparser_pkg.config = module
     return module
 
 
@@ -101,6 +115,9 @@ nfo_stub = types.ModuleType("nfo")
 
 
 class NfoGenerator:
+    def __init__(self, *args, **kwargs):
+        pass
+
     def generate(self, *args, **kwargs):
         return "<nfo />"
 
@@ -187,11 +204,14 @@ class FakeOrganizer:
         return "Target"
 
 
-def make_pipeline(storage, replace_existing_video):
+def make_pipeline(storage, replace_existing_video, skip_metadata_upload=False):
     cfg = Config.from_dict({
         "tmdb": {"api_key": "fake-api-key"},
         "drive": {"root_folder_id": "root"},
-        "pipeline": {"replace_existing_video": replace_existing_video},
+        "pipeline": {
+            "replace_existing_video": replace_existing_video,
+            "skip_metadata_upload": skip_metadata_upload,
+        },
     })
     pipeline = Pipeline(storage, cfg, skip_images=True)
     pipeline._organizer = FakeOrganizer()
@@ -236,7 +256,7 @@ class TestReplaceExistingVideo:
         assert call_names.index("move") < call_names.index("upload_text")
 
     def test_same_file_skipped(self):
-        """文件已在目标位置时跳过"""
+        """文件已在目标位置时跳过移动，但允许回填元数据"""
         storage = FakeStorageProvider()
         storage.files[("target", "video.mkv")] = make_video("source", "video.mkv", "target")
 
@@ -250,7 +270,7 @@ class TestReplaceExistingVideo:
         assert result.reason == "文件已在目标位置"
         assert storage.trashed_ids == []
         assert storage.moved == []
-        assert storage.uploaded == []
+        assert storage.uploaded == [("text", "video.nfo", "target")]
 
     def test_trash_failure_no_move(self):
         """移除失败时不调用 move_file，不上传元数据"""
@@ -305,6 +325,26 @@ class TestReplaceExistingVideo:
         assert storage.uploaded == []
         assert not any(call[0].startswith("upload") for call in storage.calls)
 
+    def test_skip_metadata_upload_toggle_disables_all_metadata_uploads(self):
+        """开启总开关时不上传任何元数据，但仍移动视频"""
+        storage = FakeStorageProvider()
+
+        result = make_pipeline(
+            storage,
+            replace_existing_video=False,
+            skip_metadata_upload=True,
+        )._process_one(
+            make_video("source", "video.mkv", "source"),
+            1,
+            1,
+        )
+
+        assert result.status == "ok"
+        assert result.moved is True
+        assert result.nfo_uploaded is False
+        assert storage.uploaded == []
+        assert not any(call[0].startswith("upload") for call in storage.calls)
+
 
 class TestConfigParseBoolStr:
     def test_valid_bool(self):
@@ -335,3 +375,13 @@ class TestConfigParseBoolStr:
         """无效类型抛出 ConfigParseError"""
         with pytest.raises(ConfigParseError, match="必须是布尔值"):
             config_mod._parse_bool_str(["true"], "pipeline.replace_existing_video")
+
+    def test_skip_metadata_upload_defaults_false(self):
+        """未配置时，skip_metadata_upload 默认为 False"""
+        cfg = Config.from_dict({})
+        assert cfg.pipeline.skip_metadata_upload is False
+
+    def test_skip_metadata_upload_string_true(self):
+        """字符串 true 能正确解析为 True"""
+        cfg = Config.from_dict({"pipeline": {"skip_metadata_upload": "true"}})
+        assert cfg.pipeline.skip_metadata_upload is True
