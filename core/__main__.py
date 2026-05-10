@@ -38,7 +38,7 @@ def main():
         epilog="""
 流程：
   扫描源文件夹 → 解析文件名 → TMDB 查询（整剧+单集）→ 生成 NFO
-  → 创建文件夹 → 上传 NFO + tvshow.nfo + season.nfo → 下载图片 → 移动文件
+  → 创建文件夹 → 上传 NFO / tvshow.nfo → 下载图片 → 移动文件
 
 示例：
   python -m core                          # 正式运行（使用配置文件中的存储后端）

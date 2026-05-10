@@ -203,6 +203,23 @@ class FakeStorageProvider:
         return CloudFile(id=f"upload-{name}", name=name, file_type=FileType.FILE, parent_id=parent_id)
 
 
+class FakeImageUploader:
+    def __init__(self):
+        self.calls = []
+
+    def upload_poster(self, poster_path, folder_id):
+        self.calls.append(("poster", poster_path, folder_id))
+        return True
+
+    def upload_fanart(self, backdrop_path, folder_id):
+        self.calls.append(("fanart", backdrop_path, folder_id))
+        return True
+
+    def upload_season_poster(self, poster_path, season, folder_id):
+        self.calls.append(("season_poster", poster_path, season, folder_id))
+        return True
+
+
 def make_video(file_id, name, folder_id):
     return CloudFile(id=file_id, name=name, file_type=FileType.FILE, parent_id=folder_id)
 
@@ -351,8 +368,8 @@ class TestReplaceExistingVideo:
         assert storage.uploaded == []
         assert not any(call[0].startswith("upload") for call in storage.calls)
 
-    def test_skip_metadata_upload_keeps_show_and_season_nfo(self):
-        """开启开关时跳过单集 NFO，但仍上传 tvshow.nfo 和 season.nfo"""
+    def test_skip_metadata_upload_keeps_only_tvshow_nfo(self):
+        """开启开关时，剧集只上传 tvshow.nfo，其他 NFO 全部跳过"""
         storage = FakeStorageProvider()
 
         result = make_pipeline(
@@ -370,8 +387,31 @@ class TestReplaceExistingVideo:
         assert result.nfo_uploaded is False
         assert storage.uploaded == [
             ("text", "tvshow.nfo", "show"),
-            ("text", "season.nfo", "target"),
         ]
+
+    def test_skip_metadata_upload_also_skips_images(self):
+        """开启开关时，剧集图片也不上传"""
+        storage = FakeStorageProvider()
+        pipeline = make_pipeline(
+            storage,
+            replace_existing_video=False,
+            skip_metadata_upload=True,
+        )
+        fake_uploader = FakeImageUploader()
+        pipeline._img_uploader = fake_uploader
+
+        result = pipeline._process_one(
+            make_video("source", "Show.S01E01.mkv", "source"),
+            1,
+            1,
+        )
+
+        assert result.status == "ok"
+        assert result.moved is True
+        assert storage.uploaded == [
+            ("text", "tvshow.nfo", "show"),
+        ]
+        assert fake_uploader.calls == []
 
 
 class TestConfigParseBoolStr:
