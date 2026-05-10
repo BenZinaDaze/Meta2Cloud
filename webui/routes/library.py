@@ -56,6 +56,29 @@ async def refresh_library(full: bool = False):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@router.delete("/api/library/{drive_folder_id}")
+async def delete_library_item(drive_folder_id: str):
+    if not drive_folder_id:
+        raise HTTPException(status_code=400, detail="缺少 drive_folder_id")
+    try:
+        deleted = get_library_store().delete_library_item(drive_folder_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="媒体库条目不存在")
+        app_log(
+            "library",
+            "item_removed",
+            "媒体项已移出媒体库",
+            level="SUCCESS",
+            details={"drive_folder_id": drive_folder_id},
+        )
+        return {"success": True, "drive_folder_id": drive_folder_id}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"移出媒体库失败: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @router.get("/api/movies", response_model=List[MediaItem])
 async def get_movies():
     try:

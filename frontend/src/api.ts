@@ -46,6 +46,8 @@ export const refreshMediaItem = (
   title?: string,
   year?: string
 ) => api.post('/library:refresh-item', { tmdb_id, media_type, drive_folder_id, title, year })
+export const removeLibraryItem = (driveFolderId: string) =>
+  api.delete(`/library/${driveFolderId}`)
 
 // ── TMDB/刮削 ──
 export const tmdbSearchMulti = (keyword: string, config?: { signal?: AbortSignal }) =>

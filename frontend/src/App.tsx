@@ -1,23 +1,24 @@
-import { useState, useEffect, useCallback } from 'react'
+import { Suspense, lazy, useState, useEffect, useCallback } from 'react'
 import { setUnauthorizedHandler, getMe, getAria2Overview, getConfig, getU115OauthStatus, refreshLibrary } from './api'
 import type { Aria2Overview, MediaItem } from '@/types/api'
 import { Toaster } from '@/components/ui/sonner'
-import LoginPage from '@/components/pages/LoginPage'
 import Sidebar from '@/components/layout/Sidebar'
 import Topbar from '@/components/layout/Topbar'
 import MobileNav from '@/components/layout/MobileNav'
-import LibraryPage from '@/components/pages/LibraryPage'
-import ConfigPage from '@/components/pages/ConfigPage'
-import FileManagerPage from '@/components/pages/FileManagerPage'
-import DownloadsPage from '@/components/pages/DownloadsPage'
-import CalendarPage from '@/components/pages/CalendarPage'
-import SubscriptionsPage from '@/components/pages/SubscriptionsPage'
-import LogsPage from '@/components/pages/LogsPage'
-import IngestHistoryPage from '@/components/pages/IngestHistoryPage'
-import U115OfflinePage from '@/components/pages/U115OfflinePage'
-import ScraperSearch from '@/components/pages/ScraperSearch'
-import ParseTestModal from '@/components/modals/ParseTestModal'
 import { toast } from 'sonner'
+
+const LoginPage = lazy(() => import('@/components/pages/LoginPage'))
+const LibraryPage = lazy(() => import('@/components/pages/LibraryPage'))
+const ConfigPage = lazy(() => import('@/components/pages/ConfigPage'))
+const FileManagerPage = lazy(() => import('@/components/pages/FileManagerPage'))
+const DownloadsPage = lazy(() => import('@/components/pages/DownloadsPage'))
+const CalendarPage = lazy(() => import('@/components/pages/CalendarPage'))
+const SubscriptionsPage = lazy(() => import('@/components/pages/SubscriptionsPage'))
+const LogsPage = lazy(() => import('@/components/pages/LogsPage'))
+const IngestHistoryPage = lazy(() => import('@/components/pages/IngestHistoryPage'))
+const U115OfflinePage = lazy(() => import('@/components/pages/U115OfflinePage'))
+const ScraperSearch = lazy(() => import('@/components/pages/ScraperSearch'))
+const ParseTestModal = lazy(() => import('@/components/modals/ParseTestModal'))
 
 type NavKey = 'all' | 'movies' | 'tv' | 'config' | 'config-filename-rules' | 'calendar' | 'scraper-search' | 'subscriptions' | 'files' | 'ingest-history' | 'logs' | 'u115-offline' | 'downloads' | 'downloads-active' | 'downloads-waiting' | 'downloads-stopped'
 
@@ -26,6 +27,14 @@ const DOWNLOAD_QUEUE_MAP: Record<string, string | undefined> = {
   'downloads-active': 'active',
   'downloads-waiting': 'waiting',
   'downloads-stopped': 'stopped',
+}
+
+function PageFallback() {
+  return (
+    <div className="flex min-h-[240px] items-center justify-center">
+      <div className="text-sm text-muted-foreground">页面加载中...</div>
+    </div>
+  )
 }
 
 export default function App() {
@@ -170,7 +179,9 @@ export default function App() {
   if (!token) {
     return (
       <>
-        <LoginPage onLogin={handleLogin} />
+        <Suspense fallback={<PageFallback />}>
+          <LoginPage onLogin={handleLogin} />
+        </Suspense>
         <Toaster />
       </>
     )
@@ -205,7 +216,8 @@ export default function App() {
 
       <main className="h-full pt-14 pb-20 lg:pb-0 lg:ml-[260px]">
         <div data-main-scroll-container="true" className="h-full overflow-y-auto p-4 lg:p-8">
-          {activeNav === 'config' ? (
+          <Suspense fallback={<PageFallback />}>
+            {activeNav === 'config' ? (
               <ConfigPage onAria2EnabledChange={setAria2Enabled} page="general" />
             ) : activeNav === 'config-filename-rules' ? (
               <ConfigPage onAria2EnabledChange={setAria2Enabled} page="filenameRules" />
@@ -259,6 +271,7 @@ export default function App() {
                 }}
               />
             )}
+          </Suspense>
         </div>
       </main>
 
@@ -269,10 +282,12 @@ export default function App() {
         u115Authorized={u115Authorized}
       />
 
-      <ParseTestModal
-        open={showParseTest}
-        onOpenChange={setShowParseTest}
-      />
+      <Suspense fallback={null}>
+        <ParseTestModal
+          open={showParseTest}
+          onOpenChange={setShowParseTest}
+        />
+      </Suspense>
 
       <Toaster />
     </div>

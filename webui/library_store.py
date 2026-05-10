@@ -353,6 +353,7 @@ class LibraryStore:
             f"""
             SELECT *
             FROM library_media
+            WHERE in_library = 1
             ORDER BY media_type ASC, {sort_column} {order}, {title_order}
             """
         ).fetchall()
@@ -515,19 +516,19 @@ class LibraryStore:
     def mark_missing_folders(self, existing_folder_ids: set[str]) -> int:
         if not existing_folder_ids:
             # 空集合表示所有文件夹都不存在 -> 标记所有为不在库
-            self._conn.execute(
+            cur = self._conn.execute(
                 "UPDATE library_media SET in_library = 0, updated_at = ? WHERE in_library = 1",
                 (self._utc_now(),),
             )
             self._conn.commit()
-            return self._conn.total_changes
+            return cur.rowcount
         placeholders = ",".join("?" * len(existing_folder_ids))
-        self._conn.execute(
+        cur = self._conn.execute(
             f"UPDATE library_media SET in_library = 0, updated_at = ? WHERE drive_folder_id NOT IN ({placeholders}) AND in_library = 1",
             (self._utc_now(), *existing_folder_ids),
         )
         self._conn.commit()
-        return self._conn.total_changes
+        return cur.rowcount
 
     def patch_item(self, drive_folder_id: str, updates: dict) -> bool:
         row = self._conn.execute(
@@ -543,6 +544,19 @@ class LibraryStore:
         self._conn.commit()
         logger.info("已更新库条目 drive_folder_id=%s", drive_folder_id)
         return True
+
+    def delete_library_item(self, drive_folder_id: str) -> bool:
+        cur = self._conn.execute(
+            "DELETE FROM library_media WHERE drive_folder_id = ?",
+            (drive_folder_id,),
+        )
+        self._conn.commit()
+        deleted = cur.rowcount > 0
+        if deleted:
+            logger.info("已移出库条目 drive_folder_id=%s", drive_folder_id)
+        else:
+            logger.warning("delete_library_item: 未找到 drive_folder_id=%s", drive_folder_id)
+        return deleted
 
     def get_library_item_by_tmdb(self, media_type: str, tmdb_id: int) -> Optional[dict[str, Any]]:
         row = self._conn.execute(

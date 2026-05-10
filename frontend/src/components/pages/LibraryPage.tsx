@@ -177,6 +177,22 @@ export default function LibraryPage({
     </Button>
   )
 
+  function handleRemoved(item: MediaItem) {
+    setData((current) => {
+      if (!current) return current
+      const movies = current.movies.filter((entry) => entry.drive_folder_id !== item.drive_folder_id)
+      const tvShows = current.tv_shows.filter((entry) => entry.drive_folder_id !== item.drive_folder_id)
+      return {
+        ...current,
+        movies,
+        tv_shows: tvShows,
+        total_movies: movies.length,
+        total_tv: tvShows.length,
+      }
+    })
+    setSelected(null)
+  }
+
   return (
     <div className="flex flex-1 flex-col gap-5">
       <div className="mb-2 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
@@ -330,6 +346,7 @@ export default function LibraryPage({
         item={selected}
         open={!!selected}
         onOpenChange={(open) => !open && setSelected(null)}
+        onRemoved={handleRemoved}
         onSearchResources={(item) => {
           onGlobalSearch?.(item)
           setSelected(null)

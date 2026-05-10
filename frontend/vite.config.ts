@@ -25,6 +25,29 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+
+          if (id.includes('/react/') || id.includes('/react-dom/')) {
+            return 'react-vendor'
+          }
+          if (id.includes('/@radix-ui/') || id.includes('/@base-ui/')) {
+            return 'ui-vendor'
+          }
+          if (id.includes('/axios/')) {
+            return 'axios-vendor'
+          }
+          if (id.includes('/lucide-react/')) {
+            return 'icons-vendor'
+          }
+          if (id.includes('/sonner/') || id.includes('/next-themes/')) {
+            return 'app-vendor'
+          }
+        },
+      },
+    },
   },
   resolve: {
     alias: {

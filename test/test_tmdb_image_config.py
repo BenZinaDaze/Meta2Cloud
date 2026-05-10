@@ -123,3 +123,56 @@ def test_rss_subscription_store_persists_relative_poster_path(tmp_path):
         (record.id,),
     ).fetchone()
     assert row["poster_url"] == "/poster.jpg"
+
+
+def test_library_store_snapshot_hides_missing_items_and_supports_manual_remove(tmp_path):
+    db_path = tmp_path / "library.db"
+    store = LibraryStore(str(db_path))
+    store.save_snapshot(
+        movies=[
+            {
+                "tmdb_id": 1,
+                "title": "Movie",
+                "original_title": "Movie",
+                "year": "2024",
+                "media_type": "movie",
+                "overview": "",
+                "rating": 0.0,
+                "drive_folder_id": "movie-1",
+                "folder_modified_time": 10,
+            }
+        ],
+        tv_shows=[
+            {
+                "tmdb_id": 2,
+                "title": "Show",
+                "original_title": "Show",
+                "year": "2024",
+                "media_type": "tv",
+                "overview": "",
+                "rating": 0.0,
+                "drive_folder_id": "show-1",
+                "folder_modified_time": 20,
+            }
+        ],
+    )
+
+    removed_missing = store.mark_missing_folders({"movie-1"})
+    assert removed_missing == 1
+
+    snapshot = store.get_snapshot()
+    assert snapshot is not None
+    assert [item["drive_folder_id"] for item in snapshot["movies"]] == ["movie-1"]
+    assert snapshot["tv_shows"] == []
+    assert snapshot["total_movies"] == 1
+    assert snapshot["total_tv"] == 0
+
+    assert store.delete_library_item("movie-1") is True
+    assert store.delete_library_item("movie-1") is False
+
+    snapshot_after_delete = store.get_snapshot()
+    assert snapshot_after_delete is not None
+    assert snapshot_after_delete["movies"] == []
+    assert snapshot_after_delete["tv_shows"] == []
+    assert snapshot_after_delete["total_movies"] == 0
+    assert snapshot_after_delete["total_tv"] == 0

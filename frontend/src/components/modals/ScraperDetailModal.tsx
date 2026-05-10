@@ -1,9 +1,19 @@
 import { useEffect, useState } from 'react'
-import { tmdbGetDetail, refreshMediaItem } from '@/api'
+import { tmdbGetDetail, refreshMediaItem, removeLibraryItem } from '@/api'
 import { toast } from 'sonner'
 import DetailModal from './DetailModal'
-import { RefreshCw, Search } from 'lucide-react'
+import { RefreshCw, Search, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import type { MediaItem } from '@/types/api'
 
 interface ScraperDetailModalProps {
@@ -11,6 +21,7 @@ interface ScraperDetailModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSearchResources?: (item: MediaItem) => void
+  onRemoved?: (item: MediaItem) => void
 }
 
 export default function ScraperDetailModal({
@@ -18,10 +29,13 @@ export default function ScraperDetailModal({
   open,
   onOpenChange,
   onSearchResources,
+  onRemoved,
 }: ScraperDetailModalProps) {
   const [item, setItem] = useState<MediaItem | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [removing, setRemoving] = useState(false)
 
   useEffect(() => {
     if (!open || !initialItem) return
@@ -95,6 +109,30 @@ export default function ScraperDetailModal({
     }
   }
 
+  async function handleRemoveFromLibrary() {
+    if (!initialItem?.drive_folder_id) {
+      toast.error('该媒体项缺少 Drive 文件夹 ID，无法移出媒体库')
+      return
+    }
+    setRemoving(true)
+    try {
+      await removeLibraryItem(initialItem.drive_folder_id)
+      toast.success('已移出媒体库', { description: initialItem.title })
+      setConfirmRemove(false)
+      onOpenChange(false)
+      onRemoved?.(initialItem)
+    } catch (e) {
+      toast.error('移出失败', {
+        description:
+          (e as { response?: { data?: { detail?: string } }; message?: string })?.response?.data?.detail ||
+          (e as { message?: string })?.message ||
+          '未知错误',
+      })
+    } finally {
+      setRemoving(false)
+    }
+  }
+
   if (!initialItem) return null
 
   const displayItem = item || initialItem
@@ -117,26 +155,62 @@ export default function ScraperDetailModal({
   ) : null
 
   const headerRight = (
-    <Button
-      variant="default"
-      size="icon-lg"
-      onClick={() => onSearchResources?.(displayItem)}
-      disabled={loadingDetail}
-      className="rounded-full shadow-lg bg-brand text-brand-foreground hover:bg-brand/80"
-      title="检索资源"
-    >
-      <Search className="size-4" />
-    </Button>
+    <div className="flex items-center gap-2">
+      {initialItem.drive_folder_id && (
+        <Button
+          variant="outline"
+          size="icon-lg"
+          onClick={() => setConfirmRemove(true)}
+          disabled={loadingDetail || removing}
+          className="rounded-full border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          title="移出媒体库"
+        >
+          <Trash2 className="size-4" />
+        </Button>
+      )}
+      <Button
+        variant="default"
+        size="icon-lg"
+        onClick={() => onSearchResources?.(displayItem)}
+        disabled={loadingDetail}
+        className="rounded-full shadow-lg bg-brand text-brand-foreground hover:bg-brand/80"
+        title="检索资源"
+      >
+        <Search className="size-4" />
+      </Button>
+    </div>
   )
 
   return (
-    <DetailModal
-      item={displayItem}
-      open={open}
-      onOpenChange={onOpenChange}
-      loadingSlot={loadingDetail}
-      headerRightSlot={headerRight}
-      titleActionSlot={titleAction}
-    />
+    <>
+      <DetailModal
+        item={displayItem}
+        open={open}
+        onOpenChange={onOpenChange}
+        loadingSlot={loadingDetail}
+        headerRightSlot={headerRight}
+        titleActionSlot={titleAction}
+      />
+      <AlertDialog open={confirmRemove} onOpenChange={setConfirmRemove}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认移出媒体库</AlertDialogTitle>
+            <AlertDialogDescription>
+              这只会移除本地媒体库记录，不会删除网盘中的实际文件。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removing}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleRemoveFromLibrary}
+              disabled={removing}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {removing ? '移出中...' : '确认移出'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }
