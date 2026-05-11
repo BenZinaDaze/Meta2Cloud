@@ -413,6 +413,27 @@ class TestReplaceExistingVideo:
         ]
         assert fake_uploader.calls == []
 
+    def test_skip_metadata_upload_still_uploads_movie_nfo(self):
+        """开启开关时，电影仍上传同名 NFO"""
+        storage = FakeStorageProvider()
+
+        result = make_pipeline(
+            storage,
+            replace_existing_video=False,
+            skip_metadata_upload=True,
+        )._process_one(
+            make_video("source", "Movie.2024.mkv", "source"),
+            1,
+            1,
+        )
+
+        assert result.status == "ok"
+        assert result.moved is True
+        assert result.nfo_uploaded is True
+        assert storage.uploaded == [
+            ("text", "Movie.2024.nfo", "target"),
+        ]
+
 
 class TestConfigParseBoolStr:
     def test_valid_bool(self):

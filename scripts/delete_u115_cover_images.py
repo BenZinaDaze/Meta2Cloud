@@ -1,19 +1,26 @@
 #!/usr/bin/env python3
 """
-删除 115 远程剧集目录中的 NFO 文件。
+删除 115 远程目录中的封面图片文件。
 
 默认行为：
   - 递归扫描指定远程目录
-  - 匹配单集同名 .nfo + season.nfo
-  - 保留 tvshow.nfo 和电影 .nfo
+  - 匹配程序会上传的封面图片文件
   - 只预览，不实际删除
 
+匹配文件名：
+  - poster.jpg
+  - fanart.jpg
+  - seasonXX-poster.jpg
+  - season-specials-poster.jpg
+  - episode-thumb.jpg
+
 示例：
-  uv run python scripts/delete_u115_episode_nfo.py --path "/剧集/绝命毒师 (2008)"
-  uv run python scripts/delete_u115_episode_nfo.py --path "/剧集/绝命毒师 (2008)" --yes
-  uv run python scripts/delete_u115_episode_nfo.py --path "/剧集/绝命毒师 (2008)" --all-nfo --yes
-  uv run python scripts/delete_u115_episode_nfo.py --tv-root
-  uv run python scripts/delete_u115_episode_nfo.py --movie-root
+  uv run python scripts/delete_u115_cover_images.py --path "/剧集/绝命毒师 (2008)"
+  uv run python scripts/delete_u115_cover_images.py --path "/剧集/绝命毒师 (2008)" --yes
+  uv run python scripts/delete_u115_cover_images.py --tv-root
+  uv run python scripts/delete_u115_cover_images.py --tv-root --yes
+  uv run python scripts/delete_u115_cover_images.py --movie-root
+  uv run python scripts/delete_u115_cover_images.py --movie-root --yes
 """
 
 from __future__ import annotations
@@ -32,8 +39,13 @@ from u115pan.client import Pan115Client
 from u115pan.errors import Pan115ApiError
 from u115pan.models import Pan115File
 
-RESERVED_NFO_NAMES = {"tvshow.nfo"}
-EPISODE_NFO_RE = re.compile(r"[Ss]\d+[Ee]\d+")
+SEASON_POSTER_RE = re.compile(r"^season\d{2}-poster\.jpg$", re.IGNORECASE)
+SPECIAL_SEASON_POSTER = "season-specials-poster.jpg"
+STATIC_IMAGE_NAMES = {
+    "poster.jpg",
+    "fanart.jpg",
+    "episode-thumb.jpg",
+}
 
 
 def resolve_local_path(path: str) -> Path:
@@ -52,6 +64,12 @@ def build_client(cfg: Config, api_qps: float) -> Pan115Client:
     )
 
 
+def join_remote_path(parent: str, name: str) -> str:
+    if parent == "/":
+        return f"/{name}"
+    return f"{parent.rstrip('/')}/{name}"
+
+
 def iter_files(
     client: Pan115Client,
     folder_id: str,
@@ -64,42 +82,13 @@ def iter_files(
             yield from iter_files(client, item.id, item_path)
 
 
-def join_remote_path(parent: str, name: str) -> str:
-    if parent == "/":
-        return f"/{name}"
-    return f"{parent.rstrip('/')}/{name}"
-
-
-def should_delete_nfo(name: str, include_all_nfo: bool) -> bool:
+def should_delete_image(name: str) -> bool:
     lower_name = name.lower()
-    if not lower_name.endswith(".nfo"):
-        return False
-    if include_all_nfo:
+    if lower_name in STATIC_IMAGE_NAMES:
         return True
-    if lower_name in RESERVED_NFO_NAMES:
-        return False
-    if lower_name == "season.nfo":
+    if lower_name == SPECIAL_SEASON_POSTER:
         return True
-    return bool(EPISODE_NFO_RE.search(name))
-
-
-def scan_targets(
-    client: Pan115Client,
-    root: Pan115File,
-    root_path: str,
-    *,
-    include_all_nfo: bool,
-) -> list[tuple[Pan115File, str]]:
-    if not root.is_folder:
-        raise Pan115ApiError(f"远程路径不是目录：{root_path}")
-
-    matches: list[tuple[Pan115File, str]] = []
-    for item, item_path in iter_files(client, root.id, root_path):
-        if item.is_folder:
-            continue
-        if should_delete_nfo(item.name, include_all_nfo):
-            matches.append((item, item_path))
-    return matches
+    return bool(SEASON_POSTER_RE.match(lower_name))
 
 
 def resolve_scan_root(client: Pan115Client, cfg: Config, args: argparse.Namespace) -> tuple[Pan115File, str]:
@@ -127,8 +116,25 @@ def resolve_scan_root(client: Pan115Client, cfg: Config, args: argparse.Namespac
     return root, remote_path
 
 
+def scan_targets(
+    client: Pan115Client,
+    root: Pan115File,
+    root_path: str,
+) -> list[tuple[Pan115File, str]]:
+    if not root.is_folder:
+        raise Pan115ApiError(f"远程路径不是目录：{root_path}")
+
+    matches: list[tuple[Pan115File, str]] = []
+    for item, item_path in iter_files(client, root.id, root_path):
+        if item.is_folder:
+            continue
+        if should_delete_image(item.name):
+            matches.append((item, item_path))
+    return matches
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="删除 115 远程剧集目录中的 NFO 文件")
+    parser = argparse.ArgumentParser(description="删除 115 远程目录中的封面图片文件")
     parser.add_argument(
         "--path",
         default=None,
@@ -156,11 +162,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="115 API 请求速率限制，默认 3",
     )
     parser.add_argument(
-        "--all-nfo",
-        action="store_true",
-        help="连 tvshow.nfo 和 season.nfo 也一起删除",
-    )
-    parser.add_argument(
         "--yes",
         action="store_true",
         help="确认执行删除；不传时只预览",
@@ -177,23 +178,17 @@ def main() -> int:
 
     try:
         root, root_path = resolve_scan_root(client, cfg, args)
-        targets = scan_targets(
-            client,
-            root,
-            root_path,
-            include_all_nfo=args.all_nfo,
-        )
+        targets = scan_targets(client, root, root_path)
     except Exception as exc:
         print(f"扫描失败：{exc}")
         return 1
 
     if not targets:
-        print("未找到符合条件的 NFO 文件")
+        print("未找到符合条件的封面图片文件")
         return 0
 
-    mode = "全部 NFO" if args.all_nfo else "单集 NFO + season.nfo（保留 tvshow.nfo 和电影 NFO）"
     print(f"扫描目录：{root_path}")
-    print(f"匹配模式：{mode}")
+    print("匹配模式：封面图片")
     print(f"命中数量：{len(targets)}")
     for _, item_path in targets:
         print(item_path)

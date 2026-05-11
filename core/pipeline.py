@@ -225,7 +225,7 @@ class Pipeline:
         if self._skip_tmdb or not self._tmdb:
             self._log("  ℹ️  跳过 TMDB — 不生成 NFO")
         if self._skip_metadata_upload:
-            self._log("  ℹ️  仅上传 tvshow.nfo，跳过其他 NFO 和图片")
+            self._log("  ℹ️  剧集仅上传 tvshow.nfo，电影保留 NFO，图片跳过")
         if self._skip_images:
             self._log("  ℹ️  跳过图片下载")
         self._log("=" * 68)
@@ -549,8 +549,8 @@ class Pipeline:
         def upload_metadata() -> None:
             # ── Step 8: 上传单集/电影 NFO ──────────────────
             if nfo_content and nfo_name:
-                if self._skip_metadata_upload:
-                    self._log("      NFO：跳过（仅保留 tvshow.nfo）")
+                if self._skip_metadata_upload and is_tv:
+                    self._log("      NFO：跳过（剧集仅保留 tvshow.nfo）")
                 elif not self._dry_run and target_folder:
                     try:
                         self._client.upload_text(
@@ -631,7 +631,7 @@ class Pipeline:
                         self._poster_done.add(img_top_id)
 
             elif tmdb_info and self._skip_metadata_upload:
-                self._log("      图片：跳过（仅保留 tvshow.nfo）")
+                self._log("      图片：跳过（skip_metadata_upload 已开启）")
             elif tmdb_info and not self._img_uploader and not self._skip_images and not self._dry_run:
                 pass  # img_uploader 未初始化时静默跳过
             elif tmdb_info and self._dry_run:

@@ -179,8 +179,8 @@ pipeline:
   # 替换同名视频（移除的文件可在回收站恢复）
   replace_existing_video: false
 
-  # 仅上传 tvshow.nfo
-  # True = 跳过单集 .nfo、season.nfo、电影 .nfo，以及所有图片上传
+  # 剧集只上传 tvshow.nfo；电影仍上传同名 .nfo
+  # True = 跳过单集 .nfo、season.nfo，以及所有图片上传
   skip_metadata_upload: false
 
 # ─────────────────────────────────────────────────────────
