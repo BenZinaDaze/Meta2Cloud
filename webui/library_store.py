@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -20,6 +21,53 @@ from mediaparser.tmdb_image import build_tmdb_image_url, extract_tmdb_image_path
 from webui.core.runtime import get_config
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_lookup_title(title: str) -> str:
+    raw = str(title or "").strip()
+    raw = re.sub(r"\s*\(\d{4}\)\s*$", "", raw)
+    raw = re.sub(r"\s+", " ", raw)
+    return raw.casefold()
+
+
+def _compact_lookup_title(title: str) -> str:
+    normalized = _normalize_lookup_title(title)
+    return re.sub(r"[^0-9a-z\u4e00-\u9fff]", "", normalized)
+
+
+def _lookup_title_variants(title: str) -> set[str]:
+    raw = str(title or "").strip()
+    if not raw:
+        return set()
+    variants = {_normalize_lookup_title(raw), _compact_lookup_title(raw)}
+    for part in re.split(r"[~～:：|／/]+", raw):
+        normalized = _normalize_lookup_title(part)
+        compact = _compact_lookup_title(part)
+        if normalized:
+            variants.add(normalized)
+        if compact:
+            variants.add(compact)
+    return {variant for variant in variants if variant}
+
+
+def _titles_match(query: str, candidates: list[str]) -> bool:
+    query_variants = _lookup_title_variants(query)
+    if not query_variants:
+        return False
+    candidate_variants: set[str] = set()
+    for candidate in candidates:
+        candidate_variants.update(_lookup_title_variants(candidate))
+    if not candidate_variants:
+        return False
+    if query_variants & candidate_variants:
+        return True
+    for q in query_variants:
+        for c in candidate_variants:
+            if min(len(q), len(c)) < 4:
+                continue
+            if q in c or c in q:
+                return True
+    return False
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS tmdb_media (
@@ -544,6 +592,99 @@ class LibraryStore:
         self._conn.commit()
         logger.info("已更新库条目 drive_folder_id=%s", drive_folder_id)
         return True
+
+    def get_library_item_by_folder_id(self, drive_folder_id: str) -> Optional[dict[str, Any]]:
+        row = self._conn.execute(
+            """
+            SELECT raw_json
+            FROM library_media
+            WHERE drive_folder_id = ?
+            LIMIT 1
+            """,
+            (drive_folder_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return self._hydrate_library_payload(json.loads(row["raw_json"] or "{}"))
+
+    def find_library_item_by_title_year(
+        self,
+        media_type: str,
+        title: str,
+        year: str,
+    ) -> Optional[dict[str, Any]]:
+        if not _lookup_title_variants(title):
+            return None
+        rows = self._conn.execute(
+            """
+            SELECT raw_json
+            FROM library_media
+            WHERE media_type = ?
+              AND tmdb_id > 0
+              AND year = ?
+            ORDER BY in_library DESC, updated_at DESC, folder_modified_time DESC
+            """,
+            (media_type, year or ""),
+        ).fetchall()
+        for row in rows:
+            payload = json.loads(row["raw_json"] or "{}")
+            candidates = [
+                payload.get("title") or "",
+                payload.get("original_title") or "",
+            ]
+            raw_json = payload if isinstance(payload, dict) else {}
+            names = raw_json.get("names") or []
+            if isinstance(names, list):
+                candidates.extend(str(name or "") for name in names)
+            if _titles_match(title, [candidate for candidate in candidates if candidate]):
+                return self._hydrate_library_payload(payload)
+        return None
+
+    def find_tmdb_entry_by_title_year(
+        self,
+        media_type: str,
+        title: str,
+        year: str,
+    ) -> Optional[dict[str, Any]]:
+        if not _lookup_title_variants(title):
+            return None
+        rows = self._conn.execute(
+            """
+            SELECT *
+            FROM tmdb_media
+            WHERE media_type = ?
+            ORDER BY
+                CASE
+                    WHEN ? != '' AND substr(COALESCE(first_air_date, release_date, ''), 1, 4) = ? THEN 0
+                    ELSE 1
+                END,
+                last_synced_at DESC
+            """,
+            (media_type, year or "", year or ""),
+        ).fetchall()
+        for row in rows:
+            payload = dict(row)
+            raw_json = payload.get("raw_json") or "{}"
+            if isinstance(raw_json, str):
+                try:
+                    raw_json = json.loads(raw_json)
+                except json.JSONDecodeError:
+                    raw_json = {}
+            payload["raw_json"] = raw_json
+            candidates = [
+                payload.get("title") or "",
+                payload.get("original_title") or "",
+                raw_json.get("title") or "",
+                raw_json.get("name") or "",
+                raw_json.get("original_title") or "",
+                raw_json.get("original_name") or "",
+            ]
+            names = raw_json.get("names") or []
+            if isinstance(names, list):
+                candidates.extend(str(name or "") for name in names)
+            if _titles_match(title, [candidate for candidate in candidates if candidate]):
+                return payload
+        return None
 
     def delete_library_item(self, drive_folder_id: str) -> bool:
         cur = self._conn.execute(

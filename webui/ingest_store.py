@@ -6,11 +6,59 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_lookup_title(title: str) -> str:
+    raw = str(title or "").strip()
+    raw = re.sub(r"\s*\(\d{4}\)\s*$", "", raw)
+    raw = re.sub(r"\s+", " ", raw)
+    return raw.casefold()
+
+
+def _compact_lookup_title(title: str) -> str:
+    normalized = _normalize_lookup_title(title)
+    return re.sub(r"[^0-9a-z\u4e00-\u9fff]", "", normalized)
+
+
+def _lookup_title_variants(title: str) -> set[str]:
+    raw = str(title or "").strip()
+    if not raw:
+        return set()
+    variants = {_normalize_lookup_title(raw), _compact_lookup_title(raw)}
+    for part in re.split(r"[~～:：|／/]+", raw):
+        normalized = _normalize_lookup_title(part)
+        compact = _compact_lookup_title(part)
+        if normalized:
+            variants.add(normalized)
+        if compact:
+            variants.add(compact)
+    return {variant for variant in variants if variant}
+
+
+def _titles_match(query: str, candidates: list[str]) -> bool:
+    query_variants = _lookup_title_variants(query)
+    if not query_variants:
+        return False
+    candidate_variants: set[str] = set()
+    for candidate in candidates:
+        candidate_variants.update(_lookup_title_variants(candidate))
+    if not candidate_variants:
+        return False
+    if query_variants & candidate_variants:
+        return True
+    for q in query_variants:
+        for c in candidate_variants:
+            if min(len(q), len(c)) < 4:
+                continue
+            if q in c or c in q:
+                return True
+    return False
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS ingest_history (
@@ -171,6 +219,37 @@ class IngestStore:
             (limit,),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def find_match_by_title_year(
+        self,
+        *,
+        media_type: str,
+        title: str,
+        year: str,
+    ) -> Optional[dict[str, Any]]:
+        if not _lookup_title_variants(title):
+            return None
+        rows = self._conn.execute(
+            """
+            SELECT *
+            FROM ingest_history
+            WHERE media_type = ?
+              AND tmdb_id > 0
+              AND status = 'success'
+              AND year = ?
+            ORDER BY ingested_at DESC, id DESC
+            """,
+            (media_type, year or ""),
+        ).fetchall()
+        for row in rows:
+            payload = dict(row)
+            candidates = [
+                payload.get("title") or "",
+                payload.get("original_title") or "",
+            ]
+            if _titles_match(title, [candidate for candidate in candidates if candidate]):
+                return payload
+        return None
 
     def stats(self, days: int = 7) -> dict[str, Any]:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()

@@ -1409,7 +1409,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                       onChange={(v) => set('pipeline', 'replace_existing_video', v)}
                     />
                   </Field>
-                  <Field label="精简元数据上传" description="剧集仅上传 tvshow.nfo；电影仍上传同名 .nfo；所有图片与 season.nfo/单集 .nfo 跳过">
+                  <Field label="跳过元数据上传" description="关闭时上传全部 NFO 和图片；开启时只移动媒体文件，不上传任何 NFO 或图片">
                     <Toggle
                       value={(cfg?.pipeline as Record<string, unknown>)?.skip_metadata_upload === true}
                       onChange={(v) => set('pipeline', 'skip_metadata_upload', v)}

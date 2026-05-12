@@ -368,8 +368,8 @@ class TestReplaceExistingVideo:
         assert storage.uploaded == []
         assert not any(call[0].startswith("upload") for call in storage.calls)
 
-    def test_skip_metadata_upload_keeps_only_tvshow_nfo(self):
-        """开启开关时，剧集只上传 tvshow.nfo，其他 NFO 全部跳过"""
+    def test_skip_metadata_upload_skips_all_tv_metadata(self):
+        """开启开关时，剧集不上传任何 NFO 或图片"""
         storage = FakeStorageProvider()
 
         result = make_pipeline(
@@ -385,9 +385,7 @@ class TestReplaceExistingVideo:
         assert result.status == "ok"
         assert result.moved is True
         assert result.nfo_uploaded is False
-        assert storage.uploaded == [
-            ("text", "tvshow.nfo", "show"),
-        ]
+        assert storage.uploaded == []
 
     def test_skip_metadata_upload_also_skips_images(self):
         """开启开关时，剧集图片也不上传"""
@@ -408,13 +406,11 @@ class TestReplaceExistingVideo:
 
         assert result.status == "ok"
         assert result.moved is True
-        assert storage.uploaded == [
-            ("text", "tvshow.nfo", "show"),
-        ]
+        assert storage.uploaded == []
         assert fake_uploader.calls == []
 
-    def test_skip_metadata_upload_still_uploads_movie_nfo(self):
-        """开启开关时，电影仍上传同名 NFO"""
+    def test_skip_metadata_upload_skips_movie_nfo(self):
+        """开启开关时，电影也不上传 NFO"""
         storage = FakeStorageProvider()
 
         result = make_pipeline(
@@ -429,10 +425,8 @@ class TestReplaceExistingVideo:
 
         assert result.status == "ok"
         assert result.moved is True
-        assert result.nfo_uploaded is True
-        assert storage.uploaded == [
-            ("text", "Movie.2024.nfo", "target"),
-        ]
+        assert result.nfo_uploaded is False
+        assert storage.uploaded == []
 
 
 class TestConfigParseBoolStr:

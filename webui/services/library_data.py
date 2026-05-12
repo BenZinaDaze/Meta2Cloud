@@ -3,8 +3,11 @@ from datetime import datetime
 from typing import Dict, List, Optional, Set
 
 from storage.base import StorageProvider
-from mediaparser import Config
+from mediaparser import Config, TmdbClient
+from webui.ingest_store import get_ingest_store
+from webui.library_store import get_library_store
 from webui.schemas.library import EpisodeStatus, MediaItem, SeasonStatus
+from webui.services.tmdb_service import get_tmdb_cache
 from webui.services.tmdb_service import tmdb_get, tmdb_image_url
 from webui.core.runtime import logger
 
@@ -178,22 +181,92 @@ def parse_episode_from_filename(filename: str) -> Optional[tuple]:
     return None
 
 
-def _scan_single_movie_folder(client: StorageProvider, folder) -> Optional[MediaItem]:
+def _extract_title_year(name: str) -> tuple[str, str]:
+    year_match = re.search(r"\((\d{4})\)", name or "")
+    year = year_match.group(1) if year_match else ""
+    title = re.sub(r"\s*\(\d{4}\)\s*$", "", name or "").strip()
+    return title, year
+
+
+def _tmdb_detail_path(media_type: str, tmdb_id: int) -> str:
+    return f"/tv/{tmdb_id}" if media_type == "tv" else f"/movie/{tmdb_id}"
+
+
+def _resolve_tmdb_info(media_type: str, tmdb_id: int) -> Optional[dict]:
+    if not tmdb_id or tmdb_id <= 0:
+        return None
+    store = get_library_store()
+    tmdb_entry = store.get_tmdb_entry(media_type, tmdb_id)
+    if tmdb_entry and tmdb_entry.get("raw_json"):
+        return tmdb_entry["raw_json"]
+    return tmdb_get(_tmdb_detail_path(media_type, tmdb_id))
+
+
+def _search_tmdb_identity(media_type: str, title: str, year: str, cfg: Config) -> tuple[int, Optional[dict]]:
+    if not title or not cfg.is_tmdb_ready():
+        return 0, None
+    from mediaparser.types import MediaType as MType
+
+    tmdb_client = TmdbClient(
+        api_key=cfg.tmdb.api_key,
+        language=cfg.tmdb.language,
+        proxy=cfg.tmdb_proxy,
+        timeout=cfg.tmdb.timeout,
+        cache=get_tmdb_cache(),
+    )
+    mtype = MType.TV if media_type == "tv" else MType.MOVIE
+    found = tmdb_client._search_by_name(title, year or None, mtype)
+    if not found:
+        return 0, None
+    tmdb_id = int(found.get("tmdb_id") or found.get("id") or 0)
+    return tmdb_id, found if tmdb_id > 0 else None
+
+
+def _resolve_media_identity(media_type: str, drive_folder_id: str, folder_name: str, cfg: Config) -> tuple[int, Optional[dict]]:
+    store = get_library_store()
+    existing = store.get_library_item_by_folder_id(drive_folder_id)
+    if existing:
+        tmdb_id = int(existing.get("tmdb_id") or 0)
+        if tmdb_id > 0:
+            return tmdb_id, _resolve_tmdb_info(media_type, tmdb_id)
+
+    title, year = _extract_title_year(folder_name)
+    if title:
+        matched = store.find_library_item_by_title_year(media_type, title, year)
+        if matched:
+            tmdb_id = int(matched.get("tmdb_id") or 0)
+            if tmdb_id > 0:
+                return tmdb_id, _resolve_tmdb_info(media_type, tmdb_id)
+
+        tmdb_cached = store.find_tmdb_entry_by_title_year(media_type, title, year)
+        if tmdb_cached:
+            tmdb_id = int(tmdb_cached.get("tmdb_id") or 0)
+            if tmdb_id > 0:
+                return tmdb_id, tmdb_cached.get("raw_json") or _resolve_tmdb_info(media_type, tmdb_id)
+
+        ingest_match = get_ingest_store().find_match_by_title_year(
+            media_type=media_type,
+            title=title,
+            year=year,
+        )
+        if ingest_match:
+            tmdb_id = int(ingest_match.get("tmdb_id") or 0)
+            if tmdb_id > 0:
+                return tmdb_id, _resolve_tmdb_info(media_type, tmdb_id)
+
+        tmdb_id, tmdb_info = _search_tmdb_identity(media_type, title, year, cfg)
+        if tmdb_id > 0 and tmdb_info:
+            return tmdb_id, tmdb_info
+
+    return 0, None
+
+
+def _scan_single_movie_folder(client: StorageProvider, folder, cfg: Config) -> Optional[MediaItem]:
     mtime = _normalize_modified_time(folder.modified_time)
-    nfo_files = [f for f in client.list_files(folder_id=folder.id, page_size=100) if f.name.endswith(".nfo") and f.name != "tvshow.nfo"]
-    tmdb_id = None
-    tmdb_info = None
-    for nfo in nfo_files:
-        content = client.read_text(nfo)
-        if content:
-            tmdb_id = parse_tmdb_id_from_nfo(content)
-            if tmdb_id:
-                break
-    if tmdb_id:
-        tmdb_info = tmdb_get(f"/movie/{tmdb_id}")
+    tmdb_id, tmdb_info = _resolve_media_identity("movie", folder.id, folder.name, cfg)
     if tmdb_info:
         return MediaItem(
-            tmdb_id=tmdb_id,
+            tmdb_id=int(tmdb_id),
             title=tmdb_info.get("title") or folder.name,
             original_title=tmdb_info.get("original_title") or "",
             year=(tmdb_info.get("release_date") or "")[:4],
@@ -205,10 +278,7 @@ def _scan_single_movie_folder(client: StorageProvider, folder) -> Optional[Media
             drive_folder_id=folder.id,
             folder_modified_time=mtime,
         )
-    name = folder.name
-    year_match = re.search(r"\((\d{4})\)", name)
-    year = year_match.group(1) if year_match else ""
-    title = re.sub(r"\s*\(\d{4}\)\s*$", "", name).strip()
+    title, year = _extract_title_year(folder.name)
     return MediaItem(
         tmdb_id=0,
         title=title,
@@ -232,7 +302,7 @@ def scan_movies(client: StorageProvider, cfg: Config) -> List[MediaItem]:
     movie_folders = [f for f in client.list_files(folder_id=movie_root, page_size=500) if f.is_folder]
     logger.info("扫描到 %d 个电影文件夹", len(movie_folders))
     for folder in movie_folders:
-        movie = _scan_single_movie_folder(client, folder)
+        movie = _scan_single_movie_folder(client, folder, cfg)
         if movie:
             movies.append(movie)
     return movies
@@ -251,18 +321,13 @@ def _tv_leaf_modified_time(show_folder, show_files: List) -> int:
 
 def _scan_single_tv_folder(
     client: StorageProvider,
+    cfg: Config,
     show_folder,
     show_files: Optional[List] = None,
 ) -> Optional[MediaItem]:
     show_files = show_files or client.list_files(folder_id=show_folder.id, page_size=200)
     mtime = _tv_leaf_modified_time(show_folder, show_files)
-    tvshow_nfo = next((f for f in show_files if f.name == "tvshow.nfo"), None)
-    tmdb_id = None
-    if tvshow_nfo:
-        content = client.read_text(tvshow_nfo)
-        if content:
-            tmdb_id = parse_tmdb_id_from_nfo(content)
-    tmdb_info = tmdb_get(f"/tv/{tmdb_id}") if tmdb_id else None
+    tmdb_id, tmdb_info = _resolve_media_identity("tv", show_folder.id, show_folder.name, cfg)
     season_folders = [f for f in show_files if f.is_folder and f.name.startswith("Season")]
     drive_episodes: Set[tuple] = set()
     for season_folder in season_folders:
@@ -329,7 +394,7 @@ def scan_tv_shows(client: StorageProvider, cfg: Config) -> List[MediaItem]:
     show_folders = [f for f in client.list_files(folder_id=tv_root, page_size=500) if f.is_folder]
     logger.info("扫描到 %d 个剧集文件夹", len(show_folders))
     for show_folder in show_folders:
-        show = _scan_single_tv_folder(client, show_folder)
+        show = _scan_single_tv_folder(client, cfg, show_folder)
         if show:
             shows.append(show)
     return shows
@@ -353,7 +418,7 @@ def scan_movies_incremental(
         stored_mtime = stored_mtimes.get(folder.id, 0)
         if stored_mtime > 0 and current_mtime > 0 and current_mtime <= stored_mtime:
             continue
-        movie = _scan_single_movie_folder(client, folder)
+        movie = _scan_single_movie_folder(client, folder, cfg)
         if movie:
             movies.append(movie)
     skipped = len(movie_folders) - len(movies)
@@ -380,7 +445,7 @@ def scan_tv_shows_incremental(
         stored_mtime = stored_mtimes.get(show_folder.id, 0)
         if stored_mtime > 0 and current_mtime > 0 and current_mtime <= stored_mtime:
             continue
-        show = _scan_single_tv_folder(client, show_folder, show_files=show_files)
+        show = _scan_single_tv_folder(client, cfg, show_folder, show_files=show_files)
         if show:
             shows.append(show)
     skipped = len(show_folders) - len(shows)

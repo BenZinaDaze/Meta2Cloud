@@ -21,6 +21,7 @@ except ImportError:
 
 def do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str, title: str | None = None, year: str | None = None) -> dict:
     cfg = get_config()
+    skip_metadata_upload = cfg.pipeline.skip_metadata_upload
     if not tmdb_id or tmdb_id <= 0:
         if not title:
             raise ValueError("该媒体项没有 TMDB ID 且未提供标题，无法搜索")
@@ -76,41 +77,42 @@ def do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str, title: 
             {"id": p["id"], "name": p["name"], "character": p.get("character"), "profile_path": p.get("profile_path")}
             for p in (credits.get("cast") or [])[:20]
         ]
-        try:
-            folder_files = client.list_files(folder_id=drive_folder_id, page_size=50)
-            video_files = [f for f in folder_files if f.is_video]
-        except Exception as exc:
-            logger.warning("列出文件夹内容失败，将跳过视频同名 NFO: %s", exc)
-            video_files = []
-        if video_files:
-            for video_file in video_files:
-                nfo_name = gen.nfo_name_for(video_file.name)
+        if not skip_metadata_upload:
+            try:
+                folder_files = client.list_files(folder_id=drive_folder_id, page_size=50)
+                video_files = [f for f in folder_files if f.is_video]
+            except Exception as exc:
+                logger.warning("列出文件夹内容失败，将跳过视频同名 NFO: %s", exc)
+                video_files = []
+            if video_files:
+                for video_file in video_files:
+                    nfo_name = gen.nfo_name_for(video_file.name)
+                    try:
+                        xml = gen.generate(info, media_type=None)
+                        client.upload_text(xml, nfo_name, parent_id=drive_folder_id, mime_type="text/xml", overwrite=True)
+                        uploaded.append(nfo_name)
+                    except Exception as exc:
+                        errors.append(f"{nfo_name}: {exc}")
+                        logger.warning("上传 NFO 失败: %s - %s", nfo_name, exc)
+            else:
                 try:
                     xml = gen.generate(info, media_type=None)
-                    client.upload_text(xml, nfo_name, parent_id=drive_folder_id, mime_type="text/xml", overwrite=True)
-                    uploaded.append(nfo_name)
+                    client.upload_text(xml, "movie.nfo", parent_id=drive_folder_id, mime_type="text/xml", overwrite=True)
+                    uploaded.append("movie.nfo")
                 except Exception as exc:
-                    errors.append(f"{nfo_name}: {exc}")
-                    logger.warning("上传 NFO 失败: %s - %s", nfo_name, exc)
-        else:
-            try:
-                xml = gen.generate(info, media_type=None)
-                client.upload_text(xml, "movie.nfo", parent_id=drive_folder_id, mime_type="text/xml", overwrite=True)
-                uploaded.append("movie.nfo")
-            except Exception as exc:
-                errors.append(f"movie.nfo: {exc}")
-        if info.get("poster_path"):
-            try:
-                uploader.upload_poster(info["poster_path"], drive_folder_id)
-                uploaded.append("poster.jpg")
-            except Exception as exc:
-                errors.append(f"poster.jpg: {exc}")
-        if info.get("backdrop_path"):
-            try:
-                uploader.upload_fanart(info["backdrop_path"], drive_folder_id)
-                uploaded.append("fanart.jpg")
-            except Exception as exc:
-                errors.append(f"fanart.jpg: {exc}")
+                    errors.append(f"movie.nfo: {exc}")
+            if info.get("poster_path"):
+                try:
+                    uploader.upload_poster(info["poster_path"], drive_folder_id)
+                    uploaded.append("poster.jpg")
+                except Exception as exc:
+                    errors.append(f"poster.jpg: {exc}")
+            if info.get("backdrop_path"):
+                try:
+                    uploader.upload_fanart(info["backdrop_path"], drive_folder_id)
+                    uploaded.append("fanart.jpg")
+                except Exception as exc:
+                    errors.append(f"fanart.jpg: {exc}")
     elif media_type == "tv":
         info = _fetch_with_credits(f"/tv/{tmdb_id}", "credits,external_ids,content_ratings")
         if not info:
@@ -127,53 +129,55 @@ def do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str, title: 
             for p in (credits.get("cast") or [])[:20]
         ]
         try:
-            xml = gen.generate_tvshow(info)
-            client.upload_text(xml, "tvshow.nfo", parent_id=drive_folder_id, mime_type="text/xml", overwrite=True)
-            uploaded.append("tvshow.nfo")
-        except Exception as exc:
-            errors.append(f"tvshow.nfo: {exc}")
-        if info.get("poster_path"):
-            try:
-                uploader.upload_poster(info["poster_path"], drive_folder_id)
-                uploaded.append("poster.jpg")
-            except Exception as exc:
-                errors.append(f"poster.jpg: {exc}")
-        if info.get("backdrop_path"):
-            try:
-                uploader.upload_fanart(info["backdrop_path"], drive_folder_id)
-                uploaded.append("fanart.jpg")
-            except Exception as exc:
-                errors.append(f"fanart.jpg: {exc}")
-        try:
             season_folders = [
                 f
                 for f in client.list_files(folder_id=drive_folder_id, page_size=200)
                 if f.is_folder and re.match(r"Season\s*\d+", f.name, re.IGNORECASE)
             ]
         except Exception as exc:
-            logger.warning("列出季文件夹失败，跳过季 NFO: %s", exc)
+            logger.warning("列出季文件夹失败，季状态可能不准确: %s", exc)
             season_folders = []
-        for season_folder in season_folders:
-            match = re.search(r"(\d+)", season_folder.name)
-            if not match:
-                continue
-            season_num = int(match.group(1))
-            season_detail = tmdb_get(f"/tv/{tmdb_id}/season/{season_num}", use_cache=False)
-            if not season_detail:
-                logger.info("跳过 Season %d（TMDB 无数据）", season_num)
-                continue
+
+        if not skip_metadata_upload:
             try:
-                xml = gen.generate_season(season_detail, season_num)
-                client.upload_text(xml, "season.nfo", parent_id=season_folder.id, mime_type="text/xml", overwrite=True)
-                uploaded.append(f"Season {season_num}/season.nfo")
+                xml = gen.generate_tvshow(info)
+                client.upload_text(xml, "tvshow.nfo", parent_id=drive_folder_id, mime_type="text/xml", overwrite=True)
+                uploaded.append("tvshow.nfo")
             except Exception as exc:
-                errors.append(f"Season {season_num}/season.nfo: {exc}")
-            if season_detail.get("poster_path"):
+                errors.append(f"tvshow.nfo: {exc}")
+            if info.get("poster_path"):
                 try:
-                    uploader.upload_season_poster(season_detail["poster_path"], season_num, drive_folder_id)
-                    uploaded.append(f"season{season_num:02d}-poster.jpg")
+                    uploader.upload_poster(info["poster_path"], drive_folder_id)
+                    uploaded.append("poster.jpg")
                 except Exception as exc:
-                    errors.append(f"season{season_num:02d}-poster.jpg: {exc}")
+                    errors.append(f"poster.jpg: {exc}")
+            if info.get("backdrop_path"):
+                try:
+                    uploader.upload_fanart(info["backdrop_path"], drive_folder_id)
+                    uploaded.append("fanart.jpg")
+                except Exception as exc:
+                    errors.append(f"fanart.jpg: {exc}")
+            for season_folder in season_folders:
+                match = re.search(r"(\d+)", season_folder.name)
+                if not match:
+                    continue
+                season_num = int(match.group(1))
+                season_detail = tmdb_get(f"/tv/{tmdb_id}/season/{season_num}", use_cache=False)
+                if not season_detail:
+                    logger.info("跳过 Season %d（TMDB 无数据）", season_num)
+                    continue
+                try:
+                    xml = gen.generate_season(season_detail, season_num)
+                    client.upload_text(xml, "season.nfo", parent_id=season_folder.id, mime_type="text/xml", overwrite=True)
+                    uploaded.append(f"Season {season_num}/season.nfo")
+                except Exception as exc:
+                    errors.append(f"Season {season_num}/season.nfo: {exc}")
+                if season_detail.get("poster_path"):
+                    try:
+                        uploader.upload_season_poster(season_detail["poster_path"], season_num, drive_folder_id)
+                        uploaded.append(f"season{season_num:02d}-poster.jpg")
+                    except Exception as exc:
+                        errors.append(f"season{season_num:02d}-poster.jpg: {exc}")
     else:
         raise ValueError(f"不支持的 media_type: {media_type}")
 

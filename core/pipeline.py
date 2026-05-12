@@ -232,7 +232,7 @@ class Pipeline:
         if self._skip_tmdb or not self._tmdb:
             self._log("  ℹ️  跳过 TMDB — 不生成 NFO")
         if self._skip_metadata_upload:
-            self._log("  ℹ️  剧集仅上传 tvshow.nfo，电影保留 NFO，图片跳过")
+            self._log("  ℹ️  跳过元数据上传 — 仅移动媒体文件，不上传任何 NFO 或图片")
         if self._skip_images:
             self._log("  ℹ️  跳过图片下载")
         self._log("=" * 68)
@@ -560,11 +560,12 @@ class Pipeline:
                     return result
 
         def upload_metadata() -> None:
+            if self._skip_metadata_upload:
+                self._log("      元数据：跳过（skip_metadata_upload 已开启）")
+                return
             # ── Step 8: 上传单集/电影 NFO ──────────────────
             if nfo_content and nfo_name:
-                if self._skip_metadata_upload and is_tv:
-                    self._log("      NFO：跳过（剧集仅保留 tvshow.nfo）")
-                elif not self._dry_run and target_folder:
+                if not self._dry_run and target_folder:
                     try:
                         self._client.upload_text(
                             content=nfo_content,
@@ -601,7 +602,7 @@ class Pipeline:
                     self._log(f"      tvshow.nfo：→ 剧名文件夹  [dry-run]")
 
             # ── Step 10: season.nfo → Season 文件夹 ───────
-            if is_tv and tmdb_info and target_folder and not self._skip_metadata_upload:
+            if is_tv and tmdb_info and target_folder:
                 season_folder_id = target_folder.id
                 if not self._dry_run and season_folder_id not in self._season_nfo_done:
                     try:
@@ -622,7 +623,7 @@ class Pipeline:
                     self._log(f"      season.nfo：→ Season {season_num} 文件夹  [dry-run]")
 
             # ── Step 11: poster.jpg / fanart.jpg ──────────
-            if tmdb_info and self._img_uploader and target_folder and not self._skip_metadata_upload:
+            if tmdb_info and self._img_uploader and target_folder:
                 # TV 的 poster/fanart 上传到剧名文件夹（顶层），使用 Step 6 缓存的 top_folder_id
                 img_top_id = top_folder_id or target_folder.id
 
@@ -643,15 +644,13 @@ class Pipeline:
                     if uploaded_any:
                         self._poster_done.add(img_top_id)
 
-            elif tmdb_info and self._skip_metadata_upload:
-                self._log("      图片：跳过（skip_metadata_upload 已开启）")
             elif tmdb_info and not self._img_uploader and not self._skip_images and not self._dry_run:
                 pass  # img_uploader 未初始化时静默跳过
             elif tmdb_info and self._dry_run:
                 self._log(f"      poster.jpg / fanart.jpg：[dry-run，不下载]")
 
             # ── Step 11.5: season poster（季封面）──────────
-            if is_tv and tmdb_info and self._img_uploader and target_folder and top_folder_id and not self._skip_metadata_upload:
+            if is_tv and tmdb_info and self._img_uploader and target_folder and top_folder_id:
                 season_poster_key = f"{top_folder_id}:s{season_num}"
                 if season_poster_key not in self._season_poster_done:
                     _sp_key = f"{tmdb_info.get('tmdb_id') or tmdb_info.get('id')}:{season_num}"
