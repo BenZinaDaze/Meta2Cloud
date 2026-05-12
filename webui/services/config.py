@@ -9,6 +9,7 @@ from webui.services.u115 import resolve_config_path
 import webui.core.runtime as runtime
 from webui.core.app_logging import app_log
 from webui.services.tmdb_service import get_tmdb_cache, serialize_meta, serialize_tmdb_result
+from webui.services.mediavault import test_mediavault_connection_payload as _test_mediavault_connection_payload
 from webui.core.runtime import (
     _CONFIG_PATH,
     _PARSER_RULES_PATH,
@@ -211,3 +212,7 @@ def drive_test_connection_payload():
     except Exception as exc:
         logger.exception("Google Drive 连接测试失败")
         raise HTTPException(status_code=400, detail=f"Drive 连接测试失败：{exc}") from exc
+
+
+def mediavault_test_connection_payload(body=None):
+    return _test_mediavault_connection_payload(body)

@@ -88,6 +88,8 @@ export const saveMainConfig = (data: Record<string, unknown>) =>
 export const getParserRulesConfig = () => api.get('/config/parser-rules')
 export const saveParserRulesConfig = (data: Record<string, unknown>) =>
   api.put('/config/parser-rules', { data })
+export const testMediaVault = (data: Record<string, unknown>) =>
+  api.post('/mediavault/test', data)
 export const testParse = (filename: string, skipTmdb: boolean = false) =>
   api.post('/parser/test', { filename }, { params: { skip_tmdb: skipTmdb } })
 

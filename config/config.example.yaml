@@ -2,8 +2,8 @@
 # WebUI 认证设置
 # ─────────────────────────────────────────────────────────
 webui:
-  # 登录用户名（默认 admin）
-  username: "admin"
+  # 登录用户名（留空则使用系统默认值）
+  username: ""
 
   # 登录密码（必填，留空则任何人都可以访问——非常不安全）
   password: ""
@@ -43,7 +43,7 @@ aria2:
   enabled: true
 
   # Aria2 RPC 主机
-  host: "127.0.0.1"
+  host: ""
 
   # Aria2 RPC 端口
   port: 6800
@@ -71,7 +71,7 @@ tmdb:
   # 常用：zh-CN（简体中文）、zh-TW、en-US、ja-JP
   language: "zh-CN"
 
-  # HTTP 代理（可选），示例：http://127.0.0.1:7890
+  # HTTP 代理（可选），示例：http://proxy-host:port
   proxy: ""
 
   # 请求超时（秒）
@@ -97,11 +97,11 @@ drive:
 
   # 扫描的目标 Drive 文件夹 ID
   # 在 Drive 网页版打开文件夹，URL 末尾即为 ID
-  # 示例：https://drive.google.com/drive/folders/1AbCdEfGhIjKlMn → ID = 1AbCdEfGhIjKlMn
+  # 示例：https://drive.google.com/drive/folders/<folder-id> → ID = <folder-id>
   scan_folder_id: ""
 
   # 媒体库根目录 ID（必填，Google Drive 文件夹 ID）
-  # 例：https://drive.google.com/drive/folders/1AbCdEfGhIjKlMn → 1AbCdEfGhIjKlMn
+  # 例：https://drive.google.com/drive/folders/<folder-id> → <folder-id>
   root_folder_id: ""
 
   # 电影专用目录 ID（可选）
@@ -124,7 +124,7 @@ drive:
 # ─────────────────────────────────────────────────────────
 u115:
   # 115 开放平台 client_id
-  client_id: "100197847"
+  client_id: ""
 
   # 115 access_token / refresh_token 缓存路径
   token_json: "config/115-token.json"
@@ -197,12 +197,12 @@ subtitle:
 # ─────────────────────────────────────────────────────────
 telegram:
   # Bot Token，从 @BotFather 获取
-  # 示例：123456789:ABCdefGHIjklMNOpqrSTUvwxYZ
+  # 示例：your-bot-token
   bot_token: ""
 
   # 接收通知的 Chat ID（个人账号或群组）
   # 获取方式：给 bot 发一条消息后访问
-  # https://api.telegram.org/bot<Token>/getUpdates
+  # https://api.telegram.org/bot<your-bot-token>/getUpdates
   # 找 "chat": {"id": ...}
   chat_id: ""
 
@@ -211,3 +211,28 @@ telegram:
   # 作用：批量入库时多集合并成一条 TG 通知，而不是每集发一次
   # 推荐：60（1 分钟），set 0 关闭防抖（立即触发，旧行为）
   debounce_seconds: 60
+
+# ─────────────────────────────────────────────────────────
+# MediaVault 集成（可选）
+# ─────────────────────────────────────────────────────────
+mediavault:
+  # 整理成功入库后，触发 MediaVault 目录监控
+  enabled: false
+
+  # 接口协议
+  # 可选值：http / https
+  scheme: "http"
+
+  # MediaVault 地址
+  # 只填主机或主机:端口，不要带 http:// 或 https://
+  host: ""
+
+  # MediaVault API Key
+  api_key: ""
+
+  # 可选：传给 MediaVault 的 source_dir
+  # 留空则使用 MediaVault 默认目录
+  source_dir: ""
+
+  # 请求超时（秒）
+  timeout: 10

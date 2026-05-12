@@ -1,9 +1,10 @@
 from fastapi import APIRouter
 
-from webui.schemas.config import ConfigSaveBody, ParserTestBody
+from webui.schemas.config import ConfigSaveBody, MediaVaultTestBody, ParserTestBody
 from webui.services.config import (
     drive_oauth_status_payload,
     drive_test_connection_payload,
+    mediavault_test_connection_payload,
     parser_test_payload,
     read_config_payload,
     read_main_config_payload,
@@ -59,3 +60,8 @@ async def drive_oauth_status():
 @router.post("/api/drive/test")
 async def drive_test_connection():
     return drive_test_connection_payload()
+
+
+@router.post("/api/mediavault/test")
+async def mediavault_test_connection(body: MediaVaultTestBody):
+    return mediavault_test_connection_payload(body)

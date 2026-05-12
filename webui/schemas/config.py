@@ -7,6 +7,14 @@ class ConfigSaveBody(BaseModel):
     data: Dict[str, Any]
 
 
+class MediaVaultTestBody(BaseModel):
+    enabled: Optional[bool] = None
+    scheme: Optional[str] = None
+    host: Optional[str] = None
+    api_key: Optional[str] = None
+    timeout: Optional[int] = None
+
+
 class ParserTestBody(BaseModel):
     filename: str
 

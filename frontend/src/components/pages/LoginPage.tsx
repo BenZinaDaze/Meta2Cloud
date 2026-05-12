@@ -74,7 +74,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   autoComplete="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="admin"
+                  placeholder="输入用户名"
                   disabled={loading}
                   className="pl-10"
                 />

@@ -68,6 +68,13 @@ class ProcessResult:
 
 
 @dataclass
+class PipelineSummary:
+    ok_count: int = 0
+    skipped_count: int = 0
+    failed_count: int = 0
+
+
+@dataclass
 class _NotifyItem:
     title: str
     year: str
@@ -209,14 +216,14 @@ class Pipeline:
 
     # ── 主入口 ──────────────────────────────────────────────────
 
-    def run(self) -> None:
+    def run(self) -> PipelineSummary:
         scan_folder = self._cfg.active_scan_folder_id()
         if not scan_folder:
             self._log("❌  配置错误：当前存储后端的扫描目录未设置", "ERROR")
-            return
+            return PipelineSummary()
         if not self._cfg.active_root_folder_id():
             self._log("❌  配置错误：当前存储后端的媒体库根目录未设置", "ERROR")
-            return
+            return PipelineSummary()
 
         self._log("=" * 68)
         self._log("  Meta2Cloud 开始整理")
@@ -247,7 +254,7 @@ class Pipeline:
                 self._log("\n🧹 检查并清理空子文件夹...")
                 self._cleanup_empty_folders(scan_folder, is_root=True)
                 self._log("  空文件夹清理完毕。")
-            return
+            return PipelineSummary()
 
         self._log(f"  找到 {len(videos)} 个视频文件")
         if subtitles:
@@ -266,6 +273,12 @@ class Pipeline:
             self._log("\n🧹 检查并清理空子文件夹...")
             self._cleanup_empty_folders(scan_folder, is_root=True)
             self._log("  空文件夹清理完毕。")
+
+        return PipelineSummary(
+            ok_count=sum(1 for r in results if r.status == "ok"),
+            skipped_count=sum(1 for r in results if r.status == "skipped"),
+            failed_count=sum(1 for r in results if r.status == "failed"),
+        )
 
     def _move_subtitles_for_video(
         self,

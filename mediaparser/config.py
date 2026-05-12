@@ -216,6 +216,27 @@ class TelegramConfig:
 
 
 @dataclass
+class MediaVaultConfig:
+    enabled: bool = False
+    scheme: str = "http"
+    host: str = ""
+    api_key: str = ""
+    source_dir: str = ""
+    timeout: int = 10
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "MediaVaultConfig":
+        return cls(
+            enabled=_parse_bool_str(d.get("enabled", False), "mediavault.enabled"),
+            scheme=str(d.get("scheme") or "http").strip().lower(),
+            host=str(d.get("host") or ""),
+            api_key=str(d.get("api_key") or ""),
+            source_dir=str(d.get("source_dir") or ""),
+            timeout=max(1, int(d.get("timeout") or 10)),
+        )
+
+
+@dataclass
 class WebUIConfig:
     username: str = "admin"
     password: str = ""           # 明文密码（配置文件私有，用 hmac.compare_digest 比较）
@@ -281,6 +302,7 @@ class Config:
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
     subtitle: SubtitleConfig = field(default_factory=SubtitleConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
+    mediavault: MediaVaultConfig = field(default_factory=MediaVaultConfig)
     webui: WebUIConfig = field(default_factory=WebUIConfig)
     aria2: Aria2Config = field(default_factory=Aria2Config)
     storage: StorageConfig = field(default_factory=StorageConfig)
@@ -338,6 +360,7 @@ class Config:
             pipeline=PipelineConfig.from_dict(d.get("pipeline") or {}),
             subtitle=SubtitleConfig.from_dict(d.get("subtitle") or {}),
             telegram=TelegramConfig.from_dict(d.get("telegram") or {}),
+            mediavault=MediaVaultConfig.from_dict(d.get("mediavault") or {}),
             webui=WebUIConfig.from_dict(d.get("webui") or {}),
             aria2=Aria2Config.from_dict(d.get("aria2") or {}),
             storage=StorageConfig.from_dict(d.get("storage") or {}),
@@ -366,6 +389,12 @@ class Config:
     @property
     def tmdb_image_base_url(self) -> str:
         return normalize_tmdb_image_base_url(self.tmdb.image_base_url)
+
+    @property
+    def mediavault_base_url(self) -> str:
+        scheme = (self.mediavault.scheme or "http").strip().lower()
+        host = (self.mediavault.host or "").strip()
+        return f"{scheme}://{host}" if host else ""
 
     def is_tmdb_ready(self) -> bool:
         """是否具备 TMDB 查询条件（有 api_key）"""

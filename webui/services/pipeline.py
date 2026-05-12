@@ -15,6 +15,7 @@ from webui.services.library_data import (
     scan_tv_shows,
     scan_tv_shows_incremental,
 )
+from webui.services.mediavault import trigger_mediavault
 from webui.services.telegram import send_telegram
 from webui.websocket import get_broadcaster
 
@@ -108,14 +109,19 @@ def _do_run_pipeline() -> None:
             cfg=cfg_obj,
             log_callback=log_callback,
         )
-        pipe.run()
+        summary = pipe.run()
 
         app_log(
             "pipeline",
             "pipeline_finish",
             "整理流程完成",
             level="SUCCESS",
-            details={"runId": run_id},
+            details={
+                "runId": run_id,
+                "okCount": summary.ok_count,
+                "skippedCount": summary.skipped_count,
+                "failedCount": summary.failed_count,
+            },
         )
         try:
             _do_refresh_library()
@@ -128,6 +134,22 @@ def _do_run_pipeline() -> None:
                 level="ERROR",
                 details={"runId": run_id, "error": str(exc)},
             )
+        if cfg_obj.pipeline.dry_run:
+            app_log(
+                "integration",
+                "mediavault_skipped_dry_run",
+                "Dry-run 模式跳过 MediaVault 触发",
+                details={"runId": run_id},
+            )
+        elif summary.ok_count <= 0:
+            app_log(
+                "integration",
+                "mediavault_skipped_no_success",
+                "本次整理无成功入库，跳过 MediaVault 触发",
+                details={"runId": run_id, "okCount": summary.ok_count},
+            )
+        else:
+            trigger_mediavault(cfg_obj, run_id=run_id, ok_count=summary.ok_count)
     except Exception as exc:
         logger.error("Pipeline 异常：%s", exc)
         app_log(

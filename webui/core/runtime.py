@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -108,6 +109,7 @@ def _validate_main_config_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     rss = dict(normalized.get("rss") or {})
     aria2 = dict(normalized.get("aria2") or {})
     telegram = dict(normalized.get("telegram") or {})
+    mediavault = dict(normalized.get("mediavault") or {})
 
     _parse_int_field(webui, "token_expire_hours", "Token 有效期", 1, 8760)
     _parse_int_field(webui, "log_retention_days", "日志保留天数", 1, 365)
@@ -119,6 +121,16 @@ def _validate_main_config_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     _parse_int_field(rss, "poll_seconds", "RSS 订阅轮询间隔", 10, 3600)
     _parse_int_field(aria2, "port", "Aria2 RPC 端口", 1, 65535)
     _parse_int_field(telegram, "debounce_seconds", "Telegram 防抖延时", 0, 600)
+    _parse_int_field(mediavault, "timeout", "MediaVault 请求超时", 1, 120)
+    if "scheme" in mediavault:
+        scheme = str(mediavault.get("scheme") or "").strip().lower()
+        if scheme not in ("http", "https"):
+            raise HTTPException(status_code=400, detail="MediaVault 协议仅支持 http 或 https")
+        mediavault["scheme"] = scheme
+    if "host" in mediavault:
+        host = str(mediavault.get("host") or "").strip()
+        host = re.sub(r"^https?://", "", host, flags=re.IGNORECASE)
+        mediavault["host"] = host.rstrip("/")
     for key in [
         "skip_tmdb",
         "move_on_tmdb_miss",
@@ -134,6 +146,7 @@ def _validate_main_config_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     normalized["rss"] = rss
     normalized["aria2"] = aria2
     normalized["telegram"] = telegram
+    normalized["mediavault"] = mediavault
     return normalized
 
 

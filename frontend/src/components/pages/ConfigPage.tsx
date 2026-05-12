@@ -19,6 +19,7 @@ import {
   Users,
   BookOpen,
   Captions,
+  RadioTower,
 } from 'lucide-react'
 import {
   getMainConfig,
@@ -27,6 +28,7 @@ import {
   saveParserRulesConfig,
   getDriveOauthStatus,
   testDriveConnection,
+  testMediaVault,
   getU115OauthStatus,
   createU115OauthSession,
   testU115Connection,
@@ -79,6 +81,7 @@ const CONFIG_TABS = [
   { key: 'u115', label: '115', icon: HardDrive },
   { key: 'rss', label: 'RSS', icon: Rss },
   { key: 'telegram', label: '通知', icon: Bell },
+  { key: 'mediavault', label: 'MediaVault', icon: RadioTower },
   { key: 'pipeline', label: '策略', icon: FolderSync },
   { key: 'subtitle', label: '字幕', icon: Captions },
 ]
@@ -91,6 +94,7 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   const u115 = { ...(next.u115 as Record<string, unknown> || {}) }
   const rss = { ...(next.rss as Record<string, unknown> || {}) }
   const telegram = { ...(next.telegram as Record<string, unknown> || {}) }
+  const mediavault = { ...(next.mediavault as Record<string, unknown> || {}) }
   const pipeline = { ...(next.pipeline as Record<string, unknown> || {}) }
 
   if (aria2.enabled === undefined) {
@@ -122,6 +126,12 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   if (telegram.debounce_seconds === undefined || telegram.debounce_seconds === null || telegram.debounce_seconds === '') {
     telegram.debounce_seconds = 60
   }
+  if (mediavault.scheme === undefined || mediavault.scheme === null || mediavault.scheme === '') {
+    mediavault.scheme = 'http'
+  }
+  if (mediavault.timeout === undefined || mediavault.timeout === null || mediavault.timeout === '') {
+    mediavault.timeout = 10
+  }
   if (pipeline.skip_metadata_upload === undefined || pipeline.skip_metadata_upload === null) {
     pipeline.skip_metadata_upload = false
   }
@@ -132,6 +142,7 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   next.u115 = u115
   next.rss = rss
   next.telegram = telegram
+  next.mediavault = mediavault
   next.pipeline = pipeline
   return next
 }
@@ -340,6 +351,8 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
   const u115PollAbortRef = useRef<AbortController | null>(null)
   const [fullRefreshing, setFullRefreshing] = useState(false)
   const [fullRefreshMessage, setFullRefreshMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [mediavaultTestBusy, setMediavaultTestBusy] = useState(false)
+  const [mediavaultMessage, setMediavaultMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const loadDriveOauthStatus = useCallback(async () => {
     try {
@@ -608,6 +621,27 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
     }
   }
 
+  async function handleMediaVaultTest() {
+    const mediavault = (cfg?.mediavault as Record<string, unknown>) || {}
+    setMediavaultTestBusy(true)
+    setMediavaultMessage(null)
+    try {
+      const res = await testMediaVault({
+        enabled: mediavault.enabled,
+        scheme: mediavault.scheme,
+        host: mediavault.host,
+        api_key: mediavault.api_key,
+        timeout: mediavault.timeout,
+      })
+      const data = res?.data || {}
+      setMediavaultMessage({ type: 'success', text: data.message || 'MediaVault 测试成功' })
+    } catch (e) {
+      setMediavaultMessage({ type: 'error', text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'MediaVault 测试失败' })
+    } finally {
+      setMediavaultTestBusy(false)
+    }
+  }
+
   function formatBytes(bytes: number): string {
     const value = Number(bytes)
     if (!Number.isFinite(value) || value < 0) return '-'
@@ -820,7 +854,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                     <TextInput
                       value={(cfg?.webui as Record<string, unknown>)?.username as string | undefined}
                       onChange={(v) => set('webui', 'username', v)}
-                      placeholder="admin"
+                      placeholder="输入登录用户名"
                     />
                   </Field>
                   <Field label="密码" description="留空则无认证">
@@ -874,7 +908,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                       value={(cfg?.tmdb as Record<string, unknown>)?.api_key as string | undefined}
                       onChange={(v) => set('tmdb', 'api_key', v)}
                       type="password"
-                      placeholder="0ec3b170d4c..."
+                      placeholder="your-tmdb-api-key"
                       mono
                     />
                   </Field>
@@ -897,7 +931,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                     <TextInput
                       value={(cfg?.tmdb as Record<string, unknown>)?.proxy as string | undefined}
                       onChange={(v) => set('tmdb', 'proxy', v)}
-                      placeholder="http://127.0.0.1:7890"
+                      placeholder="http://proxy-host:port"
                       mono
                     />
                   </Field>
@@ -905,7 +939,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                     <TextInput
                       value={(cfg?.tmdb as Record<string, unknown>)?.image_base_url as string | undefined}
                       onChange={(v) => set('tmdb', 'image_base_url', v)}
-                      placeholder="https://image.tmdb.org"
+                      placeholder="https://image-proxy.example.com"
                       mono
                     />
                   </Field>
@@ -940,7 +974,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                     <TextInput
                       value={(cfg?.aria2 as Record<string, unknown>)?.host as string | undefined}
                       onChange={(v) => set('aria2', 'host', v)}
-                      placeholder="127.0.0.1"
+                      placeholder="rpc-host"
                       mono
                     />
                   </Field>
@@ -1010,7 +1044,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                     <TextInput
                       value={(cfg?.drive as Record<string, unknown>)?.scan_folder_id as string | undefined}
                       onChange={(v) => set('drive', 'scan_folder_id', v)}
-                      placeholder="1AbCdEfGhIjKlMn..."
+                      placeholder="folder-id"
                       mono
                     />
                   </Field>
@@ -1093,7 +1127,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                     <TextInput
                       value={(cfg?.u115 as Record<string, unknown>)?.client_id as string | undefined}
                       onChange={(v) => set('u115', 'client_id', v)}
-                      placeholder="100197847"
+                      placeholder="your-client-id"
                       mono
                     />
                   </Field>
@@ -1233,7 +1267,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                       value={(cfg?.telegram as Record<string, unknown>)?.bot_token as string | undefined}
                       onChange={(v) => set('telegram', 'bot_token', v)}
                       type="password"
-                      placeholder="123456:ABC..."
+                      placeholder="your-bot-token"
                       mono
                     />
                   </Field>
@@ -1241,7 +1275,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                     <TextInput
                       value={(cfg?.telegram as Record<string, unknown>)?.chat_id as string | undefined}
                       onChange={(v) => set('telegram', 'chat_id', v)}
-                      placeholder="371338215"
+                      placeholder="your-chat-id"
                       mono
                     />
                   </Field>
@@ -1251,6 +1285,91 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                       onChange={(v) => set('telegram', 'debounce_seconds', v)}
                       min={0}
                       max={600}
+                    />
+                  </Field>
+                </FieldGroup>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="mediavault" className="mt-0">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">MediaVault</CardTitle>
+                <CardDescription>整理完成后触发目录监控</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="mb-6">
+                  <div className="mb-3 flex items-center gap-3">
+                    <span className="text-[13px] font-medium">连接测试</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleMediaVaultTest}
+                      disabled={mediavaultTestBusy || !(cfg?.mediavault as Record<string, unknown>)?.host || !(cfg?.mediavault as Record<string, unknown>)?.api_key}
+                    >
+                      {mediavaultTestBusy ? '测试中…' : '测试'}
+                    </Button>
+                    {mediavaultMessage && (
+                      <span className={`text-xs ${mediavaultMessage.type === 'success' ? 'text-success' : 'text-destructive'}`}>
+                        {mediavaultMessage.text}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <FieldGroup>
+                  <Field label="启用 MediaVault">
+                    <Toggle
+                      value={(cfg?.mediavault as Record<string, unknown>)?.enabled as boolean | undefined}
+                      onChange={(v) => set('mediavault', 'enabled', v)}
+                    />
+                  </Field>
+                  <Field label="请求超时" description="秒">
+                    <NumberInput
+                      value={(cfg?.mediavault as Record<string, unknown>)?.timeout as number | undefined ?? 10}
+                      onChange={(v) => set('mediavault', 'timeout', v)}
+                      min={1}
+                      max={120}
+                    />
+                  </Field>
+                  <Field label="协议" description="地址不需要带协议">
+                    <Select
+                      value={(cfg?.mediavault as Record<string, unknown>)?.scheme as string | undefined ?? 'http'}
+                      onValueChange={(v) => set('mediavault', 'scheme', v)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="选择协议" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="http">http</SelectItem>
+                        <SelectItem value="https">https</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field label="地址" description="只填主机或主机:端口">
+                    <TextInput
+                      value={(cfg?.mediavault as Record<string, unknown>)?.host as string | undefined}
+                      onChange={(v) => set('mediavault', 'host', v)}
+                      placeholder="mediavault:7811"
+                      mono
+                    />
+                  </Field>
+                  <Field label="API Key" description="MediaVault 系统配置中的 API Key" fullWidth>
+                    <TextInput
+                      value={(cfg?.mediavault as Record<string, unknown>)?.api_key as string | undefined}
+                      onChange={(v) => set('mediavault', 'api_key', v)}
+                      type="password"
+                      placeholder="your-api-key"
+                      mono
+                    />
+                  </Field>
+                  <Field label="source_dir" description="留空则使用 MediaVault 默认目录" fullWidth>
+                    <TextInput
+                      value={(cfg?.mediavault as Record<string, unknown>)?.source_dir as string | undefined}
+                      onChange={(v) => set('mediavault', 'source_dir', v)}
+                      placeholder="/path/to/watch"
+                      mono
                     />
                   </Field>
                 </FieldGroup>
