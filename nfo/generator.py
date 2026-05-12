@@ -126,8 +126,6 @@ class NfoGenerator:
         # 制作国
         self._add_countries(doc, root, tmdb_info)
 
-        self._add(doc, root, "language", tmdb_info.get("original_language") or "")
-
         # 导演
         self._add_directors(doc, root, tmdb_info.get("directors") or [])
 
@@ -228,8 +226,6 @@ class NfoGenerator:
         for country in (info.get("production_countries") or []):
             self._add(doc, root, "country", country.get("name") or "")
 
-        self._add(doc, root, "language", info.get("original_language") or "")
-
         # 导演
         self._add_directors(doc, root, info.get("directors") or [])
 
@@ -329,8 +325,6 @@ class NfoGenerator:
 
         # 制作国
         self._add_countries(doc, root, show_info)
-        self._add(doc, root, "language", show_info.get("original_language") or "")
-
         # 导演：优先单集导演（crew with job=Director）
         if ep:
             ep_directors = [
