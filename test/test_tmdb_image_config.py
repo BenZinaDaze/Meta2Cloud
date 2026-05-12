@@ -2,6 +2,8 @@ import os
 import sqlite3
 import sys
 
+import pytest
+
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -123,6 +125,86 @@ def test_rss_subscription_store_persists_relative_poster_path(tmp_path):
         (record.id,),
     ).fetchone()
     assert row["poster_url"] == "/poster.jpg"
+
+
+def test_rss_subscription_store_rejects_duplicate_when_tmdb_id_is_null(tmp_path):
+    db_path = tmp_path / "subscriptions.db"
+    store = RSSSubscriptionStore(str(db_path))
+    payload = {
+        "name": "Test",
+        "media_title": "Show",
+        "media_type": "tv",
+        "tmdb_id": None,
+        "poster_url": None,
+        "site": "mikan",
+        "rss_url": "https://example.com/feed.xml",
+        "subgroup_name": "",
+        "season_number": 1,
+        "start_episode": 1,
+        "keyword_all": "[]",
+        "push_target": "aria2",
+        "enabled": True,
+    }
+
+    store.create_subscription(payload)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        store.create_subscription(payload)
+
+
+def test_rss_subscription_joined_does_not_duplicate_rows_when_library_has_multiple_matches(tmp_path):
+    db_path = tmp_path / "library.db"
+    library_store = LibraryStore(str(db_path))
+    library_store.save_snapshot(
+        movies=[],
+        tv_shows=[
+            {
+                "tmdb_id": 100,
+                "title": "Show A",
+                "original_title": "Show A",
+                "year": "2024",
+                "media_type": "tv",
+                "overview": "",
+                "rating": 0.0,
+                "drive_folder_id": "show-a",
+                "folder_modified_time": 10,
+            },
+            {
+                "tmdb_id": 100,
+                "title": "Show A Alt",
+                "original_title": "Show A Alt",
+                "year": "2024",
+                "media_type": "tv",
+                "overview": "",
+                "rating": 0.0,
+                "drive_folder_id": "show-a-alt",
+                "folder_modified_time": 20,
+            },
+        ],
+    )
+
+    subscription_store = RSSSubscriptionStore(str(db_path), library_db_path=str(db_path))
+    subscription_store.create_subscription(
+        {
+            "name": "Test",
+            "media_title": "Show A",
+            "media_type": "tv",
+            "tmdb_id": 100,
+            "poster_url": None,
+            "site": "mikan",
+            "rss_url": "https://example.com/feed.xml",
+            "subgroup_name": "",
+            "season_number": 1,
+            "start_episode": 1,
+            "keyword_all": "[]",
+            "push_target": "aria2",
+            "enabled": True,
+        }
+    )
+
+    rows = subscription_store.list_subscriptions_joined()
+    assert len(rows) == 1
+    assert rows[0]["id"] > 0
 
 
 def test_library_store_snapshot_hides_missing_items_and_supports_manual_remove(tmp_path):

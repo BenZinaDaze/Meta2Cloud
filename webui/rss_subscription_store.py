@@ -260,10 +260,59 @@ class RSSSubscriptionStore:
             LEFT JOIN {media_schema}.tmdb_media AS tm
                 ON tm.media_type = s.media_type AND tm.tmdb_id = s.tmdb_id
             LEFT JOIN {media_schema}.library_media AS lib
-                ON lib.media_type = s.media_type AND lib.tmdb_id = s.tmdb_id
+                ON lib.drive_folder_id = (
+                    SELECT lm.drive_folder_id
+                    FROM {media_schema}.library_media AS lm
+                    WHERE lm.media_type = s.media_type
+                      AND lm.tmdb_id = s.tmdb_id
+                    ORDER BY lm.in_library DESC, lm.updated_at DESC, lm.drive_folder_id ASC
+                    LIMIT 1
+                )
         """.format(media_schema=media_schema)
 
+    def _find_duplicate_subscription_id(
+        self,
+        payload: dict[str, Any],
+        *,
+        exclude_id: Optional[int] = None,
+    ) -> Optional[int]:
+        row = self._conn.execute(
+            """
+            SELECT id
+            FROM rss_subscriptions
+            WHERE media_type = ?
+              AND site = ?
+              AND rss_url = ?
+              AND subgroup_name = ?
+              AND season_number = ?
+              AND start_episode = ?
+              AND push_target = ?
+              AND (
+                    (tmdb_id IS NULL AND ? IS NULL)
+                 OR tmdb_id = ?
+              )
+              AND (? IS NULL OR id != ?)
+            LIMIT 1
+            """,
+            (
+                payload.get("media_type") or "tv",
+                payload["site"],
+                payload["rss_url"],
+                payload.get("subgroup_name") or "",
+                payload["season_number"],
+                payload["start_episode"],
+                payload["push_target"],
+                payload.get("tmdb_id"),
+                payload.get("tmdb_id"),
+                exclude_id,
+                exclude_id,
+            ),
+        ).fetchone()
+        return int(row["id"]) if row is not None else None
+
     def create_subscription(self, payload: dict[str, Any]) -> SubscriptionRecord:
+        if self._find_duplicate_subscription_id(payload) is not None:
+            raise sqlite3.IntegrityError("duplicate rss subscription")
         now = self._utc_now()
         cursor = self._conn.execute(
             """
@@ -368,6 +417,8 @@ class RSSSubscriptionStore:
             "enabled": current.enabled,
         }
         merged.update(payload)
+        if self._find_duplicate_subscription_id(merged, exclude_id=subscription_id) is not None:
+            raise sqlite3.IntegrityError("duplicate rss subscription")
         self._conn.execute(
             """
             UPDATE rss_subscriptions

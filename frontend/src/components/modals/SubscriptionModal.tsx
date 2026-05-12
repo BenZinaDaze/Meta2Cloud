@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -59,6 +59,7 @@ export default function SubscriptionModal({
     enabled: initialValue?.enabled ?? true,
   }))
   const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
   const [testing, setTesting] = useState(false)
   const [parsing, setParsing] = useState(false)
   const [testResult, setTestResult] = useState<{
@@ -206,11 +207,13 @@ export default function SubscriptionModal({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (savingRef.current) return
     if (!form.name.trim() || !form.rss_url.trim() || !form.media_title.trim()) return
     if (availableTargets.length === 0) {
       setError('当前没有可用的推送方式，请先连接下载器或授权 115')
       return
     }
+    savingRef.current = true
     setSaving(true)
     setError('')
     const payload = {
@@ -243,6 +246,7 @@ export default function SubscriptionModal({
         '保存失败'
       setError(message)
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }
