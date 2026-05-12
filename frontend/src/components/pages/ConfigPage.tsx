@@ -300,19 +300,32 @@ function MultilineRulesField({ value = [], onChange, placeholder = '' }: {
   onChange: (v: string[]) => void
   placeholder?: string
 }) {
-  const text = Array.isArray(value) ? value.join('\n') : ''
-  const lineCount = text === '' ? 1 : text.split('\n').length
+  const serialize = useCallback((lines: string[]) => (Array.isArray(lines) ? lines.join('\n') : ''), [])
+  const parse = useCallback(
+    (nextText: string) => nextText.split('\n').map((line) => line.trim()).filter(Boolean),
+    [],
+  )
+  const [draftText, setDraftText] = useState(() => serialize(value))
+  const lineCount = draftText === '' ? 1 : draftText.split('\n').length
 
-  function commit(nextText: string) {
-    const next = nextText.split('\n').map((line) => line.trim()).filter(Boolean)
-    onChange(next)
-  }
+  useEffect(() => {
+    const incomingText = serialize(value)
+    const draftMatchesValue =
+      JSON.stringify(parse(draftText)) === JSON.stringify(Array.isArray(value) ? value : [])
+    if (!draftMatchesValue && incomingText !== draftText) {
+      setDraftText(incomingText)
+    }
+  }, [draftText, parse, serialize, value])
 
   return (
     <div className="space-y-2">
       <Textarea
-        value={text}
-        onChange={(e) => commit(e.target.value)}
+        value={draftText}
+        onChange={(e) => {
+          const nextText = e.target.value
+          setDraftText(nextText)
+          onChange(parse(nextText))
+        }}
         placeholder={placeholder}
         spellCheck={false}
         className="font-mono resize-none"
