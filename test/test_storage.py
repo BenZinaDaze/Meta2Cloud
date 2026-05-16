@@ -259,6 +259,54 @@ class TestPan115Provider:
 
         assert [item.id for item in items] == ["folder1", "file2", "file1"]
 
+    def test_get_file_falls_back_to_managed_root_scan(self, monkeypatch):
+        """115 get_file 在 search 查不到 file_id 时，应回退到受管根目录递归扫描。"""
+        from storage.pan115 import Pan115Provider
+        from u115pan.models import Pan115File
+
+        class FakePan115Client:
+            def get_file_by_id(self, file_id, *, roots=None, max_depth=12):
+                if str(file_id) != "folder-123":
+                    return None
+                if roots != ["movie-root"]:
+                    return None
+                return Pan115File(id="folder-123", name="Correct Movie (2024)", category="0")
+
+        provider = Pan115Provider(FakePan115Client())
+        monkeypatch.setattr(provider, "_managed_lookup_roots", lambda: ["movie-root"])
+
+        item = provider.get_file("folder-123")
+
+        assert item.id == "folder-123"
+        assert item.name == "Correct Movie (2024)"
+        assert item.is_folder is True
+
+    def test_client_get_file_by_id_scans_roots_recursively(self):
+        """底层 client 应支持在指定 roots 下递归定位 file_id。"""
+        from u115pan.client import Pan115Client
+        from u115pan.models import Pan115File
+
+        class FakePan115Client(Pan115Client):
+            def __init__(self):
+                super().__init__("fake-client-id")
+
+            def search(self, search_value, *, limit=20, offset=0, cid=None, fc=None, file_type=None, suffix=None):
+                return []
+
+            def list_files(self, cid=0, *, limit=1000, offset=0):
+                if str(cid) == "movie-root":
+                    return [Pan115File(id="sub-folder", name="Movies", category="0")]
+                if str(cid) == "sub-folder":
+                    return [Pan115File(id="folder-123", name="Correct Movie (2024)", category="0")]
+                return []
+
+        client = FakePan115Client()
+        found = client.get_file_by_id("folder-123", roots=["movie-root"])
+
+        assert found is not None
+        assert found.id == "folder-123"
+        assert found.name == "Correct Movie (2024)"
+
     def test_compute_sign_val_includes_end_byte(self):
         """sign_check 的 end 字节应被包含，否则二次认证会失败。"""
         from u115pan.client import Pan115Client

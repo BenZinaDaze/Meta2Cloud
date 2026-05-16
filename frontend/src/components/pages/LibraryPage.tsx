@@ -193,6 +193,20 @@ export default function LibraryPage({
     setSelected(null)
   }
 
+  function handleUpdated(item: MediaItem) {
+    setData((current) => {
+      if (!current) return current
+      const updateList = (entries: MediaItem[]) =>
+        entries.map((entry) => (entry.drive_folder_id === item.drive_folder_id ? { ...entry, ...item } : entry))
+      return {
+        ...current,
+        movies: updateList(current.movies),
+        tv_shows: updateList(current.tv_shows),
+      }
+    })
+    setSelected(item)
+  }
+
   return (
     <div className="flex flex-1 flex-col gap-5">
       <div className="mb-2 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
@@ -347,6 +361,7 @@ export default function LibraryPage({
         open={!!selected}
         onOpenChange={(open) => !open && setSelected(null)}
         onRemoved={handleRemoved}
+        onUpdated={handleUpdated}
         onSearchResources={(item) => {
           onGlobalSearch?.(item)
           setSelected(null)

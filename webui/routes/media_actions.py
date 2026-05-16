@@ -2,11 +2,12 @@ import asyncio
 
 from fastapi import APIRouter
 
-from webui.schemas.media_actions import RefreshItemRequest
+from webui.schemas.media_actions import RefreshItemRequest, ReidentifyItemRequest
 from webui.services.media_actions import (
     cache_evict_payload,
     cache_stats_payload,
     health_payload,
+    reidentify_item_payload,
     refresh_item_payload,
     scraper_get_episodes_payload,
     scraper_search_media_payload,
@@ -21,6 +22,11 @@ router = APIRouter()
 @router.post("/api/library:refresh-item")
 async def refresh_item(body: RefreshItemRequest):
     return await asyncio.get_event_loop().run_in_executor(None, lambda: refresh_item_payload(body))
+
+
+@router.post("/api/library:reidentify")
+async def reidentify_item(body: ReidentifyItemRequest):
+    return await asyncio.get_event_loop().run_in_executor(None, lambda: reidentify_item_payload(body))
 
 
 @router.get("/api/cache")

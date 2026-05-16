@@ -46,6 +46,14 @@ export const refreshMediaItem = (
   title?: string,
   year?: string
 ) => api.post('/library:refresh-item', { tmdb_id, media_type, drive_folder_id, title, year })
+export const reidentifyMediaItem = (
+  tmdb_id: number,
+  media_type: string,
+  drive_folder_id: string,
+  title?: string,
+  year?: string,
+  rename_folder: boolean = true
+) => api.post('/library:reidentify', { tmdb_id, media_type, drive_folder_id, title, year, rename_folder })
 export const removeLibraryItem = (driveFolderId: string) =>
   api.delete(`/library/${driveFolderId}`)
 

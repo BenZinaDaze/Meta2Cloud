@@ -152,15 +152,41 @@ class Pan115Provider(StorageProvider):
         """
         获取单个文件的元数据。
 
-        115 没有直接的 get_by_id API，使用搜索或 path_info 作为替代。
-        这里用 search 按文件 ID 查找（回退到 list_files 扫描父目录）。
+        115 开放接口没有稳定的 get_by_id API，这里委托底层 client
+        在受管根目录下做按 ID 查询与回退扫描。
         """
-        # 尝试通过 search 查找
-        results = self._current_client().search(file_id, limit=1)
-        for r in results:
-            if r.id == file_id:
-                return self._to_cloud_file(r)
+        found = self._current_client().get_file_by_id(file_id, roots=self._managed_lookup_roots())
+        if found is not None:
+            return self._to_cloud_file(found)
         raise Pan115ApiError(f"未找到文件：{file_id}")
+
+    def _managed_lookup_roots(self) -> list[str]:
+        roots: list[str] = []
+        try:
+            from webui.core.runtime import get_config
+
+            cfg = get_config()
+            candidates = [
+                cfg.active_root_folder_id(),
+                cfg.active_movie_root_id(),
+                cfg.active_tv_root_id(),
+                cfg.active_scan_folder_id(),
+                getattr(cfg.u115, "root_folder_id", None),
+                getattr(cfg.u115, "movie_root_id", None),
+                getattr(cfg.u115, "tv_root_id", None),
+                getattr(cfg.u115, "scan_folder_id", None),
+            ]
+            for candidate in candidates:
+                value = str(candidate or "").strip()
+                if value and value not in roots:
+                    roots.append(value)
+        except Exception as exc:
+            logger.debug("读取 115 受管根目录失败，get_file 将退回根目录扫描: %s", exc)
+
+        if "0" not in roots:
+            roots.append("0")
+        return roots
+
 
     def read_text(self, file: CloudFile) -> Optional[str]:
         pick_code = file.extra.get("pick_code")

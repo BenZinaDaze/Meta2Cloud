@@ -396,6 +396,65 @@ class Pan115Client:
             return None
         return Pan115File.from_path_info(data)
 
+    def get_file_by_id(
+        self,
+        file_id: int | str,
+        *,
+        roots: Optional[list[int | str]] = None,
+        max_depth: int = 12,
+    ) -> Optional[Pan115File]:
+        """
+        尝试按文件 ID 获取文件/目录详情。
+
+        115 开放平台没有稳定的按 ID 直查接口，这里使用两段式回退：
+          1. 保留 search 快路径，兼容按名称传入或搜索恰好命中的场景
+          2. 在给定 roots 下递归扫描 file_id
+
+        返回 None 表示未找到。
+        """
+        normalized_id = str(file_id)
+
+        results = self.search(normalized_id, limit=1)
+        for item in results:
+            if item.id == normalized_id:
+                return item
+
+        scan_roots = [str(root) for root in (roots or ["0"]) if str(root)]
+        seen: set[str] = set()
+        for root in scan_roots:
+            if root in seen:
+                continue
+            seen.add(root)
+            found = self._find_file_id_under_root(normalized_id, root, max_depth=max_depth)
+            if found is not None:
+                return found
+        return None
+
+    def _find_file_id_under_root(
+        self,
+        file_id: str,
+        root_id: int | str,
+        *,
+        max_depth: int = 12,
+        _depth: int = 0,
+    ) -> Optional[Pan115File]:
+        if _depth > max_depth:
+            return None
+
+        for item in self.list_files(cid=root_id, limit=1000):
+            if item.id == file_id:
+                return item
+            if item.is_folder:
+                found = self._find_file_id_under_root(
+                    file_id,
+                    item.id,
+                    max_depth=max_depth,
+                    _depth=_depth + 1,
+                )
+                if found is not None:
+                    return found
+        return None
+
     def exists(self, path: str) -> bool:
         """判断路径是否存在"""
         return self.get_path_info(path) is not None

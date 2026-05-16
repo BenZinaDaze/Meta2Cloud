@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { tmdbGetDetail, refreshMediaItem, removeLibraryItem } from '@/api'
 import { toast } from 'sonner'
 import DetailModal from './DetailModal'
-import { RefreshCw, Search, Trash2 } from 'lucide-react'
+import ReidentifyModal from './ReidentifyModal'
+import { PencilLine, RefreshCw, Search, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   AlertDialog,
@@ -22,6 +23,7 @@ interface ScraperDetailModalProps {
   onOpenChange: (open: boolean) => void
   onSearchResources?: (item: MediaItem) => void
   onRemoved?: (item: MediaItem) => void
+  onUpdated?: (item: MediaItem) => void
 }
 
 export default function ScraperDetailModal({
@@ -30,16 +32,19 @@ export default function ScraperDetailModal({
   onOpenChange,
   onSearchResources,
   onRemoved,
+  onUpdated,
 }: ScraperDetailModalProps) {
   const [item, setItem] = useState<MediaItem | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [removing, setRemoving] = useState(false)
+  const [reidentifyOpen, setReidentifyOpen] = useState(false)
 
   useEffect(() => {
     if (!open || !initialItem) return
 
+    setItem(initialItem)
     const currentItem = initialItem
 
     async function loadDetail() {
@@ -67,8 +72,8 @@ export default function ScraperDetailModal({
   }, [initialItem, open])
 
   async function handleRefreshMeta() {
-    if (!initialItem) return
-    const folderId = initialItem.drive_folder_id
+    if (!item) return
+    const folderId = item.drive_folder_id
     if (!folderId) {
       toast.error('该媒体项缺少 Drive 文件夹 ID，无法刷新')
       return
@@ -76,11 +81,11 @@ export default function ScraperDetailModal({
     setRefreshing(true)
     try {
       const res = await refreshMediaItem(
-        initialItem.tmdb_id,
-        initialItem.media_type,
+        item.tmdb_id,
+        item.media_type,
         folderId,
-        initialItem.title,
-        initialItem.year
+        item.title,
+        item.year
       )
       const { uploaded = [], errors = [] } = res.data || {}
       if (errors.length === 0) {
@@ -88,13 +93,17 @@ export default function ScraperDetailModal({
       } else {
         toast.warning(`部分文件上传失败（${errors.length} 个错误）`)
       }
-      // 刷新成功后重新获取详情
-      const tmdbId = initialItem.tmdb_id || (initialItem as MediaItem & { id?: number }).id
+      if (res.data?.item) {
+        setItem(res.data.item)
+        onUpdated?.(res.data.item)
+      }
+      const tmdbId = (res.data?.item?.tmdb_id as number | undefined) || item.tmdb_id || (item as MediaItem & { id?: number }).id
       if (tmdbId) {
         try {
-          const detailRes = await tmdbGetDetail(initialItem.media_type, tmdbId)
+          const detailRes = await tmdbGetDetail(item.media_type, tmdbId)
           if (detailRes.data?.detail) {
             setItem(detailRes.data.detail)
+            onUpdated?.(detailRes.data.detail)
           }
         } catch {
           // 忽略重新获取详情的错误
@@ -110,17 +119,17 @@ export default function ScraperDetailModal({
   }
 
   async function handleRemoveFromLibrary() {
-    if (!initialItem?.drive_folder_id) {
+    if (!item?.drive_folder_id) {
       toast.error('该媒体项缺少 Drive 文件夹 ID，无法移出媒体库')
       return
     }
     setRemoving(true)
     try {
-      await removeLibraryItem(initialItem.drive_folder_id)
-      toast.success('已移出媒体库', { description: initialItem.title })
+      await removeLibraryItem(item.drive_folder_id)
+      toast.success('已移出媒体库', { description: item.title })
       setConfirmRemove(false)
       onOpenChange(false)
-      onRemoved?.(initialItem)
+      onRemoved?.(item)
     } catch (e) {
       toast.error('移出失败', {
         description:
@@ -137,8 +146,7 @@ export default function ScraperDetailModal({
 
   const displayItem = item || initialItem
 
-  // 标题旁小刷新按钮（仅在有 drive_folder_id 时显示）
-  const titleAction = initialItem.drive_folder_id ? (
+  const titleAction = displayItem.drive_folder_id ? (
     <Button
       variant="ghost"
       size="icon-xs"
@@ -156,7 +164,19 @@ export default function ScraperDetailModal({
 
   const headerRight = (
     <div className="flex items-center gap-2">
-      {initialItem.drive_folder_id && (
+      {displayItem.drive_folder_id && (
+        <Button
+          variant="outline"
+          size="icon-lg"
+          onClick={() => setReidentifyOpen(true)}
+          disabled={loadingDetail || refreshing}
+          className="rounded-full"
+          title="修正识别"
+        >
+          <PencilLine className="size-4" />
+        </Button>
+      )}
+      {displayItem.drive_folder_id && (
         <Button
           variant="outline"
           size="icon-lg"
@@ -190,6 +210,15 @@ export default function ScraperDetailModal({
         loadingSlot={loadingDetail}
         headerRightSlot={headerRight}
         titleActionSlot={titleAction}
+      />
+      <ReidentifyModal
+        item={displayItem}
+        open={reidentifyOpen}
+        onOpenChange={setReidentifyOpen}
+        onUpdated={(updatedItem) => {
+          setItem(updatedItem)
+          onUpdated?.(updatedItem)
+        }}
       />
       <AlertDialog open={confirmRemove} onOpenChange={setConfirmRemove}>
         <AlertDialogContent>

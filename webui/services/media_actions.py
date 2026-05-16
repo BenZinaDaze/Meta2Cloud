@@ -1,7 +1,7 @@
 import logging
 import re
 from collections import defaultdict
-from typing import Set
+from typing import Any, Set
 
 from fastapi import HTTPException
 from mediaparser import TmdbClient
@@ -17,6 +17,157 @@ try:
     from scraper.core.factory import SpiderFactory
 except ImportError:
     SpiderFactory = None
+
+
+def _movie_folder_name(title: str, year: str) -> str:
+    normalized_title = str(title or "").strip()
+    normalized_year = str(year or "").strip()
+    if normalized_title and normalized_year:
+        return f"{normalized_title} ({normalized_year})"
+    return normalized_title
+
+
+def _fetch_tmdb_info(tmdb_id: int, media_type: str) -> dict[str, Any]:
+    def _fetch_with_credits(path: str, extra_keys: str) -> dict[str, Any]:
+        info = tmdb_get(path, {"append_to_response": extra_keys}, use_cache=False)
+        if not info:
+            logger.info("append_to_response 失败，回退到基础请求：%s", path)
+            info = tmdb_get(path, use_cache=False)
+        if not info:
+            return {}
+        if not info.get("credits"):
+            credits = tmdb_get(f"{path}/credits", use_cache=False)
+            if credits:
+                info["credits"] = credits
+        return info
+
+    if media_type == "movie":
+        info = _fetch_with_credits(f"/movie/{tmdb_id}", "credits,external_ids,release_dates")
+        if not info:
+            raise ValueError(f"TMDB 未找到电影 tmdb_id={tmdb_id}，请稍候重试")
+        info["tmdb_id"] = tmdb_id
+        credits = info.get("credits") or {}
+        info["directors"] = [
+            {"id": p["id"], "name": p["name"], "profile_path": p.get("profile_path")}
+            for p in (credits.get("crew") or [])
+            if p.get("job") == "Director"
+        ]
+        info["actors"] = [
+            {"id": p["id"], "name": p["name"], "character": p.get("character"), "profile_path": p.get("profile_path")}
+            for p in (credits.get("cast") or [])[:20]
+        ]
+        return info
+
+    if media_type == "tv":
+        info = _fetch_with_credits(f"/tv/{tmdb_id}", "credits,external_ids,content_ratings")
+        if not info:
+            raise ValueError(f"TMDB 未找到剧集 tmdb_id={tmdb_id}，请稍候重试")
+        info["tmdb_id"] = tmdb_id
+        credits = info.get("credits") or {}
+        info["directors"] = [
+            {"id": p["id"], "name": p["name"], "profile_path": p.get("profile_path")}
+            for p in (credits.get("crew") or [])
+            if p.get("job") in ("Director", "Executive Producer")
+        ][:5]
+        info["actors"] = [
+            {"id": p["id"], "name": p["name"], "character": p.get("character"), "profile_path": p.get("profile_path")}
+            for p in (credits.get("cast") or [])[:20]
+        ]
+        return info
+
+    raise ValueError(f"不支持的 media_type: {media_type}")
+
+
+def _build_item_updates(info: dict[str, Any], media_type: str, drive_folder_id: str, client) -> dict[str, Any]:
+    tmdb_id = int(info.get("tmdb_id") or info.get("id") or 0)
+    updates = {
+        "tmdb_id": tmdb_id,
+        "media_type": media_type,
+        "title": info.get("name") if media_type == "tv" else info.get("title"),
+        "original_title": info.get("original_name") if media_type == "tv" else info.get("original_title"),
+        "overview": info.get("overview") or "",
+        "rating": round(info.get("vote_average") or 0, 1),
+    }
+    if info.get("poster_path"):
+        updates["poster_url"] = tmdb_image_url(info["poster_path"], size="w500")
+    if info.get("backdrop_path"):
+        updates["backdrop_url"] = tmdb_image_url(info["backdrop_path"])
+    if media_type == "tv":
+        updates["year"] = (info.get("first_air_date") or "")[:4]
+        updates["status"] = info.get("status") or ""
+        if info.get("number_of_episodes") is not None:
+            updates["total_episodes"] = info.get("number_of_episodes")
+        if info.get("seasons"):
+            drive_episodes: Set[tuple] = set()
+            try:
+                season_folders = [
+                    f
+                    for f in client.list_files(folder_id=drive_folder_id, page_size=200)
+                    if f.is_folder and re.match(r"Season\s*\d+", f.name, re.IGNORECASE)
+                ]
+                for season_folder in season_folders:
+                    match = re.search(r"(\d+)", season_folder.name)
+                    if not match:
+                        continue
+                    season_num = int(match.group(1))
+                    season_files = client.list_files(folder_id=season_folder.id, page_size=500)
+                    for file in season_files:
+                        if file.is_video:
+                            episode = parse_episode_from_filename(file.name)
+                            if episode and episode[0] == season_num:
+                                drive_episodes.add((episode[0], episode[1]))
+            except Exception as exc:
+                logger.warning("扫描季文件夹失败，入库状态可能不准确: %s", exc)
+            seasons_status, total_eps, in_lib_eps = build_seasons_status(tmdb_id, info, drive_episodes)
+            if seasons_status:
+                updates["seasons"] = [s.model_dump() for s in seasons_status]
+            if total_eps:
+                updates["total_episodes"] = total_eps
+            if in_lib_eps:
+                updates["in_library_episodes"] = in_lib_eps
+    else:
+        updates["year"] = (info.get("release_date") or "")[:4]
+    return updates
+
+
+def _persist_library_item(drive_folder_id: str, result: dict[str, Any]) -> dict[str, Any] | None:
+    updates = result.get("updates", {})
+    if not updates and result.get("tmdb_id"):
+        updates = {"tmdb_id": result.get("tmdb_id")}
+    if not updates or not drive_folder_id:
+        return None
+    store = get_library_store()
+    try:
+        store.patch_item(drive_folder_id, updates)
+    except Exception as exc:
+        logger.warning("patch_item 失败（不影响刷新结果）: %s", exc)
+        return None
+    return store.get_library_item_by_folder_id(drive_folder_id)
+
+
+def _rename_library_folder(drive_folder_id: str, media_type: str, updates: dict[str, Any], client) -> dict[str, Any]:
+    target_name = _movie_folder_name(str(updates.get("title") or ""), str(updates.get("year") or ""))
+    if not target_name:
+        raise ValueError("纠错后的媒体标题为空，无法重命名目录")
+
+    # 某些 Provider（尤其 115）并不支持按 file_id 稳定 get_file，
+    # 这里不把 get_file 作为重命名的前置依赖，避免误报“未找到文件”。
+    current_name = ""
+    try:
+        current_folder = client.get_file(drive_folder_id)
+        current_name = str(getattr(current_folder, "name", "") or "")
+        if current_name == target_name:
+            return {"renamed": False, "folder_name": current_name}
+    except Exception as exc:
+        logger.debug("重命名前读取当前目录名失败，将直接尝试 rename: %s", exc)
+
+    renamed_folder = client.rename_file(drive_folder_id, target_name)
+    renamed_name = str(getattr(renamed_folder, "name", "") or target_name)
+    if current_name:
+        logger.info("已按新 TMDB 信息重命名目录：%s -> %s [%s]", current_name, renamed_name, media_type)
+    else:
+        logger.info("已按新 TMDB 信息重命名目录：%s [%s]", renamed_name, media_type)
+    return {"renamed": renamed_name != current_name, "folder_name": renamed_name}
 
 
 def do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str, title: str | None = None, year: str | None = None) -> dict:
@@ -49,34 +200,8 @@ def do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str, title: 
     uploaded: list[str] = []
     errors: list[str] = []
 
-    def _fetch_with_credits(path: str, extra_keys: str) -> dict:
-        info = tmdb_get(path, {"append_to_response": extra_keys}, use_cache=False)
-        if not info:
-            logger.info("append_to_response 失败，回退到基础请求：%s", path)
-            info = tmdb_get(path, use_cache=False)
-        if not info:
-            return {}
-        if not info.get("credits"):
-            credits = tmdb_get(f"{path}/credits", use_cache=False)
-            if credits:
-                info["credits"] = credits
-        return info
-
+    info = _fetch_tmdb_info(int(tmdb_id), media_type)
     if media_type == "movie":
-        info = _fetch_with_credits(f"/movie/{tmdb_id}", "credits,external_ids,release_dates")
-        if not info:
-            raise ValueError(f"TMDB 未找到电影 tmdb_id={tmdb_id}，请稍候重试")
-        info["tmdb_id"] = tmdb_id
-        credits = info.get("credits") or {}
-        info["directors"] = [
-            {"id": p["id"], "name": p["name"], "profile_path": p.get("profile_path")}
-            for p in (credits.get("crew") or [])
-            if p.get("job") == "Director"
-        ]
-        info["actors"] = [
-            {"id": p["id"], "name": p["name"], "character": p.get("character"), "profile_path": p.get("profile_path")}
-            for p in (credits.get("cast") or [])[:20]
-        ]
         if not skip_metadata_upload:
             try:
                 folder_files = client.list_files(folder_id=drive_folder_id, page_size=50)
@@ -114,20 +239,6 @@ def do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str, title: 
                 except Exception as exc:
                     errors.append(f"fanart.jpg: {exc}")
     elif media_type == "tv":
-        info = _fetch_with_credits(f"/tv/{tmdb_id}", "credits,external_ids,content_ratings")
-        if not info:
-            raise ValueError(f"TMDB 未找到剧集 tmdb_id={tmdb_id}，请稍候重试")
-        info["tmdb_id"] = tmdb_id
-        credits = info.get("credits") or {}
-        info["directors"] = [
-            {"id": p["id"], "name": p["name"], "profile_path": p.get("profile_path")}
-            for p in (credits.get("crew") or [])
-            if p.get("job") in ("Director", "Executive Producer")
-        ][:5]
-        info["actors"] = [
-            {"id": p["id"], "name": p["name"], "character": p.get("character"), "profile_path": p.get("profile_path")}
-            for p in (credits.get("cast") or [])[:20]
-        ]
         try:
             season_folders = [
                 f
@@ -178,57 +289,7 @@ def do_refresh_item(tmdb_id: int, media_type: str, drive_folder_id: str, title: 
                         uploaded.append(f"season{season_num:02d}-poster.jpg")
                     except Exception as exc:
                         errors.append(f"season{season_num:02d}-poster.jpg: {exc}")
-    else:
-        raise ValueError(f"不支持的 media_type: {media_type}")
-
-    updates = {
-        "tmdb_id": tmdb_id,
-        "media_type": media_type,
-        "title": info.get("name") if media_type == "tv" else info.get("title"),
-        "original_title": info.get("original_name") if media_type == "tv" else info.get("original_title"),
-        "overview": info.get("overview") or "",
-        "rating": round(info.get("vote_average") or 0, 1),
-    }
-    if info.get("poster_path"):
-        updates["poster_url"] = tmdb_image_url(info["poster_path"], size="w500")
-    if info.get("backdrop_path"):
-        updates["backdrop_url"] = tmdb_image_url(info["backdrop_path"])
-    if media_type == "tv":
-        updates["year"] = (info.get("first_air_date") or "")[:4]
-        updates["status"] = info.get("status") or ""
-        if info.get("number_of_episodes") is not None:
-            updates["total_episodes"] = info.get("number_of_episodes")
-        # 更新 seasons 数据，需要扫描 drive 文件夹获取已有的剧集信息
-        if info.get("seasons"):
-            drive_episodes: Set[tuple] = set()
-            try:
-                season_folders = [
-                    f
-                    for f in client.list_files(folder_id=drive_folder_id, page_size=200)
-                    if f.is_folder and re.match(r"Season\s*\d+", f.name, re.IGNORECASE)
-                ]
-                for season_folder in season_folders:
-                    match = re.search(r"(\d+)", season_folder.name)
-                    if not match:
-                        continue
-                    season_num = int(match.group(1))
-                    season_files = client.list_files(folder_id=season_folder.id, page_size=500)
-                    for file in season_files:
-                        if file.is_video:
-                            episode = parse_episode_from_filename(file.name)
-                            if episode and episode[0] == season_num:
-                                drive_episodes.add((episode[0], episode[1]))
-            except Exception as exc:
-                logger.warning("扫描季文件夹失败，入库状态可能不准确: %s", exc)
-            seasons_status, total_eps, in_lib_eps = build_seasons_status(tmdb_id, info, drive_episodes)
-            if seasons_status:
-                updates["seasons"] = [s.model_dump() for s in seasons_status]
-            if total_eps:
-                updates["total_episodes"] = total_eps
-            if in_lib_eps:
-                updates["in_library_episodes"] = in_lib_eps
-    else:
-        updates["year"] = (info.get("release_date") or "")[:4]
+    updates = _build_item_updates(info, media_type, drive_folder_id, client)
     return {"ok": len(errors) == 0, "uploaded": uploaded, "errors": errors, "tmdb_id": tmdb_id, "updates": updates}
 
 
@@ -250,14 +311,9 @@ def refresh_item_payload(body) -> dict:
                 "errors": result["errors"],
             },
         )
-        updates = result.get("updates", {})
-        if not updates and result.get("tmdb_id"):
-            updates = {"tmdb_id": result.get("tmdb_id")}
-        if updates and body.drive_folder_id:
-            try:
-                get_library_store().patch_item(body.drive_folder_id, updates)
-            except Exception as exc:
-                logger.warning("patch_item 失败（不影响刷新结果）: %s", exc)
+        item = _persist_library_item(body.drive_folder_id, result)
+        if item is not None:
+            result["item"] = item
         return result
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -269,6 +325,74 @@ def refresh_item_payload(body) -> dict:
             "library",
             "refresh_item_failed",
             f"刷新元数据失败：{exc}",
+            level="ERROR",
+            details={"tmdb_id": body.tmdb_id, "error": str(exc)},
+        )
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+def reidentify_item_payload(body) -> dict:
+    if not body.drive_folder_id:
+        raise HTTPException(status_code=400, detail="drive_folder_id 不能为空")
+    if not body.tmdb_id or body.tmdb_id <= 0:
+        raise HTTPException(status_code=400, detail="tmdb_id 无效")
+    try:
+        result = do_refresh_item(body.tmdb_id, body.media_type, body.drive_folder_id, title=body.title, year=body.year)
+        item = _persist_library_item(body.drive_folder_id, result)
+        if item is not None:
+            result["item"] = item
+
+        rename_error = ""
+        renamed = False
+        folder_name = ""
+        if body.rename_folder:
+            try:
+                rename_result = _rename_library_folder(
+                    body.drive_folder_id,
+                    body.media_type,
+                    result.get("updates") or {},
+                    get_storage_provider(),
+                )
+                renamed = bool(rename_result.get("renamed"))
+                folder_name = str(rename_result.get("folder_name") or "")
+            except Exception as exc:
+                rename_error = str(exc)
+                logger.warning("纠错后目录重命名失败 drive_folder_id=%s: %s", body.drive_folder_id, exc)
+
+        result["renamed"] = renamed
+        if folder_name:
+            result["folder_name"] = folder_name
+        if rename_error:
+            result["rename_errors"] = [rename_error]
+        result["partial"] = bool(result["errors"] or rename_error)
+        result["ok"] = not result["partial"]
+
+        app_log(
+            "library",
+            "reidentify_item",
+            f"已修正识别：tmdb_id={body.tmdb_id} ({body.media_type})",
+            level="SUCCESS" if result["ok"] else "WARNING",
+            details={
+                "tmdb_id": body.tmdb_id,
+                "media_type": body.media_type,
+                "drive_folder_id": body.drive_folder_id,
+                "uploaded": result["uploaded"],
+                "errors": result["errors"],
+                "renamed": renamed,
+                "rename_errors": result.get("rename_errors") or [],
+            },
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("修正识别失败 (tmdb_id=%s): %s", body.tmdb_id, exc)
+        app_log(
+            "library",
+            "reidentify_item_failed",
+            f"修正识别失败：{exc}",
             level="ERROR",
             details={"tmdb_id": body.tmdb_id, "error": str(exc)},
         )

@@ -22,6 +22,18 @@ export interface MediaItem {
   runtime?: number
 }
 
+export interface ReidentifyResponse {
+  ok: boolean
+  partial?: boolean
+  tmdb_id: number
+  uploaded: string[]
+  errors: string[]
+  rename_errors?: string[]
+  renamed?: boolean
+  folder_name?: string
+  item?: MediaItem
+}
+
 // 季状态
 export interface SeasonStatus {
   season_number: number

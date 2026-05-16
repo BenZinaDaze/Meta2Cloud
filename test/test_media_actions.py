@@ -15,12 +15,18 @@ if requests_mod is not None and not hasattr(requests_mod, "Response"):
 
 from mediaparser.config import Config
 from storage.base import CloudFile, FileType
+from webui.library_store import LibraryStore
 from webui.services import media_actions
 
 
 class FakeStorageProvider:
     def __init__(self):
         self.uploaded = []
+        self.renamed = []
+        self.files = {
+            "show-1": CloudFile(id="show-1", name="Show One (2024)", file_type=FileType.FOLDER),
+            "movie-1": CloudFile(id="movie-1", name="Wrong Movie (2020)", file_type=FileType.FOLDER),
+        }
         self.folders = {
             "show-1": [
                 CloudFile(id="season-1", name="Season 1", file_type=FileType.FOLDER),
@@ -28,10 +34,23 @@ class FakeStorageProvider:
             "season-1": [
                 CloudFile(id="ep-1", name="Show.One.S01E01.mkv", file_type=FileType.FILE),
             ],
+            "movie-1": [
+                CloudFile(id="video-1", name="Wrong.Movie.2020.mkv", file_type=FileType.FILE),
+            ],
         }
 
     def list_files(self, folder_id=None, page_size=100):
         return list(self.folders.get(folder_id or "", []))
+
+    def get_file(self, file_id):
+        return self.files[file_id]
+
+    def rename_file(self, file_id, new_name):
+        current = self.files[file_id]
+        renamed = CloudFile(id=current.id, name=new_name, file_type=current.file_type)
+        self.files[file_id] = renamed
+        self.renamed.append((file_id, new_name))
+        return renamed
 
     def upload_text(self, content, name, parent_id=None, mime_type=None, overwrite=False):
         self.uploaded.append(("text", name, parent_id))
@@ -92,3 +111,139 @@ def test_do_refresh_item_skip_metadata_upload_only_updates_cache(monkeypatch):
     assert result["updates"]["title"] == "Show One"
     assert result["updates"]["poster_url"]
     assert client.uploaded == []
+
+
+def test_reidentify_item_payload_updates_library_binding(tmp_path, monkeypatch):
+    db_path = tmp_path / "library.db"
+    store = LibraryStore(str(db_path))
+    store.save_snapshot(
+        movies=[
+            {
+                "tmdb_id": 10,
+                "title": "Wrong Movie",
+                "original_title": "Wrong Movie",
+                "year": "2020",
+                "media_type": "movie",
+                "overview": "",
+                "rating": 0.0,
+                "drive_folder_id": "movie-1",
+                "folder_modified_time": 0,
+            }
+        ],
+        tv_shows=[],
+    )
+    cfg = Config.from_dict({
+        "tmdb": {"api_key": "fake-api-key"},
+        "pipeline": {"skip_metadata_upload": True},
+    })
+    client = FakeStorageProvider()
+
+    monkeypatch.setattr(media_actions, "get_config", lambda: cfg)
+    monkeypatch.setattr(media_actions, "get_storage_provider", lambda: client)
+    monkeypatch.setattr(media_actions, "get_library_store", lambda: store)
+    monkeypatch.setattr(
+        media_actions,
+        "tmdb_get",
+        lambda path, *args, **kwargs: {
+            "id": 20,
+            "title": "Correct Movie",
+            "original_title": "Correct Movie",
+            "release_date": "2024-04-05",
+            "overview": "fixed overview",
+            "vote_average": 8.8,
+            "poster_path": "/poster.jpg",
+            "backdrop_path": "/backdrop.jpg",
+            "credits": {"crew": [], "cast": []},
+        } if path == "/movie/20" else None,
+    )
+
+    body = SimpleNamespace(
+        tmdb_id=20,
+        media_type="movie",
+        drive_folder_id="movie-1",
+        title="Wrong Movie",
+        year="2020",
+        rename_folder=True,
+    )
+    result = media_actions.reidentify_item_payload(body)
+
+    assert result["ok"] is True
+    assert result["partial"] is False
+    assert result["renamed"] is True
+    assert result["folder_name"] == "Correct Movie (2024)"
+    assert result["item"]["tmdb_id"] == 20
+    assert result["item"]["title"] == "Correct Movie"
+    assert client.renamed == [("movie-1", "Correct Movie (2024)")]
+
+    updated = store.get_library_item_by_folder_id("movie-1")
+    assert updated["tmdb_id"] == 20
+    assert updated["title"] == "Correct Movie"
+
+
+def test_reidentify_item_payload_keeps_metadata_when_rename_fails(tmp_path, monkeypatch):
+    db_path = tmp_path / "library.db"
+    store = LibraryStore(str(db_path))
+    store.save_snapshot(
+        movies=[
+            {
+                "tmdb_id": 10,
+                "title": "Wrong Movie",
+                "original_title": "Wrong Movie",
+                "year": "2020",
+                "media_type": "movie",
+                "overview": "",
+                "rating": 0.0,
+                "drive_folder_id": "movie-1",
+                "folder_modified_time": 0,
+            }
+        ],
+        tv_shows=[],
+    )
+    cfg = Config.from_dict({
+        "tmdb": {"api_key": "fake-api-key"},
+        "pipeline": {"skip_metadata_upload": True},
+    })
+    client = FakeStorageProvider()
+
+    def fail_rename(file_id, new_name):
+        raise RuntimeError("rename blocked")
+
+    monkeypatch.setattr(client, "rename_file", fail_rename)
+    monkeypatch.setattr(media_actions, "get_config", lambda: cfg)
+    monkeypatch.setattr(media_actions, "get_storage_provider", lambda: client)
+    monkeypatch.setattr(media_actions, "get_library_store", lambda: store)
+    monkeypatch.setattr(
+        media_actions,
+        "tmdb_get",
+        lambda path, *args, **kwargs: {
+            "id": 20,
+            "title": "Correct Movie",
+            "original_title": "Correct Movie",
+            "release_date": "2024-04-05",
+            "overview": "fixed overview",
+            "vote_average": 8.8,
+            "poster_path": "/poster.jpg",
+            "backdrop_path": "/backdrop.jpg",
+            "credits": {"crew": [], "cast": []},
+        } if path == "/movie/20" else None,
+    )
+
+    body = SimpleNamespace(
+        tmdb_id=20,
+        media_type="movie",
+        drive_folder_id="movie-1",
+        title="Wrong Movie",
+        year="2020",
+        rename_folder=True,
+    )
+    result = media_actions.reidentify_item_payload(body)
+
+    assert result["ok"] is False
+    assert result["partial"] is True
+    assert result["rename_errors"] == ["rename blocked"]
+    assert result["item"]["tmdb_id"] == 20
+    assert result["item"]["title"] == "Correct Movie"
+
+    updated = store.get_library_item_by_folder_id("movie-1")
+    assert updated["tmdb_id"] == 20
+    assert updated["title"] == "Correct Movie"
