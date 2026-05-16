@@ -134,30 +134,47 @@ def fill_seasons_episodes(
         if season_number is None:
             continue
 
+        existing_episode_flags = {}
+        for ep in season.get("episodes") or []:
+            if not isinstance(ep, dict):
+                continue
+            ep_num = ep.get("episode_number")
+            if ep_num is None:
+                continue
+            existing_episode_flags[int(ep_num)] = bool(ep.get("in_library", False))
+
         season_detail = tmdb_get(f"/tv/{tmdb_id}/season/{season_number}")
         episodes = []
 
         if season_detail and season_detail.get("episodes"):
             for ep in season_detail["episodes"]:
+                ep_num = ep.get("episode_number", 0)
                 episodes.append({
-                    "episode_number": ep.get("episode_number", 0),
-                    "episode_title": ep.get("name") or f"第 {ep.get('episode_number', 0)} 集",
+                    "episode_number": ep_num,
+                    "episode_title": ep.get("name") or f"第 {ep_num} 集",
                     "air_date": ep.get("air_date") or "",
-                    "in_library": ep.get("in_library", False),
+                    "in_library": existing_episode_flags.get(int(ep_num), bool(ep.get("in_library", False))),
                 })
         else:
             count = season.get("episode_count", 0)
             episodes = [
-                {"episode_number": i, "episode_title": f"第 {i} 集", "air_date": "", "in_library": False}
+                {
+                    "episode_number": i,
+                    "episode_title": f"第 {i} 集",
+                    "air_date": "",
+                    "in_library": existing_episode_flags.get(i, False),
+                }
                 for i in range(1, count + 1)
             ]
+
+        in_library_count = sum(1 for ep in episodes if ep.get("in_library"))
 
         seasons_data.append({
             "season_number": season_number,
             "season_name": season.get("season_name") or f"季 {season_number}",
             "poster_url": season.get("poster_url"),
             "episode_count": len(episodes),
-            "in_library_count": season.get("in_library_count", 0),
+            "in_library_count": in_library_count,
             "episodes": episodes,
         })
 

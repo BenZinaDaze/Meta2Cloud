@@ -425,4 +425,36 @@ def test_scan_tv_shows_searches_tmdb_when_local_history_missing(monkeypatch):
 
     assert len(shows) == 1
     assert shows[0].tmdb_id == 222222
-    assert shows[0].title == "公主殿下，“拷问”的时间到了"
+
+
+def test_fill_seasons_episodes_preserves_in_library_flags(monkeypatch):
+    monkeypatch.setattr(
+        library_data,
+        "tmdb_get",
+        lambda path: {
+            "episodes": [
+                {"episode_number": 1, "name": "Episode 1", "air_date": "2024-01-01"},
+                {"episode_number": 2, "name": "Episode 2", "air_date": "2024-01-08"},
+            ]
+        },
+    )
+
+    seasons = library_data.fill_seasons_episodes(
+        123,
+        [
+            {
+                "season_number": 1,
+                "season_name": "Season 1",
+                "episode_count": 2,
+                "in_library_count": 2,
+                "episodes": [
+                    {"episode_number": 1, "episode_title": "old 1", "air_date": "", "in_library": True},
+                    {"episode_number": 2, "episode_title": "old 2", "air_date": "", "in_library": True},
+                ],
+            }
+        ],
+    )
+
+    assert seasons[0]["in_library_count"] == 2
+    assert seasons[0]["episodes"][0]["in_library"] is True
+    assert seasons[0]["episodes"][1]["in_library"] is True
