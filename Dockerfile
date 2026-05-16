@@ -14,10 +14,11 @@ COPY frontend/ ./
 RUN VITE_APP_VERSION=${APP_VERSION} npm run build
 
 
-FROM python:3.12-slim
+FROM python:3.12-slim-bookworm
 
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
+ENV PATH="/app/.venv/bin:$PATH"
 
 # 系统依赖（requests 需要 CA 证书）
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -47,4 +48,4 @@ RUN mkdir -p /app/data
 EXPOSE 38765
 
 # 单进程启动：WebUI API + Webhook /trigger 均在 38765
-CMD ["uv", "run", "uvicorn", "webui.app:app", "--host", "0.0.0.0", "--port", "38765"]
+CMD ["uvicorn", "webui.app:app", "--host", "0.0.0.0", "--port", "38765"]
