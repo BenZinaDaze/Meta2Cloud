@@ -9,6 +9,7 @@ class MediaItem(BaseModel):
     site: str = Field(..., description="The site source, e.g. mikan")
     subgroup_id: Optional[str] = Field(None, description="Subtitle group ID if available")
     subgroup_name: Optional[str] = Field(None, description="Subtitle group name if available")
+    rss_url: Optional[str] = Field(None, description="RSS URL for this media/subgroup if available")
 
 class MagnetItem(BaseModel):
     title: str = Field(..., description="Full raw torrent/magnet title")

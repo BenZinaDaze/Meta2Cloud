@@ -531,6 +531,8 @@ def scraper_search_media_payload(keyword: str):
                 "url": result.url,
                 "cover_image": result.cover_image,
                 "subgroup_id": getattr(result, "subgroup_id", None),
+                "subgroup_name": getattr(result, "subgroup_name", None),
+                "rss_url": getattr(result, "rss_url", None),
             }
         )
     aggregate_results = []
@@ -538,6 +540,12 @@ def scraper_search_media_payload(keyword: str):
         cover_image = next((source["cover_image"] for source in sources if source["cover_image"]), None)
         aggregate_results.append({"name": name, "cover_image": cover_image, "sources": sources})
     return {"ok": True, "results": aggregate_results}
+
+
+def scraper_sites_payload():
+    if SpiderFactory is None:
+        raise HTTPException(status_code=500, detail="Scraper module not loaded")
+    return {"ok": True, "sites": SpiderFactory.list_sites()}
 
 
 def scraper_get_episodes_payload(site: str, media_id: str, subgroup_id: str | None = None):

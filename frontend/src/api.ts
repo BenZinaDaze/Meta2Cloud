@@ -68,6 +68,7 @@ export const tmdbGetEpisodes = (id: number, season: number) =>
   api.get(`/tmdb/tv/${id}/season/${season}`)
 export const searchMedia = (keyword: string, config?: { signal?: AbortSignal }) =>
   api.get('/scraper/search', { params: { keyword }, ...config })
+export const getScraperSites = () => api.get('/scraper/sites')
 export const getEpisodes = (site: string, media_id: string, subgroup_id?: string, config?: { signal?: AbortSignal }) =>
   api.get('/scraper/episodes', { params: { site, media_id, subgroup_id }, ...config })
 

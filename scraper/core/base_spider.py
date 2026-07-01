@@ -11,6 +11,20 @@ class BaseSpider(ABC):
         """
         pass
 
+    @property
+    def site_name(self) -> str:
+        """
+        Human-readable site name for UI display.
+        """
+        return self.site_id
+
+    @property
+    def rss_hosts(self) -> List[str]:
+        """
+        Hostname suffixes that should be recognized as this site's RSS URLs.
+        """
+        return []
+
     @abstractmethod
     def search_media(self, keyword: str) -> List[MediaItem]:
         """

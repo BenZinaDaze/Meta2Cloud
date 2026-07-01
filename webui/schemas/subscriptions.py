@@ -28,7 +28,7 @@ class SubscriptionUpdateBody(SubscriptionBaseBody):
 
 
 class SubscriptionTestBody(BaseModel):
-    media_title: str = Field(..., min_length=1)
+    media_title: str = ""
     poster_url: Optional[str] = None
     site: str = Field(..., min_length=1)
     rss_url: str = Field(..., min_length=1)

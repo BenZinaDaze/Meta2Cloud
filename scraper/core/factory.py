@@ -20,6 +20,17 @@ class SpiderFactory:
         return list(cls._spiders.values())
 
     @classmethod
+    def list_sites(cls) -> List[dict]:
+        return [
+            {
+                "id": spider.site_id,
+                "name": spider.site_name,
+                "rss_hosts": spider.rss_hosts,
+            }
+            for spider in cls.get_all_spiders()
+        ]
+
+    @classmethod
     def search_all(cls, keyword: str) -> List[MediaItem]:
         results = []
         for spider in cls.get_all_spiders():

@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, Wand2 } from 'lucide-react'
-import { createSubscription, testSubscription, updateSubscription, parseSubscriptionRss } from '@/api'
+import { createSubscription, testSubscription, updateSubscription, parseSubscriptionRss, getScraperSites } from '@/api'
 import { toast } from 'sonner'
 import type { Subscription } from '@/types/api'
 
@@ -22,6 +22,46 @@ function parseKeywords(value: string): string[] {
     .split(/[\n,，]+/)
     .map((item) => item.trim())
     .filter(Boolean)
+}
+
+const RSS_SITES = [
+  { id: 'mikan', name: 'Mikan', rss_hosts: ['mikanani.me', 'mikan.tangbai.cc'] },
+  { id: 'anibt', name: 'AniBT', rss_hosts: ['anibt.net'] },
+]
+
+interface RssSite {
+  id: string
+  name: string
+  rss_hosts: string[]
+}
+
+function inferRssSite(rssUrl: string, sites: RssSite[]): string | null {
+  const raw = rssUrl.trim()
+  if (!raw) return null
+  const matchHost = (host: string) => {
+    const normalizedHost = host.toLowerCase()
+    for (const site of sites) {
+      if ((site.rss_hosts || []).some((candidate) => {
+        const normalizedCandidate = candidate.toLowerCase()
+        return normalizedHost === normalizedCandidate || normalizedHost.endsWith(`.${normalizedCandidate}`)
+      })) {
+        return site.id
+      }
+    }
+    return null
+  }
+  try {
+    const parsed = new URL(raw)
+    return matchHost(parsed.hostname)
+  } catch {
+    const lower = raw.toLowerCase()
+    for (const site of sites) {
+      if ((site.rss_hosts || []).some((candidate) => lower.includes(candidate.toLowerCase()))) {
+        return site.id
+      }
+    }
+  }
+  return null
 }
 
 interface SubscriptionModalProps {
@@ -62,6 +102,7 @@ export default function SubscriptionModal({
   const savingRef = useRef(false)
   const [testing, setTesting] = useState(false)
   const [parsing, setParsing] = useState(false)
+  const [rssSites, setRssSites] = useState<RssSite[]>(RSS_SITES)
   const [testResult, setTestResult] = useState<{
     summary?: {
       total_items: number
@@ -86,6 +127,27 @@ export default function SubscriptionModal({
     if (u115Authorized) items.push({ value: 'u115', label: '推送云下载' })
     return items
   }, [aria2Enabled, u115Authorized])
+
+  useEffect(() => {
+    let cancelled = false
+    getScraperSites()
+      .then((res) => {
+        if (cancelled) return
+        const sites = (res.data?.sites || []).filter((site: RssSite) => site.id && site.name)
+        if (sites.length > 0) {
+          setRssSites(sites)
+          const inferredSite = inferRssSite(form.rss_url, sites)
+          if (inferredSite && inferredSite !== form.site) {
+            setForm((prev) => ({ ...prev, site: inferredSite }))
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setRssSites(RSS_SITES)
+      })
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Reset form when initialValue changes (e.g., opening modal with new draft)
   useEffect(() => {
@@ -142,8 +204,20 @@ export default function SubscriptionModal({
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
+  function updateRssUrl(value: string) {
+    const inferredSite = inferRssSite(value, rssSites)
+    setForm((prev) => ({
+      ...prev,
+      rss_url: value,
+      site: inferredSite || prev.site,
+    }))
+  }
+
   async function handleTest() {
-    if (!form.rss_url.trim()) return
+    if (!form.rss_url.trim()) {
+      setError('请先填写 RSS 地址')
+      return
+    }
     setTesting(true)
     setError('')
     try {
@@ -292,13 +366,20 @@ export default function SubscriptionModal({
                       className="mt-2"
                     />
                   </div>
-                  <div className="w-24">
+                  <div className="w-32">
                     <Label>站点</Label>
-                    <Input
-                      value={form.site}
-                      onChange={(e) => updateField('site', e.target.value)}
-                      className="mt-2"
-                    />
+                    <Select value={form.site} onValueChange={(value) => updateField('site', value)}>
+                      <SelectTrigger className="mt-2">
+                        <SelectValue placeholder="选择站点" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {rssSites.map((site) => (
+                          <SelectItem key={site.id} value={site.id}>
+                            {site.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -371,7 +452,7 @@ export default function SubscriptionModal({
                   </div>
                   <Textarea
                     value={form.rss_url}
-                    onChange={(e) => updateField('rss_url', e.target.value)}
+                    onChange={(e) => updateRssUrl(e.target.value)}
                     rows={3}
                     className="mt-2 resize-none"
                   />
@@ -476,7 +557,7 @@ export default function SubscriptionModal({
                   type="button"
                   variant="outline"
                   onClick={handleTest}
-                  disabled={testing || !form.rss_url.trim()}
+                  disabled={testing}
                 >
                   {testing ? (
                     <>

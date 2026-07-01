@@ -11,6 +11,7 @@ from webui.services.media_actions import (
     refresh_item_payload,
     scraper_get_episodes_payload,
     scraper_search_media_payload,
+    scraper_sites_payload,
     tmdb_alternative_names_payload,
     tmdb_detail_payload,
     tmdb_search_multi_payload,
@@ -62,6 +63,11 @@ async def tmdb_alternative_names(tmdb_id: int, media_type: str):
 @router.get("/api/scraper/search")
 async def scraper_search_media(keyword: str):
     return scraper_search_media_payload(keyword)
+
+
+@router.get("/api/scraper/sites")
+async def scraper_sites():
+    return scraper_sites_payload()
 
 
 @router.get("/api/scraper/episodes")

@@ -140,10 +140,32 @@ def _parse_mikan_rss_url(rss_url: str) -> tuple[str, str | None]:
     return str(media_id), str(subgroup_id) if subgroup_id else None
 
 
+def _parse_anibt_rss_url(rss_url: str) -> tuple[str, str | None]:
+    parsed = urlparse(rss_url)
+    qs = parse_qs(parsed.query)
+    media_id = (qs.get("bgmId") or qs.get("bangumiId") or qs.get("bangumiid") or [None])[0]
+    subgroup_id = (
+        qs.get("groupSlug")
+        or qs.get("subgroupSlug")
+        or qs.get("subgroupid")
+        or qs.get("subgroupId")
+        or [None]
+    )[0]
+    if not media_id:
+        raise HTTPException(status_code=400, detail="AniBT RSS 链接缺少 bgmId，暂不支持该格式")
+    return str(media_id), str(subgroup_id) if subgroup_id else None
+
+
+def _parse_rss_url(site: str, rss_url: str) -> tuple[str, str | None]:
+    if site == "mikan":
+        return _parse_mikan_rss_url(rss_url)
+    if site == "anibt":
+        return _parse_anibt_rss_url(rss_url)
+    raise HTTPException(status_code=400, detail=f"暂不支持 RSS 站点：{site}")
+
+
 def _fetch_feed_items(site: str, rss_url: str) -> list[dict[str, Any]]:
-    if site != "mikan":
-        raise HTTPException(status_code=400, detail=f"暂不支持 RSS 站点：{site}")
-    media_id, subgroup_id = _parse_mikan_rss_url(rss_url)
+    media_id, subgroup_id = _parse_rss_url(site, rss_url)
     spider = SpiderFactory.get_spider(site)
     episodes = spider.get_episodes(media_id, subgroup_id)
     return [episode.model_dump() for episode in episodes]
@@ -479,6 +501,8 @@ def _detect_site_from_url(rss_url: str) -> str:
     host = (parsed.netloc or "").lower()
     if "mikanani" in host or "mikan" in host:
         return "mikan"
+    if "anibt.net" in host:
+        return "anibt"
     raise HTTPException(status_code=400, detail=f"不支持的 RSS 站点：{host}")
 
 

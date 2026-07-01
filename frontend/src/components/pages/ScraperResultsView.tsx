@@ -19,6 +19,7 @@ interface Episode {
 }
 
 export interface SubgroupGroup {
+  site: string
   name: string
   mediaTitle: string
   uniqueKey: string
@@ -34,8 +35,6 @@ interface ScraperResultsViewProps {
   aria2Enabled?: boolean
 }
 
-const MIKAN_BASE = 'https://mikan.tangbai.cc'
-
 function jaccardSimilarity(a: string, b: string): number {
   const setA = new Set(a)
   const setB = new Set(b)
@@ -45,7 +44,7 @@ function jaccardSimilarity(a: string, b: string): number {
   return intersection.size / union.size
 }
 
-function filterByKnownNames(candidates: { name: string; sources: { site: string; media_id: string; subgroup_id?: string }[] }[], knownNames: string[]): typeof candidates {
+function filterByKnownNames(candidates: { name: string; sources: { site: string; media_id: string; subgroup_id?: string; rss_url?: string | null }[] }[], knownNames: string[]): typeof candidates {
   const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim()
   const stripSubgroup = (s: string) => s.replace(/\s*\[[^\]]+\]\s*$/, '').trim()
   const normalizedKnown = knownNames.map(normalize).filter(Boolean)
@@ -76,6 +75,7 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
   const [usedSearchKey, setUsedSearchKey] = useState<string | null>(null)
   const [currentSearchKey, setCurrentSearchKey] = useState<string | null>(null)
   const [activeMediaTitle, setActiveMediaTitle] = useState<string | null>(null)
+  const [activeSite, setActiveSite] = useState<string>('all')
   const [u115Authorized, setU115Authorized] = useState(false)
   const [subscriptionDraft, setSubscriptionDraft] = useState<Partial<Subscription> | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -101,6 +101,7 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
     setUsedSearchKey(null)
     setCurrentSearchKey(null)
     setActiveMediaTitle(null)
+    setActiveSite('all')
 
     if (!cached || cached.searchState === 'idle') {
       startSearch()
@@ -157,7 +158,7 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
 
     try {
       const primaryKey = item.title || item.original_title || ''
-      let aggregates: { name: string; sources: { site: string; media_id: string; subgroup_id?: string }[] }[] = []
+      let aggregates: { name: string; sources: { site: string; media_id: string; subgroup_id?: string; rss_url?: string | null }[] }[] = []
       setCurrentSearchKey(primaryKey)
 
       const primaryRes = await searchMedia(primaryKey, { signal })
@@ -212,16 +213,15 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
 
       const initialGroups: SubgroupGroup[] = subgroupAggs.map(agg => {
         const src = agg.sources.find(s => s.subgroup_id)
-        const rssUrl = src?.site === 'mikan'
-          ? `${MIKAN_BASE}/RSS/Bangumi?bangumiId=${src.media_id}&subgroupid=${src.subgroup_id}`
-          : null
+        const rssUrl = src?.rss_url || null
 
         const match = agg.name.match(/^(.*?)\s*\[(.+?)\]\s*$/)
         const mediaTitle = match ? match[1].trim() : agg.name
         const name = match ? match[2].trim() : agg.name
-        const uniqueKey = `${mediaTitle}-${name}`
+        const site = src?.site || 'unknown'
+        const uniqueKey = `${site}-${mediaTitle}-${name}`
 
-        return { name, mediaTitle, uniqueKey, rssUrl, src: src ? { site: src.site, media_id: src.media_id, subgroup_id: src.subgroup_id } : null, episodes: [], loading: true }
+        return { site, name, mediaTitle, uniqueKey, rssUrl, src: src ? { site: src.site, media_id: src.media_id, subgroup_id: src.subgroup_id } : null, episodes: [], loading: true }
       })
       setGroupedEpisodes(initialGroups)
       setSearchState('done')
@@ -325,13 +325,34 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
       .catch((e) => toast.error('复制失败', { description: e.message }))
   }
 
-  // Group by media title
+  const siteLabels: Record<string, string> = {
+    mikan: 'Mikan',
+    anibt: 'AniBT',
+  }
+  const siteCounts = groupedEpisodes.reduce<Record<string, number>>((acc, item) => {
+    acc[item.site] = (acc[item.site] || 0) + 1
+    return acc
+  }, {})
+  const siteTabs = [
+    { key: 'all', label: '全部', count: groupedEpisodes.length },
+    ...Object.keys(siteCounts).sort().map(site => ({
+      key: site,
+      label: siteLabels[site] || site.toUpperCase(),
+      count: siteCounts[site],
+    })),
+  ]
+  const filteredEpisodes = activeSite === 'all'
+    ? groupedEpisodes
+    : groupedEpisodes.filter(item => item.site === activeSite)
+
+  // Group by media title inside the active site tab
   const groupedByMedia = new Map<string, (SubgroupGroup & { originalIndex: number })[]>()
-  groupedEpisodes.forEach((item, index) => {
+  filteredEpisodes.forEach((item) => {
+    const originalIndex = groupedEpisodes.findIndex(group => group.uniqueKey === item.uniqueKey)
     if (!groupedByMedia.has(item.mediaTitle)) {
       groupedByMedia.set(item.mediaTitle, [])
     }
-    groupedByMedia.get(item.mediaTitle)!.push({ ...item, originalIndex: index })
+    groupedByMedia.get(item.mediaTitle)!.push({ ...item, originalIndex })
   })
   const mediaGroups = Array.from(groupedByMedia.entries())
   const currentActiveMedia = activeMediaTitle && groupedByMedia.has(activeMediaTitle)
@@ -381,6 +402,28 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
 
           {searchState === 'done' && (
             <div className="pb-8">
+              {siteTabs.length > 1 && (
+                <div className="mb-5 flex flex-wrap gap-2 border-b pb-4">
+                  {siteTabs.map(tab => {
+                    const isActive = activeSite === tab.key
+                    return (
+                      <Button
+                        key={tab.key}
+                        variant={isActive ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => {
+                          setActiveSite(tab.key)
+                          setActiveMediaTitle(null)
+                        }}
+                        className="rounded-xl"
+                      >
+                        {tab.label} ({tab.count})
+                      </Button>
+                    )
+                  })}
+                </div>
+              )}
+
               {/* Media groups selector */}
               <div className="mb-6 border-b pb-4">
                 <h3 className="mb-3 text-base font-bold">匹配到的相关番剧内容 ({mediaGroups.length}部)</h3>
@@ -434,7 +477,7 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
                       {/* Subgroup sections */}
                       <div className="flex flex-col gap-6">
                         {subgroups.map((subItem) => {
-                          const { name, rssUrl, episodes, loading, originalIndex, uniqueKey } = subItem
+                          const { site, name, rssUrl, episodes, loading, originalIndex, uniqueKey } = subItem
                           const isExpanded = !collapsedGroups.has(uniqueKey)
                           const toggle = () => setCollapsedGroups(prev => {
                             const next = new Set(prev)
@@ -452,6 +495,7 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
                                 <div className={`w-1.5 shrink-0 rounded-full bg-brand transition-all duration-300 ${isExpanded ? 'h-6 opacity-100' : 'h-3 opacity-40'}`} />
                                 <h4 className="flex-1 text-lg font-bold">
                                   {name}
+                                  <span className="ml-2 rounded bg-info/20 px-2 py-0.5 text-xs font-medium text-info">{siteLabels[site] || site.toUpperCase()}</span>
                                   {loading ? (
                                     <span className="ml-2 text-sm font-normal text-muted-foreground">加载中...</span>
                                   ) : (
@@ -485,7 +529,7 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
                                           media_type: item.media_type || 'tv',
                                           tmdb_id: item.tmdb_id,
                                           poster_url: item.poster_url,
-                                          site: 'mikan',
+                                          site,
                                           rss_url: rssUrl,
                                           subgroup_name: name,
                                           season_number: 1,

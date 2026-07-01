@@ -70,8 +70,7 @@ docker exec meta2cloud python -m core --dry-run  # Run pipeline in container
 - `storage/base.py` - Abstract `StorageProvider` interface with `CloudFile` data model
 - `storage/google_drive.py` - Google Drive implementation
 - `storage/pan115.py` - 115网盘 implementation
-- `storage/quark.py` - 夸克网盘 implementation
-- `u115pan/` and `uquark/` - Low-level API clients for respective platforms
+- `u115pan/` - Low-level 115 API client
 
 ### Media Parsing
 - `mediaparser/metainfo.py` - Main entry point: `MetaInfo()` for strings, `MetaInfoPath()` for file paths

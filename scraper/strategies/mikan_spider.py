@@ -35,6 +35,14 @@ class MikanSpider(BaseSpider):
     def site_id(self) -> str:
         return "mikan"
 
+    @property
+    def site_name(self) -> str:
+        return "Mikan"
+
+    @property
+    def rss_hosts(self) -> list[str]:
+        return ["mikanani.me", "mikan.tangbai.cc"]
+
     def search_media(self, keyword: str) -> List[MediaItem]:
         search_url = f"{self.BASE_URL}/Home/Search?searchstr={keyword}"
         res = self._request_with_retry(search_url)
@@ -66,7 +74,8 @@ class MikanSpider(BaseSpider):
                 name=f"{title} (全部)",
                 url=urljoin(self.BASE_URL, href),
                 cover_image=None,
-                site=self.site_id
+                site=self.site_id,
+                rss_url=self.build_rss_url(bgm_id),
             ))
 
             # 去番剧详情页爬取该番专属的字幕组列表
@@ -78,7 +87,8 @@ class MikanSpider(BaseSpider):
                     cover_image=None,
                     site=self.site_id,
                     subgroup_id=sub_id,
-                    subgroup_name=sub_name
+                    subgroup_name=sub_name,
+                    rss_url=self.build_rss_url(bgm_id, sub_id),
                 ))
 
         return media_items
@@ -107,10 +117,14 @@ class MikanSpider(BaseSpider):
             return []
 
 
-    def get_episodes(self, media_id: str, subgroup_id: str = None) -> List[MagnetItem]:
+    def build_rss_url(self, media_id: str, subgroup_id: str = None) -> str:
         rss_url = f"{self.BASE_URL}/RSS/Bangumi?bangumiId={media_id}"
         if subgroup_id:
             rss_url += f"&subgroupid={subgroup_id}"
+        return rss_url
+
+    def get_episodes(self, media_id: str, subgroup_id: str = None) -> List[MagnetItem]:
+        rss_url = self.build_rss_url(media_id, subgroup_id)
 
         res = self._request_with_retry(rss_url)
 
