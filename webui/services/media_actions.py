@@ -118,13 +118,17 @@ def _build_item_updates(info: dict[str, Any], media_type: str, drive_folder_id: 
                                 drive_episodes.add((episode[0], episode[1]))
             except Exception as exc:
                 logger.warning("扫描季文件夹失败，入库状态可能不准确: %s", exc)
-            seasons_status, total_eps, in_lib_eps = build_seasons_status(tmdb_id, info, drive_episodes)
+            seasons_status, total_eps, in_lib_eps = build_seasons_status(
+                tmdb_id,
+                info,
+                drive_episodes,
+                tmdb_use_cache=False,
+            )
             if seasons_status:
                 updates["seasons"] = [s.model_dump() for s in seasons_status]
             if total_eps:
                 updates["total_episodes"] = total_eps
-            if in_lib_eps:
-                updates["in_library_episodes"] = in_lib_eps
+            updates["in_library_episodes"] = in_lib_eps
     else:
         updates["year"] = (info.get("release_date") or "")[:4]
     return updates
@@ -453,12 +457,17 @@ def tmdb_detail_payload(tmdb_id: int, media_type: str):
             # 如果是 TV 且 seasons 没有 episodes 详情，需要补充
             if media_type == "tv" and joined.get("seasons"):
                 needs_detail = False
+                expected_total = int(joined.get("total_episodes") or 0)
+                seasons_episode_total = 0
                 for s in joined["seasons"]:
+                    seasons_episode_total += int(s.get("episode_count") or len(s.get("episodes") or []) or 0)
                     if not s.get("episodes") or len(s["episodes"]) != s.get("episode_count", 0):
                         needs_detail = True
                         break
+                if expected_total and seasons_episode_total and seasons_episode_total != expected_total:
+                    needs_detail = True
                 if needs_detail:
-                    joined["seasons"] = fill_seasons_episodes(tmdb_id, joined["seasons"])
+                    joined["seasons"] = fill_seasons_episodes(tmdb_id, joined["seasons"], tmdb_use_cache=False)
             return {"ok": True, "detail": joined}
         cfg = get_config()
         if not cfg.tmdb or not cfg.tmdb.api_key:

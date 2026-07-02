@@ -66,7 +66,7 @@ def test_scan_movies_accepts_iso_modified_time(monkeypatch):
         "movies": [_folder("m1", "Movie One (2024)", "2026-04-29T03:25:21+00:00")],
         "m1": [],
     })
-    monkeypatch.setattr(library_data, "tmdb_get", lambda path: None)
+    monkeypatch.setattr(library_data, "tmdb_get", lambda path, *args, **kwargs: None)
 
     movies = library_data.scan_movies(client, cfg)
 
@@ -85,7 +85,7 @@ def test_scan_movies_incremental_accepts_iso_modified_time(monkeypatch):
         "movies": [_folder("m1", "Movie One (2024)", "2026-04-29T03:25:21+00:00")],
         "m1": [],
     })
-    monkeypatch.setattr(library_data, "tmdb_get", lambda path: None)
+    monkeypatch.setattr(library_data, "tmdb_get", lambda path, *args, **kwargs: None)
 
     movies, mtimes = library_data.scan_movies_incremental(client, cfg, {})
 
@@ -110,13 +110,54 @@ def test_scan_tv_shows_uses_season_folder_mtime(monkeypatch):
         "season1": [_file("ep1", "Show.One.S01E01.mkv", "2026-04-30T03:25:21+00:00")],
         "season2": [_file("ep2", "Show.One.S02E01.mkv", "2026-05-01T03:25:21+00:00")],
     })
-    monkeypatch.setattr(library_data, "tmdb_get", lambda path: None)
+    monkeypatch.setattr(library_data, "tmdb_get", lambda path, *args, **kwargs: None)
 
     shows = library_data.scan_tv_shows(client, cfg)
 
     expected = int(datetime(2026, 5, 1, 3, 25, 21, tzinfo=timezone.utc).timestamp())
     assert len(shows) == 1
     assert shows[0].folder_modified_time == expected
+
+
+def test_scan_tv_shows_can_bypass_tmdb_season_cache(monkeypatch):
+    cfg = Config.from_dict({
+        "storage": {"primary": "pan115"},
+        "u115": {"tv_root_id": "tv"},
+    })
+    client = FakeStorageProvider({
+        "tv": [_folder("show1", "Show One (2024)", "2026-04-29T03:25:21+00:00")],
+        "show1": [_folder("season1", "Season 1", "2026-04-30T03:25:21+00:00")],
+        "season1": [_file("ep1", "Show.One.S01E01.mkv", "2026-04-30T03:25:21+00:00")],
+    })
+    monkeypatch.setattr(
+        library_data,
+        "_resolve_media_identity",
+        lambda media_type, drive_folder_id, folder_name, cfg: (
+            99,
+            {
+                "tmdb_id": 99,
+                "name": "Show One",
+                "original_name": "Show One",
+                "first_air_date": "2024-01-01",
+                "overview": "overview",
+                "vote_average": 8.0,
+                "status": "Returning Series",
+                "seasons": [{"season_number": 1, "name": "Season 1", "episode_count": 1}],
+            },
+        ),
+    )
+
+    def fake_tmdb_get(path, *args, **kwargs):
+        assert path == "/tv/99/season/1"
+        assert kwargs.get("use_cache") is False
+        return {"episodes": [{"episode_number": 1, "name": "Episode 1", "air_date": "2024-01-02"}]}
+
+    monkeypatch.setattr(library_data, "tmdb_get", fake_tmdb_get)
+
+    shows = library_data.scan_tv_shows(client, cfg, tmdb_use_cache=False)
+
+    assert len(shows) == 1
+    assert shows[0].in_library_episodes == 1
 
 
 def test_scan_tv_shows_incremental_uses_season_folder_mtime(monkeypatch):
@@ -132,7 +173,7 @@ def test_scan_tv_shows_incremental_uses_season_folder_mtime(monkeypatch):
         ],
         "season1": [_file("ep1", "Show.One.S01E01.mkv", "2026-04-30T03:25:21+00:00")],
     })
-    monkeypatch.setattr(library_data, "tmdb_get", lambda path: None)
+    monkeypatch.setattr(library_data, "tmdb_get", lambda path, *args, **kwargs: None)
 
     shows, mtimes = library_data.scan_tv_shows_incremental(client, cfg, {})
 
@@ -155,7 +196,7 @@ def test_scan_tv_shows_incremental_ignores_tvshow_nfo_only_changes(monkeypatch):
         ],
         "season1": [_file("ep1", "Show.One.S01E01.mkv", "2026-04-30T03:25:21+00:00")],
     })
-    monkeypatch.setattr(library_data, "tmdb_get", lambda path: None)
+    monkeypatch.setattr(library_data, "tmdb_get", lambda path, *args, **kwargs: None)
 
     shows, mtimes = library_data.scan_tv_shows_incremental(client, cfg, {"show1": int(datetime(2026, 4, 30, 3, 25, 21, tzinfo=timezone.utc).timestamp())})
 
@@ -206,7 +247,7 @@ def test_scan_movies_restores_tmdb_from_library_store(tmp_path, monkeypatch):
     })
     monkeypatch.setattr(library_data, "get_library_store", lambda: store)
     monkeypatch.setattr(library_data, "get_ingest_store", lambda: IngestStore(str(db_path)))
-    monkeypatch.setattr(library_data, "tmdb_get", lambda path: None)
+    monkeypatch.setattr(library_data, "tmdb_get", lambda path, *args, **kwargs: None)
 
     movies = library_data.scan_movies(client, cfg)
 
@@ -260,7 +301,7 @@ def test_scan_tv_shows_restores_tmdb_from_ingest_history(tmp_path, monkeypatch):
     monkeypatch.setattr(
         library_data,
         "tmdb_get",
-        lambda path: {"episodes": [{"episode_number": 1, "name": "Episode 1", "air_date": "2024-02-02"}]}
+        lambda path, *args, **kwargs: {"episodes": [{"episode_number": 1, "name": "Episode 1", "air_date": "2024-02-02"}]}
         if path == "/tv/99/season/1"
         else None,
     )
@@ -324,7 +365,7 @@ def test_scan_tv_shows_matches_long_subtitle_to_tmdb_alias(tmp_path, monkeypatch
     monkeypatch.setattr(
         library_data,
         "tmdb_get",
-        lambda path: {"episodes": [{"episode_number": 1, "name": "Episode 1", "air_date": "2026-01-02"}]}
+        lambda path, *args, **kwargs: {"episodes": [{"episode_number": 1, "name": "Episode 1", "air_date": "2026-01-02"}]}
         if path == "/tv/777/season/1"
         else None,
     )
@@ -371,7 +412,7 @@ def test_scan_tv_shows_restores_from_tmdb_cache_without_history(tmp_path, monkey
     monkeypatch.setattr(
         library_data,
         "tmdb_get",
-        lambda path: {"episodes": [{"episode_number": 1, "name": "Episode 1", "air_date": "2018-07-15"}]}
+        lambda path, *args, **kwargs: {"episodes": [{"episode_number": 1, "name": "Episode 1", "air_date": "2018-07-15"}]}
         if path == "/tv/80867/season/1"
         else None,
     )
@@ -416,7 +457,7 @@ def test_scan_tv_shows_searches_tmdb_when_local_history_missing(monkeypatch):
     monkeypatch.setattr(
         library_data,
         "tmdb_get",
-        lambda path: {"episodes": [{"episode_number": 1, "name": "Episode 1", "air_date": "2024-01-10"}]}
+        lambda path, *args, **kwargs: {"episodes": [{"episode_number": 1, "name": "Episode 1", "air_date": "2024-01-10"}]}
         if path == "/tv/222222/season/1"
         else None,
     )
@@ -431,7 +472,7 @@ def test_fill_seasons_episodes_preserves_in_library_flags(monkeypatch):
     monkeypatch.setattr(
         library_data,
         "tmdb_get",
-        lambda path: {
+        lambda path, *args, **kwargs: {
             "episodes": [
                 {"episode_number": 1, "name": "Episode 1", "air_date": "2024-01-01"},
                 {"episode_number": 2, "name": "Episode 2", "air_date": "2024-01-08"},

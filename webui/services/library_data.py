@@ -41,6 +41,7 @@ def build_seasons_status(
     tmdb_id: int,
     tmdb_info: dict,
     drive_episodes: Optional[Set[tuple]] = None,
+    tmdb_use_cache: bool = True,
 ) -> tuple[List[SeasonStatus], int, int]:
     """
     根据 TMDB 信息构建 seasons 状态列表。
@@ -68,7 +69,7 @@ def build_seasons_status(
         ep_count = season_raw.get("episode_count", 0)
         total_eps += ep_count
 
-        season_detail = tmdb_get(f"/tv/{tmdb_id}/season/{season_num}")
+        season_detail = tmdb_get(f"/tv/{tmdb_id}/season/{season_num}", use_cache=tmdb_use_cache)
         episodes_status: List[EpisodeStatus] = []
 
         if season_detail:
@@ -117,6 +118,7 @@ def build_seasons_status(
 def fill_seasons_episodes(
     tmdb_id: int,
     existing_seasons: List[dict],
+    tmdb_use_cache: bool = True,
 ) -> List[dict]:
     """
     补充已有 seasons 数据中缺失的 episodes 详情。
@@ -143,7 +145,7 @@ def fill_seasons_episodes(
                 continue
             existing_episode_flags[int(ep_num)] = bool(ep.get("in_library", False))
 
-        season_detail = tmdb_get(f"/tv/{tmdb_id}/season/{season_number}")
+        season_detail = tmdb_get(f"/tv/{tmdb_id}/season/{season_number}", use_cache=tmdb_use_cache)
         episodes = []
 
         if season_detail and season_detail.get("episodes"):
@@ -341,6 +343,7 @@ def _scan_single_tv_folder(
     cfg: Config,
     show_folder,
     show_files: Optional[List] = None,
+    tmdb_use_cache: bool = True,
 ) -> Optional[MediaItem]:
     show_files = show_files or client.list_files(folder_id=show_folder.id, page_size=200)
     mtime = _tv_leaf_modified_time(show_folder, show_files)
@@ -363,7 +366,10 @@ def _scan_single_tv_folder(
     in_lib_eps = 0
     if tmdb_info:
         seasons_status, total_eps, in_lib_eps = build_seasons_status(
-            tmdb_id, tmdb_info, drive_episodes
+            tmdb_id,
+            tmdb_info,
+            drive_episodes,
+            tmdb_use_cache=tmdb_use_cache,
         )
     else:
         season_map: Dict[int, List[int]] = {}
@@ -403,7 +409,7 @@ def _scan_single_tv_folder(
     )
 
 
-def scan_tv_shows(client: StorageProvider, cfg: Config) -> List[MediaItem]:
+def scan_tv_shows(client: StorageProvider, cfg: Config, tmdb_use_cache: bool = True) -> List[MediaItem]:
     tv_root = cfg.active_tv_root_id()
     if not tv_root:
         return []
@@ -411,7 +417,7 @@ def scan_tv_shows(client: StorageProvider, cfg: Config) -> List[MediaItem]:
     show_folders = [f for f in client.list_files(folder_id=tv_root, page_size=500) if f.is_folder]
     logger.info("扫描到 %d 个剧集文件夹", len(show_folders))
     for show_folder in show_folders:
-        show = _scan_single_tv_folder(client, cfg, show_folder)
+        show = _scan_single_tv_folder(client, cfg, show_folder, tmdb_use_cache=tmdb_use_cache)
         if show:
             shows.append(show)
     return shows

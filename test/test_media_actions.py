@@ -16,7 +16,7 @@ if requests_mod is not None and not hasattr(requests_mod, "Response"):
 from mediaparser.config import Config
 from storage.base import CloudFile, FileType
 from webui.library_store import LibraryStore
-from webui.services import media_actions
+from webui.services import library_data, media_actions
 
 
 class FakeStorageProvider:
@@ -79,10 +79,8 @@ def test_do_refresh_item_skip_metadata_upload_only_updates_cache(monkeypatch):
     monkeypatch.setattr(media_actions, "get_config", lambda: cfg)
     monkeypatch.setattr(media_actions, "get_storage_provider", lambda: client)
     monkeypatch.setattr(media_actions, "ImageUploader", FakeImageUploader)
-    monkeypatch.setattr(
-        media_actions,
-        "tmdb_get",
-        lambda path, *args, **kwargs: (
+    def fake_tmdb_get(path, *args, **kwargs):
+        return (
             {
                 "id": 99,
                 "name": "Show One",
@@ -99,8 +97,10 @@ def test_do_refresh_item_skip_metadata_upload_only_updates_cache(monkeypatch):
             }
             if path == "/tv/99"
             else {"episodes": [{"episode_number": 1, "name": "Episode 1", "air_date": "2024-01-02"}]}
-        ),
-    )
+        )
+
+    monkeypatch.setattr(media_actions, "tmdb_get", fake_tmdb_get)
+    monkeypatch.setattr(library_data, "tmdb_get", fake_tmdb_get)
 
     result = media_actions.do_refresh_item(99, "tv", "show-1")
 
@@ -111,6 +111,133 @@ def test_do_refresh_item_skip_metadata_upload_only_updates_cache(monkeypatch):
     assert result["updates"]["title"] == "Show One"
     assert result["updates"]["poster_url"]
     assert client.uploaded == []
+
+
+def test_do_refresh_item_bypasses_cached_season_detail(monkeypatch):
+    cfg = Config.from_dict({
+        "tmdb": {"api_key": "fake-api-key"},
+        "pipeline": {"skip_metadata_upload": True},
+    })
+    client = FakeStorageProvider()
+    client.folders["season-1"] = [
+        CloudFile(id=f"ep-{i}", name=f"Show.One.S01E{i:02d}.mkv", file_type=FileType.FILE)
+        for i in range(1, 7)
+    ]
+
+    def fake_tmdb_get(path, *args, **kwargs):
+        if path == "/tv/99":
+            return {
+                "id": 99,
+                "name": "Show One",
+                "original_name": "Show One",
+                "first_air_date": "2024-01-01",
+                "overview": "overview",
+                "vote_average": 8.2,
+                "status": "Returning Series",
+                "number_of_episodes": 12,
+                "credits": {"crew": [], "cast": []},
+                "seasons": [{"season_number": 1, "name": "Season 1", "episode_count": 12}],
+            }
+        if path == "/tv/99/season/1":
+            assert kwargs.get("use_cache") is False
+            return {
+                "episodes": [
+                    {"episode_number": i, "name": f"Episode {i}", "air_date": "2024-01-02"}
+                    for i in range(1, 13)
+                ]
+            }
+        return None
+
+    monkeypatch.setattr(media_actions, "get_config", lambda: cfg)
+    monkeypatch.setattr(media_actions, "get_storage_provider", lambda: client)
+    monkeypatch.setattr(media_actions, "tmdb_get", fake_tmdb_get)
+    monkeypatch.setattr(library_data, "tmdb_get", fake_tmdb_get)
+
+    result = media_actions.do_refresh_item(99, "tv", "show-1")
+
+    assert result["updates"]["total_episodes"] == 12
+    assert result["updates"]["in_library_episodes"] == 6
+    season = result["updates"]["seasons"][0]
+    assert season["episode_count"] == 12
+    assert len(season["episodes"]) == 12
+    assert sum(1 for ep in season["episodes"] if ep["in_library"]) == 6
+
+
+def test_tmdb_detail_payload_refills_inconsistent_seasons(tmp_path, monkeypatch):
+    db_path = tmp_path / "library.db"
+    store = LibraryStore(str(db_path))
+    store.save_snapshot(
+        movies=[],
+        tv_shows=[
+            {
+                "tmdb_id": 99,
+                "title": "Show One",
+                "original_title": "Show One",
+                "year": "2024",
+                "media_type": "tv",
+                "overview": "",
+                "rating": 0.0,
+                "drive_folder_id": "show-1",
+                "total_episodes": 12,
+                "in_library_episodes": 6,
+                "seasons": [
+                    {
+                        "season_number": 1,
+                        "season_name": "Season 1",
+                        "poster_url": None,
+                        "episode_count": 6,
+                        "in_library_count": 6,
+                        "episodes": [
+                            {
+                                "episode_number": i,
+                                "episode_title": f"Episode {i}",
+                                "air_date": "",
+                                "in_library": True,
+                            }
+                            for i in range(1, 7)
+                        ],
+                    }
+                ],
+            }
+        ],
+    )
+
+    def fake_fill(tmdb_id, seasons, tmdb_use_cache=True):
+        assert tmdb_id == 99
+        assert tmdb_use_cache is False
+        existing_flags = {
+            ep["episode_number"]: ep["in_library"]
+            for season in seasons
+            for ep in season.get("episodes", [])
+        }
+        return [
+            {
+                "season_number": 1,
+                "season_name": "Season 1",
+                "poster_url": None,
+                "episode_count": 12,
+                "in_library_count": 6,
+                "episodes": [
+                    {
+                        "episode_number": i,
+                        "episode_title": f"Episode {i}",
+                        "air_date": "",
+                        "in_library": existing_flags.get(i, False),
+                    }
+                    for i in range(1, 13)
+                ],
+            }
+        ]
+
+    monkeypatch.setattr(media_actions, "get_library_store", lambda: store)
+    monkeypatch.setattr(media_actions, "fill_seasons_episodes", fake_fill)
+
+    result = media_actions.tmdb_detail_payload(99, "tv")
+
+    season = result["detail"]["seasons"][0]
+    assert season["episode_count"] == 12
+    assert len(season["episodes"]) == 12
+    assert sum(1 for ep in season["episodes"] if ep["in_library"]) == 6
 
 
 def test_reidentify_item_payload_updates_library_binding(tmp_path, monkeypatch):

@@ -51,7 +51,7 @@ def _do_refresh_library(incremental: bool = True) -> dict:
         store.mark_missing_folders(existing_ids)
     else:
         movies = scan_movies(client, cfg)
-        tv_shows = scan_tv_shows(client, cfg)
+        tv_shows = scan_tv_shows(client, cfg, tmdb_use_cache=False)
         diff = store.save_snapshot(movies, tv_shows)
     app_log(
         "library",
