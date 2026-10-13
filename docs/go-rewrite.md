@@ -19,18 +19,19 @@
 | `storage/google_drive.py` | **不移植** | 🗑️ | 194 | Google Drive 移除 |
 | `drive/`(整个包) | **不移植** | 🗑️ | 604 | Google Drive 移除 |
 | `mediaparser/config.py` | `internal/config` | ✅ 完成 | 407 | 删除 DriveConfig;默认 primary=pan115 |
-| `mediaparser/metainfo.py` | `internal/mediaparser` | ⬜ 待开始 | 194 | 入口 MetaInfo/MetaInfoPath |
-| `mediaparser/meta_video.py` | `internal/mediaparser` | ⬜ 待开始 | 605 | 8 处 lookaround 正则 → regexp2 |
-| `mediaparser/meta_anime.py` | `internal/mediaparser` | ⬜ 待开始 | 228 | anitopy 需自行实现子集 |
-| `mediaparser/meta_base.py` | `internal/mediaparser` | ⬜ 待开始 | ? | |
-| `mediaparser/string_utils.py` | `internal/mediaparser` | ⬜ 待开始 | ? | cn2an/zhconv 需自行实现 |
-| `mediaparser/words.py` / `tokens.py` / `types.py` | `internal/mediaparser` | ⬜ 待开始 | ? | |
-| `mediaparser/release_group.py` | `internal/mediaparser` | ⬜ 待开始 | ? | 1 处 lookaround |
-| `mediaparser/streaming_platform.py` | `internal/mediaparser` | ⬜ 待开始 | ? | 纯映射表,简单 |
-| `mediaparser/tmdb.py` | `internal/tmdb` | ⬜ 待开始 | ? | API 客户端 |
-| `mediaparser/tmdb_image.py` | `internal/config`(部分) | ✅ | 35 | normalize 已并入 config;URL 构建待移入 tmdb 包 |
-| `mediaparser/infopath.py` | `internal/mediaparser` | ⬜ 待开始 | ? | |
-| `nfo/generator.py` | `internal/nfo` | ⬜ 待开始 | ? | XML 生成 |
+| `mediaparser/tmdb.py` | `internal/tmdb` | ✅ 完成+测试 | 431 | 搜索/详情/名称匹配/429 重试;Cache 为接口,webui 层实现 |
+| `mediaparser/tmdb_image.py` | `internal/tmdb`(ImageURL) + `internal/config` | ✅ | 35 | |
+| (新增) | `internal/jsonx` | ✅ | — | 动态 JSON 工具,多包共用 |
+| `mediaparser/metainfo.py` | `internal/mediaparser/metainfo.go` | ✅ 完成+测试 | 194 | 入口 MetaInfo/MetaInfoPath + 内嵌 ID 标签 |
+| `mediaparser/meta_video.py` | `internal/mediaparser/metavideo.go` | ✅ 完成+测试 | 605 | lookaround 用 regexp2;体积正则保留 lookahead 语义 |
+| `mediaparser/meta_anime.py` | `internal/mediaparser/metaanime.go` | ✅ 完成+测试 | 228 | anitopy 以 anitomy.go 子集实现 |
+| `mediaparser/meta_base.py` | `internal/mediaparser/metabase.go` | ✅ 完成+测试 | 448 | 副标题中文季集解析(regexp2 lookaround) |
+| `mediaparser/string_utils.py` | `internal/mediaparser/stringutils.go` | ✅ 完成+测试 | 79 | cn2an/zhconv/拼音为子集实现;繁简对照表 173 字符对 |
+| `mediaparser/words.py` / `tokens.py` / `types.py` | `internal/mediaparser` | ✅ 完成+测试 | 200 | |
+| `mediaparser/release_group.py` | `internal/mediaparser/releasegroup.go` | ✅ 完成+测试 | 92 | lookbehind/lookahead 用 regexp2 |
+| `mediaparser/streaming_platform.py` | `internal/mediaparser/streamingplatform.go` | ✅ | 105 | 全表移植 |
+| `mediaparser/infopath.py` | `internal/mediaparser/infopath.go` | ✅ | 37 | |
+| `nfo/generator.py` | `internal/nfo` | ✅ 完成+测试 | 482 | 手写 XML 构建器(CDATA/属性);转义行为与 minidom 对齐 |
 | `nfo/image_uploader.py` | `internal/nfo` | ⬜ 待开始 | ? | |
 | `core/pipeline.py` | `internal/pipeline` | ⬜ 待开始 | 944 | 主流程编排 |
 | `core/organizer.py` | `internal/organizer` | ⬜ 待开始 | ~250 | 目录整理 |
