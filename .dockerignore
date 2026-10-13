@@ -26,3 +26,7 @@ data
 
 # 不再需要 requirements.txt，使用 pyproject.toml + uv.lock
 requirements.txt
+
+# Go 构建产物
+meta2cloud
+/tmp
