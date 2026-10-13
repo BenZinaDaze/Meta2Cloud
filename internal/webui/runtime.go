@@ -349,3 +349,11 @@ func (rt *Runtime) SetU115ClientForTest(c *u115.Client) {
 	_ = rt.getConfigLocked()
 	rt.u115Client = c
 }
+
+// SetTmdbClientForTest 注入测试 TMDB 客户端。
+func (rt *Runtime) SetTmdbClientForTest(c *tmdb.Client) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	_ = rt.getConfigLocked()
+	rt.tmdbClient = c
+}

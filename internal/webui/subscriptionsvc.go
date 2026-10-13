@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"meta2cloud/internal/jsonx"
@@ -549,6 +550,12 @@ func handleListSubscriptions(w http.ResponseWriter, _ *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "订阅存储不可用")
 		return
 	}
+	// 存量订阅缓存缺失时惰性补全（有 TMDB key 才会发起）
+	for _, record := range rssStore.ListSubscriptions() {
+		if record.TmdbID != nil && *record.TmdbID > 0 {
+			ensureSubscriptionTmdbCache(record.MediaType, *record.TmdbID)
+		}
+	}
 	subscriptions := []map[string]any{}
 	if joined := rssStore.ListSubscriptionsJoined(); len(joined) > 0 {
 		for _, item := range joined {
@@ -668,6 +675,8 @@ func handleParseSubscriptionRss(w http.ResponseWriter, r *http.Request) {
 					if mt := jsonx.Str(firstTMDB, "media_type"); mt != "" {
 						mediaType = mt
 					}
+					// 搜索命中后拉详情入缓存，订阅卡片立即可显示中文标题/海报
+					ensureSubscriptionTmdbCache(mediaType, id)
 				}
 			}
 		}
@@ -799,4 +808,38 @@ func handleSubscriptionPostOp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSONError(w, http.StatusNotFound, "未知操作")
+}
+
+// subscriptionTmdbCachePrefetching 防止列表并发重复拉取详情。
+var subscriptionTmdbCachePrefetching sync.Map
+
+// ensureSubscriptionTmdbCache 确保订阅关联的 TMDB 详情已入实体缓存。
+// parse-rss 搜索命中不会写库(与 Python 一致)，导致卡片标题回退到 RSS 原名；
+// 这里在创建/列表时补拉一次详情，命中后 tmdb_media 有中文标题与海报。
+// 返回 true 表示调用方应基于新缓存重新序列化。
+func ensureSubscriptionTmdbCache(mediaType string, tmdbID int64) bool {
+	if tmdbID <= 0 {
+		return false
+	}
+	client := RT().GetTmdbClient()
+	if client == nil {
+		return false
+	}
+	if entry := RT().GetLibraryStore().GetTmdbEntry(mediaType, tmdbID); entry != nil && len(entry.RawJSON) > 0 {
+		return false // 已有缓存
+	}
+	key := fmt.Sprintf("%s:%d", mediaType, tmdbID)
+	if _, busy := subscriptionTmdbCachePrefetching.LoadOrStore(key, true); busy {
+		return false
+	}
+	defer subscriptionTmdbCachePrefetching.Delete(key)
+	path := fmt.Sprintf("/movie/%d", tmdbID)
+	if mediaType == "tv" {
+		path = fmt.Sprintf("/tv/%d", tmdbID)
+	}
+	// Get 走缓存接口：详情请求结果由 TmdbCache.Set 写入 tmdb_media
+	if client.Get(path) == nil {
+		return false
+	}
+	return true
 }
