@@ -1,6 +1,6 @@
 # Go 重构进度跟踪
 
-**分支**: `rewrite/go-backend` | **策略**: 自底向上移植,Google Drive 支持不再实现
+**状态**: ✅ 重构完成 | **分支**: `rewrite/go-backend` | Google Drive 支持已随重构移除(Python 代码已全部删除)
 **模块名**: `meta2cloud` | **Go**: 1.27 | **依赖**: yaml.v3(已用), golang-jwt/jwt/v5、modernc.org/sqlite(待用)
 
 ## 模块状态
@@ -62,3 +62,13 @@
 ## 移植顺序(后续)
 
 1. mediaparser(最难: 正则+中文处理) → 2. tmdb → 3. nfo → 4. organizer → 5. pipeline → 6. scraper → 7. webui(最大) → 8. cmd 入口 → 9. 前端清理 Google Drive UI → 10. Docker → 11. 删除 Python 代码
+
+
+## 完成收尾(2026-10)
+
+- 前端: ConfigPage 删除 Drive 标签页/OAuth/字段编辑,存储默认值 pan115
+- Dockerfile: Go 多阶段构建(golang:1.27 静态编译 + debian-slim 运行)
+- 删除全部 Python 代码(22,557 行): core/webui/storage/u115pan/mediaparser/nfo/scraper/drive/test + pyproject/uv.lock
+- scripts: dev.sh(并联 Go+Vite)/test.sh(go test) 重写;upload.example.sh 保留(/trigger 语义不变)
+- CLAUDE.md/AGENTS.md/README.md/config.example.yaml 全部更新为 Go 版
+- 冒烟验证: 真实前端 SPA + 登录 + stats/config API 正常

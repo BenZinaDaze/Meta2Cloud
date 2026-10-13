@@ -2,7 +2,7 @@
 
 网盘媒体库自动整理工具，配合 Infuse、爆米花等播放器使用。
 
-![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white) ![React](https://img.shields.io/badge/React-61DAFB?logo=react&logoColor=black) ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white) ![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-06B6D4?logo=tailwindcss&logoColor=white) ![shadcn/ui](https://img.shields.io/badge/shadcn/ui-000000?logo=shadcnui&logoColor=white) ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
+![Go](https://img.shields.io/badge/Go-00ADD8?logo=go&logoColor=white) ![React](https://img.shields.io/badge/React-61DAFB?logo=react&logoColor=black) ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white) ![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-06B6D4?logo=tailwindcss&logoColor=white) ![shadcn/ui](https://img.shields.io/badge/shadcn/ui-000000?logo=shadcnui&logoColor=white) ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
 
 ## 为什么用这个？
 
@@ -25,10 +25,10 @@
 
 | 播放器 | 平台 | 支持网盘 | 特点 |
 |--------|------|----------|------|
-| [Infuse](https://firecore.com/infuse) | iOS / macOS / Apple TV | Google Drive、115 | Apple 生态体验最佳 |
+| [Infuse](https://firecore.com/infuse) | iOS / macOS / Apple TV | 115 | Apple 生态体验最佳 |
 | [网易爆米花](https://bmh.163.com/) | 全平台 | 115、阿里云盘 | 对国内网盘支持好 |
-| [VidHub](https://vidhub.okaapps.com/) | 全平台 | Google Drive、115 等 | 免费、跨平台 |
-| [nPlayer](https://nplayer.com/) | iOS / macOS / Android | Google Drive 等 | 功能全面 |
+| [VidHub](https://vidhub.okaapps.com/) | 全平台 | 115 等 | 免费、跨平台 |
+| [nPlayer](https://nplayer.com/) | iOS / macOS / Android | 115 等 | 功能全面 |
 
 ## 功能
 
@@ -71,7 +71,6 @@
 
 ## 支持的网盘
 
-- Google Drive
 - 115 网盘
 
 ## 快速开始
@@ -114,8 +113,8 @@ docker compose up -d
 
 后端：
 ```bash
-uv sync
-uv run uvicorn webui.app:app --host 0.0.0.0 --port 38765 --reload
+go build -o meta2cloud ./cmd/meta2cloud
+./meta2cloud serve --port 38765
 ```
 
 前端开发（可选）：
@@ -127,8 +126,8 @@ npm run dev   # http://localhost:5173，自动代理 API 到后端
 
 直接运行整理（无需启动 Web UI）：
 ```bash
-uv run python -m core --dry-run  # 预览模式
-uv run python -m core            # 正式整理
+./meta2cloud pipeline --dry-run  # 预览模式
+./meta2cloud pipeline            # 正式整理
 ```
 
 ## Web UI 截图
@@ -151,7 +150,7 @@ uv run python -m core            # 正式整理
 ```yaml
 # 使用哪个网盘
 storage:
-  primary: "google_drive"  # 或 pan115
+  primary: "pan115"
 
 # Web UI 登录
 webui:
@@ -164,22 +163,6 @@ tmdb:
   language: "zh-CN"
   image_base_url: ""  # 可选；仅填根域名，留空默认 https://image.tmdb.org
 ```
-
-### Google Drive 配置
-
-1. 从 [Google Cloud Console](https://console.cloud.google.com/) 创建 OAuth 客户端 ID（桌面应用）
-2. 下载凭据文件保存为 `meta2cloud-config/credentials.json`
-3. 首次运行时会引导你授权，生成 `token.json`
-
-```yaml
-drive:
-  scan_folder_id: "待整理目录 ID"
-  root_folder_id: "媒体库根目录 ID"
-  movie_root_id: "电影目录 ID"   # 可选
-  tv_root_id: "剧集目录 ID"      # 可选
-```
-
-目录 ID 从浏览器地址栏获取：`https://drive.google.com/drive/folders/这里是ID`
 
 ### 115 网盘配置
 
@@ -256,13 +239,13 @@ telegram:
 **只想整理不下载海报？**
 
 ```bash
-python -m core --no-images
+./meta2cloud pipeline --no-images
 ```
 
 **只想预览不实际操作？**
 
 ```bash
-python -m core --dry-run
+./meta2cloud pipeline --dry-run
 ```
 
 ## 致谢
