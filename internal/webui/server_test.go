@@ -3,6 +3,7 @@ package webui
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"meta2cloud/internal/scraper"
 	"meta2cloud/internal/u115"
 
 	"gopkg.in/yaml.v3"
@@ -586,4 +588,193 @@ func TestU115OfflineEndpoints(t *testing.T) {
 	if emptyResp.StatusCode != 400 {
 		t.Errorf("empty urls code = %d", emptyResp.StatusCode)
 	}
+}
+
+// ── RSS 订阅端到端 ─────────────────────────────────────────
+
+func newSubscriptionTestServer(t *testing.T) (*httptest.Server, string) {
+	t.Helper()
+	// mock mikan RSS 站点
+	mikanServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/RSS/Bangumi") {
+			w.Header().Set("Content-Type", "application/rss+xml")
+			w.Write([]byte(`<?xml version="1.0"?>
+				<rss><channel>
+				<item><title>[GroupX] 测试剧 - 01 [1080p]</title>
+					<pubDate>Tue, 13 Oct 2026 08:00:00 GMT</pubDate>
+					<enclosure url="https://mikan/Download/x/091b1b30d24c41759da1b0e24ddfffc89925c4.torrent" length="104857600"/></item>
+				<item><title>[GroupX] 测试剧 - 02 [1080p]</title>
+					<pubDate>Tue, 13 Oct 2026 09:00:00 GMT</pubDate>
+					<enclosure url="https://mikan/Download/y/091b1b30d24c4d41759da1b0e24ddfffc89925c5.torrent" length="104857600"/></item>
+				</channel></rss>`))
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	t.Cleanup(mikanServer.Close)
+
+	// mock 115 API（add_task_urls 接收推送）
+	u115Server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"state": true, "code": 0,
+			"data": []any{map[string]any{"state": true, "code": 0, "message": "ok"}}})
+	}))
+	t.Cleanup(u115Server.Close)
+
+	rootDir := t.TempDir()
+	os.MkdirAll(filepath.Join(rootDir, "config", "data"), 0o755)
+	cfgYAML := "webui:\n  username: admin\n  password: secret123\nu115:\n  client_id: cid\n"
+	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
+	// 持久化 token 文件 → authorized = true
+	tokenData := fmt.Sprintf(`{"access_token":"at","refresh_token":"rt","expires_in":3600,"refresh_time":%d}`, time.Now().Unix())
+	os.WriteFile(filepath.Join(rootDir, "config", "115-token.json"), []byte(tokenData), 0o600)
+
+	ResetJWTSecretCache()
+	InitRuntime(rootDir)
+
+	// 注入测试 115 客户端
+	u115Client := u115.NewClient("cid",
+		u115.WithToken(u115.Token{AccessToken: "at", RefreshToken: "rt", ExpiresIn: 3600, RefreshTime: time.Now().Unix()}),
+		u115.WithQPS(1000, 1000))
+	u115Client.SetTestBaseURL(u115Server.URL)
+	RT().SetU115ClientForTest(u115Client)
+
+	// 注入测试 mikan spider
+	factory := scraper.RegisterDefault()
+	if spider, err := factory.GetSpider("mikan"); err == nil {
+		spider.(*scraper.MikanSpider).SetTestBaseURL(mikanServer.URL)
+	}
+
+	server := NewServer()
+	t.Cleanup(server.Close)
+	ts := httptest.NewServer(server.Handler())
+	t.Cleanup(ts.Close)
+	_, out := login(t, ts, "admin", "secret123")
+	return ts, out["token"].(string)
+}
+
+func authedRequest(t *testing.T, ts *httptest.Server, token, method, path string, body any) (int, map[string]any) {
+	t.Helper()
+	var reader io.Reader
+	if body != nil {
+		data, _ := json.Marshal(body)
+		reader = bytes.NewReader(data)
+	}
+	req, _ := http.NewRequest(method, ts.URL+path, reader)
+	req.Header.Set("Authorization", "Bearer "+token)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	return resp.StatusCode, out
+}
+
+func TestSubscriptionCRUDAndCheck(t *testing.T) {
+	ts, token := newSubscriptionTestServer(t)
+	rssURL := mikanTestRSSURL(ts)
+
+	// 解析 RSS 建议
+	code, parsed := authedRequest(t, ts, token, "POST", "/api/subscriptions:parse-rss",
+		map[string]any{"rss_url": rssURL})
+	if code != 200 || parsed["success"] != true {
+		t.Fatalf("parse-rss = %d %v", code, parsed)
+	}
+	if parsed["media_title"] != "测试剧" || parsed["subgroup_name"] != "GroupX" {
+		t.Errorf("parsed = %v", parsed)
+	}
+
+	// 测试匹配（第 2 集起）
+	testBody := map[string]any{
+		"site": "mikan", "rss_url": rssURL, "season_number": 1, "start_episode": 2,
+		"keyword_all": []string{"groupx"},
+	}
+	code, testOut := authedRequest(t, ts, token, "POST", "/api/subscriptions:test", testBody)
+	if code != 200 {
+		t.Fatalf("test = %d %v", code, testOut)
+	}
+	summary := testOut["summary"].(map[string]any)
+	if summary["total_items"] != float64(2) || summary["matched_items"] != float64(1) {
+		t.Errorf("summary = %v (第2集起应只匹配 1 条)", summary)
+	}
+
+	// 创建订阅（推送目标 u115）
+	createBody := map[string]any{
+		"name": "测试剧 [GroupX]", "media_title": "测试剧", "media_type": "tv",
+		"site": "mikan", "rss_url": rssURL, "subgroup_name": "GroupX",
+		"season_number": 1, "start_episode": 2, "keyword_all": []string{"GroupX"},
+		"push_target": "u115", "enabled": true,
+	}
+	code, created := authedRequest(t, ts, token, "POST", "/api/subscriptions", createBody)
+	if code != 200 || created["ok"] != true {
+		t.Fatalf("create = %d %v", code, created)
+	}
+	subID := int64(1)
+
+	// 重复创建 → 409
+	code, _ = authedRequest(t, ts, token, "POST", "/api/subscriptions", createBody)
+	if code != 409 {
+		t.Errorf("duplicate code = %d, want 409", code)
+	}
+
+	// 手动检查 → 命中 1 条并推送（mock 115）
+	code, checked := authedRequest(t, ts, token, "POST",
+		fmt.Sprintf("/api/subscriptions/%d:check", subID), nil)
+	if code != 200 || checked["ok"] != true {
+		t.Fatalf("check = %d %v", code, checked)
+	}
+	result := checked["result"].(map[string]any)
+	if result["pushed"] != float64(1) {
+		t.Errorf("result = %v (应推送 1 条)", result)
+	}
+
+	// 再次检查 → 去重跳过
+	_, checked2 := authedRequest(t, ts, token, "POST",
+		fmt.Sprintf("/api/subscriptions/%d:check", subID), nil)
+	result2 := checked2["result"].(map[string]any)
+	if result2["pushed"] != float64(0) || result2["skipped"] != float64(1) {
+		t.Errorf("result2 = %v (应去重跳过)", result2)
+	}
+
+	// 列表
+	code, listOut := authedRequest(t, ts, token, "GET", "/api/subscriptions", nil)
+	if code != 200 {
+		t.Fatalf("list = %d", code)
+	}
+	subs := listOut["subscriptions"].([]any)
+	if len(subs) != 1 {
+		t.Fatalf("subscriptions = %d", len(subs))
+	}
+	sub := subs[0].(map[string]any)
+	if sub["hit_count"] != float64(1) {
+		t.Errorf("hit_count = %v", sub["hit_count"])
+	}
+
+	// 更新 → 修改起始集数避免重复
+	updateBody := createBody
+	updateBody["start_episode"] = 5
+	code, updated := authedRequest(t, ts, token, "PUT",
+		fmt.Sprintf("/api/subscriptions/%d", subID), updateBody)
+	if code != 200 || updated["ok"] != true {
+		t.Fatalf("update = %d %v", code, updated)
+	}
+
+	// 删除
+	code, _ = authedRequest(t, ts, token, "DELETE", fmt.Sprintf("/api/subscriptions/%d", subID), nil)
+	if code != 200 {
+		t.Errorf("delete code = %d", code)
+	}
+	// 再删 → 404
+	code, _ = authedRequest(t, ts, token, "DELETE", fmt.Sprintf("/api/subscriptions/%d", subID), nil)
+	if code != 404 {
+		t.Errorf("redelete code = %d, want 404", code)
+	}
+}
+
+func mikanTestRSSURL(_ *httptest.Server) string {
+	return "https://mikanani.me/RSS/Bangumi?bangumiId=3065"
 }

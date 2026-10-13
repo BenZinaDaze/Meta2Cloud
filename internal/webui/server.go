@@ -73,6 +73,16 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("PUT /api/config/main", handleWriteMainConfig)
 	m.HandleFunc("PUT /api/config/parser-rules", handleWriteParserRules)
 
+	// subscriptions
+	m.HandleFunc("GET /api/subscriptions", handleListSubscriptions)
+	m.HandleFunc("POST /api/subscriptions", handleCreateSubscription)
+	m.HandleFunc("POST /api/subscriptions:test", handleTestSubscription)
+	m.HandleFunc("POST /api/subscriptions:parse-rss", handleParseSubscriptionRss)
+	m.HandleFunc("GET /api/subscriptions/{subscriptionID}", handleGetSubscription)
+	m.HandleFunc("PUT /api/subscriptions/{subscriptionID}", handleUpdateSubscription)
+	m.HandleFunc("DELETE /api/subscriptions/{subscriptionID}", handleDeleteSubscription)
+	m.HandleFunc("POST /api/subscriptions/{subscriptionID}", handleSubscriptionPostOp)
+
 	// u115 (OAuth + 云下载)
 	m.HandleFunc("GET /api/u115/oauth/status", handleU115OauthStatus)
 	m.HandleFunc("POST /api/u115/oauth/create", handleU115OauthCreate)
