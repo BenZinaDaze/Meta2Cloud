@@ -31,6 +31,10 @@ type Runtime struct {
 	provider   cloudfile.Provider
 	u115Client *u115.Client
 	tmdbClient *tmdb.Client
+	ingest     *store.IngestStore
+	logStore   *store.LogStore
+	rss        *store.RSSStore
+	u115Auto   *store.U115AutoStore
 }
 
 var defaultRuntime = &Runtime{}
@@ -39,6 +43,7 @@ var defaultRuntime = &Runtime{}
 func RT() *Runtime { return defaultRuntime }
 
 // InitRuntime 初始化运行时（rootDir 为空时取当前目录）。
+// 重置全部缓存状态（配置/Provider/存储单例）。
 func InitRuntime(rootDir string) *Runtime {
 	if rootDir == "" {
 		if exe, err := os.Executable(); err == nil {
@@ -47,9 +52,22 @@ func InitRuntime(rootDir string) *Runtime {
 			rootDir, _ = os.Getwd()
 		}
 	}
+	defaultRuntime.mu.Lock()
+	defer defaultRuntime.mu.Unlock()
 	defaultRuntime.RootDir = rootDir
 	defaultRuntime.configPath = filepath.Join(rootDir, "config", "config.yaml")
 	defaultRuntime.rulesPath = filepath.Join(rootDir, "config", "parser-rules.yaml")
+	defaultRuntime.cfg = nil
+	defaultRuntime.provider = nil
+	defaultRuntime.u115Client = nil
+	defaultRuntime.tmdbClient = nil
+	defaultRuntime.library = nil
+	defaultRuntime.tmdbCache = nil
+	defaultRuntime.ingest = nil
+	defaultRuntime.logStore = nil
+	defaultRuntime.rss = nil
+	defaultRuntime.u115Auto = nil
+	defaultRuntime.configSig = [2]int64{}
 	return defaultRuntime
 }
 
@@ -250,4 +268,76 @@ func (rt *Runtime) startTmdbEvictLoop(stop <-chan struct{}) {
 			}
 		}
 	}()
+}
+
+// GetIngestStore 入库历史存储单例（与 library.db 同库）。
+func (rt *Runtime) GetIngestStore() *store.IngestStore {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.ingest == nil {
+		dbPath := filepath.Join(rt.RootDir, "config", "data", "library.db")
+		s, err := store.OpenIngestStore(dbPath)
+		if err != nil {
+			log.Printf("入库历史存储初始化失败：%v", err)
+			return nil
+		}
+		rt.ingest = s
+	}
+	return rt.ingest
+}
+
+// GetLogStore 应用日志存储单例。
+func (rt *Runtime) GetLogStore() *store.LogStore {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.logStore == nil {
+		s, err := store.OpenLogStore(rt.DataDir(), rt.getConfigLocked().WebUI.LogRetentionDays, "")
+		if err != nil {
+			return nil
+		}
+		rt.logStore = s
+	}
+	return rt.logStore
+}
+
+// GetRSSStore RSS 订阅存储单例（与 library.db 同库）。
+func (rt *Runtime) GetRSSStore() *store.RSSStore {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.rss == nil {
+		dbPath := filepath.Join(rt.RootDir, "config", "data", "library.db")
+		s, err := store.OpenRSSStore(dbPath, dbPath)
+		if err != nil {
+			log.Printf("RSS 订阅存储初始化失败：%v", err)
+			return nil
+		}
+		cfg := rt.getConfigLocked()
+		s.ImageBaseURL = cfg.TmdbImageBaseURL
+		rt.rss = s
+	}
+	return rt.rss
+}
+
+// GetU115AutoStore 115 自动整理状态存储单例。
+func (rt *Runtime) GetU115AutoStore() *store.U115AutoStore {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.u115Auto == nil {
+		dbPath := filepath.Join(rt.RootDir, "config", "data", "u115_auto_organize.db")
+		s, err := store.OpenU115AutoStore(dbPath)
+		if err != nil {
+			return nil
+		}
+		rt.u115Auto = s
+	}
+	return rt.u115Auto
+}
+
+// SetProviderForTest 注入测试 Provider（绕过配置构造）。
+// 先预热配置，避免后续首次 GetConfig 触发失效逻辑清掉注入的 Provider。
+func (rt *Runtime) SetProviderForTest(p cloudfile.Provider) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	_ = rt.getConfigLocked()
+	rt.provider = p
 }

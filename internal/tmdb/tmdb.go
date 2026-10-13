@@ -470,6 +470,17 @@ func buildYearRange(year string) []string {
 
 // ── HTTP 基础方法 ───────────────────────────────────────────
 
+// Get 通用 GET 请求（走缓存），供 webui 层按路径取任意 TMDB 资源。
+func (c *Client) Get(path string) map[string]any {
+	return c.get(path, nil, true)
+}
+
+// SearchByName 按名称+年份+类型搜索（供媒体库扫描身份识别使用）。
+func (c *Client) SearchByName(name, year string, mtype mediaparser.MediaType) map[string]any {
+	hasType := mtype != mediaparser.MediaUnknown
+	return c.searchByName(name, year, mtype, hasType, nil)
+}
+
 // SetTestBaseURL 覆盖 API 地址（仅测试使用）。
 func (c *Client) SetTestBaseURL(baseURL string) { c.baseURLOverride = baseURL }
 

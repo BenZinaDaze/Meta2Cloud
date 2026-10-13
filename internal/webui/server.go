@@ -52,8 +52,23 @@ func (s *Server) registerRoutes() {
 
 	// library / stats
 	m.HandleFunc("GET /api/library", handleGetLibrary)
+	m.HandleFunc("POST /api/library:refresh", handleRefreshLibrary)
 	m.HandleFunc("GET /api/stats", handleGetStats)
 	m.HandleFunc("DELETE /api/library/{driveFolderID}", handleDeleteLibraryItem)
+	m.HandleFunc("GET /api/movies", handleGetMovies)
+	m.HandleFunc("GET /api/tv-shows", handleGetTVShows)
+	m.HandleFunc("GET /api/tv-shows/{tmdbID}", handleGetTVDetail)
+
+	// pipeline / webhook
+	m.HandleFunc("POST /trigger", handleTriggerWebhook)
+	m.HandleFunc("GET /api/pipeline/status", handlePipelineStatus)
+	m.HandleFunc("POST /api/pipeline/trigger", handlePipelineTrigger)
+
+	// logs / ingest
+	m.HandleFunc("GET /api/logs", handleGetLogs)
+	m.HandleFunc("GET /api/ingest/history", handleIngestHistory)
+	m.HandleFunc("GET /api/ingest/stats", handleIngestStats)
+	m.HandleFunc("GET /api/ingest/recent", handleIngestRecent)
 
 	// 兜底：静态资源 / SPA
 	m.HandleFunc("/", s.handleRoot)
