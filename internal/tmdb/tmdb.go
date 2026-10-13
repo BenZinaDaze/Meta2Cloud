@@ -605,3 +605,32 @@ func ImageURL(path, size, baseURLOverride string) string {
 	}
 	return base + "/t/p/" + size + path
 }
+
+// imagePathRe 匹配图片 URL 中的 /t/p/{size}{path} 部分。
+var imagePathRe = regexp.MustCompile(`/t/p/[^/]+(/.*)$`)
+
+// ExtractImagePath 从完整图片 URL 提取相对路径；已是相对路径时原样返回。
+func ExtractImagePath(value string) string {
+	raw := strings.TrimSpace(value)
+	if raw == "" {
+		return ""
+	}
+	if strings.HasPrefix(raw, "/") {
+		return raw
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	candidate := parsed.Path
+	if candidate == "" {
+		candidate = raw
+	}
+	if m := imagePathRe.FindStringSubmatch(candidate); m != nil {
+		return m[1]
+	}
+	if strings.HasPrefix(raw, "/") {
+		return raw
+	}
+	return ""
+}
