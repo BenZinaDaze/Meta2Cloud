@@ -91,7 +91,7 @@ func TestLoginFlow(t *testing.T) {
 	}
 
 	// 伪造 token → 401
-	req3, _ := http.NewRequest("GET", ts.URL + "/api/stats", nil)
+	req3, _ := http.NewRequest("GET", ts.URL+"/api/stats", nil)
 	req3.Header.Set("Authorization", "Bearer fake.token.here")
 	resp3, err := http.DefaultClient.Do(req3)
 	if err != nil {
