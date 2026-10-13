@@ -64,6 +64,15 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("GET /api/pipeline/status", handlePipelineStatus)
 	m.HandleFunc("POST /api/pipeline/trigger", handlePipelineTrigger)
 
+	// config
+	m.HandleFunc("GET /api/config", handleReadConfig)
+	m.HandleFunc("GET /api/config/main", handleReadMainConfig)
+	m.HandleFunc("GET /api/config/parser-rules", handleReadParserRules)
+	m.HandleFunc("POST /api/parser/test", handleParserTest)
+	m.HandleFunc("PUT /api/config", handleWriteConfig)
+	m.HandleFunc("PUT /api/config/main", handleWriteMainConfig)
+	m.HandleFunc("PUT /api/config/parser-rules", handleWriteParserRules)
+
 	// logs / ingest
 	m.HandleFunc("GET /api/logs", handleGetLogs)
 	m.HandleFunc("GET /api/ingest/history", handleIngestHistory)

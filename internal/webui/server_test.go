@@ -311,3 +311,104 @@ func TestPipelineStatusAndWebhook(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 }
+
+// ── 配置读写端到端 ─────────────────────────────────────────
+
+func TestConfigEndpoints(t *testing.T) {
+	rootDir := t.TempDir()
+	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
+	cfgYAML := "webui:\n  username: admin\n  password: secret123\ntmdb:\n  api_key: test\ntelegram:\n  bot_token: tg-token\n"
+	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
+	os.WriteFile(filepath.Join(rootDir, "config", "parser-rules.yaml"),
+		[]byte("parser:\n  custom_words:\n    - 测试词\n  custom_release_groups:\n    - FSD\n"), 0o644)
+	ResetJWTSecretCache()
+	InitRuntime(rootDir)
+	server := NewServer()
+	t.Cleanup(server.Close)
+	ts := httptest.NewServer(server.Handler())
+	t.Cleanup(ts.Close)
+
+	_, out := login(t, ts, "admin", "secret123")
+	token := out["token"].(string)
+
+	// 读取合并配置（含 parser 规则合并）
+	code, cfgData := authedGet(t, ts, token, "/api/config")
+	if code != 200 {
+		t.Fatalf("config code = %d", code)
+	}
+	parser, ok := cfgData["parser"].(map[string]any)
+	if !ok {
+		t.Fatalf("parser 段缺失: %v", cfgData)
+	}
+	if words, _ := parser["custom_words"].([]any); len(words) != 1 || words[0] != "测试词" {
+		t.Errorf("custom_words = %v", parser["custom_words"])
+	}
+
+	// 解析测试（跳过 TMDB）
+	parseReq, _ := http.NewRequest("POST", ts.URL+"/api/parser/test?skip_tmdb=true",
+		strings.NewReader(`{"filename": "Breaking.Bad.S01E03.1080p.BluRay.HEVC-TTG.mkv"}`))
+	parseReq.Header.Set("Authorization", "Bearer "+token)
+	parseReq.Header.Set("Content-Type", "application/json")
+	parseResp, err := http.DefaultClient.Do(parseReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed map[string]any
+	json.NewDecoder(parseResp.Body).Decode(&parsed)
+	parseResp.Body.Close()
+	if parseResp.StatusCode != 200 || parsed["name"] != "Breaking Bad" {
+		t.Errorf("parse = %d %v", parseResp.StatusCode, parsed["name"])
+	}
+	if parsed["release_group"] != "TTG" {
+		t.Errorf("release_group = %v", parsed["release_group"])
+	}
+
+	// 保存主配置（校验+持久化+运行时失效）
+	saveBody := map[string]any{"data": map[string]any{
+		"webui": map[string]any{"username": "admin", "password": "secret123", "token_expire_hours": 48},
+		"telegram": map[string]any{"bot_token": "tg-token", "debounce_seconds": "10"},
+	}}
+	saveJSON, _ := json.Marshal(saveBody)
+	saveReq, _ := http.NewRequest("PUT", ts.URL+"/api/config/main", bytes.NewReader(saveJSON))
+	saveReq.Header.Set("Authorization", "Bearer "+token)
+	saveReq.Header.Set("Content-Type", "application/json")
+	saveResp, err := http.DefaultClient.Do(saveReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saveOut map[string]any
+	json.NewDecoder(saveResp.Body).Decode(&saveOut)
+	saveResp.Body.Close()
+	if saveResp.StatusCode != 200 {
+		t.Fatalf("save = %d %v", saveResp.StatusCode, saveOut)
+	}
+	// 重读：debounce 字符串应被规范化为整数 10
+	_, reread := authedGet(t, ts, token, "/api/config/main")
+	tg := reread["telegram"].(map[string]any)
+	if tg["debounce_seconds"] != float64(10) {
+		t.Errorf("debounce_seconds = %v (%T), want 10", tg["debounce_seconds"], tg["debounce_seconds"])
+	}
+	webuiSec := reread["webui"].(map[string]any)
+	if webuiSec["token_expire_hours"] != float64(48) {
+		t.Errorf("token_expire_hours = %v", webuiSec["token_expire_hours"])
+	}
+	// 新配置生效（运行时缓存失效）
+	if RT().GetConfig().WebUI.TokenExpireHours != 48 {
+		t.Errorf("运行时未感知新配置: %d", RT().GetConfig().WebUI.TokenExpireHours)
+	}
+
+	// 越界校验
+	badBody := map[string]any{"data": map[string]any{
+		"webui": map[string]any{"username": "a", "password": "b", "token_expire_hours": 999999}}}
+	badJSON, _ := json.Marshal(badBody)
+	badReq, _ := http.NewRequest("PUT", ts.URL+"/api/config/main", bytes.NewReader(badJSON))
+	badReq.Header.Set("Authorization", "Bearer "+token)
+	badResp, err := http.DefaultClient.Do(badReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	badResp.Body.Close()
+	if badResp.StatusCode != 400 {
+		t.Errorf("越界值 code = %d, want 400", badResp.StatusCode)
+	}
+}

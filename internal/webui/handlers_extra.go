@@ -2,6 +2,7 @@
 package webui
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -54,4 +55,9 @@ func intParam(s string, def int) int {
 		return def
 	}
 	return n
+}
+
+// jsonDecodeBody 解码 JSON 请求体。
+func jsonDecodeBody(r *http.Request, v any) error {
+	return json.NewDecoder(r.Body).Decode(v)
 }
