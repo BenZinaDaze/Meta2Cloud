@@ -510,3 +510,8 @@ func handleU115OfflineClearTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "flag": body.Flag})
 }
+
+// handleU115AutoOrganizeStatus 115 自动整理监听状态。
+func handleU115AutoOrganizeStatus(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, U115AutoOrganizeStatusPayload())
+}

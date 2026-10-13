@@ -27,6 +27,7 @@ func NewServer() *Server {
 	s.registerRoutes()
 	s.rootFS = loadStaticFiles()
 	RT().startTmdbEvictLoop(s.stop)
+	StartupBackgroundWatchers()
 	return s
 }
 
@@ -114,6 +115,7 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("POST /api/u115/test", handleU115TestConnection)
 	m.HandleFunc("POST /api/u115/test-cookie", handleU115TestCookie)
 	m.HandleFunc("GET /api/u115/offline/overview", handleU115OfflineOverview)
+	m.HandleFunc("GET /api/u115/offline/auto-organize-status", handleU115AutoOrganizeStatus)
 	m.HandleFunc("GET /api/u115/offline/quota", handleU115OfflineQuota)
 	m.HandleFunc("POST /api/u115/offline/add-urls", handleU115OfflineAddURLs)
 	m.HandleFunc("POST /api/u115/offline/tasks/delete", handleU115OfflineDeleteTasks)
