@@ -139,6 +139,7 @@ func (s *Server) registerRoutes() {
 
 	// logs / ingest
 	m.HandleFunc("GET /api/logs", handleGetLogs)
+	m.HandleFunc("GET /api/logs/live", handleLogsLiveWS)
 	m.HandleFunc("GET /api/ingest/history", handleIngestHistory)
 	m.HandleFunc("GET /api/ingest/stats", handleIngestStats)
 	m.HandleFunc("GET /api/ingest/recent", handleIngestRecent)

@@ -63,7 +63,7 @@ func doRunPipeline() {
 
 	pipe := pipeline.New(provider, cfg, pipeline.Options{
 		LogFn: func(level, message string) {
-			appLog("pipeline", "pipeline_output", level, message, map[string]any{"runId": runID})
+			BroadcastLog(level, message, runID)
 		},
 		TmdbCache: RT().GetTmdbCache(),
 	})
