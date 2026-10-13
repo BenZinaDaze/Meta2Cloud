@@ -33,13 +33,13 @@
 | `mediaparser/infopath.py` | `internal/mediaparser/infopath.go` | ✅ | 37 | |
 | `nfo/generator.py` | `internal/nfo` | ✅ 完成+测试 | 482 | 手写 XML 构建器(CDATA/属性);转义行为与 minidom 对齐 |
 | `nfo/image_uploader.py` | `internal/nfo` | ⬜ 待开始 | ? | |
-| `core/pipeline.py` | `internal/pipeline` | ⬜ 待开始 | 944 | 主流程编排 |
-| `core/organizer.py` | `internal/organizer` | ⬜ 待开始 | ~250 | 目录整理 |
-| `core/subtitle_matcher.py` | `internal/pipeline` | ⬜ 待开始 | ? | |
-| `scraper/`(mikan 等) | `internal/scraper` | ⬜ 待开始 | ? | RSS 抓取 |
-| `webui/app.py` + `routes/` + `services/` | `internal/webui` | ⬜ 待开始 | ~8000 | FastAPI → net/http;JWT+SQLite |
-| `webui/library_store.py` / `tmdb_cache.py` 等 store | `internal/webui/store` | ⬜ 待开始 | ? | modernc.org/sqlite |
-| `core/__main__.py` | `cmd/meta2cloud`(CLI) | ⬜ 待开始 | ~120 | `--dry-run` 等参数 |
+| `core/pipeline.py` | `internal/pipeline` | ✅ 完成+测试 | 944 | 端到端: TV/电影/字幕/dry-run/替换模式/TG 通知 |
+| `core/organizer.py` | `internal/organizer` | ✅ 完成+测试 | 190 | 目录整理 |
+| `core/subtitle_matcher.py` | `internal/pipeline/subtitle.go` | ✅ 完成+测试 | 279 | |
+| `scraper/`(mikan/anibt) | `internal/scraper` | ✅ 完成+测试 | 456 | goquery HTML 解析 |
+| `webui/app.py`+`core/`+auth+基础路由 | `internal/webui` | ✅ 完成+测试 | ~500 | 运行时/JWT/ServeMux/SPA 兜底;登录+library+stats |
+| `webui/library_store.py`+`tmdb_cache.py` | `internal/webui/store` | ✅ 完成+测试 | 933 | 表结构与 Python 完全一致,复用既有 library.db |
+| `core/__main__.py`+服务入口 | `cmd/meta2cloud` | ✅ 可运行 | 98+ | serve/pipeline 子命令,二进制冒烟通过 |
 | 前端 `frontend/` | 不变 | — | — | 保持 API 兼容 |
 | Docker / compose | 待更新 | ⬜ | — | 多阶段构建 Go 二进制 |
 
