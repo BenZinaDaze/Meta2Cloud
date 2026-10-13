@@ -73,6 +73,14 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("PUT /api/config/main", handleWriteMainConfig)
 	m.HandleFunc("PUT /api/config/parser-rules", handleWriteParserRules)
 
+	// file manager
+	m.HandleFunc("GET /api/files", handleListFiles)
+	m.HandleFunc("GET /api/files/{fileID}", handleGetFile)
+	m.HandleFunc("POST /api/files", handleCreateFile)
+	m.HandleFunc("PATCH /api/files/{fileID}", handleUpdateFile)
+	m.HandleFunc("DELETE /api/files/{fileID}", handleDeleteFile)
+	m.HandleFunc("POST /api/files/batch", handleFileBatch)
+
 	// media actions / tmdb / scraper / bangumi
 	m.HandleFunc("POST /api/library:refresh-item", handleRefreshItem)
 	m.HandleFunc("POST /api/library:reidentify", handleReidentifyItem)
