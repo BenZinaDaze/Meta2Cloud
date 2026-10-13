@@ -26,8 +26,6 @@ import {
   saveMainConfig,
   getParserRulesConfig,
   saveParserRulesConfig,
-  getDriveOauthStatus,
-  testDriveConnection,
   testMediaVault,
   getU115OauthStatus,
   createU115OauthSession,
@@ -77,7 +75,6 @@ const CONFIG_TABS = [
   { key: 'auth', label: '认证', icon: Shield },
   { key: 'tmdb', label: 'TMDB', icon: Database },
   { key: 'aria2', label: '下载', icon: Download },
-  { key: 'drive', label: 'Drive', icon: HardDrive },
   { key: 'u115', label: '115', icon: HardDrive },
   { key: 'rss', label: 'RSS', icon: Rss },
   { key: 'telegram', label: '通知', icon: Bell },
@@ -350,9 +347,6 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
-  const [driveOauth, setDriveOauth] = useState<{ authorized: boolean; credentials_exists: boolean; token_exists: boolean } | null>(null)
-  const [driveOauthMessage, setDriveOauthMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-  const [driveTestBusy, setDriveTestBusy] = useState(false)
   const [u115Oauth, setU115Oauth] = useState<{ authorized: boolean; token_exists: boolean } | null>(null)
   const [u115OauthMessage, setU115OauthMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [u115CookieMessage, setU115CookieMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
@@ -366,15 +360,6 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
   const [fullRefreshMessage, setFullRefreshMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [mediavaultTestBusy, setMediavaultTestBusy] = useState(false)
   const [mediavaultMessage, setMediavaultMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-
-  const loadDriveOauthStatus = useCallback(async () => {
-    try {
-      const res = await getDriveOauthStatus()
-      setDriveOauth(res.data)
-    } catch {
-      setDriveOauth(null)
-    }
-  }, [])
 
   const loadU115OauthStatus = useCallback(async () => {
     try {
@@ -398,10 +383,9 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
       .catch((e) => setError((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || e.message))
       .finally(() => setLoading(false))
     if (page !== 'filenameRules') {
-      loadDriveOauthStatus()
       loadU115OauthStatus()
     }
-  }, [loadDriveOauthStatus, loadU115OauthStatus, page])
+  }, [loadU115OauthStatus, page])
 
   // 115 扫码轮询
   useEffect(() => {
@@ -527,22 +511,6 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
       setError((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '保存失败')
     } finally {
       setSaving(false)
-    }
-  }
-
-  async function handleDriveTest() {
-    setDriveTestBusy(true)
-    setDriveOauthMessage(null)
-    try {
-      const res = await testDriveConnection()
-      const data = res?.data || {}
-      const identity = data.email || data.display_name || '当前账号'
-      setDriveOauthMessage({ type: 'success', text: `连接成功：${identity}` })
-      loadDriveOauthStatus()
-    } catch (e) {
-      setDriveOauthMessage({ type: 'error', text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Drive 连接测试失败' })
-    } finally {
-      setDriveTestBusy(false)
     }
   }
 
@@ -815,14 +783,13 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                 <FieldGroup>
                   <Field label="主存储">
                     <Select
-                      value={((cfg?.storage as Record<string, unknown>)?.primary as string) || 'google_drive'}
+                      value={((cfg?.storage as Record<string, unknown>)?.primary as string) || 'pan115'}
                       onValueChange={(v) => set('storage', 'primary', v)}
                     >
                       <SelectTrigger className="w-full sm:w-48 focus:ring-0 focus:ring-offset-0">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="google_drive">Google Drive</SelectItem>
                         <SelectItem value="pan115">115 网盘</SelectItem>
                       </SelectContent>
                     </Select>
@@ -1005,92 +972,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
             </Card>
           </TabsContent>
 
-          <TabsContent value="drive" className="mt-0">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Google Drive</CardTitle>
-                <CardDescription>OAuth2 与目录配置</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <div className="mb-3 text-[13px] font-medium">授权状态</div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <Badge variant={driveOauth?.authorized ? 'success' : 'secondary'}>
-                      {driveOauth?.authorized ? '已授权' : '未授权'}
-                    </Badge>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleDriveTest}
-                      disabled={driveTestBusy || driveOauth?.credentials_exists === false}
-                    >
-                      {driveTestBusy ? '测试中…' : '测试连接'}
-                    </Button>
-                  </div>
-                  {driveOauthMessage && (
-                    <div className={`mt-3 rounded-md px-3 py-2 text-xs ${driveOauthMessage.type === 'success' ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
-                      {driveOauthMessage.text}
-                    </div>
-                  )}
-                </div>
-
-                <Separator />
-
-                <FieldGroup>
-                  <Field label="凭据路径" description="credentials.json">
-                    <TextInput
-                      value={(cfg?.drive as Record<string, unknown>)?.credentials_json as string | undefined}
-                      onChange={(v) => set('drive', 'credentials_json', v)}
-                      placeholder="config/credentials.json"
-                      mono
-                    />
-                  </Field>
-                  <Field label="Token 路径">
-                    <TextInput
-                      value={(cfg?.drive as Record<string, unknown>)?.token_json as string | undefined}
-                      onChange={(v) => set('drive', 'token_json', v)}
-                      placeholder="config/token.json"
-                      mono
-                    />
-                  </Field>
-                  <Field label="扫描目录 ID" description="目标文件夹">
-                    <TextInput
-                      value={(cfg?.drive as Record<string, unknown>)?.scan_folder_id as string | undefined}
-                      onChange={(v) => set('drive', 'scan_folder_id', v)}
-                      placeholder="folder-id"
-                      mono
-                    />
-                  </Field>
-                  <Field label="媒体库根目录 ID">
-                    <TextInput
-                      value={(cfg?.drive as Record<string, unknown>)?.root_folder_id as string | undefined}
-                      onChange={(v) => set('drive', 'root_folder_id', v)}
-                      placeholder="Google Drive 文件夹 ID"
-                      mono
-                    />
-                  </Field>
-                  <Field label="电影归档目录" description="留空同根目录">
-                    <TextInput
-                      value={(cfg?.drive as Record<string, unknown>)?.movie_root_id as string | undefined}
-                      onChange={(v) => set('drive', 'movie_root_id', v)}
-                      placeholder="留空同根目录"
-                      mono
-                    />
-                  </Field>
-                  <Field label="剧集归档目录" description="留空同根目录">
-                    <TextInput
-                      value={(cfg?.drive as Record<string, unknown>)?.tv_root_id as string | undefined}
-                      onChange={(v) => set('drive', 'tv_root_id', v)}
-                      placeholder="留空同根目录"
-                      mono
-                    />
-                  </Field>
-                </FieldGroup>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="u115" className="mt-0">
+                    <TabsContent value="u115" className="mt-0">
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">115 网盘</CardTitle>
