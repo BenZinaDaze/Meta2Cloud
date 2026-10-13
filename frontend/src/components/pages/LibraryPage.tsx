@@ -293,7 +293,7 @@ export default function LibraryPage({
         <StatePanel
           icon="!"
           title={`加载失败：${error}`}
-          description="请确认 FastAPI 后端已启动，或稍后重试。"
+          description="请确认后端服务已启动，或稍后重试。"
           tone="danger"
         />
       )}

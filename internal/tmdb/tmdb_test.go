@@ -168,3 +168,30 @@ func (f *fakeCache) Set(path string, data map[string]any, language string) {
 	f.data[path+"|"+language] = data
 }
 func (f *fakeCache) SetFailed(path, language string) {}
+
+// 回归: path 带 query 时(?append_to_response=...)不得被 api_key/language 覆盖
+func TestGetMergesExistingQuery(t *testing.T) {
+	var gotAppend, gotAPIKey string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAppend = r.URL.Query().Get("append_to_response")
+		gotAPIKey = r.URL.Query().Get("api_key")
+		if r.URL.Query().Get("language") == "" {
+			t.Error("language 参数丢失")
+		}
+		json.NewEncoder(w).Encode(map[string]any{"id": 1.0, "credits": map[string]any{}})
+	}))
+	defer server.Close()
+
+	client := NewClient("key", "zh-CN", "", 5, nil)
+	client.SetTestBaseURL(server.URL)
+	data := client.Get("/movie/27205?append_to_response=credits,external_ids")
+	if data == nil || data["credits"] == nil {
+		t.Fatalf("data = %v", data)
+	}
+	if gotAppend != "credits,external_ids" {
+		t.Errorf("append_to_response = %q (被覆盖丢失)", gotAppend)
+	}
+	if gotAPIKey != "key" {
+		t.Errorf("api_key = %q", gotAPIKey)
+	}
+}

@@ -2,7 +2,10 @@
 package webui
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -10,7 +13,64 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
+
+// aria2RPCCall 调用 aria2 JSON-RPC。method 如 "aria2.addUri"。
+func aria2RPCCall(method string, params []any) (any, error) {
+	cfg := RT().GetConfig().Aria2
+	if !cfg.Enabled {
+		return nil, fmt.Errorf("Aria2 未启用")
+	}
+	scheme := "http"
+	if cfg.Secure {
+		scheme = "https"
+	}
+	rpcURL := fmt.Sprintf("%s://%s:%d%s", scheme, cfg.Host, cfg.Port, cfg.Path)
+
+	// secret 前缀参数（aria2 约定：token:xxx 作为第一个参数）
+	rpcParams := make([]any, 0, len(params)+1)
+	if cfg.Secret != "" {
+		rpcParams = append(rpcParams, "token:"+cfg.Secret)
+	}
+	rpcParams = append(rpcParams, params...)
+
+	requestID := time.Now().UnixNano()
+	body, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": requestID, "method": method, "params": rpcParams,
+	})
+	if err != nil {
+		return nil, err
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(rpcURL, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("无法连接 Aria2 RPC：%v", err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("Aria2 RPC HTTP %d", resp.StatusCode)
+	}
+	var result struct {
+		Result json.RawMessage `json:"result"`
+		Error  *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("Aria2 RPC 响应解析失败：%v", err)
+	}
+	if result.Error != nil {
+		return nil, fmt.Errorf("Aria2 RPC 错误 %d: %s", result.Error.Code, result.Error.Message)
+	}
+	var out any
+	if json.Unmarshal(result.Result, &out) == nil {
+		return out, nil
+	}
+	return string(result.Result), nil
+}
 
 var aria2TaskKeys = []string{
 	"gid", "status", "totalLength", "completedLength", "uploadLength",
@@ -677,6 +737,35 @@ func handleAria2TasksPurge(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+// aria2AddURICore addUri 公共实现（HTTP 端点与订阅推送共用）。
+func aria2AddURICore(uris []string, options map[string]string, title string) (string, map[string]any, error) {
+	var cleaned []string
+	for _, uri := range uris {
+		if uri = strings.TrimSpace(uri); uri != "" {
+			cleaned = append(cleaned, uri)
+		}
+	}
+	if len(cleaned) == 0 {
+		return "", nil, fmt.Errorf("至少需要一个下载链接")
+	}
+	if options == nil {
+		options = map[string]string{}
+	}
+	result, err := aria2RPCCall("addUri", []any{cleaned, options})
+	if err != nil {
+		return "", nil, err
+	}
+	gid, _ := result.(string)
+	task, _ := aria2GetTask(gid)
+	message := "已添加链接下载任务"
+	if title != "" {
+		message = "已推送下载：" + title
+	}
+	appLog("download", "task_added_uri", "SUCCESS", message,
+		map[string]any{"gid": gid, "uriCount": len(cleaned), "name": title})
+	return gid, task, nil
+}
+
 func handleAria2AddURI(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Uris    []string          `json:"uris"`
@@ -687,32 +776,11 @@ func handleAria2AddURI(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "请求体格式错误")
 		return
 	}
-	var cleaned []string
-	for _, uri := range body.Uris {
-		if uri = strings.TrimSpace(uri); uri != "" {
-			cleaned = append(cleaned, uri)
-		}
-	}
-	if len(cleaned) == 0 {
-		writeJSONError(w, http.StatusBadRequest, "至少需要一个下载链接")
-		return
-	}
-	options := body.Options
-	if options == nil {
-		options = map[string]string{}
-	}
-	result, err := aria2RPCCall("addUri", []any{cleaned, options})
+	gid, task, err := aria2AddURICore(body.Uris, body.Options, body.Title)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	gid, _ := result.(string)
-	task, _ := aria2GetTask(gid)
-	message := "已添加链接下载任务"
-	if body.Title != "" {
-		message = "已推送下载：" + body.Title
-	}
-	appLog("download", "task_added_uri", "SUCCESS", message,
-		map[string]any{"gid": gid, "uriCount": len(cleaned), "name": body.Title})
+	_ = gid
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "task": task})
 }

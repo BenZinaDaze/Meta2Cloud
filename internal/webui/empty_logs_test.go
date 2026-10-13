@@ -3,6 +3,7 @@ package webui
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -111,5 +112,40 @@ func TestSubscriptionTmdbCacheBackfill(t *testing.T) {
 	}
 	if entry.Title != "异世界悠闲农家 第2季" {
 		t.Errorf("缓存 title = %q, want 中文标题", entry.Title)
+	}
+}
+
+// SPA 兜底不得读出 dist 之外的文件（路径穿越防护回归）
+func TestRootPathTraversal(t *testing.T) {
+	rootDir := t.TempDir()
+	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
+	os.MkdirAll(filepath.Join(rootDir, "frontend", "dist"), 0o755)
+	os.MkdirAll(filepath.Join(rootDir, "secret"), 0o755)
+	os.WriteFile(filepath.Join(rootDir, "frontend", "dist", "index.html"), []byte("<html>app</html>"), 0o644)
+	os.WriteFile(filepath.Join(rootDir, "secret", "token.txt"), []byte("TOPSECRET"), 0o644)
+	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
+		[]byte("webui:\n  username: admin\n  password: secret123\n"), 0o644)
+	ResetJWTSecretCache()
+	InitRuntime(rootDir)
+	server := NewServer()
+	defer server.Close()
+	ts := httptest.NewServer(server.Handler())
+	defer ts.Close()
+
+	for _, raw := range []string{
+		ts.URL + "/../../../secret/token.txt",
+		ts.URL + "/%2e%2e/%2e%2e/secret/token.txt",
+		ts.URL + "/..%2f..%2fsecret%2ftoken.txt",
+		ts.URL + "/frontend/../secret/token.txt",
+	} {
+		resp, err := http.Get(raw)
+		if err != nil {
+			continue // 部分客户端会先规范化, 请求不发出也视为安全
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if strings.Contains(string(body), "TOPSECRET") {
+			t.Fatalf("路径穿越泄露: %s", raw)
+		}
 	}
 }

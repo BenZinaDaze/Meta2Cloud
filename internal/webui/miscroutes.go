@@ -6,13 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
 )
-
-var mediavaultHostPrefix = regexp.MustCompile(`^https?://`)
 
 // handleMediavaultTest 测试 MediaVault 连接。
 func handleMediavaultTest(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +42,7 @@ func handleMediavaultTest(w http.ResponseWriter, r *http.Request) {
 	if scheme != "http" && scheme != "https" {
 		scheme = "http"
 	}
-	host = strings.TrimRight(mediavaultHostPrefix.ReplaceAllString(strings.TrimSpace(host), ""), "/")
+	host = strings.TrimRight(hostPrefixRe.ReplaceAllString(strings.TrimSpace(host), ""), "/")
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
 		writeJSONError(w, http.StatusBadRequest, "MediaVault API Key 不能为空")

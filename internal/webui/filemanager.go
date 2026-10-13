@@ -61,11 +61,11 @@ func buildFolderPath(folderID, rootID, folderName string) []map[string]string {
 	return path
 }
 
-// buildPath 从文件向上追溯构建完整路径面包屑。
+// buildPath 从文件向上追溯构建完整路径面包屑（深度上限防数据成环时死循环）。
 func buildPath(provider cloudfile.Provider, file cloudfile.CloudFile, rootID string) []map[string]string {
 	var path []map[string]string
 	current := file
-	for {
+	for depth := 0; depth < 64; depth++ {
 		path = append([]map[string]string{breadcrumb(current.ID, current.Name)}, path...)
 		if current.ParentID != "" && current.ParentID != rootID {
 			parent, err := provider.GetFile(current.ParentID)

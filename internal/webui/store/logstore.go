@@ -147,10 +147,16 @@ func (s *LogStore) Write(category, event, level, message string, details map[str
 	return LogEntry{Ts: ts, Category: category, Event: event, Level: level, Message: message, Details: details}
 }
 
+// lastCleanupAt 上次过期清理时间（Read 内清理按小时节流，避免每次读取都执行 DELETE）。
+var lastCleanupAt time.Time
+
 // Read 读取日志（id 倒序，limit 1~1000）。
 func (s *LogStore) Read(limit int, category, level string, sinceID int64) []LogEntry {
 	s.mu.Lock()
-	s.cleanupExpired()
+	if time.Since(lastCleanupAt) > time.Hour {
+		s.cleanupExpired()
+		lastCleanupAt = time.Now()
+	}
 	s.mu.Unlock()
 
 	if limit < 1 {

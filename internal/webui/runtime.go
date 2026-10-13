@@ -291,7 +291,8 @@ func (rt *Runtime) GetLogStore() *store.LogStore {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	if rt.logStore == nil {
-		s, err := store.OpenLogStore(rt.DataDir(), rt.getConfigLocked().WebUI.LogRetentionDays, "")
+		legacyJSONL := filepath.Join(rt.DataDir(), "app_logs.jsonl") // Python 时代旧日志一次性迁移
+		s, err := store.OpenLogStore(rt.DataDir(), rt.getConfigLocked().WebUI.LogRetentionDays, legacyJSONL)
 		if err != nil {
 			return nil
 		}

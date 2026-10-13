@@ -524,7 +524,18 @@ func (c *Client) get(path string, extraParams map[string]string, useCache bool) 
 		if err != nil {
 			return nil
 		}
-		req.URL.RawQuery = params.Encode()
+		// target 可能已带 query（Get("/movie/1?append_to_response=...")），合并非覆盖
+		if req.URL.RawQuery != "" {
+			existing, _ := url.ParseQuery(req.URL.RawQuery)
+			for key, values := range params {
+				for _, v := range values {
+					existing.Set(key, v)
+				}
+			}
+			req.URL.RawQuery = existing.Encode()
+		} else {
+			req.URL.RawQuery = params.Encode()
+		}
 		req.Header.Set("Accept", "application/json")
 		resp, err := c.hc.Do(req)
 		if err != nil {

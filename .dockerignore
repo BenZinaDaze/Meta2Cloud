@@ -1,9 +1,10 @@
 .git
 .github
 .codex
-.pytest_cache
-__pycache__
-*.py[cod]
+
+# Go 构建产物(本地编译不入镜像)
+meta2cloud
+*.exe
 
 frontend/node_modules
 frontend/dist
