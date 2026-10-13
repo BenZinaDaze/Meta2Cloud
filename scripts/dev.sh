@@ -1,48 +1,40 @@
 #!/usr/bin/env bash
 
 # meta2cloud 本地全栈开发启动脚本
-# 一键并联启动 fastapi 后端和 vite 前端
+# 一键并联启动 Go 后端和 Vite 前端
 
-echo "🚀 Starting meta2cloud complete development environment..."
+set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PYTHON_CMD="python"
 BACKEND_PID=""
-
-# 优先使用项目虚拟环境，避免误用系统 Python 导致缺少 uvicorn/fastapi 依赖
-if [ -x "$PROJECT_ROOT/.venv/bin/python" ]; then
-  PYTHON_CMD="$PROJECT_ROOT/.venv/bin/python"
-fi
+FRONTEND_PID=""
 
 cleanup() {
-  if [ -n "$BACKEND_PID" ] && kill -0 "$BACKEND_PID" >/dev/null 2>&1; then
-    kill "$BACKEND_PID" >/dev/null 2>&1 || true
-  fi
+    echo ""
+    echo "🛑 Stopping dev servers..."
+    [ -n "$FRONTEND_PID" ] && kill "$FRONTEND_PID" 2>/dev/null
+    [ -n "$BACKEND_PID" ] && kill "$BACKEND_PID" 2>/dev/null
+    wait 2>/dev/null
+    exit 0
 }
+trap cleanup INT TERM
 
-# 捕捉中断信号或退出，关闭后台 uvicorn 进程
-trap cleanup SIGINT SIGTERM EXIT
+echo "🚀 Starting meta2cloud development environment..."
 
-if ! "$PYTHON_CMD" -c "import uvicorn" >/dev/null 2>&1; then
-  echo "❌ Backend dependencies are missing for: $PYTHON_CMD"
-  echo "   Please run: cd $PROJECT_ROOT && uv sync"
-  exit 1
-fi
-
-# 1. 启动后端 (Uvicorn)
-echo "============================================================"
-echo "=> [Backend] Starting FastAPI Server on port 38765..."
-echo "============================================================"
-# 这里使用 python -m uvicorn，以防 uvicorn 不在系统 PATH 中
-"$PYTHON_CMD" -m uvicorn webui.app:app --host 0.0.0.0 --port 38765 --reload &
+# 启动 Go 后端（端口 38765）
+cd "$PROJECT_ROOT"
+go build -o /tmp/meta2cloud-dev ./cmd/meta2cloud
+/tmp/meta2cloud-dev serve --host 0.0.0.0 --port 38765 --root "$PROJECT_ROOT" &
 BACKEND_PID=$!
+echo "✅ Backend:  http://localhost:38765 (pid $BACKEND_PID)"
 
-# 稍微等待半秒以免前端的日志先刷掉后端的启动日志
-sleep 0.5 
+# 启动前端开发服务器（端口 5173，代理 /api 到 38765）
+cd "$PROJECT_ROOT/frontend"
+npm run dev &
+FRONTEND_PID=$!
+echo "✅ Frontend: http://localhost:5173 (pid $FRONTEND_PID)"
 
-# 2. 启动前端 (Vite)
-echo "============================================================"
-echo "=> [Frontend] Starting Vite Dev Server..."
-echo "============================================================"
-cd "$PROJECT_ROOT/frontend" && npm run dev
+echo ""
+echo "Press Ctrl+C to stop."
+wait
