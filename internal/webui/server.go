@@ -73,6 +73,20 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("PUT /api/config/main", handleWriteMainConfig)
 	m.HandleFunc("PUT /api/config/parser-rules", handleWriteParserRules)
 
+	// media actions / tmdb / scraper / bangumi
+	m.HandleFunc("POST /api/library:refresh-item", handleRefreshItem)
+	m.HandleFunc("POST /api/library:reidentify", handleReidentifyItem)
+	m.HandleFunc("GET /api/cache", handleCacheStats)
+	m.HandleFunc("POST /api/cache:evict", handleCacheEvict)
+	m.HandleFunc("GET /api/health", handleHealth)
+	m.HandleFunc("GET /api/tmdb/search", handleTmdbSearch)
+	m.HandleFunc("GET /api/tmdb/{tmdbID}", handleTmdbDetail)
+	m.HandleFunc("GET /api/tmdb/{tmdbID}/alternative-names", handleTmdbAlternativeNames)
+	m.HandleFunc("GET /api/scraper/search", handleScraperSearch)
+	m.HandleFunc("GET /api/scraper/sites", handleScraperSites)
+	m.HandleFunc("GET /api/scraper/episodes", handleScraperEpisodes)
+	m.HandleFunc("GET /api/bangumi/calendar", handleBangumiCalendar)
+
 	// subscriptions
 	m.HandleFunc("GET /api/subscriptions", handleListSubscriptions)
 	m.HandleFunc("POST /api/subscriptions", handleCreateSubscription)
