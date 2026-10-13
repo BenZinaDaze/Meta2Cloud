@@ -3,6 +3,7 @@ package webui
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"meta2cloud/internal/u115"
 
 	"gopkg.in/yaml.v3"
 )
@@ -365,7 +368,7 @@ func TestConfigEndpoints(t *testing.T) {
 
 	// 保存主配置（校验+持久化+运行时失效）
 	saveBody := map[string]any{"data": map[string]any{
-		"webui": map[string]any{"username": "admin", "password": "secret123", "token_expire_hours": 48},
+		"webui":    map[string]any{"username": "admin", "password": "secret123", "token_expire_hours": 48},
 		"telegram": map[string]any{"bot_token": "tg-token", "debounce_seconds": "10"},
 	}}
 	saveJSON, _ := json.Marshal(saveBody)
@@ -410,5 +413,177 @@ func TestConfigEndpoints(t *testing.T) {
 	badResp.Body.Close()
 	if badResp.StatusCode != 400 {
 		t.Errorf("越界值 code = %d, want 400", badResp.StatusCode)
+	}
+}
+
+// ── 115 OAuth 与云下载端到端 ───────────────────────────────
+
+func newU115TestServer(t *testing.T, confirmed bool) (*httptest.Server, string) {
+	t.Helper()
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/open/authDeviceCode"):
+			json.NewEncoder(w).Encode(map[string]any{"state": true, "code": 0,
+				"data": map[string]any{"qrcode": "https://115.com/qr?token=x", "uid": "u1", "time": "123", "sign": "s1"}})
+		case strings.HasSuffix(r.URL.Path, "/get/status/"):
+			status := 2
+			if !confirmed {
+				status = 0
+			}
+			json.NewEncoder(w).Encode(map[string]any{"state": true, "data": map[string]any{"status": status, "msg": ""}})
+		case strings.HasSuffix(r.URL.Path, "/open/deviceCodeToToken"):
+			json.NewEncoder(w).Encode(map[string]any{"state": true, "code": 0,
+				"data": map[string]any{"access_token": "at", "refresh_token": "rt", "expires_in": 3600}})
+		case strings.HasSuffix(r.URL.Path, "/open/offline/get_task_list"):
+			json.NewEncoder(w).Encode(map[string]any{"state": true, "code": 0, "data": map[string]any{
+				"page": 1, "page_count": 1, "count": 1,
+				"tasks": []any{map[string]any{
+					"info_hash": "h1", "name": "任务1", "status": 2, "percentDone": 100.0,
+					"size": 1024.0, "add_time": 1700000000.0, "last_update": 1700000100.0,
+				}}}})
+		case strings.HasSuffix(r.URL.Path, "/open/offline/get_quota_info"):
+			json.NewEncoder(w).Encode(map[string]any{"state": true, "code": 0, "data": map[string]any{
+				"count": 10, "used": 3, "surplus": 7, "package": []any{}}})
+		case strings.HasSuffix(r.URL.Path, "/open/offline/add_task_urls"):
+			json.NewEncoder(w).Encode(map[string]any{"state": true, "code": 0,
+				"data": []any{map[string]any{"state": true, "code": 0, "message": "ok", "url": "magnet:?xt=1"}}})
+		default:
+			json.NewEncoder(w).Encode(map[string]any{"state": true, "code": 0, "data": map[string]any{}})
+		}
+	}))
+	t.Cleanup(apiServer.Close)
+
+	rootDir := t.TempDir()
+	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
+	cfgYAML := "webui:\n  username: admin\n  password: secret123\nu115:\n  client_id: test-cid\n"
+	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
+	ResetJWTSecretCache()
+	InitRuntime(rootDir)
+
+	client := u115.NewClient("test-cid",
+		u115.WithToken(u115.Token{AccessToken: "at", RefreshToken: "rt", ExpiresIn: 3600, RefreshTime: time.Now().Unix()}),
+		u115.WithQPS(1000, 1000))
+	client.SetTestBaseURL(apiServer.URL)
+	RT().SetU115ClientForTest(client)
+
+	server := NewServer()
+	t.Cleanup(server.Close)
+	ts := httptest.NewServer(server.Handler())
+	t.Cleanup(ts.Close)
+	_, out := login(t, ts, "admin", "secret123")
+	return ts, out["token"].(string)
+}
+
+func TestU115OauthFlow(t *testing.T) {
+	ts, token := newU115TestServer(t, true)
+
+	// 初始状态：无 token 文件未授权（注入客户端不算持久化 token）
+	req, _ := http.NewRequest("GET", ts.URL+"/api/u115/oauth/status", nil)
+	req.Header.Set("Authorization", "Bearer "+authToken(ts, t))
+	resp, _ := http.DefaultClient.Do(req)
+	var status map[string]any
+	json.NewDecoder(resp.Body).Decode(&status)
+	resp.Body.Close()
+	if status["client_id"] != "test-cid" {
+		t.Errorf("status = %v", status)
+	}
+
+	// 创建扫码会话
+	createReq, _ := http.NewRequest("POST", ts.URL+"/api/u115/oauth/create", strings.NewReader("{}"))
+	createReq.Header.Set("Authorization", "Bearer "+token)
+	createResp, err := http.DefaultClient.Do(createReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var created map[string]any
+	json.NewDecoder(createResp.Body).Decode(&created)
+	createResp.Body.Close()
+	if created["ok"] != true || created["uid"] != "u1" {
+		t.Fatalf("create = %v", created)
+	}
+
+	// 二维码 PNG
+	qrReq, _ := http.NewRequest("GET", ts.URL+"/api/u115/oauth/qrcode", nil)
+	qrReq.Header.Set("Authorization", "Bearer "+token)
+	qrResp, err := http.DefaultClient.Do(qrReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	qrData := make([]byte, 4)
+	io.ReadFull(qrResp.Body, qrData)
+	qrResp.Body.Close()
+	if qrResp.Header.Get("Content-Type") != "image/png" || string(qrData[:4]) != "\x89PNG" {
+		t.Errorf("qrcode = %s %v", qrResp.Header.Get("Content-Type"), qrData[:4])
+	}
+
+	// 轮询（已确认 → 换取 token → 会话文件删除）
+	pollReq, _ := http.NewRequest("GET", ts.URL+"/api/u115/oauth/poll", nil)
+	pollReq.Header.Set("Authorization", "Bearer "+token)
+	pollResp, err := http.DefaultClient.Do(pollReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pollOut map[string]any
+	json.NewDecoder(pollResp.Body).Decode(&pollOut)
+	pollResp.Body.Close()
+	if pollOut["ok"] != true || pollOut["confirmed"] != true {
+		t.Errorf("poll = %v", pollOut)
+	}
+}
+
+func authToken(ts *httptest.Server, t *testing.T) string {
+	t.Helper()
+	_, out := login(t, ts, "admin", "secret123")
+	return out["token"].(string)
+}
+
+func TestU115OfflineEndpoints(t *testing.T) {
+	ts, token := newU115TestServer(t, true)
+
+	// 任务列表
+	code, overview := authedGet(t, ts, token, "/api/u115/offline/overview")
+	if code != 200 || overview["ok"] != true {
+		t.Fatalf("overview = %d %v", code, overview)
+	}
+	tasks := overview["tasks"].([]any)
+	if len(tasks) != 1 {
+		t.Fatalf("tasks = %v", tasks)
+	}
+	task := tasks[0].(map[string]any)
+	if task["is_finished"] != true || task["name"] != "任务1" {
+		t.Errorf("task = %v", task)
+	}
+
+	// 配额
+	_, quota := authedGet(t, ts, token, "/api/u115/offline/quota")
+	quotaData := quota["quota"].(map[string]any)
+	if quotaData["surplus"] != float64(7) {
+		t.Errorf("quota = %v", quotaData)
+	}
+
+	// 添加链接
+	addReq, _ := http.NewRequest("POST", ts.URL+"/api/u115/offline/add-urls",
+		strings.NewReader(`{"urls": "magnet:?xt=1\nmagnet:?xt=2"}`))
+	addReq.Header.Set("Authorization", "Bearer "+token)
+	addReq.Header.Set("Content-Type", "application/json")
+	addResp, err := http.DefaultClient.Do(addReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var addOut map[string]any
+	json.NewDecoder(addResp.Body).Decode(&addOut)
+	addResp.Body.Close()
+	if addOut["ok"] != true || addOut["count"] != float64(1) {
+		t.Errorf("add = %v", addOut)
+	}
+
+	// 空链接拒绝
+	emptyReq, _ := http.NewRequest("POST", ts.URL+"/api/u115/offline/add-urls",
+		strings.NewReader(`{"urls": "  \n "}`))
+	emptyReq.Header.Set("Authorization", "Bearer "+token)
+	emptyResp, _ := http.DefaultClient.Do(emptyReq)
+	emptyResp.Body.Close()
+	if emptyResp.StatusCode != 400 {
+		t.Errorf("empty urls code = %d", emptyResp.StatusCode)
 	}
 }

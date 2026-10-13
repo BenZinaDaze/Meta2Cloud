@@ -341,3 +341,11 @@ func (rt *Runtime) SetProviderForTest(p cloudfile.Provider) {
 	_ = rt.getConfigLocked()
 	rt.provider = p
 }
+
+// SetU115ClientForTest 注入测试 115 客户端。
+func (rt *Runtime) SetU115ClientForTest(c *u115.Client) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	_ = rt.getConfigLocked()
+	rt.u115Client = c
+}

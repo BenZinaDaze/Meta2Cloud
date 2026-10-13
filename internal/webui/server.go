@@ -73,6 +73,20 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("PUT /api/config/main", handleWriteMainConfig)
 	m.HandleFunc("PUT /api/config/parser-rules", handleWriteParserRules)
 
+	// u115 (OAuth + 云下载)
+	m.HandleFunc("GET /api/u115/oauth/status", handleU115OauthStatus)
+	m.HandleFunc("POST /api/u115/oauth/create", handleU115OauthCreate)
+	m.HandleFunc("GET /api/u115/oauth/qrcode", handleU115OauthQrcode)
+	m.HandleFunc("GET /api/u115/oauth/poll", handleU115OauthPoll)
+	m.HandleFunc("POST /api/u115/oauth/exchange", handleU115OauthExchange)
+	m.HandleFunc("POST /api/u115/test", handleU115TestConnection)
+	m.HandleFunc("POST /api/u115/test-cookie", handleU115TestCookie)
+	m.HandleFunc("GET /api/u115/offline/overview", handleU115OfflineOverview)
+	m.HandleFunc("GET /api/u115/offline/quota", handleU115OfflineQuota)
+	m.HandleFunc("POST /api/u115/offline/add-urls", handleU115OfflineAddURLs)
+	m.HandleFunc("POST /api/u115/offline/tasks/delete", handleU115OfflineDeleteTasks)
+	m.HandleFunc("POST /api/u115/offline/tasks/clear", handleU115OfflineClearTasks)
+
 	// logs / ingest
 	m.HandleFunc("GET /api/logs", handleGetLogs)
 	m.HandleFunc("GET /api/ingest/history", handleIngestHistory)

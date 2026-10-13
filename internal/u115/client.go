@@ -324,7 +324,6 @@ func (c *Client) doRequest(method, target string, opts requestOpts) (payload map
 		req.URL.RawQuery = opts.params.Encode()
 	}
 	req.Header.Set("User-Agent", c.userAgent)
-	req.Header.Set("Accept-Encoding", "gzip, deflate")
 	if opts.form != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
