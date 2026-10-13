@@ -470,6 +470,9 @@ func buildYearRange(year string) []string {
 
 // ── HTTP 基础方法 ───────────────────────────────────────────
 
+// SetTestBaseURL 覆盖 API 地址（仅测试使用）。
+func (c *Client) SetTestBaseURL(baseURL string) { c.baseURLOverride = baseURL }
+
 // SearchRawMulti 直接透传调用 /search/multi，返回原始 results（不走缓存避免结果陈旧）。
 func (c *Client) SearchRawMulti(query string) []map[string]any {
 	return c.search("multi", map[string]string{"query": query})
