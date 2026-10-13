@@ -362,11 +362,11 @@ func scanSingleMovieFolder(_ cloudfile.Provider, folder cloudfile.CloudFile, cfg
 func ScanMovies(client cloudfile.Provider, cfg *config.Config) []MediaItem {
 	movieRoot := cfg.ActiveMovieRootID()
 	if movieRoot == "" {
-		return nil
+		return []MediaItem{}
 	}
 	folders, err := client.ListFiles(movieRoot, 500)
 	if err != nil {
-		return nil
+		return []MediaItem{}
 	}
 	movies := []MediaItem{}
 	for _, folder := range folders {
@@ -497,11 +497,11 @@ func scanSingleTVFolder(client cloudfile.Provider, cfg *config.Config, showFolde
 func ScanTVShows(client cloudfile.Provider, cfg *config.Config, useCache bool) []MediaItem {
 	tvRoot := cfg.ActiveTvRootID()
 	if tvRoot == "" {
-		return nil
+		return []MediaItem{}
 	}
 	folders, err := client.ListFiles(tvRoot, 500)
 	if err != nil {
-		return nil
+		return []MediaItem{}
 	}
 	shows := []MediaItem{}
 	for _, showFolder := range folders {
@@ -520,11 +520,11 @@ func ScanTVShows(client cloudfile.Provider, cfg *config.Config, useCache bool) [
 func ScanMoviesIncremental(client cloudfile.Provider, cfg *config.Config, storedMtimes map[string]int64) ([]MediaItem, map[string]int64) {
 	movieRoot := cfg.ActiveMovieRootID()
 	if movieRoot == "" {
-		return nil, map[string]int64{}
+		return []MediaItem{}, map[string]int64{}
 	}
 	folders, err := client.ListFiles(movieRoot, 500)
 	if err != nil {
-		return nil, map[string]int64{}
+		return []MediaItem{}, map[string]int64{}
 	}
 	movies := []MediaItem{}
 	currentMtimes := map[string]int64{}
@@ -549,11 +549,11 @@ func ScanMoviesIncremental(client cloudfile.Provider, cfg *config.Config, stored
 func ScanTVShowsIncremental(client cloudfile.Provider, cfg *config.Config, storedMtimes map[string]int64) ([]MediaItem, map[string]int64) {
 	tvRoot := cfg.ActiveTvRootID()
 	if tvRoot == "" {
-		return nil, map[string]int64{}
+		return []MediaItem{}, map[string]int64{}
 	}
 	folders, err := client.ListFiles(tvRoot, 500)
 	if err != nil {
-		return nil, map[string]int64{}
+		return []MediaItem{}, map[string]int64{}
 	}
 	shows := []MediaItem{}
 	currentMtimes := map[string]int64{}

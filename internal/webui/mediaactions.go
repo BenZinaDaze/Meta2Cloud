@@ -648,7 +648,7 @@ func handleScraperEpisodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data, _ := json.Marshal(episodes)
-	var out []any
+	out := []any{}
 	_ = json.Unmarshal(data, &out)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "episodes": out})
 }

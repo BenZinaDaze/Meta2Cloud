@@ -248,7 +248,7 @@ func (s *IngestStore) GetRecent(limit int) []map[string]any {
 		return nil
 	}
 	defer rows.Close()
-	var out []map[string]any
+	out := []map[string]any{}
 	for rows.Next() {
 		if item := scanIngestRow(rows); item != nil {
 			out = append(out, item)

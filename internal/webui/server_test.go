@@ -259,18 +259,29 @@ func TestRefreshLibraryAndScan(t *testing.T) {
 		t.Errorf("shows err: %v", shows)
 	}
 
-	// 日志（refresh 完成事件已写入；响应是 JSON 数组）
+	// 日志（refresh 完成事件已写入；结构为 {items, summary, maxId}）
 	reqLogs, _ := http.NewRequest("GET", ts.URL+"/api/logs?limit=50", nil)
 	reqLogs.Header.Set("Authorization", "Bearer "+token)
 	respLogs, err := http.DefaultClient.Do(reqLogs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var logEntries []map[string]any
-	json.NewDecoder(respLogs.Body).Decode(&logEntries)
+	var logsPayload struct {
+		Items   []map[string]any `json:"items"`
+		Summary map[string]any   `json:"summary"`
+		MaxID   int64            `json:"maxId"`
+	}
+	json.NewDecoder(respLogs.Body).Decode(&logsPayload)
 	respLogs.Body.Close()
-	if len(logEntries) == 0 {
+	if len(logsPayload.Items) == 0 {
 		t.Fatal("日志为空，refresh 事件未写入")
+	}
+	if logsPayload.Summary["retentionDays"] == nil {
+		t.Errorf("summary = %v", logsPayload.Summary)
+	}
+	// 空库时 items 必须是 [] 而非 null(前端 res.data.items 会抛错)
+	if logsPayload.Items == nil {
+		t.Fatal("items 为 null，应为空数组")
 	}
 }
 

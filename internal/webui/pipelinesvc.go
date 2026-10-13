@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"meta2cloud/internal/pipeline"
+	"meta2cloud/internal/webui/store"
 )
 
 var (
@@ -215,13 +216,25 @@ func strconvParseInt(s string) (int64, error) {
 }
 
 func handleGetLogs(w http.ResponseWriter, r *http.Request) {
+	// 与 Python logs_payload 一致：{items, summary, maxId}，并同步保留天数配置
 	ls := RT().GetLogStore()
 	if ls == nil {
-		writeJSON(w, http.StatusOK, []any{})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"items": []any{}, "summary": map[string]any{}, "maxId": 0,
+		})
 		return
 	}
+	ls.SetRetentionDays(RT().GetConfig().WebUI.LogRetentionDays)
 	limit := intQuery(r, "limit", 200)
-	writeJSON(w, http.StatusOK, ls.Read(limit, r.URL.Query().Get("category"), r.URL.Query().Get("level"), 0))
+	items := ls.Read(limit, r.URL.Query().Get("category"), r.URL.Query().Get("level"), 0)
+	if items == nil {
+		items = []store.LogEntry{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items":   items,
+		"summary": ls.Summary(500),
+		"maxId":   ls.MaxID(),
+	})
 }
 
 func handleIngestHistory(w http.ResponseWriter, r *http.Request) {

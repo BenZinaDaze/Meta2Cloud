@@ -927,7 +927,7 @@ func (s *LibraryStore) ListLibraryItems(mediaType string) []map[string]any {
 		return nil
 	}
 	defer rows.Close()
-	var out []map[string]any
+	out := []map[string]any{}
 	for rows.Next() {
 		var rawJSON string
 		if rows.Scan(&rawJSON) == nil {

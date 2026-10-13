@@ -707,7 +707,7 @@ func (s *RSSStore) ListHits(subscriptionID int64, limit int) []*HitRecord {
 		return nil
 	}
 	defer rows.Close()
-	var out []*HitRecord
+	out := []*HitRecord{}
 	for rows.Next() {
 		if h := scanHit(rows); h != nil {
 			out = append(out, h)

@@ -112,7 +112,7 @@ func serializeSubscription(rssStore *store.RSSStore, record *store.SubscriptionR
 			payload["library"] = map[string]any{"in_library": false}
 		}
 	}
-	var recentHits []map[string]any
+	recentHits := []map[string]any{}
 	for _, h := range rssStore.ListHits(record.ID, 5) {
 		recentHits = append(recentHits, hitToPayload(h))
 	}
@@ -302,7 +302,7 @@ func filterMatchItems(items []map[string]any, seasonNumber, startEpisode int, ke
 		})
 	}
 
-	var effectiveMatches []map[string]any
+	effectiveMatches := []map[string]any{}
 	for _, item := range matches {
 		if item["would_push"] == true {
 			effectiveMatches = append(effectiveMatches, item)
@@ -321,7 +321,7 @@ func filterMatchItems(items []map[string]any, seasonNumber, startEpisode int, ke
 // withRecentHits 给 joined 载荷补最近命中。
 func withRecentHits(rssStore *store.RSSStore, payload map[string]any) map[string]any {
 	id, _ := payload["id"].(int64)
-	var recentHits []map[string]any
+	recentHits := []map[string]any{}
 	for _, h := range rssStore.ListHits(id, 5) {
 		recentHits = append(recentHits, hitToPayload(h))
 	}
@@ -366,7 +366,7 @@ func checkSubscriptionRecord(rssStore *store.RSSStore, record *store.Subscriptio
 	result := filterMatchItems(items, record.SeasonNumber, record.StartEpisode, decodeKeywordAll(record.KeywordAll))
 
 	pushed, skipped := 0, 0
-	var errors []string
+	errors := []string{}
 	effective, _ := result["effective_matches"].([]map[string]any)
 	for _, item := range effective {
 		dedupe := item["dedupe_key"].(string)

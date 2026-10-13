@@ -177,7 +177,7 @@ func (s *LogStore) Read(limit int, category, level string, sinceID int64) []LogE
 		return nil
 	}
 	defer rows.Close()
-	var items []LogEntry
+	items := []LogEntry{}
 	for rows.Next() {
 		var e LogEntry
 		var detailsJSON string
