@@ -36,7 +36,7 @@ services:
     environment:
       - TZ=Asia/Shanghai
     volumes:
-      # Google Drive 认证文件，不打包进镜像
+      # 运行时配置与数据（115 token、library.db 等），不打包进镜像
       - ${PWD}/meta2cloud-config:/app/config
     network_mode: host
     restart: unless-stopped

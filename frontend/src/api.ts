@@ -168,10 +168,6 @@ export const getIngestStats = (days?: number) =>
 export const getRecentIngests = (limit?: number) =>
   api.get('/ingest/recent', { params: { limit } })
 
-// ── Google Drive ──
-export const getDriveOauthStatus = () => api.get('/drive/oauth/status')
-export const testDriveConnection = () => api.post('/drive/test')
-
 // ── Bangumi 新番 ──
 export const getBangumiCalendar = () => api.get('/bangumi/calendar')
 

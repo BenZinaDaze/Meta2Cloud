@@ -1,0 +1,336 @@
+// ingest.go —— 入库历史记录存储（对应 webui/ingest_store.py）。
+// 与 library.db 同库（ingest_history 表）。
+package store
+
+import (
+	"database/sql"
+	"fmt"
+	"log"
+	"os"
+	"strings"
+	"time"
+)
+
+const ingestDDL = `
+CREATE TABLE IF NOT EXISTS ingest_history (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    media_type      TEXT    NOT NULL,
+    tmdb_id         INTEGER NOT NULL DEFAULT 0,
+    title           TEXT    NOT NULL,
+    original_title  TEXT    NOT NULL DEFAULT '',
+    year            TEXT    NOT NULL DEFAULT '',
+    season          INTEGER DEFAULT NULL,
+    episode         INTEGER DEFAULT NULL,
+    episode_title   TEXT    NOT NULL DEFAULT '',
+    poster_path     TEXT    NOT NULL DEFAULT '',
+    drive_folder_id TEXT    NOT NULL DEFAULT '',
+    original_name   TEXT    NOT NULL DEFAULT '',
+    status          TEXT    NOT NULL DEFAULT 'success',
+    error_message   TEXT    NOT NULL DEFAULT '',
+    ingested_at     TEXT    NOT NULL,
+    created_at      TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ingest_history_media_type
+ON ingest_history(media_type);
+
+CREATE INDEX IF NOT EXISTS idx_ingest_history_tmdb_id
+ON ingest_history(media_type, tmdb_id);
+
+CREATE INDEX IF NOT EXISTS idx_ingest_history_ingested_at
+ON ingest_history(ingested_at DESC);
+`
+
+// IngestRecord 入库历史条目（与 pipeline.IngestRecord 字段对齐）。
+type IngestRecord struct {
+	MediaType     string
+	TmdbID        int64
+	Title         string
+	OriginalTitle string
+	Year          string
+	Season        *int
+	Episode       *int
+	EpisodeTitle  string
+	PosterPath    string
+	DriveFolderID string
+	OriginalName  string
+	Status        string
+	ErrorMessage  string
+	IngestedAt    string // 为空取当前时间
+}
+
+// IngestStore 入库历史存储。
+type IngestStore struct {
+	db *sql.DB
+}
+
+func sqliteDir(dbPath string) string {
+	if i := strings.LastIndexByte(dbPath, '/'); i > 0 {
+		return dbPath[:i]
+	}
+	return ""
+}
+
+// OpenIngestStore 在指定 SQLite 库上打开（通常是 library.db）。
+func OpenIngestStore(dbPath string) (*IngestStore, error) {
+	if dir := sqliteDir(dbPath); dir != "" {
+		_ = os.MkdirAll(dir, 0o755)
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err := db.Exec(ingestDDL); err != nil {
+		db.Close()
+		return nil, err
+	}
+	log.Printf("入库历史存储启动：%s", dbPath)
+	return &IngestStore{db: db}, nil
+}
+
+// Close 关闭。
+func (s *IngestStore) Close() error { return s.db.Close() }
+
+// RecordIngest 写入一条入库记录，返回行 ID。
+func (s *IngestStore) RecordIngest(r IngestRecord) (int64, error) {
+	now := utcNow()
+	ingestedAt := r.IngestedAt
+	if ingestedAt == "" {
+		ingestedAt = now
+	}
+	res, err := s.db.Exec(`INSERT INTO ingest_history(
+		media_type, tmdb_id, title, original_title, year,
+		season, episode, episode_title, poster_path,
+		drive_folder_id, original_name, status, error_message,
+		ingested_at, created_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.MediaType, r.TmdbID, r.Title, r.OriginalTitle, r.Year,
+		r.Season, r.Episode, r.EpisodeTitle, r.PosterPath,
+		r.DriveFolderID, r.OriginalName, r.Status, r.ErrorMessage,
+		ingestedAt, now)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// IngestQuery 查询条件。
+type IngestQuery struct {
+	Page      int
+	PageSize  int
+	MediaType string
+	TmdbID    int64
+	Status    string
+	StartDate string
+	EndDate   string
+	Keyword   string
+}
+
+// IngestQueryResult 查询结果。
+type IngestQueryResult struct {
+	Items      []map[string]any `json:"items"`
+	Pagination map[string]any   `json:"pagination"`
+}
+
+func scanIngestRow(row interface{ Scan(...any) error }) map[string]any {
+	var id int64
+	var mediaType, title, originalTitle, year, episodeTitle, posterPath string
+	var driveFolderID, originalName, status, errorMessage, ingestedAt, createdAt string
+	var tmdbID int64
+	var season, episode sql.NullInt64
+	if err := row.Scan(&id, &mediaType, &tmdbID, &title, &originalTitle, &year,
+		&season, &episode, &episodeTitle, &posterPath, &driveFolderID,
+		&originalName, &status, &errorMessage, &ingestedAt, &createdAt); err != nil {
+		return nil
+	}
+	item := map[string]any{
+		"id": id, "media_type": mediaType, "tmdb_id": tmdbID,
+		"title": title, "original_title": originalTitle, "year": year,
+		"season": nil, "episode": nil,
+		"episode_title": episodeTitle, "poster_path": posterPath,
+		"drive_folder_id": driveFolderID, "original_name": originalName,
+		"status": status, "error_message": errorMessage,
+		"ingested_at": ingestedAt, "created_at": createdAt,
+	}
+	if season.Valid {
+		item["season"] = season.Int64
+	}
+	if episode.Valid {
+		item["episode"] = episode.Int64
+	}
+	return item
+}
+
+const ingestSelect = `SELECT id, media_type, tmdb_id, title, original_title, year,
+	season, episode, episode_title, poster_path, drive_folder_id, original_name,
+	status, error_message, ingested_at, created_at FROM ingest_history`
+
+// Query 分页查询。
+func (s *IngestStore) Query(q IngestQuery) IngestQueryResult {
+	page := q.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := q.PageSize
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+
+	var conditions []string
+	var params []any
+	if q.MediaType != "" {
+		conditions = append(conditions, "media_type = ?")
+		params = append(params, q.MediaType)
+	}
+	if q.TmdbID > 0 {
+		conditions = append(conditions, "tmdb_id = ?")
+		params = append(params, q.TmdbID)
+	}
+	if q.Status != "" {
+		conditions = append(conditions, "status = ?")
+		params = append(params, q.Status)
+	}
+	if q.StartDate != "" {
+		conditions = append(conditions, "ingested_at >= ?")
+		params = append(params, q.StartDate)
+	}
+	if q.EndDate != "" {
+		conditions = append(conditions, "ingested_at <= ?")
+		params = append(params, q.EndDate)
+	}
+	if q.Keyword != "" {
+		conditions = append(conditions, "(title LIKE ? OR original_title LIKE ?)")
+		params = append(params, "%"+q.Keyword+"%", "%"+q.Keyword+"%")
+	}
+	where := "1=1"
+	if len(conditions) > 0 {
+		where = strings.Join(conditions, " AND ")
+	}
+
+	var total int64
+	_ = s.db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM ingest_history WHERE %s", where), params...).Scan(&total)
+
+	args := append(append([]any{}, params...), pageSize, offset)
+	rows, err := s.db.Query(
+		fmt.Sprintf("%s WHERE %s ORDER BY ingested_at DESC LIMIT ? OFFSET ?", ingestSelect, where),
+		args...)
+	if err != nil {
+		return IngestQueryResult{Items: []map[string]any{}, Pagination: map[string]any{
+			"page": page, "page_size": pageSize, "total": 0, "total_pages": 1,
+		}}
+	}
+	defer rows.Close()
+	items := []map[string]any{}
+	for rows.Next() {
+		if item := scanIngestRow(rows); item != nil {
+			items = append(items, item)
+		}
+	}
+	totalPages := 1
+	if total > 0 {
+		totalPages = int((total + int64(pageSize) - 1) / int64(pageSize))
+	}
+	return IngestQueryResult{Items: items, Pagination: map[string]any{
+		"page": page, "page_size": pageSize, "total": total, "total_pages": totalPages,
+	}}
+}
+
+// GetRecent 最近 N 条。
+func (s *IngestStore) GetRecent(limit int) []map[string]any {
+	rows, err := s.db.Query(fmt.Sprintf("%s ORDER BY ingested_at DESC LIMIT ?", ingestSelect), limit)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := []map[string]any{}
+	for rows.Next() {
+		if item := scanIngestRow(rows); item != nil {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// FindMatchByTitleYear 按标题+年份查找成功记录。
+func (s *IngestStore) FindMatchByTitleYear(mediaType, title, year string) map[string]any {
+	if len(lookupTitleVariants(title)) == 0 {
+		return nil
+	}
+	rows, err := s.db.Query(fmt.Sprintf(`%s
+		WHERE media_type = ? AND tmdb_id > 0 AND status = 'success' AND year = ?
+		ORDER BY ingested_at DESC, id DESC`, ingestSelect), mediaType, year)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	for rows.Next() {
+		item := scanIngestRow(rows)
+		if item == nil {
+			continue
+		}
+		candidates := []string{strOf(item["title"]), strOf(item["original_title"])}
+		var nonEmpty []string
+		for _, c := range candidates {
+			if c != "" {
+				nonEmpty = append(nonEmpty, c)
+			}
+		}
+		if TitlesMatch(title, nonEmpty) {
+			return item
+		}
+	}
+	return nil
+}
+
+func strOf(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// Stats 近 N 天统计。
+func (s *IngestStore) Stats(days int) map[string]any {
+	if days <= 0 {
+		days = 7
+	}
+	cutoff := time.Now().UTC().AddDate(0, 0, -days).Format("2006-01-02T15:04:05")
+	var total, movies, tvEpisodes, success, failed, noTmdb sql.NullInt64
+	err := s.db.QueryRow(`SELECT
+		COUNT(*),
+		COUNT(CASE WHEN media_type = 'movie' THEN 1 END),
+		COUNT(CASE WHEN media_type = 'tv' THEN 1 END),
+		COUNT(CASE WHEN status = 'success' THEN 1 END),
+		COUNT(CASE WHEN status = 'failed' THEN 1 END),
+		COUNT(CASE WHEN status = 'no_tmdb' THEN 1 END)
+		FROM ingest_history WHERE ingested_at >= ?`, cutoff).Scan(
+		&total, &movies, &tvEpisodes, &success, &failed, &noTmdb)
+	if err != nil {
+		return map[string]any{"days": days, "total": 0}
+	}
+	return map[string]any{
+		"days": days, "total": total.Int64, "movies": movies.Int64,
+		"tv_episodes": tvEpisodes.Int64, "success": success.Int64,
+		"failed": failed.Int64, "no_tmdb": noTmdb.Int64,
+	}
+}
+
+// Cleanup 清理 N 天前的记录，返回删除行数。
+func (s *IngestStore) Cleanup(retentionDays int) int64 {
+	if retentionDays <= 0 {
+		retentionDays = 30
+	}
+	cutoff := time.Now().UTC().AddDate(0, 0, -retentionDays).Format("2006-01-02T15:04:05")
+	res, err := s.db.Exec("DELETE FROM ingest_history WHERE ingested_at < ?", cutoff)
+	if err != nil {
+		return 0
+	}
+	n, _ := res.RowsAffected()
+	return n
+}

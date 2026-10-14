@@ -28,10 +28,10 @@ webui:
 # ─────────────────────────────────────────────────────────
 storage:
   # 主流程使用的存储 Provider
-  # 可选值：google_drive / pan115
+  # 当前支持 pan115
   # pipeline.py / organizer 会使用此 Provider 进行文件整理
   # 也可以通过 CLI 参数 --storage 覆盖
-  primary: "google_drive"
+  primary: "pan115"
 
 # ─────────────────────────────────────────────────────────
 # Aria2 RPC 设置
@@ -85,82 +85,6 @@ tmdb:
 # 请复制 config/parser-rules.example.yaml 为 parser-rules.yaml 后单独维护
 
 # ─────────────────────────────────────────────────────────
-# Google Drive 设置
-# ─────────────────────────────────────────────────────────
-drive:
-  # OAuth2 凭据文件路径
-  # 从 Google Cloud Console → API → 凭据 → 创建 OAuth2 Client ID(桌面应用) 下载
-  credentials_json: "config/credentials.json"
-
-  # OAuth2 Token 缓存路径（首次授权后自动生成，下次直接复用）
-  token_json: "config/token.json"
-
-  # 扫描的目标 Drive 文件夹 ID
-  # 在 Drive 网页版打开文件夹，URL 末尾即为 ID
-  # 示例：https://drive.google.com/drive/folders/<folder-id> → ID = <folder-id>
-  scan_folder_id: ""
-
-  # 媒体库根目录 ID（必填，Google Drive 文件夹 ID）
-  # 例：https://drive.google.com/drive/folders/<folder-id> → <folder-id>
-  root_folder_id: ""
-
-  # 电影专用目录 ID（可选）
-  # 留空则使用 root_folder_id
-  # 用途：将电影和剧集分别放到不同的顶层文件夹
-  # 例：电影文件夹 ID
-  movie_root_id: ""
-
-  # 剧集专用目录 ID（可选）
-  # 留空则使用 root_folder_id
-  # 例：剧集文件夹 ID
-  tv_root_id: ""
-
-  # 目录结构说明（与 Plex / Infuse 默认格式一致）：
-  #   电影：{root}/片名 (年份)/
-  #   剧集：{root}/剧名 (年份)/Season N/
-
-# ─────────────────────────────────────────────────────────
-# 115 网盘设置
-# ─────────────────────────────────────────────────────────
-u115:
-  # 115 开放平台 client_id
-  client_id: ""
-
-  # 115 access_token / refresh_token 缓存路径
-  token_json: "config/115-token.json"
-
-  # 115 扫码授权会话缓存路径
-  session_json: "config/115-device-session.json"
-
-  # 115 Web API Cookie（分享转存等功能使用，可选）
-  cookie: ""
-
-  # 115 云下载目录 ID（可选）
-  # 用于保存离线下载任务产物
-  download_folder_id: ""
-
-  # 115 媒体库根目录 ID（可选）
-  # 用于后续区分 115 与 Google Drive 的媒体库存储位置
-  root_folder_id: ""
-
-  # 115 电影专用目录 ID（可选）
-  # 留空则使用 root_folder_id
-  movie_root_id: ""
-
-  # 115 剧集专用目录 ID（可选）
-  # 留空则使用 root_folder_id
-  tv_root_id: ""
-
-  # 115 云下载完成后是否自动触发整理流程
-  auto_organize_enabled: false
-
-  # 自动整理轮询间隔（秒）
-  auto_organize_poll_seconds: 45
-
-  # 检测到任务完成后，额外等待多少秒再触发整理
-  auto_organize_stable_seconds: 30
-
-# ─────────────────────────────────────────────────────────
 # 流水线设置（pipeline.py）
 # ─────────────────────────────────────────────────────────
 pipeline:
@@ -172,7 +96,7 @@ pipeline:
   # False = 找不到则跳过该文件
   move_on_tmdb_miss: false
 
-  # dry_run 模式（True = 只打印计划，不实际操作 Drive）
+  # dry_run 模式（True = 只打印计划，不实际操作网盘）
   # 命令行 --dry-run 参数优先级更高
   dry_run: false
 
