@@ -405,25 +405,17 @@ func scanSingleTVFolder(client cloudfile.Provider, cfg *config.Config, showFolde
 	tmdbID, tmdbInfo := resolveMediaIdentity("tv", showFolder.ID, showFolder.Name, cfg)
 
 	// 已入库集集合
-	driveEpisodes := map[epKey]bool{}
-	for _, seasonFolder := range showFiles {
-		if !seasonFolder.IsFolder() || !strings.HasPrefix(seasonFolder.Name, "Season") {
-			continue
-		}
-		m := seasonFolderRe.FindStringSubmatch(seasonFolder.Name)
-		if m == nil {
-			continue
-		}
-		seasonNum, _ := strconv.Atoi(m[1])
-		seasonFiles, err := client.ListFiles(seasonFolder.ID, 500)
-		if err != nil {
-			continue
-		}
-		for _, file := range seasonFiles {
-			if file.IsVideo() {
-				if s, e, ok := ParseEpisodeFromFilename(file.Name); ok && s == seasonNum {
-					driveEpisodes[epKey{s, e}] = true
-				}
+	driveEpisodes := collectFolderEpisodes(client, showFolder.ID, showFiles)
+	// 同一部剧在网盘上可能存在多个目录（历史整理用了不同译名，如
+	// 「令和的斑小姐」与「令和妖神斑小姐」），把同 tmdb_id 其他目录
+	// 的集数并入，避免入库进度被拆分显示
+	if tmdbID > 0 {
+		for _, otherFolderID := range RT().GetLibraryStore().ListFolderIDsByTmdb("tv", tmdbID) {
+			if otherFolderID == showFolder.ID {
+				continue
+			}
+			for k := range collectFolderEpisodes(client, otherFolderID, nil) {
+				driveEpisodes[k] = true
 			}
 		}
 	}
@@ -684,4 +676,38 @@ func mapKeys(m map[string]int64) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// collectFolderEpisodes 收集一个剧集目录下所有 Season 子目录中
+// 可解析出集号的视频文件，返回 {(season, episode)} 集合。
+// showFiles 为 nil 时自动列目录。
+func collectFolderEpisodes(client cloudfile.Provider, folderID string, showFiles []cloudfile.CloudFile) map[epKey]bool {
+	episodes := map[epKey]bool{}
+	if showFiles == nil {
+		if files, err := client.ListFiles(folderID, 200); err == nil {
+			showFiles = files
+		}
+	}
+	for _, seasonFolder := range showFiles {
+		if !seasonFolder.IsFolder() || !strings.HasPrefix(seasonFolder.Name, "Season") {
+			continue
+		}
+		m := seasonFolderRe.FindStringSubmatch(seasonFolder.Name)
+		if m == nil {
+			continue
+		}
+		seasonNum, _ := strconv.Atoi(m[1])
+		seasonFiles, err := client.ListFiles(seasonFolder.ID, 500)
+		if err != nil {
+			continue
+		}
+		for _, file := range seasonFiles {
+			if file.IsVideo() {
+				if s, e, ok := ParseEpisodeFromFilename(file.Name); ok && s == seasonNum {
+					episodes[epKey{s, e}] = true
+				}
+			}
+		}
+	}
+	return episodes
 }

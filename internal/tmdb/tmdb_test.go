@@ -195,3 +195,81 @@ func TestGetMergesExistingQuery(t *testing.T) {
 		t.Errorf("api_key = %q", gotAPIKey)
 	}
 }
+
+// 回归: 民间译名(非官方名/不在别名表)搜索——TMDB 模糊搜索返回唯一
+// 年份吻合的候选时应采纳(「令和妖神斑小姐」→「令和的斑小姐」场景)
+func TestMatchTVUniqueCandidateFallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/search/tv"):
+			// 模糊搜索返回官方译名的正确条目
+			json.NewEncoder(w).Encode(map[string]any{"results": []any{
+				map[string]any{"id": 312507.0, "name": "令和的斑小姐",
+					"original_name": "令和のダラさん", "first_air_date": "2026-07-02"},
+			}})
+		case strings.Contains(r.URL.Path, "/tv/312507"):
+			json.NewEncoder(w).Encode(map[string]any{
+				"id": 312507.0, "name": "令和的斑小姐", "original_name": "令和のダラさん",
+				"first_air_date":     "2026-07-02",
+				"credits":            map[string]any{"crew": []any{}, "cast": []any{}},
+				"alternative_titles": map[string]any{"results": []any{}},
+				"translations":       map[string]any{"translations": []any{}},
+				"external_ids":       map[string]any{},
+			})
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	defer server.Close()
+	client := NewClient("key", "zh-CN", "", 5, nil)
+	client.SetTestBaseURL(server.URL)
+
+	// 精确匹配与别名表都不会命中「令和妖神斑小姐」,但唯一候选应被采纳
+	info := client.SearchByName("令和妖神斑小姐", "2026", mediaparser.MediaTV)
+	if info == nil {
+		t.Fatal("唯一年份吻合候选未被采纳(民间译名识别失败)")
+	}
+	if id := int(jsonx_TestInt(info, "tmdb_id")); id != 312507 {
+		if id2 := int(jsonx_TestInt(info, "id")); id2 != 312507 {
+			t.Errorf("id = %v/%v, want 312507", info["tmdb_id"], info["id"])
+		}
+	}
+}
+
+// 对照: 多候选且无一精确匹配时不得随意采纳(防误识别)
+func TestMatchTVMultipleCandidatesNoFallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/search/tv") {
+			json.NewEncoder(w).Encode(map[string]any{"results": []any{
+				map[string]any{"id": 1.0, "name": "完全不相关剧A", "first_air_date": "2026-01-01"},
+				map[string]any{"id": 2.0, "name": "完全不相关剧B", "first_air_date": "2026-02-01"},
+			}})
+			return
+		}
+		if strings.Contains(r.URL.Path, "/tv/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"id": 1.0, "name": "完全不相关剧A",
+				"credits":            map[string]any{"crew": []any{}, "cast": []any{}},
+				"alternative_titles": map[string]any{"results": []any{}},
+				"translations":       map[string]any{"translations": []any{}},
+				"external_ids":       map[string]any{},
+			})
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer server.Close()
+	client := NewClient("key", "zh-CN", "", 5, nil)
+	client.SetTestBaseURL(server.URL)
+
+	if info := client.SearchByName("某部不存在的剧", "2026", mediaparser.MediaTV); info != nil {
+		t.Errorf("多候选无精确匹配时不应回退采纳: %v", info["id"])
+	}
+}
+
+func jsonx_TestInt(m map[string]any, key string) float64 {
+	if v, ok := m[key].(float64); ok {
+		return v
+	}
+	return 0
+}

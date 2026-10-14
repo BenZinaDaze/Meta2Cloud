@@ -1003,3 +1003,23 @@ func (s *LibraryStore) GetStats() map[string]any {
 		"completion_rate":           rate,
 	}
 }
+
+// ListFolderIDsByTmdb 返回关联到同一 (mediaType, tmdbID) 的全部目录 ID。
+// 同一部剧存在多个目录（历史译名差异）时用于集数聚合。
+func (s *LibraryStore) ListFolderIDsByTmdb(mediaType string, tmdbID int64) []string {
+	rows, err := s.db.Query(
+		"SELECT drive_folder_id FROM library_media WHERE media_type = ? AND tmdb_id = ?",
+		mediaType, tmdbID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err == nil {
+			out = append(out, id)
+		}
+	}
+	return out
+}

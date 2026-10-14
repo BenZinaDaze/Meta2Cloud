@@ -789,3 +789,62 @@ func TestSubscriptionCRUDAndCheck(t *testing.T) {
 func mikanTestRSSURL(_ *httptest.Server) string {
 	return "https://mikanani.me/RSS/Bangumi?bangumiId=3065"
 }
+
+// 同一部剧多个译名目录 → 刷新后集数聚合(令和的斑小姐场景)
+func TestScanAggregatesDuplicateShowFolders(t *testing.T) {
+	rootDir := t.TempDir()
+	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
+	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
+		[]byte("webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n  tv_root_id: \"tv\"\n"), 0o644)
+	ResetJWTSecretCache()
+	InitRuntime(rootDir)
+
+	fp := newFakeWebProvider()
+	fp.addFolder("tv", "0")
+	// 目录 A: 官方译名, 12 集
+	showA := fp.addFolder("令和的斑小姐 (2026)", "tv")
+	seasonA := fp.addFolder("Season 01", showA.ID)
+	for ep := 1; ep <= 12; ep++ {
+		fp.addFile(fmt.Sprintf("令和的斑小姐 - S01E%02d.mkv", ep), seasonA.ID)
+	}
+	// 目录 B: 民间译名, 仅 1 集(E06)
+	showB := fp.addFolder("令和妖神斑小姐 (2026)", "tv")
+	seasonB := fp.addFolder("Season 01", showB.ID)
+	fp.addFile("令和妖神斑小姐 - S01E06.mkv", seasonB.ID)
+	RT().SetProviderForTest(fp.provider())
+
+	// 预置库条目: 两个目录都已关联同一 tmdb_id(手动修正后的状态)
+	libStore := RT().GetLibraryStore()
+	libStore.SaveIncremental([]map[string]any{
+		{"drive_folder_id": showA.ID, "media_type": "tv", "tmdb_id": 312507, "title": "令和的斑小姐", "year": "2026"},
+		{"drive_folder_id": showB.ID, "media_type": "tv", "tmdb_id": 312507, "title": "令和妖神斑小姐", "year": "2026"},
+	}, nil)
+
+	server := NewServer()
+	t.Cleanup(server.Close)
+	ts := httptest.NewServer(server.Handler())
+	t.Cleanup(ts.Close)
+	_, out := login(t, ts, "admin", "secret123")
+	token := out["token"].(string)
+
+	// 全量刷新
+	code, _ := authedRequest(t, ts, token, "POST", "/api/library:refresh?full=true", nil)
+	if code != 200 {
+		t.Fatalf("refresh code = %d", code)
+	}
+
+	// 两个条目的入库集数都应是 12+1 去重 = 12(E06 在 A 目录已存在) → 12
+	// 注意: A 有 E01-E12, B 只有 E06 → 并集 = 12
+	_, lib := authedGet(t, ts, token, "/api/library")
+	shows, _ := lib["tv_shows"].([]any)
+	if len(shows) != 2 {
+		t.Fatalf("tv_shows = %d, want 2", len(shows))
+	}
+	for _, s := range shows {
+		show := s.(map[string]any)
+		if show["in_library_episodes"] != float64(12) {
+			t.Errorf("%q in_library_episodes = %v, want 12(跨目录聚合)",
+				show["title"], show["in_library_episodes"])
+		}
+	}
+}

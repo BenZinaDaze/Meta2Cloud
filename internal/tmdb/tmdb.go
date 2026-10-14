@@ -169,10 +169,16 @@ func (c *Client) matchMovie(name, year string) map[string]any {
 	}
 	sortResults(results, "release_date")
 	var fastSkipped []map[string]any
+	yearMatchCount := 0
+	var firstYearMatch map[string]any
 	for _, r := range results {
 		rYear := firstN(jsonx.Str(r, "release_date"), 4)
 		if year != "" && rYear != year {
 			continue
+		}
+		yearMatchCount++
+		if firstYearMatch == nil {
+			firstYearMatch = r
 		}
 		if nameMatch(name, jsonx.Str(r, "title"), jsonx.Str(r, "original_title")) {
 			return c.getMovieDetail(int(jsonx.Int(r, "id", 0)))
@@ -189,6 +195,10 @@ func (c *Client) matchMovie(name, year string) map[string]any {
 			return detail
 		}
 	}
+	// 最终回退：同 matchTV——年份吻合的唯一候选直接采纳（民间译名场景）
+	if yearMatchCount == 1 && firstYearMatch != nil {
+		return c.getMovieDetail(int(jsonx.Int(firstYearMatch, "id", 0)))
+	}
 	return nil
 }
 
@@ -202,11 +212,13 @@ func (c *Client) matchTV(name, year string) map[string]any {
 		return nil
 	}
 	sortResults(results, "first_air_date")
+	var yearMatches []map[string]any
 	for _, r := range results {
 		rYear := firstN(jsonx.Str(r, "first_air_date"), 4)
 		if year != "" && rYear != year {
 			continue
 		}
+		yearMatches = append(yearMatches, r)
 		if nameMatch(name, jsonx.Str(r, "name"), jsonx.Str(r, "original_name")) {
 			return c.getTVDetail(int(jsonx.Int(r, "id", 0)))
 		}
@@ -215,6 +227,13 @@ func (c *Client) matchTV(name, year string) map[string]any {
 		if detail != nil && matchNameList(name, toStrSlice(detail["names"])) {
 			return detail
 		}
+	}
+	// 最终回退：TMDB 模糊搜索已命中且年份吻合、仅剩唯一候选时直接采纳。
+	// 场景：目录名是民间译名（如「令和妖神斑小姐」），TMDB 搜索能返回官方
+	// 条目（「令和的斑小姐」），但民间译名不在主字段也不在别名表，精确
+	// 匹配全部落空——唯一候选 + 年份吻合已足够可信。
+	if len(yearMatches) == 1 {
+		return c.getTVDetail(int(jsonx.Int(yearMatches[0], "id", 0)))
 	}
 	return nil
 }
