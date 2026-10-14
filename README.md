@@ -81,10 +81,26 @@
 - **数据完全兼容** — SQLite 表结构与 v1 一致，现有 `library.db`、115 授权 token 可直接沿用，升级无需迁移
 - **115 限流与重试** — 请求管线内置 QPS 预约、风控冷却与指数退避，大批量整理更稳
 - **识别增强** — TMDB 模糊搜索唯一候选回退（民间译名可识别）、新番集数增长自适应、同剧多目录集数聚合
-- **移除 Google Drive 支持** — 聚焦 115 网盘
-- RSS 订阅新增 AniBT 站点（原有 Mikan）
+- **移除 Google Drive 支持** — 聚焦 115 网盘（需要 Google Drive 的用户请继续使用 [v1.3.1](#google-drive-用户)，见下方说明）
+- RSS 订阅站点（Mikan、AniBT）与 v1 保持一致
 
 升级：直接替换二进制或拉取新镜像即可。
+
+## Google Drive 用户
+
+v2.0.0 起仅支持 115 网盘。仍需 Google Drive 的用户请使用最后一个支持它的版本
+**v1.3.1**，仓库提供了 [`docker-compose.gdrive.yml`](docker-compose.gdrive.yml)：
+
+```bash
+# 凭据文件放入挂载目录（容器内 /app/config）
+mkdir -p meta2cloud-config
+cp config.example 的配置同 v1   # 见 v1.3.1 的 config/config.example.yaml
+# 将 credentials.json / token.json 放入 meta2cloud-config/
+
+docker compose -f docker-compose.gdrive.yml up -d
+```
+
+注意：v1.3.1 与 v2.0.0 的 `library.db` 结构兼容，但不建议两个版本同时挂载同一数据目录。
 
 ## 快速开始
 
