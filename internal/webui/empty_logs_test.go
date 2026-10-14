@@ -205,3 +205,70 @@ func TestRefreshItemArraysNotNull(t *testing.T) {
 		}
 	}
 }
+
+// 回归: 主详情 episode_count 旧值(7) + 季详情 12 集 + 库 12 集 → 总数 12 非 7
+func TestBuildSeasonsTotalNotStale(t *testing.T) {
+	rootDir := t.TempDir()
+	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
+	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
+		[]byte("webui:\n  username: admin\n  password: p\n"), 0o644)
+	ResetJWTSecretCache()
+	InitRuntime(rootDir)
+
+	// TMDB mock: 主详情 seasons[0].episode_count=7, 季详情 12 集
+	tmdbServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/season/") {
+			eps := make([]any, 0, 12)
+			for i := 1; i <= 12; i++ {
+				eps = append(eps, map[string]any{"episode_number": float64(i), "name": fmt.Sprintf("EP%d", i)})
+			}
+			json.NewEncoder(w).Encode(map[string]any{"episodes": eps})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{})
+	}))
+	defer tmdbServer.Close()
+	tmdbClient := tmdb.NewClient("k", "zh-CN", "", 5, nil)
+	tmdbClient.SetTestBaseURL(tmdbServer.URL)
+	RT().SetTmdbClientForTest(tmdbClient)
+
+	tmdbInfo := map[string]any{ // 主详情: 旧 episode_count=7
+		"seasons": []any{map[string]any{"season_number": 1.0, "episode_count": 7.0}},
+	}
+	drive := map[epKey]bool{}
+	for i := 1; i <= 12; i++ {
+		drive[epKey{1, i}] = true
+	}
+	seasons, total, inLib := BuildSeasonsStatus(309163, tmdbInfo, drive, false)
+	if total != 12 {
+		t.Errorf("total = %d, want 12(季详情 12 集 > 主详情旧值 7)", total)
+	}
+	if inLib != 12 {
+		t.Errorf("inLib = %d, want 12", inLib)
+	}
+	if seasons[0].EpisodeCount != 12 {
+		t.Errorf("season episodeCount = %d, want 12", seasons[0].EpisodeCount)
+	}
+
+	// 场景 2: 季详情也旧(仅 7 集)但库有 12 集 → 追加占位, 总数 12
+	tmdbServer2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		eps := make([]any, 0, 7)
+		for i := 1; i <= 7; i++ {
+			eps = append(eps, map[string]any{"episode_number": float64(i)})
+		}
+		json.NewEncoder(w).Encode(map[string]any{"episodes": eps})
+	}))
+	defer tmdbServer2.Close()
+	RT().SetTmdbClientForTest(nil) // 防走缓存客户端干扰
+	c2 := tmdb.NewClient("k", "zh-CN", "", 5, nil)
+	c2.SetTestBaseURL(tmdbServer2.URL)
+	RT().SetTmdbClientForTest(c2)
+
+	seasons2, total2, inLib2 := BuildSeasonsStatus(309164, tmdbInfo, drive, false)
+	if total2 != 12 || inLib2 != 12 {
+		t.Errorf("场景2: total=%d inLib=%d, want 12/12(TMDB 未登记的 8-12 集应补占位)", total2, inLib2)
+	}
+	if len(seasons2[0].Episodes) != 12 {
+		t.Errorf("场景2 episodes = %d, want 12", len(seasons2[0].Episodes))
+	}
+}

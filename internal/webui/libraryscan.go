@@ -165,7 +165,6 @@ func BuildSeasonsStatus(tmdbID int64, tmdbInfo map[string]any, driveEpisodes map
 		}
 		seasonNum := int(jsonx.Int(seasonRaw, "season_number", 0))
 		epCount := int(jsonx.Int(seasonRaw, "episode_count", 0))
-		totalEps += epCount
 
 		var seasonDetail map[string]any
 		seasonCachePath := fmt.Sprintf("/tv/%d/season/%d", tmdbID, seasonNum)
@@ -187,9 +186,6 @@ func BuildSeasonsStatus(tmdbID int64, tmdbInfo map[string]any, driveEpisodes map
 			for _, epRaw := range jsonx.MapSlice(seasonDetail, "episodes") {
 				epNum := int(jsonx.Int(epRaw, "episode_number", 0))
 				inLib := driveEpisodes[epKey{seasonNum, epNum}]
-				if inLib {
-					inLibEps++
-				}
 				title := jsonx.Str(epRaw, "name")
 				if title == "" {
 					title = "第 " + strconv.Itoa(epNum) + " 集"
@@ -202,20 +198,46 @@ func BuildSeasonsStatus(tmdbID int64, tmdbInfo map[string]any, driveEpisodes map
 		} else {
 			for epNum := 1; epNum <= epCount; epNum++ {
 				inLib := driveEpisodes[epKey{seasonNum, epNum}]
-				if inLib {
-					inLibEps++
-				}
 				episodes = append(episodes, EpisodeStatus{
 					EpisodeNumber: epNum, EpisodeTitle: "第 " + strconv.Itoa(epNum) + " 集",
+					InLibrary: inLib,
 				})
 			}
 		}
+		// 库里有、但 TMDB（主/季详情均旧）尚未登记的集号，补占位条目。
+		// 新番追季场景：TMDB episode_count 滞后于实际入库，不补会出现
+		// 「已入库 12/7」这类入库数大于总数的荒谬显示。
+		knownNums := map[int]bool{}
+		for _, ep := range episodes {
+			knownNums[ep.EpisodeNumber] = true
+		}
+		var extraNums []int
+		for k := range driveEpisodes {
+			if k.season == seasonNum && !knownNums[k.episode] {
+				extraNums = append(extraNums, k.episode)
+			}
+		}
+		sort.Ints(extraNums)
+		for _, epNum := range extraNums {
+			episodes = append(episodes, EpisodeStatus{
+				EpisodeNumber: epNum, EpisodeTitle: "第 " + strconv.Itoa(epNum) + " 集",
+				InLibrary: true,
+			})
+		}
+
+		// 总数取各来源最大值：主详情 episode_count 可能是早期抓取的旧值
+		if len(episodes) > epCount {
+			epCount = len(episodes)
+		}
+		totalEps += epCount
+
 		sInLib := 0
 		for _, ep := range episodes {
 			if ep.InLibrary {
 				sInLib++
 			}
 		}
+		inLibEps += sInLib
 		name := jsonx.Str(seasonRaw, "name")
 		if name == "" {
 			name = "Season " + strconv.Itoa(seasonNum)
