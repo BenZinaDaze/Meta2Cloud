@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/scraper"
 	"meta2cloud/internal/u115"
 
@@ -847,5 +848,82 @@ func TestScanAggregatesDuplicateShowFolders(t *testing.T) {
 	}
 	if show["tmdb_id"] != float64(312507) {
 		t.Errorf("tmdb_id = %v", show["tmdb_id"])
+	}
+}
+
+// 增量刷新: 只变 B 目录时,同 tmdb_id 的 A 也应联动重扫聚合集数
+func TestIncrementalSiblingRescan(t *testing.T) {
+	rootDir := t.TempDir()
+	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
+	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
+		[]byte("webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n  tv_root_id: \"tv\"\n"), 0o644)
+	ResetJWTSecretCache()
+	InitRuntime(rootDir)
+
+	fp := newFakeWebProvider()
+	fp.addFolder("tv", "0") // 占位；扫描走 tv_root_id="tv"，show 目录挂在字符串 "tv" 下
+	showA := fp.addFolder("令和的斑小姐 (2026)", "tv")
+	seasonA := fp.addFolder("Season 01", showA.ID)
+	for ep := 1; ep <= 12; ep++ {
+		if ep == 6 {
+			continue // A 缺 E06
+		}
+		fp.addFile(fmt.Sprintf("令和的斑小姐 - S01E%02d.mkv", ep), seasonA.ID)
+	}
+	showB := fp.addFolder("令和妖神斑小姐 (2026)", "tv")
+	seasonB := fp.addFolder("Season 01", showB.ID)
+	fp.addFile("令和妖神斑小姐 - S01E06.mkv", seasonB.ID)
+	// 剧集增量时间按 Season 叶子目录计算，初始 mtime 一致
+	for _, id := range []string{showA.ID, seasonA.ID, showB.ID, seasonB.ID} {
+		fp.setMtime(id, 1000)
+	}
+	RT().SetProviderForTest(fp.provider())
+
+	// 预置库条目: 两个目录都已关联同一 tmdb_id(手动修正后的状态)
+	libStore := RT().GetLibraryStore()
+	libStore.SaveIncremental([]map[string]any{
+		{"drive_folder_id": showA.ID, "media_type": "tv", "tmdb_id": 312507, "title": "令和的斑小姐", "year": "2026"},
+		{"drive_folder_id": showB.ID, "media_type": "tv", "tmdb_id": 312507, "title": "令和妖神斑小姐", "year": "2026"},
+	}, nil)
+
+	server := NewServer()
+	t.Cleanup(server.Close)
+	ts := httptest.NewServer(server.Handler())
+	t.Cleanup(ts.Close)
+	_, out := login(t, ts, "admin", "secret123")
+	token := out["token"].(string)
+
+	// 首次全量: 两目录聚合并集 11+1=12(A 缺 E06，B 只有 E06)
+	if code, ref := authedRequest(t, ts, token, "POST", "/api/library:refresh?full=true", nil); code != 200 {
+		t.Fatalf("full refresh failed: %d %v", code, ref)
+	}
+	_, lib := authedGet(t, ts, token, "/api/library")
+	shows, _ := lib["tv_shows"].([]any)
+	if len(shows) != 1 || shows[0].(map[string]any)["in_library_episodes"] != float64(12) {
+		t.Fatalf("首次全量: %+v", shows)
+	}
+
+	// 模拟旧版本遗留的未聚合行: A 行回退为 11(mtime 不变)，B 行保持 12
+	libStore.SaveIncremental([]map[string]any{
+		{"drive_folder_id": showA.ID, "media_type": "tv", "tmdb_id": 312507,
+			"title": "令和的斑小姐", "year": "2026", "in_library_episodes": 11},
+	}, map[string]int64{showA.ID: 1000})
+
+	// 增量: 仅 B 的 Season 叶子 mtime 变化，A 未变
+	fp.addFile("令和妖神斑小姐 - S01E06v2.mkv", seasonB.ID)
+	fp.setMtime(seasonB.ID, 2000)
+	if code, _ := authedRequest(t, ts, token, "POST", "/api/library:refresh", nil); code != 200 {
+		t.Fatal("incremental refresh failed")
+	}
+
+	// 联动重扫后 A 行应被重写为聚合值 12，卡片保持一张
+	itemA := RT().GetLibraryStore().GetLibraryItemByFolderID(showA.ID)
+	if itemA == nil || jsonx.Int(itemA, "in_library_episodes", 0) != 12 {
+		t.Fatalf("增量联动: A 行未联动重扫, in_library_episodes = %+v", itemA)
+	}
+	_, lib = authedGet(t, ts, token, "/api/library")
+	shows, _ = lib["tv_shows"].([]any)
+	if len(shows) != 1 || shows[0].(map[string]any)["in_library_episodes"] != float64(12) {
+		t.Fatalf("增量联动卡片: %+v", shows)
 	}
 }

@@ -2,6 +2,7 @@ package webui
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
 
 	"meta2cloud/internal/cloudfile"
@@ -48,6 +49,20 @@ func (f *fakeWebProvider) addFile(name, parentID string) cloudfile.CloudFile {
 }
 
 func (f *fakeWebProvider) provider() cloudfile.Provider { return f }
+
+// setMtime 更新条目的修改时间（byID 与 children 各存一份值拷贝，需同步）。
+func (f *fakeWebProvider) setMtime(itemID string, unix int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	cf := f.byID[itemID]
+	cf.ModifiedTime = strconv.FormatInt(unix, 10)
+	f.byID[itemID] = cf
+	for i := range f.children[cf.ParentID] {
+		if f.children[cf.ParentID][i].ID == itemID {
+			f.children[cf.ParentID][i] = cf
+		}
+	}
+}
 
 func (f *fakeWebProvider) ProviderName() string { return "fake-web" }
 

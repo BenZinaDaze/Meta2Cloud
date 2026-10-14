@@ -1068,3 +1068,14 @@ func mergeDedupedEntry(items []map[string]any, tmdbID int64, dup map[string]any)
 		return
 	}
 }
+
+// GetTmdbIDByFolderID 读取库条目关联的 TMDB ID（无条目或未关联返回 false）。
+func (s *LibraryStore) GetTmdbIDByFolderID(driveFolderID string) (int64, bool) {
+	var tmdbID int64
+	err := s.db.QueryRow(
+		"SELECT tmdb_id FROM library_media WHERE drive_folder_id = ?", driveFolderID).Scan(&tmdbID)
+	if err != nil || tmdbID <= 0 {
+		return 0, false
+	}
+	return tmdbID, true
+}

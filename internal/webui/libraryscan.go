@@ -571,10 +571,15 @@ func ScanTVShowsIncremental(client cloudfile.Provider, cfg *config.Config, store
 	}
 	shows := []MediaItem{}
 	currentMtimes := map[string]int64{}
+
+	// 第一遍：按 mtime 判定需要重扫的目录
+	changed := map[string]bool{}
+	folderByID := map[string]cloudfile.CloudFile{}
 	for _, showFolder := range folders {
 		if !showFolder.IsFolder() {
 			continue
 		}
+		folderByID[showFolder.ID] = showFolder
 		showFiles, err := client.ListFiles(showFolder.ID, 200)
 		if err != nil {
 			continue
@@ -584,6 +589,32 @@ func ScanTVShowsIncremental(client cloudfile.Provider, cfg *config.Config, store
 		storedMtime := storedMtimes[showFolder.ID]
 		if storedMtime > 0 && currentMtime > 0 && currentMtime <= storedMtime {
 			continue
+		}
+		changed[showFolder.ID] = true
+	}
+
+	// 第二遍：同剧兄弟目录联动重扫。某目录变化时，同 tmdb_id 的其他目录
+	// 也必须重扫——跨目录集数聚合只发生在 scanSingleTVFolder 内，若兄弟
+	// 目录被 mtime 跳过，会保留旧的未聚合值（表现为集数统计不更新）。
+	if libStore := RT().GetLibraryStore(); libStore != nil {
+		for folderID := range changed {
+			if tmdbID, ok := libStore.GetTmdbIDByFolderID(folderID); ok && tmdbID > 0 {
+				for _, sib := range libStore.ListFolderIDsByTmdb("tv", tmdbID) {
+					if sib != folderID {
+						changed[sib] = true
+					}
+				}
+			}
+		}
+	}
+
+	for _, showFolder := range folders {
+		if !showFolder.IsFolder() || !changed[showFolder.ID] {
+			continue
+		}
+		var showFiles []cloudfile.CloudFile
+		if files, err := client.ListFiles(showFolder.ID, 200); err == nil {
+			showFiles = files
 		}
 		if m := scanSingleTVFolder(client, cfg, showFolder, showFiles, true); m != nil {
 			shows = append(shows, *m)
