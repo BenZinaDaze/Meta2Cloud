@@ -413,7 +413,7 @@ func fetchAria2QueueItems(queue string, page, pageSize int, search string) (map[
 		filteredActive := filter(activeTasks)
 		filteredWaiting := filter(waiting)
 		filteredStopped := filter(stopped)
-		var items []map[string]any
+		items := []map[string]any{}
 		switch queue {
 		case "active":
 			items = filteredActive
@@ -456,7 +456,7 @@ func fetchAria2QueueItems(queue string, page, pageSize int, search string) (map[
 	pageNum := pagination["page"].(int)
 	offset := (pageNum - 1) * pageSize
 
-	var items []map[string]any
+	items := []map[string]any{}
 	switch queue {
 	case "active":
 		end := offset + pageSize

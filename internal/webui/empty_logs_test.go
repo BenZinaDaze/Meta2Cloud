@@ -3,6 +3,7 @@ package webui
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -146,6 +147,61 @@ func TestRootPathTraversal(t *testing.T) {
 		resp.Body.Close()
 		if strings.Contains(string(body), "TOPSECRET") {
 			t.Fatalf("路径穿越泄露: %s", raw)
+		}
+	}
+}
+
+// 回归: refresh-item 响应的数组字段永不为 null(前端解构默认值不处理 null)
+func TestRefreshItemArraysNotNull(t *testing.T) {
+	tmdbServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": 27205.0, "title": "测试电影", "release_date": "2010-07-16",
+			"credits":            map[string]any{"crew": []any{}, "cast": []any{}},
+			"alternative_titles": map[string]any{"titles": []any{}},
+			"translations":       map[string]any{"translations": []any{}},
+			"external_ids":       map[string]any{},
+		})
+	}))
+	defer tmdbServer.Close()
+
+	rootDir := t.TempDir()
+	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
+	fp := newFakeWebProvider()
+	movieFolder := fp.addFolder("测试电影 (2010)", "movies")
+	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
+		[]byte("webui:\n  username: admin\n  password: secret123\ntmdb:\n  api_key: k\n"), 0o644)
+	ResetJWTSecretCache()
+	InitRuntime(rootDir)
+	tmdbClient := tmdb.NewClient("k", "zh-CN", "", 5, nil)
+	tmdbClient.SetTestBaseURL(tmdbServer.URL)
+	RT().SetProviderForTest(fp.provider())
+	RT().SetTmdbClientForTest(tmdbClient)
+
+	server := NewServer()
+	t.Cleanup(server.Close)
+	ts := httptest.NewServer(server.Handler())
+	t.Cleanup(ts.Close)
+	_, out := login(t, ts, "admin", "secret123")
+	token := out["token"].(string)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/library:refresh-item",
+		strings.NewReader(fmt.Sprintf(
+			`{"tmdb_id":27205,"media_type":"movie","drive_folder_id":%q}`, movieFolder.ID)))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var raw map[string]json.RawMessage
+	json.NewDecoder(resp.Body).Decode(&raw)
+	if resp.StatusCode != 200 {
+		t.Fatalf("code = %d", resp.StatusCode)
+	}
+	for _, field := range []string{"uploaded", "errors"} {
+		if string(raw[field]) == "null" {
+			t.Errorf("%s = null, 应为空数组(前端 null.length 崩溃)", field)
 		}
 	}
 }

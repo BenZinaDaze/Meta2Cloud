@@ -227,8 +227,10 @@ func doRefreshItem(tmdbID int64, mediaType, driveFolderID, title, year string) (
 	client := RT().GetStorageProvider()
 	gen := nfo.NewGenerator(cfg.TmdbImageBaseURL())
 	uploader := pipeline.NewImageUploader(client, cfg.TmdbImageBaseURL())
-	var uploaded []string
-	var errors []string
+	// 空切片而非 nil：JSON 序列化为 [] 而非 null
+	// （前端 `const { errors = [] } = res.data` 的解构默认值只对 undefined 生效，null.length 会抛 TypeError）
+	uploaded := []string{}
+	errors := []string{}
 
 	info, err := fetchTmdbInfoForRefresh(tmdbID, mediaType)
 	if err != nil {
@@ -318,7 +320,7 @@ func doRefreshItem(tmdbID int64, mediaType, driveFolderID, title, year string) (
 
 // uploadArtifacts 上传 poster/fanart，返回成功清单。
 func uploadArtifacts(_ cloudfile.Provider, uploader *pipeline.ImageUploader, info map[string]any, driveFolderID string, errors *[]string) []string {
-	var uploaded []string
+	uploaded := []string{}
 	if p := jsonx.Str(info, "poster_path"); p != "" {
 		if uploader.UploadPoster(p, driveFolderID) != nil {
 			uploaded = append(uploaded, "poster.jpg")

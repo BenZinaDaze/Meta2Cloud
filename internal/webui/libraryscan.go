@@ -155,7 +155,7 @@ func BuildSeasonsStatus(tmdbID int64, tmdbInfo map[string]any, driveEpisodes map
 	if driveEpisodes == nil {
 		driveEpisodes = map[epKey]bool{}
 	}
-	var seasonsStatus []SeasonStatus
+	seasonsStatus := []SeasonStatus{}
 	totalEps := 0
 	inLibEps := 0
 
@@ -182,7 +182,7 @@ func BuildSeasonsStatus(tmdbID int64, tmdbInfo map[string]any, driveEpisodes map
 			}
 		}
 
-		var episodes []EpisodeStatus
+		episodes := []EpisodeStatus{}
 		if seasonDetail != nil {
 			for _, epRaw := range jsonx.MapSlice(seasonDetail, "episodes") {
 				epNum := int(jsonx.Int(epRaw, "episode_number", 0))
@@ -420,7 +420,7 @@ func scanSingleTVFolder(client cloudfile.Provider, cfg *config.Config, showFolde
 		}
 	}
 
-	var seasonsStatus []SeasonStatus
+	seasonsStatus := []SeasonStatus{}
 	totalEps, inLibEps := 0, 0
 	if tmdbInfo != nil {
 		seasonsStatus, totalEps, inLibEps = BuildSeasonsStatus(tmdbID, tmdbInfo, driveEpisodes, useCache)
