@@ -23,6 +23,9 @@ import (
 	"meta2cloud/internal/webui"
 )
 
+// version 构建时由 -ldflags "-X main.version=..." 注入（CI/脚本传入 tag）。
+var version = "dev"
+
 const usage = `Meta2Cloud — 扫描云存储媒体文件，查询 TMDB 元数据，生成 NFO，整理到目标文件夹
 
 用法:
@@ -73,7 +76,7 @@ func runServe(args []string) {
 	defer server.Close()
 
 	addr := fmt.Sprintf("%s:%d", *host, *port)
-	log.Printf("Meta2Cloud Web 服务启动：http://%s", addr)
+	log.Printf("Meta2Cloud v%s Web 服务启动：http://%s", version, addr)
 	go func() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)

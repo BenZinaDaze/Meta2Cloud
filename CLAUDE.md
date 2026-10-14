@@ -108,4 +108,3 @@ All stores use `modernc.org/sqlite` (pure Go, no CGO) with WAL mode and `SetMaxO
 - Dependencies: `yaml.v3`, `regexp2` (lookaround regex), `goquery` (HTML), `go-qrcode`, `golang-jwt/jwt/v5`, `modernc.org/sqlite`
 - The mediaparser reimplements cn2an/zhconv/Pinyin2Hanzi/anitopy subsets natively (no Go equivalents existed)
 - Test files live alongside code (`*_test.go`); utility scripts go in `scripts/`
-- `docs/go-rewrite.md` documents the Python→Go rewrite mapping

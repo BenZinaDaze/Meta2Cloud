@@ -1,33 +1,33 @@
+# 版本控制 / CI
 .git
 .github
 .codex
 
-# Go 构建产物(本地编译不入镜像)
+# Go 构建产物（本地编译不入镜像）
 meta2cloud
 *.exe
+/tmp
 
+# 前端（容器内重新 npm ci + build）
 frontend/node_modules
 frontend/dist
 frontend/.vite
-frontend-archive
 
-test
+# 文档与本地脚本（镜像不需要）
 doc
 scripts
 
-config
+# 运行时配置：全部由 volume 挂载，仅放行 example 模板进镜像
+config/*
+!config/config.example.yaml
+!config/parser-rules.example.yaml
 
+# 运行时数据
 data
 *.db
 *.sqlite
 *.sqlite3
 
+# 环境变量
 .env
 .env.*
-
-# 不再需要 requirements.txt，使用 pyproject.toml + uv.lock
-requirements.txt
-
-# Go 构建产物
-meta2cloud
-/tmp
