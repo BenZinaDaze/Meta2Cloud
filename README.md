@@ -2,7 +2,7 @@
 
 网盘媒体库自动整理工具，配合 Infuse、爆米花等播放器使用。
 
-![Version](https://img.shields.io/badge/version-2.0.0-blue) ![Go](https://img.shields.io/badge/Go-00ADD8?logo=go&logoColor=white) ![React](https://img.shields.io/badge/React-61DAFB?logo=react&logoColor=black) ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white) ![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-06B6D4?logo=tailwindcss&logoColor=white) ![shadcn/ui](https://img.shields.io/badge/shadcn/ui-000000?logo=shadcnui&logoColor=white) ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
+![Version](https://img.shields.io/badge/version-2.0.1-blue) ![Go](https://img.shields.io/badge/Go-00ADD8?logo=go&logoColor=white) ![React](https://img.shields.io/badge/React-61DAFB?logo=react&logoColor=black) ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white) ![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-06B6D4?logo=tailwindcss&logoColor=white) ![shadcn/ui](https://img.shields.io/badge/shadcn/ui-000000?logo=shadcnui&logoColor=white) ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
 
 ## 为什么用这个？
 
@@ -83,6 +83,15 @@
 - **识别增强** — TMDB 模糊搜索唯一候选回退（民间译名可识别）、新番集数增长自适应、同剧多目录集数聚合
 - **移除 Google Drive 支持** — 聚焦 115 网盘（需要 Google Drive 的用户请继续使用 [v1.3.1](#google-drive-用户)，见下方说明）
 - RSS 订阅站点（Mikan、AniBT）与 v1 保持一致
+
+### v2.0.1
+
+- 媒体库卡片刷新报错修复（`null.length` 崩溃）
+- 实时日志 WebSocket 修复
+- 同剧多目录合并为一张卡片、跨目录集数聚合
+- 民间译名自动识别（TMDB 唯一候选回退）
+- 新番集数增长自适应（不再出现「已入库 12/7」）
+- 订阅卡片 TMDB 标题缓存补全
 
 升级：直接替换二进制或拉取新镜像即可。
 
