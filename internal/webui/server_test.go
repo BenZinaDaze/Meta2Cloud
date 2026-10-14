@@ -833,18 +833,19 @@ func TestScanAggregatesDuplicateShowFolders(t *testing.T) {
 		t.Fatalf("refresh code = %d", code)
 	}
 
-	// 两个条目的入库集数都应是 12+1 去重 = 12(E06 在 A 目录已存在) → 12
-	// 注意: A 有 E01-E12, B 只有 E06 → 并集 = 12
+	// 同 tmdb_id 的两个目录合并为一张卡片，集数取聚合值 12
+	// (A 有 E01-E12，B 只有 E06，并集 = 12)
 	_, lib := authedGet(t, ts, token, "/api/library")
 	shows, _ := lib["tv_shows"].([]any)
-	if len(shows) != 2 {
-		t.Fatalf("tv_shows = %d, want 2", len(shows))
+	if len(shows) != 1 {
+		t.Fatalf("tv_shows = %d, want 1(同 tmdb_id 合并为一张卡片)", len(shows))
 	}
-	for _, s := range shows {
-		show := s.(map[string]any)
-		if show["in_library_episodes"] != float64(12) {
-			t.Errorf("%q in_library_episodes = %v, want 12(跨目录聚合)",
-				show["title"], show["in_library_episodes"])
-		}
+	show := shows[0].(map[string]any)
+	if show["in_library_episodes"] != float64(12) {
+		t.Errorf("%q in_library_episodes = %v, want 12(跨目录聚合)",
+			show["title"], show["in_library_episodes"])
+	}
+	if show["tmdb_id"] != float64(312507) {
+		t.Errorf("tmdb_id = %v", show["tmdb_id"])
 	}
 }

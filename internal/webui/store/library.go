@@ -511,6 +511,11 @@ func (s *LibraryStore) GetSnapshot(sortBy, sortOrder string) *Snapshot {
 	}
 	defer rows.Close()
 	snap := &Snapshot{ScannedAt: scannedAt, Movies: []map[string]any{}, TvShows: []map[string]any{}}
+	// 同一部剧存在多个目录（历史译名差异，如「令和的斑小姐」与「令和妖神斑小姐」）
+	// 时按 (media_type, tmdb_id>0) 合并为一张卡片：取最近更新的条目展示，
+	// 集数取各目录最大值，避免同一部剧出现多张卡片、且详情与卡片对不上。
+	seenMovie := map[int64]bool{}
+	seenTV := map[int64]bool{}
 	for rows.Next() {
 		var mediaType, rawJSON, updatedAt string
 		var folderModified int64
@@ -521,11 +526,22 @@ func (s *LibraryStore) GetSnapshot(sortBy, sortOrder string) *Snapshot {
 		payload = s.hydrateLibraryPayload(payload)
 		payload["updated_at"] = updatedAt
 		payload["folder_modified_time"] = folderModified
+
+		target := &snap.TvShows
+		seen := seenTV
 		if mediaType == "movie" {
-			snap.Movies = append(snap.Movies, payload)
-		} else {
-			snap.TvShows = append(snap.TvShows, payload)
+			target = &snap.Movies
+			seen = seenMovie
 		}
+		tmdbID := int64(jsonx.Int(payload, "tmdb_id", 0))
+		if tmdbID > 0 {
+			if seen[tmdbID] {
+				mergeDedupedEntry(*target, tmdbID, payload)
+				continue
+			}
+			seen[tmdbID] = true
+		}
+		*target = append(*target, payload)
 	}
 	snap.TotalMovies = len(snap.Movies)
 	snap.TotalTV = len(snap.TvShows)
@@ -907,7 +923,10 @@ func (s *LibraryStore) DeleteLibraryItem(driveFolderID string) bool {
 // GetLibraryItemByTmdb 按 TMDB ID 取库条目。
 func (s *LibraryStore) GetLibraryItemByTmdb(mediaType string, tmdbID int64) map[string]any {
 	var rawJSON string
-	err := s.db.QueryRow("SELECT raw_json FROM library_media WHERE media_type = ? AND tmdb_id = ? LIMIT 1", mediaType, tmdbID).Scan(&rawJSON)
+	// 同 tmdb_id 可能存在多个目录条目：取最近更新的，保证与快照合并展示的卡片一致
+	err := s.db.QueryRow(`SELECT raw_json FROM library_media
+		WHERE media_type = ? AND tmdb_id = ?
+		ORDER BY updated_at DESC, drive_folder_id ASC LIMIT 1`, mediaType, tmdbID).Scan(&rawJSON)
 	if err != nil {
 		return nil
 	}
@@ -1022,4 +1041,30 @@ func (s *LibraryStore) ListFolderIDsByTmdb(mediaType string, tmdbID int64) []str
 		}
 	}
 	return out
+}
+
+// mergeDedupedEntry 将同 tmdb_id 的重复条目并入已展示的那条：
+// 集数/时间戳取最大值，保留首个（最近更新）条目的标题与目录 ID。
+func strOfAny(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+func mergeDedupedEntry(items []map[string]any, tmdbID int64, dup map[string]any) {
+	for _, item := range items {
+		if int64(jsonx.Int(item, "tmdb_id", 0)) != tmdbID {
+			continue
+		}
+		for _, field := range []string{"in_library_episodes", "total_episodes", "folder_modified_time"} {
+			if jsonx.Int(dup, field, 0) > jsonx.Int(item, field, 0) {
+				item[field] = dup[field]
+			}
+		}
+		if s, _ := dup["updated_at"].(string); s > strOfAny(item["updated_at"]) {
+			item["updated_at"] = s
+		}
+		return
+	}
 }
