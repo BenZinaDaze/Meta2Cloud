@@ -2,7 +2,7 @@
 
 网盘媒体库自动整理工具，配合 Infuse、爆米花等播放器使用。
 
-![Go](https://img.shields.io/badge/Go-00ADD8?logo=go&logoColor=white) ![React](https://img.shields.io/badge/React-61DAFB?logo=react&logoColor=black) ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white) ![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-06B6D4?logo=tailwindcss&logoColor=white) ![shadcn/ui](https://img.shields.io/badge/shadcn/ui-000000?logo=shadcnui&logoColor=white) ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
+![Version](https://img.shields.io/badge/version-2.0.0-blue) ![Go](https://img.shields.io/badge/Go-00ADD8?logo=go&logoColor=white) ![React](https://img.shields.io/badge/React-61DAFB?logo=react&logoColor=black) ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white) ![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-06B6D4?logo=tailwindcss&logoColor=white) ![shadcn/ui](https://img.shields.io/badge/shadcn/ui-000000?logo=shadcnui&logoColor=white) ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
 
 ## 为什么用这个？
 
@@ -72,6 +72,19 @@
 ## 支持的网盘
 
 - 115 网盘
+
+## v2.0.0 更新内容
+
+后端使用 **Go 全面重构**（原 Python/FastAPI 实现）：
+
+- **单二进制部署** — 约 20MB 静态编译，Docker 镜像更小、启动更快、内存占用更低
+- **数据完全兼容** — SQLite 表结构与 v1 一致，现有 `library.db`、115 授权 token 可直接沿用，升级无需迁移
+- **115 限流与重试** — 请求管线内置 QPS 预约、风控冷却与指数退避，大批量整理更稳
+- **识别增强** — TMDB 模糊搜索唯一候选回退（民间译名可识别）、新番集数增长自适应、同剧多目录集数聚合
+- **移除 Google Drive 支持** — 聚焦 115 网盘
+- RSS 订阅新增 AniBT 站点（原有 Mikan）
+
+升级：直接替换二进制或拉取新镜像即可。
 
 ## 快速开始
 
@@ -220,7 +233,7 @@ telegram:
 
 ### RSS 订阅
 
-支持 Mikan Project 动漫订阅，自动下载新番。
+支持 Mikan Project、AniBT 动漫订阅，自动追新番（推送至 Aria2 或 115 云下载）。
 
 ## 常见问题
 
@@ -247,6 +260,21 @@ telegram:
 ```bash
 ./meta2cloud pipeline --dry-run
 ```
+
+## 开发
+
+```bash
+# 后端测试
+go test ./internal/... -count=1
+
+# 一键启动开发环境（Go 后端 + Vite 前端热更新）
+./scripts/dev.sh
+
+# 前端
+cd frontend && npm run build
+```
+
+架构说明见 [CLAUDE.md](CLAUDE.md)；云存储/资源站点接入指南见 [doc/](doc/)。
 
 ## 致谢
 
