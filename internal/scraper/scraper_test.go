@@ -11,6 +11,13 @@ func TestMikanSearchAndEpisodes(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/Home/Search"):
+			// 关键词必须已百分号编码：mikan 服务端拒绝请求行中的原始非 ASCII 字节
+			for _, b := range []byte(r.URL.RawQuery) {
+				if b > 127 {
+					t.Errorf("searchstr 未编码，RawQuery 含非 ASCII 字节: %q", r.URL.RawQuery)
+					break
+				}
+			}
 			w.Write([]byte(`
 				<html><body>
 				<a href="/Home/Bangumi/3065">标题A</a>

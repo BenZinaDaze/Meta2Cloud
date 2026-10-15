@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -82,8 +83,9 @@ func (s *MikanSpider) requestWithRetry(url string) (string, []byte, error) {
 }
 
 // SearchMedia 搜索番剧（含字幕组条目）。
+// 关键词必须百分号编码：mikan 服务端拒绝请求行中的原始非 ASCII 字节（HTTP 400）。
 func (s *MikanSpider) SearchMedia(keyword string) ([]MediaItem, error) {
-	text, _, err := s.requestWithRetry(s.baseURL + "/Home/Search?searchstr=" + keyword)
+	text, _, err := s.requestWithRetry(s.baseURL + "/Home/Search?searchstr=" + url.QueryEscape(keyword))
 	if err != nil {
 		return nil, err
 	}
