@@ -33,7 +33,7 @@ export default defineConfig({
           if (id.includes('/react/') || id.includes('/react-dom/')) {
             return 'react-vendor'
           }
-          if (id.includes('/@radix-ui/') || id.includes('/@base-ui/')) {
+          if (id.includes('/@radix-ui/')) {
             return 'ui-vendor'
           }
           if (id.includes('/axios/')) {
