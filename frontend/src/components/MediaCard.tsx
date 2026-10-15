@@ -51,7 +51,7 @@ export default function MediaCard({ item, onClick, compact = false, style }: Med
         {isTV && pct !== null && pct > 0 && (
           <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/40">
             <div
-              className="h-full bg-lime glow-lime transition-all duration-500"
+              className={`h-full transition-all duration-500 ${pct >= 100 ? 'bg-success' : 'bg-lime glow-lime'}`}
               style={{ width: `${Math.min(pct, 100)}%` }}
             />
           </div>
