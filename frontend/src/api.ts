@@ -29,15 +29,10 @@ export const login = (username: string, password: string) =>
   axios.post('/api/auth:login', { username, password })
 
 export const getMe = () => api.get('/auth/me')
-export const logout = () => api.post('/auth:logout')
 
 // ── 媒体库 ──
 export const getLibrary = (sort_by?: string, sort_order?: string) =>
   api.get('/library', { params: { sort_by, sort_order } })
-export const getMovies = () => api.get('/movies')
-export const getTvShows = () => api.get('/tv-shows')
-export const getStats = () => api.get('/stats')
-export const getTvDetail = (tmdbId: number) => api.get(`/tv-shows/${tmdbId}`)
 export const refreshLibrary = (full: boolean = false) => api.post('/library:refresh', null, { params: { full } })
 export const refreshMediaItem = (
   tmdb_id: number,
@@ -64,8 +59,6 @@ export const tmdbGetDetail = (media_type: string, tmdb_id: number) =>
   api.get(`/tmdb/${tmdb_id}`, { params: { media_type } })
 export const tmdbGetAlternativeNames = (media_type: string, tmdb_id: number, config?: { signal?: AbortSignal }) =>
   api.get(`/tmdb/${tmdb_id}/alternative-names`, { params: { media_type }, ...config })
-export const tmdbGetEpisodes = (id: number, season: number) =>
-  api.get(`/tmdb/tv/${id}/season/${season}`)
 export const searchMedia = (keyword: string, config?: { signal?: AbortSignal }) =>
   api.get('/scraper/search', { params: { keyword }, ...config })
 export const getScraperSites = () => api.get('/scraper/sites')
@@ -74,7 +67,6 @@ export const getEpisodes = (site: string, media_id: string, subgroup_id?: string
 
 // ── 订阅 ──
 export const listSubscriptions = () => api.get('/subscriptions')
-export const getSubscription = (id: number) => api.get(`/subscriptions/${id}`)
 export const createSubscription = (data: Record<string, unknown>) =>
   api.post('/subscriptions', data)
 export const updateSubscription = (id: number, data: Record<string, unknown>) =>
@@ -89,8 +81,6 @@ export const checkSubscription = (id: number) =>
 
 // ── 配置 ──
 export const getConfig = () => api.get('/config')
-export const saveConfig = (data: Record<string, unknown>) =>
-  api.put('/config', { data })
 export const getMainConfig = () => api.get('/config/main')
 export const saveMainConfig = (data: Record<string, unknown>) =>
   api.put('/config/main', { data })
@@ -105,9 +95,6 @@ export const testParse = (filename: string, skipTmdb: boolean = false) =>
 // ── Aria2 ──
 export const getAria2Overview = (params?: { queue?: string; page?: number; page_size?: number; search?: string }) =>
   api.get('/aria2/overview', { params })
-export const getAria2Options = () => api.get('/aria2/options')
-export const saveAria2Options = (data: Record<string, unknown>) =>
-  api.put('/aria2/options', data)
 export const addAria2Uri = (data: Record<string, unknown>) =>
   api.post('/aria2/add-uri', data)
 export const addAria2Torrent = (data: Record<string, unknown>) =>
@@ -120,7 +107,6 @@ export const removeAria2Tasks = (gids: string[]) =>
   api.post('/aria2/tasks/remove', { gids })
 export const retryAria2Tasks = (gids: string[]) =>
   api.post('/aria2/tasks/retry', { gids })
-export const purgeAria2Tasks = () => api.post('/aria2/tasks/purge')
 
 // ── 115 网盘 ──
 export const getU115OauthStatus = () => api.get('/u115/oauth/status')
@@ -130,14 +116,11 @@ export const fetchU115QrCode = (config?: { signal?: AbortSignal }) =>
   api.get('/u115/oauth/qrcode', { responseType: 'blob', ...config })
 export const pollU115OauthStatus = (config?: { signal?: AbortSignal }) =>
   api.get('/u115/oauth/poll', { params: { ts: Date.now() }, ...config })
-export const exchangeU115OauthToken = (data: Record<string, unknown>, config?: { signal?: AbortSignal }) =>
-  api.post('/u115/oauth/exchange', data, config)
 export const testU115Connection = () => api.post('/u115/test')
 export const testU115Cookie = () => api.post('/u115/test-cookie')
 export const getU115OfflineOverview = (params?: Record<string, unknown>) =>
   api.get('/u115/offline/overview', { params })
 export const getU115OfflineQuota = () => api.get('/u115/offline/quota')
-export const getU115AutoOrganizeStatus = () => api.get('/u115/offline/auto-organize-status')
 export const addU115OfflineUrls = (data: { urls: string; wp_path_id?: string }) =>
   api.post('/u115/offline/add-urls', data)
 export const deleteU115OfflineTasks = (data: { info_hashes: string[]; del_source_file?: number }) =>
@@ -165,8 +148,6 @@ export const getIngestHistory = (params?: {
 export const getIngestStats = (days?: number) =>
   api.get('/ingest/stats', { params: { days } })
 
-export const getRecentIngests = (limit?: number) =>
-  api.get('/ingest/recent', { params: { limit } })
 
 // ── Bangumi 新番 ──
 export const getBangumiCalendar = () => api.get('/bangumi/calendar')
@@ -175,8 +156,6 @@ export const getBangumiCalendar = () => api.get('/bangumi/calendar')
 export const listFiles = (params?: { folder_id?: string; folder_name?: string; search?: string }) =>
   api.get('/files', { params })
 
-export const getFileDetail = (fileId: string, includePath?: boolean) =>
-  api.get(`/files/${fileId}`, { params: { include_path: includePath } })
 
 export const createFolder = (data: { name: string; parent_id?: string }) =>
   api.post('/files', { ...data, file_type: 'folder' })

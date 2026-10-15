@@ -158,15 +158,6 @@ export interface Aria2Overview {
   version?: string
 }
 
-// 统计
-export interface StatsResponse {
-  total_movies: number
-  total_tv_shows: number
-  total_episodes_in_library: number
-  total_episodes_on_tmdb: number
-  completion_rate: number
-}
-
 // 用户
 export interface User {
   username: string
@@ -242,25 +233,4 @@ export interface ListFilesResponse {
   provider: string
   root_id: string
   path: PathBreadcrumbItem[]
-}
-
-export interface FileDetailResponse extends CloudFile {
-  path: PathBreadcrumbItem[]
-}
-
-export interface CreateFileBody {
-  name: string
-  parent_id?: string
-  file_type?: 'file' | 'folder'
-}
-
-export interface UpdateFileBody {
-  name?: string
-  parent_id?: string
-}
-
-export interface BatchActionBody {
-  action: 'delete' | 'move'
-  file_ids: string[]
-  parent_id?: string
 }
