@@ -5,6 +5,7 @@ import BackToTopButton from '@/components/BackToTopButton'
 import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 import SubscriptionModal from '@/components/modals/SubscriptionModal'
+import { cn } from '@/lib/utils'
 import type { MediaItem, Subscription } from '@/types/api'
 import { toast } from 'sonner'
 import _resultsCache from '@/utils/resultsCache'
@@ -360,268 +361,274 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
     : (mediaGroups[0]?.[0] || null)
 
   return (
-    <div className="flex flex-1 flex-col">
-      <section className="flex flex-1 flex-col rounded-2xl border bg-card p-4 sm:rounded-3xl sm:p-7">
-        <div className="flex-1 min-h-0">
-          {/* Header */}
-          <div className="mb-6 flex items-center gap-4">
-            <Button variant="outline" size="icon" onClick={onBack} className="shrink-0 rounded-full">
-              <ChevronLeft className="size-5" />
-            </Button>
-            <div className="min-w-0 flex-1">
-              <h2 className="truncate text-xl font-bold sm:text-2xl">{displayTitle}</h2>
-              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:text-sm">
-                资源检索结果
-                {usedSearchKey && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-medium text-warning border border-warning/20">
-                    以别名「{usedSearchKey}」检索
-                  </span>
-                )}
-              </div>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="mb-6 flex items-center gap-4">
+        <Button variant="outline" size="icon" onClick={onBack} className="shrink-0 rounded-full">
+          <ChevronLeft className="size-5" />
+        </Button>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-xl font-bold tracking-tight sm:text-2xl">{displayTitle}</h2>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:text-sm">
+            资源检索结果
+            {usedSearchKey && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[10px] font-medium text-warning">
+                以别名「{usedSearchKey}」检索
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Search states */}
+      {searchState === 'searching' && (
+        <StatePanel
+          title={`以「${currentSearchKey || displayTitle}」检索中`}
+          description={currentSearchKey && currentSearchKey !== displayTitle ? '主标题无结果，正在尝试别名。' : '正在从源站聚合可用资源，请稍候。'}
+          compact
+        />
+      )}
+
+      {searchState === 'error' && (
+        <StatePanel
+          icon="!"
+          title="检索失败或无匹配资源"
+          description={errorMsg || '请更换关键词，或稍后重新尝试。'}
+          tone="danger"
+          compact
+        />
+      )}
+
+      {searchState === 'done' && (
+        <div className="min-h-0 flex-1 overflow-y-auto pb-8" data-scroll-container="scraper-results">
+          {siteTabs.length > 1 && (
+            <div className="mb-5 flex flex-wrap gap-2 border-b border-border/60 pb-4">
+              {siteTabs.map(tab => {
+                const isActive = activeSite === tab.key
+                return (
+                  <Button
+                    key={tab.key}
+                    variant={isActive ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => {
+                      setActiveSite(tab.key)
+                      setActiveMediaTitle(null)
+                    }}
+                    className="rounded-full"
+                  >
+                    {tab.label} ({tab.count})
+                  </Button>
+                )
+              })}
             </div>
+          )}
+
+          {/* Media groups selector */}
+          <div className="mb-6 border-b border-border/60 pb-4">
+            <h3 className="mb-3 text-base font-bold tracking-tight">匹配到的相关番剧内容（{mediaGroups.length}部）</h3>
+            {mediaGroups.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {mediaGroups.map(([mediaTitle, subgroups]) => {
+                  const count = subgroups.reduce((s, g) => s + g.episodes.length, 0)
+                  const isActive = mediaTitle === currentActiveMedia
+                  return (
+                    <Button
+                      key={mediaTitle}
+                      variant={isActive ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setActiveMediaTitle(mediaTitle)}
+                      className="rounded-full"
+                    >
+                      {mediaTitle || '未分类源'}（{count}源）
+                    </Button>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
-          {/* Search states */}
-          {searchState === 'searching' && (
-            <StatePanel
-              title={`以「${currentSearchKey || displayTitle}」检索中`}
-              description={currentSearchKey && currentSearchKey !== displayTitle ? '主标题无结果，正在尝试别名。' : '正在从源站聚合可用资源，请稍候。'}
-              compact
-            />
-          )}
-
-          {searchState === 'error' && (
-            <StatePanel
-              icon="!"
-              title="检索失败或无匹配资源"
-              description={errorMsg || '请更换关键词，或稍后重新尝试。'}
-              tone="danger"
-              compact
-            />
-          )}
-
-          {searchState === 'done' && (
-            <div className="pb-8">
-              {siteTabs.length > 1 && (
-                <div className="mb-5 flex flex-wrap gap-2 border-b pb-4">
-                  {siteTabs.map(tab => {
-                    const isActive = activeSite === tab.key
-                    return (
-                      <Button
-                        key={tab.key}
-                        variant={isActive ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => {
-                          setActiveSite(tab.key)
-                          setActiveMediaTitle(null)
-                        }}
-                        className="rounded-xl"
-                      >
-                        {tab.label} ({tab.count})
-                      </Button>
-                    )
-                  })}
-                </div>
-              )}
-
-              {/* Media groups selector */}
-              <div className="mb-6 border-b pb-4">
-                <h3 className="mb-3 text-base font-bold">匹配到的相关番剧内容 ({mediaGroups.length}部)</h3>
-                {mediaGroups.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {mediaGroups.map(([mediaTitle, subgroups]) => {
-                      const count = subgroups.reduce((s, g) => s + g.episodes.length, 0)
-                      const isActive = mediaTitle === currentActiveMedia
-                      return (
+          {groupedEpisodes.length === 0 ? (
+            <StatePanel icon="📭" title="没有获取到有效的剧集种子/磁力项" description="请尝试其他关键词或字幕组。" />
+          ) : (
+            <div className="flex flex-col gap-10">
+              {mediaGroups.filter(([mediaTitle]) => mediaTitle === currentActiveMedia).map(([mediaTitle, subgroups]) => (
+                <div key={mediaTitle} className="flex flex-col gap-4">
+                  {/* Subgroup quick nav */}
+                  {subgroups.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pb-2">
+                      {subgroups.map(({ name, episodes, uniqueKey }) => (
                         <Button
-                          key={mediaTitle}
-                          variant={isActive ? 'default' : 'outline'}
+                          key={uniqueKey}
+                          variant="outline"
                           size="sm"
-                          onClick={() => setActiveMediaTitle(mediaTitle)}
-                          className="rounded-xl"
+                          onClick={() => {
+                            const el = document.getElementById(`fansub-${encodeURIComponent(uniqueKey)}`)
+                            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                          }}
+                          className="rounded-lg text-xs"
                         >
-                          {mediaTitle || '未分类源'} ({count}源)
+                          {name}（{episodes.length}）
                         </Button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Subgroup sections */}
+                  <div className="flex flex-col gap-6">
+                    {subgroups.map((subItem) => {
+                      const { site, name, rssUrl, episodes, loading, originalIndex, uniqueKey } = subItem
+                      const isExpanded = !collapsedGroups.has(uniqueKey)
+                      const toggle = () => setCollapsedGroups(prev => {
+                        const next = new Set(prev)
+                        if (next.has(uniqueKey)) {
+                          next.delete(uniqueKey)
+                        } else {
+                          next.add(uniqueKey)
+                        }
+                        return next
+                      })
+
+                      return (
+                        <div key={uniqueKey} id={`fansub-${encodeURIComponent(uniqueKey)}`} className="flex scroll-mt-4 flex-col">
+                          <button onClick={toggle} className="flex w-full items-center gap-3 py-2 text-left">
+                            <div className={cn(
+                              'w-1.5 shrink-0 rounded-full bg-gradient-to-b from-tide to-tide-2 transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]',
+                              isExpanded ? 'h-6 opacity-100 glow-tide-sm' : 'h-3 opacity-40'
+                            )} />
+                            <h4 className="flex-1 text-lg font-bold tracking-tight">
+                              {name}
+                              <span className="ml-2 rounded-md bg-info/15 px-2 py-0.5 align-middle text-xs font-medium text-info">{siteLabels[site] || site.toUpperCase()}</span>
+                              {loading ? (
+                                <span className="ml-2 text-sm font-normal text-muted-foreground">加载中...</span>
+                              ) : (
+                                <span className="ml-2 text-sm font-medium text-muted-foreground">({episodes.length})</span>
+                              )}
+                            </h4>
+                            {rssUrl && (
+                              <div className="flex shrink-0 items-center gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    navigator.clipboard.writeText(rssUrl)
+                                      .then(() => toast.success('已复制 RSS 链接'))
+                                      .catch((err) => toast.error('复制失败', { description: err.message }))
+                                  }}
+                                  className="gap-1.5 rounded-lg border-warning/30 text-warning hover:border-warning/60"
+                                >
+                                  <Rss className="size-3" />
+                                  复制 RSS
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setSubscriptionDraft({
+                                      name: `${mediaTitle || displayTitle} [${name}]`,
+                                      media_title: mediaTitle || displayTitle,
+                                      media_type: item.media_type || 'tv',
+                                      tmdb_id: item.tmdb_id,
+                                      poster_url: item.poster_url,
+                                      site,
+                                      rss_url: rssUrl,
+                                      subgroup_name: name,
+                                      season_number: 1,
+                                      start_episode: 1,
+                                      keyword_all: [],
+                                      push_target: u115Authorized ? 'u115' : 'aria2',
+                                      enabled: true,
+                                    })
+                                  }}
+                                  className="gap-1.5 rounded-lg border-success/30 text-success hover:border-success/60"
+                                >
+                                  <Rss className="size-3" />
+                                  订阅 RSS
+                                </Button>
+                              </div>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              onClick={(e) => { e.stopPropagation(); refreshGroup(originalIndex) }}
+                              title="刷新该字幕组的资源列表"
+                            >
+                              <RefreshCw className={cn('size-3', loading && 'animate-spin')} />
+                            </Button>
+                            <ChevronDown className={cn(
+                              'size-4 shrink-0 text-muted-foreground transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]',
+                              isExpanded ? 'rotate-180' : ''
+                            )} />
+                          </button>
+
+                          {loading ? (
+                            <div className="mt-1 flex flex-col gap-2 pb-4">
+                              {[1, 2, 3].map(i => (
+                                <div key={i} className="h-16 animate-pulse rounded-2xl border border-border/60 bg-muted/40" />
+                              ))}
+                            </div>
+                          ) : (
+                            <div className={cn(
+                              'grid transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]',
+                              isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+                            )}>
+                              <div className="overflow-hidden">
+                                <div className="mt-1 flex flex-col gap-3 pb-4">
+                                  {episodes.length === 0 ? (
+                                    <div className="px-2 py-3 text-sm text-muted-foreground">该字幕组暂无资源</div>
+                                  ) : episodes.map((ep, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="flex flex-col gap-4 rounded-2xl border border-border/60 bg-muted/25 p-4 transition-colors duration-200 hover:border-primary/20 hover:bg-muted/50 md:flex-row md:p-5"
+                                    >
+                                      <div className="min-w-0 flex-1">
+                                        <div className="mb-2 break-all text-sm font-semibold leading-relaxed md:text-base">{ep.title}</div>
+                                        <div className="flex flex-wrap gap-2 text-xs font-medium">
+                                          <span className="rounded-md bg-info/15 px-2 py-0.5 text-info">{ep._site?.toUpperCase()}</span>
+                                          {ep.file_size_mb && <span className="rounded-md bg-muted px-2 py-0.5 text-muted-foreground">{ep.file_size_mb} MB</span>}
+                                          {ep.publish_time && <span className="rounded-md bg-muted px-2 py-0.5 text-muted-foreground">{ep.publish_time}</span>}
+                                        </div>
+                                      </div>
+                                      <div className="flex shrink-0 flex-col gap-2 md:max-w-[320px] md:items-end">
+                                        {u115Authorized ? (
+                                          <Button onClick={() => handlePushU115(ep)} className="w-full md:w-[132px]">
+                                            推送云下载
+                                          </Button>
+                                        ) : aria2Enabled ? (
+                                          <Button onClick={() => handlePushAria2(ep)} className="w-full md:w-[132px]">
+                                            推送下载
+                                          </Button>
+                                        ) : null}
+                                        <div className="grid grid-cols-2 gap-2 md:flex">
+                                          {u115Authorized && aria2Enabled ? (
+                                            <Button variant="outline" onClick={() => handlePushAria2(ep)} className="md:w-[132px]">
+                                              推送下载
+                                            </Button>
+                                          ) : null}
+                                          <Button variant="outline" onClick={() => handleCopy(ep)}>
+                                            <Copy className="size-4" />
+                                            复制链接
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       )
                     })}
                   </div>
-                )}
-              </div>
-
-              {groupedEpisodes.length === 0 ? (
-                <StatePanel icon="📭" title="没有获取到有效的剧集种子/磁力项" description="请尝试其他关键词或字幕组。" />
-              ) : (
-                <div className="flex flex-col gap-10">
-                  {mediaGroups.filter(([mediaTitle]) => mediaTitle === currentActiveMedia).map(([mediaTitle, subgroups]) => (
-                    <div key={mediaTitle} className="flex flex-col gap-4">
-                      {/* Subgroup quick nav */}
-                      {subgroups.length > 0 && (
-                        <div className="flex flex-wrap gap-2 pb-2">
-                          {subgroups.map(({ name, episodes, uniqueKey }) => (
-                            <Button
-                              key={uniqueKey}
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                const el = document.getElementById(`fansub-${encodeURIComponent(uniqueKey)}`)
-                                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                              }}
-                              className="rounded-lg text-xs"
-                            >
-                              {name} ({episodes.length})
-                            </Button>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Subgroup sections */}
-                      <div className="flex flex-col gap-6">
-                        {subgroups.map((subItem) => {
-                          const { site, name, rssUrl, episodes, loading, originalIndex, uniqueKey } = subItem
-                          const isExpanded = !collapsedGroups.has(uniqueKey)
-                          const toggle = () => setCollapsedGroups(prev => {
-                            const next = new Set(prev)
-                            if (next.has(uniqueKey)) {
-                              next.delete(uniqueKey)
-                            } else {
-                              next.add(uniqueKey)
-                            }
-                            return next
-                          })
-
-                          return (
-                            <div key={uniqueKey} id={`fansub-${encodeURIComponent(uniqueKey)}`} className="flex flex-col">
-                              <button onClick={toggle} className="flex w-full items-center gap-3 py-2 text-left">
-                                <div className={`w-1.5 shrink-0 rounded-full bg-brand transition-all duration-300 ${isExpanded ? 'h-6 opacity-100' : 'h-3 opacity-40'}`} />
-                                <h4 className="flex-1 text-lg font-bold">
-                                  {name}
-                                  <span className="ml-2 rounded bg-info/20 px-2 py-0.5 text-xs font-medium text-info">{siteLabels[site] || site.toUpperCase()}</span>
-                                  {loading ? (
-                                    <span className="ml-2 text-sm font-normal text-muted-foreground">加载中...</span>
-                                  ) : (
-                                    <span className="ml-2 text-sm font-medium text-muted-foreground">({episodes.length})</span>
-                                  )}
-                                </h4>
-                                {rssUrl && (
-                                  <div className="flex shrink-0 items-center gap-2">
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        navigator.clipboard.writeText(rssUrl)
-                                          .then(() => toast.success('已复制 RSS 链接'))
-                                          .catch((err) => toast.error('复制失败', { description: err.message }))
-                                      }}
-                                      className="gap-1.5 rounded-lg border-warning/30 text-warning hover:border-warning/60"
-                                    >
-                                      <Rss className="size-3" />
-                                      复制 RSS
-                                    </Button>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        setSubscriptionDraft({
-                                          name: `${mediaTitle || displayTitle} [${name}]`,
-                                          media_title: mediaTitle || displayTitle,
-                                          media_type: item.media_type || 'tv',
-                                          tmdb_id: item.tmdb_id,
-                                          poster_url: item.poster_url,
-                                          site,
-                                          rss_url: rssUrl,
-                                          subgroup_name: name,
-                                          season_number: 1,
-                                          start_episode: 1,
-                                          keyword_all: [],
-                                          push_target: u115Authorized ? 'u115' : 'aria2',
-                                          enabled: true,
-                                        })
-                                      }}
-                                      className="gap-1.5 rounded-lg border-success/30 text-success hover:border-success/60"
-                                    >
-                                      <Rss className="size-3" />
-                                      订阅 RSS
-                                    </Button>
-                                  </div>
-                                )}
-                                <Button
-                                  variant="ghost"
-                                  size="icon-xs"
-                                  onClick={(e) => { e.stopPropagation(); refreshGroup(originalIndex) }}
-                                  title="刷新该字幕组的资源列表"
-                                >
-                                  <RefreshCw className={`size-3 ${loading ? 'animate-spin' : ''}`} />
-                                </Button>
-                                <ChevronDown className={`size-4 shrink-0 text-muted-foreground transition-all duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
-                              </button>
-
-                              {loading ? (
-                                <div className="mt-1 flex flex-col gap-2 pb-4">
-                                  {[1, 2, 3].map(i => (
-                                    <div key={i} className="h-16 animate-pulse rounded-2xl border bg-muted" />
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-                                  <div className="overflow-hidden">
-                                    <div className="mt-1 flex flex-col gap-3 pb-4">
-                                      {episodes.length === 0 ? (
-                                        <div className="px-2 py-3 text-sm text-muted-foreground">该字幕组暂无资源</div>
-                                      ) : episodes.map((ep, idx) => (
-                                        <div key={idx} className="flex flex-col gap-4 rounded-2xl border bg-muted/30 p-4 transition-colors hover:bg-muted/50 md:flex-row md:p-5">
-                                          <div className="min-w-0 flex-1">
-                                            <div className="mb-2 break-all text-sm font-semibold leading-relaxed md:text-base">{ep.title}</div>
-                                            <div className="flex flex-wrap gap-2 text-xs font-medium">
-                                              <span className="rounded bg-info/20 px-2 py-0.5 text-info">{ep._site?.toUpperCase()}</span>
-                                              {ep.file_size_mb && <span className="rounded bg-muted px-2 py-0.5 text-muted-foreground">{ep.file_size_mb} MB</span>}
-                                              {ep.publish_time && <span className="rounded bg-muted px-2 py-0.5 text-muted-foreground">{ep.publish_time}</span>}
-                                            </div>
-                                          </div>
-                                          <div className="flex shrink-0 flex-col gap-2 md:max-w-[320px] md:items-end">
-                                            {u115Authorized ? (
-                                              <Button onClick={() => handlePushU115(ep)} className="w-full md:w-[132px]">
-                                                推送云下载
-                                              </Button>
-                                            ) : aria2Enabled ? (
-                                              <Button onClick={() => handlePushAria2(ep)} className="w-full md:w-[132px]">
-                                                推送下载
-                                              </Button>
-                                            ) : null}
-                                            <div className="grid grid-cols-2 gap-2 md:flex">
-                                              {u115Authorized && aria2Enabled ? (
-                                                <Button variant="outline" onClick={() => handlePushAria2(ep)} className="md:w-[132px]">
-                                                  推送下载
-                                                </Button>
-                                              ) : null}
-                                              <Button variant="outline" onClick={() => handleCopy(ep)}>
-                                                <Copy className="size-4" />
-                                                复制链接
-                                              </Button>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ))}
                 </div>
-              )}
+              ))}
             </div>
           )}
         </div>
+      )}
 
-      </section>
-
-      <BackToTopButton />
+      <BackToTopButton containerSelector='[data-scroll-container="scraper-results"]' />
 
       <SubscriptionModal
         mode="create"

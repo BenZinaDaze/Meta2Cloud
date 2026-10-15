@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Search, RefreshCw, ChevronRight, ArrowUpDown } from 'lucide-react'
+import { Search, RefreshCw, ChevronRight, ArrowUpDown, RefreshCw as RefreshIcon } from 'lucide-react'
 import { getLibrary } from '@/api'
 import BackToTopButton from '@/components/BackToTopButton'
 import MediaCard from '@/components/MediaCard'
@@ -13,9 +13,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import PageHeader from '@/components/shared/PageHeader'
 import ScraperDetailModal from '@/components/modals/ScraperDetailModal'
 import type { MediaItem, LibraryResponse } from '@/types/api'
 import { relativeTime } from '@/lib/time'
+
 function StatCard({ label, value, sub, action }: {
   label: string
   value: string | number
@@ -23,17 +25,18 @@ function StatCard({ label, value, sub, action }: {
   action?: React.ReactNode
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded-2xl border bg-card p-4 sm:p-5">
-      <div className="min-w-0 flex-1 space-y-0.5">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground sm:text-[11px]">
+    <div className="card-lift relative flex items-center justify-between gap-2 overflow-hidden rounded-2xl border border-border/70 bg-card/50 p-4 sm:p-5">
+      <div className="pointer-events-none absolute inset-0 bg-ambient opacity-50" />
+      <div className="relative min-w-0 flex-1 space-y-0.5">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-[11px]">
           {label}
         </span>
-        <span className={`block font-bold tabular-nums leading-tight ${action ? 'text-base sm:text-2xl' : 'text-xl sm:text-3xl'}`}>
+        <span className={`relative block font-bold tabular-nums leading-tight ${action ? 'text-base sm:text-2xl' : 'text-xl sm:text-3xl'}`}>
           {value}
         </span>
         {sub && <span className="block text-[10px] leading-4 text-muted-foreground/60">{sub}</span>}
       </div>
-      {action && <div className="ml-2 flex-shrink-0">{action}</div>}
+      {action && <div className="relative ml-2 flex-shrink-0">{action}</div>}
     </div>
   )
 }
@@ -54,20 +57,24 @@ function SectionRow({
   return (
     <section className="mb-10">
       <div className="mb-5 flex items-center gap-3">
-        <h2 className="shrink-0 text-xl font-bold sm:text-[22px]">{title}</h2>
-        <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <h2 className="shrink-0 text-xl font-bold tracking-tight sm:text-[22px]">{title}</h2>
+        <span className="shrink-0 rounded-full bg-muted/80 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-muted-foreground">
           {count}
         </span>
-        <div className="h-px flex-1 bg-gradient-to-r from-border to-transparent" />
-        <Button variant="outline" size="sm" onClick={onViewAll} className="gap-1 text-xs">
+        <div className="h-px flex-1 bg-gradient-to-r from-border via-border/50 to-transparent" />
+        <Button variant="outline" size="sm" onClick={onViewAll} className="gap-1 rounded-full text-xs">
           查看全部
           <ChevronRight className="size-3" />
         </Button>
       </div>
 
-      <div className="flex gap-4 overflow-x-auto pb-3">
-        {items.map((item) => (
-          <div key={`${item.media_type}-${item.tmdb_id || item.title}`} className="w-[148px] flex-shrink-0">
+      <div className="flex gap-4 overflow-x-auto pb-3 [scrollbar-width:thin]">
+        {items.map((item, idx) => (
+          <div
+            key={`${item.media_type}-${item.tmdb_id || item.title}`}
+            className="w-[148px] flex-shrink-0 animate-stagger-in"
+            style={{ animationDelay: `${Math.min(idx * 40, 400)}ms` }}
+          >
             <MediaCard item={item} onClick={onSelect} compact />
           </div>
         ))}
@@ -79,8 +86,14 @@ function SectionRow({
 function MediaGrid({ items, onSelect }: { items: MediaItem[]; onSelect: (item: MediaItem) => void }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-10">
-      {items.map((item) => (
-        <MediaCard key={`${item.media_type}-${item.tmdb_id || item.title}`} item={item} onClick={onSelect} />
+      {items.map((item, idx) => (
+        <div
+          key={`${item.media_type}-${item.tmdb_id || item.title}`}
+          className="animate-stagger-in"
+          style={{ animationDelay: `${Math.min(idx * 25, 400)}ms` }}
+        >
+          <MediaCard item={item} onClick={onSelect} />
+        </div>
       ))}
     </div>
   )
@@ -91,10 +104,10 @@ function LoadingRow() {
     <div className="flex gap-3 overflow-hidden">
       {Array.from({ length: 8 }).map((_, i) => (
         <div key={i} className="w-[148px] flex-shrink-0 animate-pulse overflow-hidden rounded-xl">
-          <div className="aspect-[2/3] rounded-xl bg-muted" />
+          <div className="aspect-[2/3] rounded-xl bg-muted/70" />
           <div className="space-y-1.5 px-1 pt-2">
-            <div className="h-3 w-[85%] rounded bg-muted" />
-            <div className="h-2.5 w-[50%] rounded bg-muted" />
+            <div className="h-3 w-[85%] rounded bg-muted/70" />
+            <div className="h-2.5 w-[50%] rounded bg-muted/50" />
           </div>
         </div>
       ))}
@@ -130,6 +143,7 @@ export default function LibraryPage({
   const [, setTick] = useState(0)
 
   useEffect(() => {
+    setLoading(true)
     getLibrary(sortBy, sortOrder)
       .then((res) => setData(res.data))
       .catch((err) => setError(err.message))
@@ -209,53 +223,48 @@ export default function LibraryPage({
 
   return (
     <div className="flex flex-1 flex-col gap-5">
-      <div className="mb-2 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div className="max-w-2xl">
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-brand sm:mb-2 sm:text-[11px]">
-            Cinematic catalog
-          </div>
-          <h1 className="text-2xl font-bold leading-tight sm:text-[34px]">{pageTitle}</h1>
-          <p className="mt-2 hidden text-sm leading-7 text-muted-foreground sm:block">
-            以更清晰的方式浏览你在 Drive 中维护的电影与剧集元数据，快速检索、刷新并查看季集完整度。
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Select
-            value={`${sortBy}:${sortOrder}`}
-            onValueChange={(v) => {
-              const [by, order] = v.split(':')
-              setSortBy(by)
-              setSortOrder(order)
-            }}
-          >
-            <SelectTrigger className="h-11 min-w-0 gap-1 rounded-full border bg-card px-3 text-sm font-medium focus:ring-0 focus:ring-offset-0">
-              <ArrowUpDown className="size-3.5 text-muted-foreground" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl">
-              <SelectItem value="folder_modified_time:desc">最近更新</SelectItem>
-              <SelectItem value="folder_modified_time:asc">最早更新</SelectItem>
-              <SelectItem value="updated_at:desc">最近入库</SelectItem>
-              <SelectItem value="updated_at:asc">最早入库</SelectItem>
-              <SelectItem value="year:desc">最新发行</SelectItem>
-              <SelectItem value="year:asc">最早发行</SelectItem>
-              <SelectItem value="title:asc">标题 A-Z</SelectItem>
-              <SelectItem value="title:desc">标题 Z-A</SelectItem>
-            </SelectContent>
-          </Select>
-          <div className="relative w-full sm:w-auto">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="text"
-              placeholder="搜索标题..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-11 w-full rounded-full pl-10 pr-4 sm:w-72"
-            />
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        kicker="Cinematic catalog"
+        title={pageTitle}
+        description="以更清晰的方式浏览你在 Drive 中维护的电影与剧集元数据，快速检索、刷新并查看季集完整度。"
+        actions={
+          <>
+            <Select
+              value={`${sortBy}:${sortOrder}`}
+              onValueChange={(v) => {
+                const [by, order] = v.split(':')
+                setSortBy(by)
+                setSortOrder(order)
+              }}
+            >
+              <SelectTrigger className="h-10 min-w-0 gap-1.5 rounded-full border-border/70 bg-card/50 px-3.5 text-sm font-medium focus:ring-0 focus:ring-offset-0">
+                <ArrowUpDown className="size-3.5 text-muted-foreground" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl">
+                <SelectItem value="folder_modified_time:desc">最近更新</SelectItem>
+                <SelectItem value="folder_modified_time:asc">最早更新</SelectItem>
+                <SelectItem value="updated_at:desc">最近入库</SelectItem>
+                <SelectItem value="updated_at:asc">最早入库</SelectItem>
+                <SelectItem value="year:desc">最新发行</SelectItem>
+                <SelectItem value="year:asc">最早发行</SelectItem>
+                <SelectItem value="title:asc">标题 A-Z</SelectItem>
+                <SelectItem value="title:desc">标题 Z-A</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="relative w-full sm:w-auto">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="搜索标题..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-10 w-full rounded-full pl-10 pr-4 sm:w-72"
+              />
+            </div>
+          </>
+        }
+      />
 
       {stats && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-4">
@@ -279,11 +288,11 @@ export default function LibraryPage({
       {loading && (
         <div className="flex flex-col gap-8">
           <div>
-            <div className="mb-4 h-5 w-24 rounded bg-muted" />
+            <div className="mb-4 h-5 w-24 rounded bg-muted/70" />
             <LoadingRow />
           </div>
           <div>
-            <div className="mb-4 h-5 w-24 rounded bg-muted" />
+            <div className="mb-4 h-5 w-24 rounded bg-muted/70" />
             <LoadingRow />
           </div>
         </div>
@@ -316,7 +325,7 @@ export default function LibraryPage({
       {!loading && !error && !search.trim() && filter === 'all' && data && (
         data.movies.length === 0 && data.tv_shows.length === 0 ? (
           <StatePanel
-            icon="📭"
+            icon={<RefreshIcon className="size-6" />}
             title="媒体库为空"
             description="点击上方刷新媒体库，重新扫描 Drive 内容。"
           />

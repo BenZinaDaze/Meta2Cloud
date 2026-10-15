@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -8,7 +8,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, ChevronDown, ExternalLink } from 'lucide-react'
+import { Loader2, ChevronDown, ExternalLink, Star } from 'lucide-react'
 import { testParse } from '@/api'
 
 const STATUS_MAP: Record<string, string> = {
@@ -33,7 +33,7 @@ interface InfoCardProps {
 
 function InfoCard({ label, value }: InfoCardProps) {
   return (
-    <div className="rounded-xl px-3 py-3 bg-muted/50 border">
+    <div className="rounded-xl border border-border/60 bg-muted/40 px-3 py-3">
       <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
         {label}
       </div>
@@ -87,31 +87,13 @@ export default function ParseTestModal({
   const [showDetails, setShowDetails] = useState(true)
   const [showOverview, setShowOverview] = useState(false)
 
-  const handleClose = useCallback(() => {
-    onOpenChange(false)
-  }, [onOpenChange])
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && open) {
-        handleClose()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, handleClose])
-
   useEffect(() => {
     if (initialFilename) {
       setFilename(initialFilename)
     }
   }, [initialFilename])
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    const value = filename.trim()
-    if (!value || loading) return
-
+  async function runParse(value: string) {
     setLoading(true)
     setError('')
     try {
@@ -131,41 +113,19 @@ export default function ParseTestModal({
     }
   }
 
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const value = filename.trim()
+    if (!value || loading) return
+    await runParse(value)
+  }
+
+  // 打开时自动解析初始文件名
   useEffect(() => {
     if (!initialFilename?.trim() || !open) return
-
-    let cancelled = false
-
-    async function runInitialParse() {
-      const value = initialFilename.trim()
-      setLoading(true)
-      setError('')
-      try {
-        const res = await testParse(value)
-        if (!cancelled) {
-          setFilename(value)
-          setResult(res.data)
-          setShowOverview(false)
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setResult(null)
-          setError(
-            (err as { response?: { data?: { detail?: string } }; message?: string })?.response?.data
-              ?.detail ||
-              (err as { message?: string })?.message ||
-              '解析失败'
-          )
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-
-    runInitialParse()
-    return () => {
-      cancelled = true
-    }
+    const value = initialFilename.trim()
+    setFilename(value)
+    runParse(value)
   }, [initialFilename, open])
 
   return (
@@ -176,10 +136,12 @@ export default function ParseTestModal({
           输入文件名或路径，测试解析结果和 TMDB 命中情况
         </DialogDescription>
         {/* Header */}
-        <div className="border-b px-4 pb-4 pt-6 sm:px-6">
-          <div className="flex items-start justify-between gap-4">
+        <div className="relative border-b border-border/60 px-4 pb-4 pt-6 sm:px-6">
+          <div className="pointer-events-none absolute inset-0 bg-ambient opacity-70" />
+          <div className="relative flex items-start justify-between gap-4">
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-widest text-brand">
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary/90">
+                <span className="h-px w-5 bg-gradient-to-r from-tide to-transparent" />
                 Parser Sandbox
               </div>
               <h2 className="mt-1.5 text-xl font-bold leading-snug sm:text-2xl">解析测试</h2>
@@ -192,7 +154,7 @@ export default function ParseTestModal({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">
-          <form onSubmit={handleSubmit} className="rounded-2xl border bg-card overflow-hidden">
+          <form onSubmit={handleSubmit} className="overflow-hidden rounded-2xl border border-border/70 bg-card/40">
             <div className="px-4 pb-4 pt-4 sm:px-5">
               <div className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                 输入样本
@@ -201,15 +163,15 @@ export default function ParseTestModal({
                 value={filename}
                 onChange={(e) => setFilename(e.target.value)}
                 placeholder="例如：Breaking.Bad.S01E03.1080p.BluRay.HEVC.mkv"
-                className="mt-3 min-h-28 resize-none"
+                className="mt-3 min-h-28 resize-none font-mono text-[13px]"
               />
             </div>
 
-            <div className="sticky bottom-0 flex items-center justify-between gap-3 border-t px-4 py-3 sm:px-5 bg-muted/30">
+            <div className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-border/60 bg-card/80 px-4 py-3 backdrop-blur-md sm:px-5">
               <div className="text-xs text-muted-foreground">
                 {loading ? '正在请求后端解析并查询 TMDB' : '修改输入后可再次测试'}
               </div>
-              <Button type="submit" disabled={!filename.trim() || loading}>
+              <Button type="submit" disabled={!filename.trim() || loading} className="rounded-full px-4">
                 {loading ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />
@@ -223,13 +185,13 @@ export default function ParseTestModal({
           </form>
 
           {error && (
-            <div className="mt-4 rounded-xl px-4 py-3 text-sm bg-destructive/10 text-destructive border border-destructive/20">
+            <div className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-4 py-3 text-sm text-destructive">
               {error}
             </div>
           )}
 
           {result && (
-            <section className="mt-5 rounded-2xl border bg-card px-4 py-4 sm:px-5">
+            <section className="mt-5 rounded-2xl border border-border/70 bg-card/40 px-4 py-4 sm:px-5">
               <button
                 type="button"
                 onClick={() => setShowDetails((v) => !v)}
@@ -238,17 +200,13 @@ export default function ParseTestModal({
               >
                 <div className="flex items-center gap-3">
                   <h3 className="text-sm font-semibold">详细字段</h3>
-                  <Badge
-                    variant={result.tmdb ? 'default' : 'secondary'}
-                    className={result.tmdb ? 'bg-success text-success-foreground' : ''}
-                  >
+                  <Badge variant={result.tmdb ? 'success' : 'secondary'}>
                     {result.tmdb ? '已命中 TMDB' : '未命中 TMDB'}
                   </Badge>
                 </div>
                 <Button variant="ghost" size="icon-sm">
                   <ChevronDown
-                    className="size-4 transition-transform"
-                    style={{ transform: showDetails ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                    className={`size-4 transition-transform duration-300 ${showDetails ? 'rotate-180' : ''}`}
                   />
                 </Button>
               </button>
@@ -272,7 +230,7 @@ export default function ParseTestModal({
                   ))}
                 </div>
               ) : (
-                <div className="mt-4 rounded-xl px-4 py-4 text-sm leading-6 text-muted-foreground bg-muted/50">
+                <div className="mt-4 rounded-xl bg-muted/40 px-4 py-4 text-sm leading-6 text-muted-foreground">
                   已收起 12 个解析字段，点击展开查看。
                 </div>
               )}
@@ -280,19 +238,19 @@ export default function ParseTestModal({
           )}
 
           <div className="mt-5">
-            <section className="rounded-2xl border bg-card px-4 py-4 sm:px-5 sm:py-5">
+            <section className="rounded-2xl border border-border/70 bg-card/40 px-4 py-4 sm:px-5 sm:py-5">
               <h3 className="text-sm font-semibold">TMDB 信息</h3>
               {!result ? (
-                <div className="mt-4 rounded-xl px-4 py-6 text-sm text-muted-foreground bg-muted/50">
+                <div className="mt-4 rounded-xl bg-muted/40 px-4 py-6 text-sm text-muted-foreground">
                   等待解析结果…
                 </div>
               ) : !result.tmdb ? (
-                <div className="mt-4 rounded-xl px-4 py-6 text-sm text-muted-foreground bg-muted/50">
+                <div className="mt-4 rounded-xl bg-muted/40 px-4 py-6 text-sm text-muted-foreground">
                   没有匹配到 TMDB 结果。请检查文件名，或确认已配置 TMDB API Key。
                 </div>
               ) : (
                 <div className="mt-4 space-y-4">
-                  <div className="relative overflow-hidden rounded-xl bg-muted/50 border">
+                  <div className="relative overflow-hidden rounded-xl border border-border/70 bg-muted/40">
                     {result.tmdb.backdrop_url && (
                       <img
                         src={result.tmdb.backdrop_url}
@@ -306,11 +264,11 @@ export default function ParseTestModal({
                         <img
                           src={result.tmdb.poster_url}
                           alt={result.tmdb.title}
-                          className="h-36 w-24 rounded-xl object-cover border sm:h-40 sm:w-28"
+                          className="h-36 w-24 rounded-xl border border-border/70 object-cover shadow-lg sm:h-40 sm:w-28"
                         />
                       )}
                       <div className="min-w-0 flex-1">
-                        <div className="text-[11px] font-semibold uppercase tracking-widest text-brand">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary/90">
                           {result.tmdb.media_type_label || 'TMDB'}
                         </div>
                         <div className="mt-1 text-xl font-semibold">
@@ -327,21 +285,19 @@ export default function ParseTestModal({
                             <Badge variant="secondary">{result.tmdb.year}</Badge>
                           )}
                           {result.tmdb.rating && result.tmdb.rating > 0 && (
-                            <Badge variant="secondary" className="text-warning border-warning">
-                              ★ {result.tmdb.rating}
+                            <Badge variant="warning">
+                              <Star className="size-3 fill-current" /> {result.tmdb.rating}
                             </Badge>
                           )}
                           {result.tmdb.status && (
-                            <Badge variant="secondary" className="text-brand">
-                              {formatStatus(result.tmdb.status)}
-                            </Badge>
+                            <Badge>{formatStatus(result.tmdb.status)}</Badge>
                           )}
                           {result.tmdb.tmdb_id && (
                             <a
                               href={`https://www.themoviedb.org/${result.tmdb.media_type === 'tv' ? 'tv' : 'movie'}/${result.tmdb.tmdb_id}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs bg-blue-500/10 text-blue-500 border border-blue-500/30 hover:bg-blue-500/20 transition-colors"
+                              className="inline-flex items-center gap-1 rounded-full border border-info/30 bg-info/10 px-2 py-0.5 text-xs text-info transition-colors hover:bg-info/20"
                             >
                               TMDB {result.tmdb.tmdb_id}
                               <ExternalLink className="size-3" />
@@ -365,7 +321,7 @@ export default function ParseTestModal({
                               <button
                                 type="button"
                                 onClick={() => setShowOverview((v) => !v)}
-                                className="mt-2 text-xs font-semibold text-brand"
+                                className="mt-2 text-xs font-semibold text-primary"
                               >
                                 {showOverview ? '收起简介' : '展开简介'}
                               </button>

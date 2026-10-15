@@ -13,15 +13,16 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import PageHeader from '@/components/shared/PageHeader'
 import { relativeTime } from '@/lib/time'
 import type { IngestRecord, IngestHistoryResponse, IngestStatsResponse } from '@/types/api'
 
 function StatusBadge({ status }: { status: string }) {
   const config = {
-    success: { label: '成功', icon: CheckCircle, className: 'bg-success/20 text-success' },
-    failed: { label: '失败', icon: AlertCircle, className: 'bg-destructive/20 text-destructive' },
-    no_tmdb: { label: '无元数据', icon: HelpCircle, className: 'bg-warning/20 text-warning' },
-  }[status] || { label: status, icon: AlertCircle, className: 'bg-muted text-muted-foreground' }
+    success: { label: '成功', icon: CheckCircle, className: 'border-success/30 bg-success/10 text-success' },
+    failed: { label: '失败', icon: AlertCircle, className: 'border-destructive/30 bg-destructive/10 text-destructive' },
+    no_tmdb: { label: '无元数据', icon: HelpCircle, className: 'border-warning/30 bg-warning/10 text-warning' },
+  }[status] || { label: status, icon: AlertCircle, className: 'border-border bg-muted text-muted-foreground' }
 
   const Icon = config.icon
   return (
@@ -36,8 +37,8 @@ function IngestCard({ item }: { item: IngestRecord }) {
   const isTV = item.media_type === 'tv'
 
   return (
-    <div className="flex gap-3 overflow-hidden rounded-2xl border bg-card p-3 transition-colors hover:bg-muted/30 sm:gap-4 sm:p-4">
-      <div className="h-20 w-14 flex-shrink-0 overflow-hidden rounded-lg bg-muted sm:h-24 sm:w-16">
+    <div className="flex gap-3 overflow-hidden rounded-xl border border-border/60 bg-card/50 p-3 transition-colors duration-200 hover:border-primary/20 hover:bg-card/80 sm:gap-4 sm:p-4">
+      <div className="h-20 w-14 flex-shrink-0 overflow-hidden rounded-lg border border-border/60 bg-muted sm:h-24 sm:w-16">
         {item.poster_url ? (
           <img
             src={item.poster_url}
@@ -65,7 +66,7 @@ function IngestCard({ item }: { item: IngestRecord }) {
 
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           {isTV && item.season !== null && (
-            <span className="rounded bg-muted px-1.5 py-0.5 font-mono">
+            <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono">
               S{String(item.season).padStart(2, '0')}E{String(item.episode || 0).padStart(2, '0')}
             </span>
           )}
@@ -87,13 +88,15 @@ function IngestCard({ item }: { item: IngestRecord }) {
   )
 }
 
-function StatCard({ label, value }: { label: string; value: number }) {
+function StatCard({ label, value, icon }: { label: string; value: number; icon?: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border bg-card p-4">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+    <div className="card-lift relative overflow-hidden rounded-2xl border border-border/70 bg-card/50 p-4">
+      <div className="pointer-events-none absolute inset-0 bg-ambient opacity-40" />
+      <div className="relative flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        {icon}
         {label}
-      </span>
-      <p className="mt-1 text-2xl font-bold tabular-nums">{value}</p>
+      </div>
+      <p className="relative mt-1 text-2xl font-bold tabular-nums tracking-tight">{value}</p>
     </div>
   )
 }
@@ -183,76 +186,71 @@ export default function IngestHistoryPage(props: IngestHistoryPageProps) {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-brand sm:mb-2 sm:text-[11px]">
-            Import Log
-          </div>
-          <h1 className="text-2xl font-bold leading-tight sm:text-[34px]">入库记录</h1>
-          <p className="mt-2 hidden text-sm leading-7 text-muted-foreground sm:block">
-            查看所有媒体的入库历史，包括电影和剧集的时间、状态及元数据信息。
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative w-full min-w-0 sm:w-56">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="text"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleRefresh()}
-              placeholder="搜索标题..."
-              className="h-11 rounded-full pl-10"
-            />
-          </div>
-          <Select value={mediaType} onValueChange={(v) => { setMediaType(v); setPage(1) }}>
-            <SelectTrigger className="h-11 w-28 rounded-full focus:ring-0 focus:ring-offset-0">
-              <SelectValue placeholder="类型" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部</SelectItem>
-              <SelectItem value="movie">电影</SelectItem>
-              <SelectItem value="tv">剧集</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1) }}>
-            <SelectTrigger className="h-11 w-28 rounded-full focus:ring-0 focus:ring-offset-0">
-              <SelectValue placeholder="状态" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部</SelectItem>
-              <SelectItem value="success">成功</SelectItem>
-              <SelectItem value="failed">失败</SelectItem>
-              <SelectItem value="no_tmdb">无元数据</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            variant="outline"
-            onClick={handleRefresh}
-            className="h-11 gap-2 px-4"
-          >
-            <RefreshCw className="size-4" />
-            刷新
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        kicker="Import Log"
+        title="入库记录"
+        description="查看所有媒体的入库历史，包括电影和剧集的时间、状态及元数据信息。"
+        actions={
+          <>
+            <div className="relative w-full min-w-0 sm:w-56">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="text"
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleRefresh()}
+                placeholder="搜索标题..."
+                className="h-10 rounded-full pl-10"
+              />
+            </div>
+            <Select value={mediaType} onValueChange={(v) => { setMediaType(v); setPage(1) }}>
+              <SelectTrigger className="h-10 w-28 rounded-full border-border/70 bg-card/50 focus:ring-0 focus:ring-offset-0">
+                <SelectValue placeholder="类型" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部</SelectItem>
+                <SelectItem value="movie">电影</SelectItem>
+                <SelectItem value="tv">剧集</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1) }}>
+              <SelectTrigger className="h-10 w-28 rounded-full border-border/70 bg-card/50 focus:ring-0 focus:ring-offset-0">
+                <SelectValue placeholder="状态" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部</SelectItem>
+                <SelectItem value="success">成功</SelectItem>
+                <SelectItem value="failed">失败</SelectItem>
+                <SelectItem value="no_tmdb">无元数据</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              onClick={handleRefresh}
+              className="h-10 gap-2 rounded-full px-4"
+            >
+              <RefreshCw className="size-4" />
+              刷新
+            </Button>
+          </>
+        }
+      />
 
       {stats && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <StatCard label="近 7 天入库" value={stats.total} />
-          <StatCard label="电影" value={stats.movies} />
-          <StatCard label="剧集集数" value={stats.tv_episodes} />
-          <StatCard label="成功" value={stats.success} />
-          <StatCard label="失败" value={stats.failed} />
-          <StatCard label="无元数据" value={stats.no_tmdb} />
+          <StatCard label="近 7 天入库" value={stats.total} icon={<Clock className="size-3" />} />
+          <StatCard label="电影" value={stats.movies} icon={<Film className="size-3" />} />
+          <StatCard label="剧集集数" value={stats.tv_episodes} icon={<Tv className="size-3" />} />
+          <StatCard label="成功" value={stats.success} icon={<CheckCircle className="size-3" />} />
+          <StatCard label="失败" value={stats.failed} icon={<AlertCircle className="size-3" />} />
+          <StatCard label="无元数据" value={stats.no_tmdb} icon={<HelpCircle className="size-3" />} />
         </div>
       )}
 
-      <section className="min-w-0 overflow-hidden rounded-3xl border bg-card px-4 py-4 sm:px-6 sm:py-6">
+      <section className="min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-card/40 px-4 py-4 sm:px-6 sm:py-6">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold">入库历史</h2>
+            <h2 className="text-lg font-semibold tracking-tight">入库历史</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               共 {data?.pagination.total || 0} 条记录
             </p>
@@ -268,8 +266,10 @@ export default function IngestHistoryPage(props: IngestHistoryPageProps) {
         ) : (
           <>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-              {data?.items.map((item) => (
-                <IngestCard key={item.id} item={item} />
+              {data?.items.map((item, idx) => (
+                <div key={item.id} className="animate-stagger-in" style={{ animationDelay: `${Math.min(idx * 20, 240)}ms` }}>
+                  <IngestCard item={item} />
+                </div>
               ))}
             </div>
 
@@ -284,7 +284,7 @@ export default function IngestHistoryPage(props: IngestHistoryPageProps) {
                   <ChevronLeft className="size-4" />
                   上一页
                 </Button>
-                <span className="px-4 text-sm text-muted-foreground">
+                <span className="px-4 text-sm tabular-nums text-muted-foreground">
                   第 {page} / {data.pagination.total_pages} 页
                 </span>
                 <Button

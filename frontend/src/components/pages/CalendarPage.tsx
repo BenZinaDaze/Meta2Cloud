@@ -4,6 +4,8 @@ import { getBangumiCalendar, testParse } from '@/api'
 import BackToTopButton from '@/components/BackToTopButton'
 import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
+import PageHeader from '@/components/shared/PageHeader'
+import { cn } from '@/lib/utils'
 
 interface BangumiItem {
   id: number
@@ -55,7 +57,7 @@ async function fetchCalendar(): Promise<BangumiWeekday[]> {
   })).sort((a, b) => a.weekday.id - b.weekday.id)
 }
 
-function AnimeCard({ item, onSearch }: { item: BangumiItem; onSearch: (item: BangumiItem) => void }) {
+function AnimeCard({ item, onSearch, index }: { item: BangumiItem; onSearch: (item: BangumiItem) => void; index: number }) {
   const cover = item.images?.large || item.images?.common || item.images?.medium
   const title = item.name_cn || item.name
   const score = item.rating?.score ?? 0
@@ -63,7 +65,8 @@ function AnimeCard({ item, onSearch }: { item: BangumiItem; onSearch: (item: Ban
   return (
     <div
       onClick={() => onSearch(item)}
-      className="group relative flex cursor-pointer flex-col overflow-hidden rounded-xl transition-all duration-200 hover:-translate-y-1"
+      style={{ animationDelay: `${Math.min(index * 30, 360)}ms` }}
+      className="group animate-stagger-in relative flex cursor-pointer flex-col overflow-hidden rounded-xl border border-border/70 bg-card transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-1.5 hover:border-primary/40 hover:shadow-[0_16px_40px_-12px_oklch(8%_0.01_140/0.9),0_0_24px_-8px_oklch(76%_0.19_150/0.35)]"
     >
       <div className="relative aspect-[2/3] overflow-hidden bg-muted">
         {cover ? (
@@ -71,7 +74,7 @@ function AnimeCard({ item, onSearch }: { item: BangumiItem; onSearch: (item: Ban
             src={cover}
             alt={title}
             loading="lazy"
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            className="h-full w-full object-cover transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.06]"
             onError={(e) => { e.currentTarget.style.display = 'none' }}
           />
         ) : (
@@ -80,14 +83,14 @@ function AnimeCard({ item, onSearch }: { item: BangumiItem; onSearch: (item: Ban
           </div>
         )}
         {score > 0 && (
-          <div className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full bg-black/70 px-2 py-0.5 text-[11px] font-bold backdrop-blur-sm">
+          <div className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full bg-black/65 px-2 py-0.5 text-[11px] font-bold backdrop-blur-md">
             <Star className="size-3 fill-warning text-warning" />
             {score.toFixed(1)}
           </div>
         )}
       </div>
-      <div className="flex h-14 flex-col gap-1 rounded-b-xl bg-muted p-2.5 sm:h-[65px]">
-        <p className="line-clamp-2 text-sm font-semibold leading-snug">{title}</p>
+      <div className="flex h-14 flex-col gap-1 bg-card p-2.5 sm:h-[65px]">
+        <p className="line-clamp-2 text-[13px] font-semibold leading-snug">{title}</p>
       </div>
     </div>
   )
@@ -119,36 +122,44 @@ function WeekdaySection({
 
   return (
     <section ref={sectionRef} className="mb-8">
-      <div onClick={() => setExpanded((v) => !v)} className="mb-4 flex cursor-pointer items-center gap-3 select-none">
+      <div onClick={() => setExpanded((v) => !v)} className="mb-4 flex cursor-pointer select-none items-center gap-3">
         {isToday && (
-          <span className="flex h-5 shrink-0 items-center rounded-full bg-brand px-2 text-[10px] font-bold uppercase tracking-wide text-primary-foreground">
+          <span className="flex h-5 shrink-0 items-center rounded-full bg-lime px-2 text-[10px] font-bold uppercase tracking-wide text-[oklch(18%_0.01_140)] glow-lime">
             今日
           </span>
         )}
-        <span className={`shrink-0 text-[22px] font-bold ${isToday ? 'text-brand' : ''}`}>
+        <span className={cn('shrink-0 text-[22px] font-bold tracking-tight', isToday && 'text-gradient-tide')}>
           {weekday.cn}
         </span>
         <span className="shrink-0 text-[15px] text-muted-foreground">{weekday.en}</span>
         <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-[13px] font-semibold ${
-            isToday ? 'bg-brand/20 text-brand' : 'bg-muted text-muted-foreground'
-          }`}
+          className={cn(
+            'shrink-0 rounded-full px-2 py-0.5 text-[13px] font-semibold tabular-nums',
+            isToday ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'
+          )}
         >
           {items.length}
         </span>
-        <span className="flex-1 h-px bg-border/50" />
+        <span className="h-px flex-1 bg-gradient-to-r from-border via-border/50 to-transparent" />
         <ChevronDown
-          className={`size-4 text-muted-foreground transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+          className={cn(
+            'size-4 text-muted-foreground transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]',
+            expanded ? 'rotate-180' : ''
+          )}
         />
       </div>
 
       <div
-        className={`grid gap-3 overflow-hidden transition-all duration-300 ease-in-out ${
-          expanded ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-10 opacity-100' : 'max-h-0 opacity-0'
-        }`}
+        className={cn(
+          'grid overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]',
+          expanded
+            ? 'grid-cols-2 gap-3 opacity-100 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-10'
+            : 'grid-rows-[0fr] opacity-0'
+        )}
+        style={expanded ? undefined : { gridTemplateRows: '0fr' }}
       >
-        {items.map((item) => (
-          <AnimeCard key={item.id} item={item} onSearch={onSearch} />
+        {expanded && items.map((item, index) => (
+          <AnimeCard key={item.id} item={item} onSearch={onSearch} index={index} />
         ))}
       </div>
     </section>
@@ -199,28 +210,29 @@ function LazyWeekdaySection({
         <section className="mb-8">
           <div className="mb-4 flex items-center gap-3">
             {isToday && (
-              <span className="flex h-5 shrink-0 items-center rounded-full bg-brand px-2 text-[10px] font-bold uppercase tracking-wide text-primary-foreground">
+              <span className="flex h-5 shrink-0 items-center rounded-full bg-lime px-2 text-[10px] font-bold uppercase tracking-wide text-[oklch(18%_0.01_140)]">
                 今日
               </span>
             )}
-            <span className={`shrink-0 text-[22px] font-bold ${isToday ? 'text-brand' : ''}`}>
+            <span className={cn('shrink-0 text-[22px] font-bold tracking-tight', isToday && 'text-gradient-tide')}>
               {weekday.cn}
             </span>
             <span className="shrink-0 text-[15px] text-muted-foreground">{weekday.en}</span>
             <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-[13px] font-semibold ${
-                isToday ? 'bg-brand/20 text-brand' : 'bg-muted text-muted-foreground'
-              }`}
+              className={cn(
+                'shrink-0 rounded-full px-2 py-0.5 text-[13px] font-semibold tabular-nums',
+                isToday ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'
+              )}
             >
               {items.length}
             </span>
-            <span className="flex-1 h-px bg-border/50" />
+            <span className="h-px flex-1 bg-gradient-to-r from-border via-border/50 to-transparent" />
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-10">
             {Array.from({ length: Math.min(items.length, 6) }, (_, index) => (
               <div
                 key={`${weekday.id}-placeholder-${index}`}
-                className="aspect-[2/3] animate-pulse rounded-xl bg-muted"
+                className="aspect-[2/3] animate-pulse rounded-xl bg-muted/70"
               />
             ))}
           </div>
@@ -292,29 +304,30 @@ export default function CalendarPage({ onSearch }: CalendarPageProps) {
   }
 
   return (
-    <div className="py-6">
-      <div className="mb-8 flex items-start justify-between gap-4">
-        <div>
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-            Bangumi · 新番放送
+    <div className="py-2">
+      <PageHeader
+        kicker="Bangumi · 新番放送"
+        title="新番列表"
+        description="按星期浏览本季放送的新番，点击卡片可直接跳转到资源检索。"
+        actions={
+          <div className="flex items-center gap-3">
+            {lastUpdated && (
+              <p className="text-xs text-muted-foreground">
+                更新于 {lastUpdated.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+              </p>
+            )}
+            <Button
+              variant="outline"
+              onClick={handleRefresh}
+              disabled={loading}
+              className="gap-2 rounded-full"
+            >
+              <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
+              {loading ? '加载中…' : '刷新'}
+            </Button>
           </div>
-          <h1 className="mt-1 text-3xl font-bold">新番列表</h1>
-          {lastUpdated && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              更新于 {lastUpdated.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-            </p>
-          )}
-        </div>
-        <Button
-          variant="outline"
-          onClick={handleRefresh}
-          disabled={loading}
-          className="gap-2"
-        >
-          <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
-          {loading ? '加载中…' : '刷新'}
-        </Button>
-      </div>
+        }
+      />
 
       {error && !loading && (
         <div className="mb-6">
@@ -332,10 +345,10 @@ export default function CalendarPage({ onSearch }: CalendarPageProps) {
         <div className="space-y-8">
           {[1, 2, 3].map((i) => (
             <div key={i}>
-              <div className="mb-4 h-10 w-48 animate-pulse rounded-xl bg-muted" />
+              <div className="mb-4 h-10 w-48 animate-pulse rounded-xl bg-muted/70" />
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-10">
                 {Array.from({ length: 8 }, (_, j) => (
-                  <div key={j} className="aspect-[2/3] animate-pulse rounded-xl bg-muted" />
+                  <div key={j} className="aspect-[2/3] animate-pulse rounded-xl bg-muted/70" />
                 ))}
               </div>
             </div>
@@ -361,7 +374,7 @@ export default function CalendarPage({ onSearch }: CalendarPageProps) {
       {!loading && data && (
         <div className="mt-4 text-center text-xs text-muted-foreground">
           数据来源：
-          <a href="https://bgm.tv" target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">
+          <a href="https://bgm.tv" target="_blank" rel="noopener noreferrer" className="text-primary transition-colors hover:underline">
             Bangumi 番组计划
           </a>
         </div>

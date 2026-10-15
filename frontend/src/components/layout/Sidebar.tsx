@@ -16,11 +16,10 @@ import {
   ChevronDown,
   Settings,
   LogOut,
-  Circle,
   FolderOpen,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import Logo from '@/components/layout/Logo'
 import type { Aria2Overview } from '@/types/api'
 
 // GitHub SVG 图标
@@ -57,6 +56,18 @@ function compareVer(v1: string, v2: string): number {
   return 0
 }
 
+interface NavGroupLabelProps {
+  label: string
+}
+
+function NavGroupLabel({ label }: NavGroupLabelProps) {
+  return (
+    <div className="px-4 pb-1.5 pt-5 text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/40">
+      {label}
+    </div>
+  )
+}
+
 interface NavItemProps {
   icon: React.ReactNode
   label: string
@@ -64,46 +75,71 @@ interface NavItemProps {
   onClick?: () => void
   indent?: boolean
   right?: React.ReactNode
-  bold?: boolean
   meta?: number | null
 }
 
-function NavItem({ icon, label, active, onClick, indent, right, bold, meta }: NavItemProps) {
+function NavItem({ icon, label, active, onClick, indent, right, meta }: NavItemProps) {
   return (
     <button
       onClick={onClick}
       className={cn(
-        "group relative flex w-full items-center gap-3 overflow-hidden text-left font-medium transition-colors",
-        indent ? "px-4 py-2 pl-10" : "px-4 py-2.5",
+        "group relative flex w-full items-center gap-2.5 overflow-hidden rounded-lg text-left font-medium transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        indent
+          ? "mx-2 w-[calc(100%-1rem)] py-1.5 pl-9 pr-2.5"
+          : "mx-2 w-[calc(100%-1rem)] px-2.5 py-2",
         active
-          ? "bg-accent text-accent-foreground"
-          : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+          ? "bg-foreground text-[oklch(18%_0.01_140)] shadow-[0_4px_14px_-4px_oklch(0%_0_0/0.6)]"
+          : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
       )}
     >
-      <span className={cn(
-        "flex-shrink-0",
-        active ? "text-accent-foreground/70" : "text-muted-foreground group-hover:text-foreground"
-      )}>
+      <span className={cn("flex-shrink-0 transition-colors", active ? "opacity-80" : "text-muted-foreground/80 group-hover:text-foreground")}>
         {icon}
       </span>
-      <span
-        className={cn("flex-1 text-sm", indent && "text-[13px]")}
-        style={{ fontWeight: bold || active ? 600 : 500 }}
-      >
+      <span className={cn("flex-1 truncate", indent ? "text-[12.5px]" : "text-[13px]", active && "font-semibold")}>
         {label}
       </span>
-      <span className="flex min-w-[40px] items-center justify-end gap-2">
+      <span className="flex min-w-[24px] items-center justify-end gap-1.5">
         {meta !== null && meta !== undefined && (
           <span className={cn(
-            "flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
-            active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+            "flex-shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums transition-colors",
+            active ? "bg-[oklch(18%_0.01_140)]/10 text-[oklch(18%_0.01_140)]/75" : "bg-muted text-muted-foreground"
           )}>
             {meta}
           </span>
         )}
-        {right && <span className="flex items-center justify-center">{right}</span>}
+        {right}
       </span>
     </button>
+  )
+}
+
+function Chevron({ expanded }: { expanded: boolean }) {
+  return (
+    <ChevronDown
+      className={cn(
+        "size-3.5 text-muted-foreground/70 transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        expanded && "rotate-180"
+      )}
+    />
+  )
+}
+
+function NavCollapse({ expanded, children }: { expanded: boolean; children: React.ReactNode }) {
+  return (
+    <div
+      className={cn(
+        "grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        expanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+      )}
+    >
+      <div className="overflow-hidden">
+        <div className="relative py-0.5">
+          {/* 树状层级线：挂在一级图标中心正下方 */}
+          <div className="absolute bottom-1 top-1 left-[25px] w-[2px] rounded-full bg-gradient-to-b from-foreground/15 via-foreground/[0.07] to-transparent" />
+          {children}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -169,11 +205,11 @@ export default function Sidebar({
   const showDownloads = aria2Enabled !== false
 
   const connectionState = {
-    connected: { label: '已连接', color: 'text-success' },
-    disabled: { label: '已禁用', color: 'text-muted-foreground' },
-    connecting: { label: '连接中', color: 'text-warning' },
-    error: { label: '未连接', color: 'text-destructive' },
-  }[aria2ConnectionStatus] || { label: '未连接', color: 'text-destructive' }
+    connected: { label: '已连接', color: 'bg-success' },
+    disabled: { label: '已禁用', color: 'bg-muted-foreground/50' },
+    connecting: { label: '连接中', color: 'bg-warning' },
+    error: { label: '未连接', color: 'bg-destructive' },
+  }[aria2ConnectionStatus] || { label: '未连接', color: 'bg-destructive' }
 
   function handleLogoutClick() {
     if (!confirmingLogout) {
@@ -184,58 +220,52 @@ export default function Sidebar({
     onLogout?.()
   }
 
-  const chevronIcon = (expanded: boolean) => (
-    <ChevronDown
-      className={cn(
-        "size-4 text-muted-foreground transition-transform duration-200",
-        expanded && "rotate-180"
-      )}
-    />
-  )
-
   return (
     <aside
       className={cn(
-        "fixed left-0 top-14 bottom-0 flex w-[260px] flex-col border-r bg-background z-40",
-        "transition-transform duration-300 ease-out",
-        mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+        "fixed left-0 top-0 bottom-0 z-40 flex w-[248px] flex-col border-r border-border/70 glass transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        mobileOpen ? "translate-x-0 shadow-[24px_0_80px_-24px_oklch(5%_0.01_140/0.8)]" : "-translate-x-full lg:translate-x-0"
       )}
     >
-      {/* Navigation */}
-      <div className="min-h-0 flex-1 overflow-y-auto py-2">
-        <NavItem
-          icon={<BookOpen className="size-4" />}
-          label="媒体库"
-          active={active === 'all'}
-          onClick={() => { setLibraryExpanded(!libraryExpanded); onSelect('all') }}
-          bold
-          right={chevronIcon(isLibraryExpanded)}
-        />
-
-        <div
-          className={cn(
-            "overflow-hidden transition-all duration-200",
-            isLibraryExpanded ? "max-h-[100px] opacity-100" : "max-h-0 opacity-0"
-          )}
-        >
-          <div className="relative">
-            <div className="absolute bottom-0 top-0 left-5 w-px bg-border" />
-            <NavItem
-              icon={<Film className="size-4" />}
-              label="电影"
-              active={active === 'movies'}
-              onClick={() => onSelect('movies')}
-              indent
-            />
-            <NavItem
-              icon={<Tv className="size-4" />}
-              label="电视剧"
-              active={active === 'tv'}
-              onClick={() => onSelect('tv')}
-              indent
-            />
+      {/* Brand */}
+      <div className="flex h-14 flex-shrink-0 items-center gap-2.5 border-b border-border/60 px-4">
+        <Logo className="size-8 drop-shadow-[0_2px_8px_oklch(76%_0.19_150/0.45)]" />
+        <div className="min-w-0">
+          <div className="text-sm font-bold leading-tight tracking-tight text-foreground">
+            Meta<span className="text-gradient-tide">2</span>Cloud
+          </div>
+          <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-foreground/45">
+            Media Archive
           </div>
         </div>
+      </div>
+
+      {/* Navigation */}
+      <nav className="min-h-0 flex-1 overflow-y-auto py-1">
+        <NavGroupLabel label="媒体库" />
+        <NavItem
+          icon={<BookOpen className="size-4" />}
+          label="媒体库总览"
+          active={active === 'all'}
+          onClick={() => { setLibraryExpanded(!libraryExpanded); onSelect('all') }}
+          right={<Chevron expanded={isLibraryExpanded} />}
+        />
+        <NavCollapse expanded={isLibraryExpanded}>
+          <NavItem
+            icon={<Film className="size-4" />}
+            label="电影"
+            active={active === 'movies'}
+            onClick={() => onSelect('movies')}
+            indent
+          />
+          <NavItem
+            icon={<Tv className="size-4" />}
+            label="电视剧"
+            active={active === 'tv'}
+            onClick={() => onSelect('tv')}
+            indent
+          />
+        </NavCollapse>
 
         <div className="hidden lg:block">
           <NavItem
@@ -244,9 +274,6 @@ export default function Sidebar({
             active={active === 'calendar'}
             onClick={() => onSelect('calendar')}
           />
-        </div>
-
-        <div className="hidden lg:block">
           <NavItem
             icon={<Search className="size-4" />}
             label="资源检索"
@@ -264,6 +291,7 @@ export default function Sidebar({
 
         {showDownloads && (
           <>
+            <NavGroupLabel label="下载" />
             <NavItem
               icon={<Download className="size-4" />}
               label="下载管理"
@@ -271,47 +299,40 @@ export default function Sidebar({
               onClick={() => { setDownloadsExpanded(!downloadsExpanded); onSelect('downloads') }}
               meta={aria2Connected ? totalDownloadCount : null}
               right={
-                <span className="flex items-center gap-1.5">
-                  <Circle className={cn("size-2 fill-current", connectionState.color)} />
-                  {chevronIcon(isDownloadsExpanded)}
+                <span className="relative mr-1 flex items-center">
+                  {aria2ConnectionStatus === 'connected' && (
+                    <span className={cn("absolute inline-flex size-2 rounded-full opacity-60 animate-tide-ping", connectionState.color)} />
+                  )}
+                  <span className={cn("relative inline-flex size-2 rounded-full", connectionState.color)} />
                 </span>
               }
             />
-
-            <div
-              className={cn(
-                "overflow-hidden transition-all duration-200",
-                isDownloadsExpanded ? "max-h-[150px] opacity-100" : "max-h-0 opacity-0"
-              )}
-            >
-              <div className="relative">
-                <div className="absolute bottom-0 top-0 left-5 w-px bg-border" />
-                <NavItem
-                  icon={<Zap className="size-4" />}
-                  label="下载中"
-                  active={active === 'downloads-active'}
-                  onClick={() => onSelect('downloads-active')}
-                  indent
-                  meta={activeCount}
-                />
-                <NavItem
-                  icon={<List className="size-4" />}
-                  label="等待中"
-                  active={active === 'downloads-waiting'}
-                  onClick={() => onSelect('downloads-waiting')}
-                  indent
-                  meta={waitingCount}
-                />
-                <NavItem
-                  icon={<Archive className="size-4" />}
-                  label="已停止"
-                  active={active === 'downloads-stopped'}
-                  onClick={() => onSelect('downloads-stopped')}
-                  indent
-                  meta={stoppedCount}
-                />
-              </div>
-            </div>
+            <NavCollapse expanded={isDownloadsExpanded}>
+              <NavItem
+                icon={<Zap className="size-4" />}
+                label="下载中"
+                active={active === 'downloads-active'}
+                onClick={() => onSelect('downloads-active')}
+                indent
+                meta={activeCount}
+              />
+              <NavItem
+                icon={<List className="size-4" />}
+                label="等待中"
+                active={active === 'downloads-waiting'}
+                onClick={() => onSelect('downloads-waiting')}
+                indent
+                meta={waitingCount}
+              />
+              <NavItem
+                icon={<Archive className="size-4" />}
+                label="已停止"
+                active={active === 'downloads-stopped'}
+                onClick={() => onSelect('downloads-stopped')}
+                indent
+                meta={stoppedCount}
+              />
+            </NavCollapse>
           </>
         )}
 
@@ -326,96 +347,88 @@ export default function Sidebar({
           </div>
         )}
 
+        <NavGroupLabel label="系统" />
         <NavItem
           icon={<FolderOpen className="size-4" />}
           label="文件管理"
           active={active === 'files'}
           onClick={() => onSelect('files')}
         />
-
         <NavItem
           icon={<History className="size-4" />}
           label="入库记录"
           active={active === 'ingest-history'}
           onClick={() => onSelect('ingest-history')}
         />
-
         <NavItem
           icon={<Activity className="size-4" />}
           label="日志"
           active={active === 'logs'}
           onClick={() => onSelect('logs')}
         />
-
         <NavItem
           icon={<Settings className="size-4" />}
           label="配置"
           active={false}
           onClick={() => setConfigExpanded(!configExpanded)}
-          right={chevronIcon(configExpanded)}
+          right={<Chevron expanded={configExpanded} />}
         />
-
-        <div
-          className={cn(
-            "overflow-hidden transition-all duration-200",
-            configExpanded ? "max-h-[100px] opacity-100" : "max-h-0 opacity-0"
-          )}
-        >
-          <div className="relative">
-            <div className="absolute bottom-0 top-0 left-5 w-px bg-border" />
-            <NavItem
-              icon={<Settings className="size-4" />}
-              label="基础配置"
-              active={active === 'config'}
-              onClick={() => onSelect('config')}
-              indent
-            />
-            <NavItem
-              icon={<Search className="size-4" />}
-              label="识别规则"
-              active={active === 'config-filename-rules'}
-              onClick={() => onSelect('config-filename-rules')}
-              indent
-            />
-          </div>
-        </div>
-      </div>
+        <NavCollapse expanded={configExpanded}>
+          <NavItem
+            icon={<Settings className="size-4" />}
+            label="基础配置"
+            active={active === 'config'}
+            onClick={() => onSelect('config')}
+            indent
+          />
+          <NavItem
+            icon={<Search className="size-4" />}
+            label="识别规则"
+            active={active === 'config-filename-rules'}
+            onClick={() => onSelect('config-filename-rules')}
+            indent
+          />
+        </NavCollapse>
+      </nav>
 
       {/* Footer */}
-      <div className="mt-auto border-t">
+      <div className="mt-auto flex-shrink-0 border-t border-border/60 pb-16 lg:pb-0">
         {onLogout && (
-          <div className="p-3">
-            <Button
-              variant={confirmingLogout ? "destructive" : "ghost"}
-              className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
+          <div className="p-2.5">
+            <button
               onClick={handleLogoutClick}
+              className={cn(
+                "flex w-full items-center justify-start gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-300",
+                confirmingLogout
+                  ? "bg-destructive/15 text-destructive shadow-[inset_0_0_0_1px_oklch(70%_0.19_22/0.3)] animate-tide-breathe"
+                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              )}
             >
               <LogOut className="size-4" />
-              <span className="text-sm">{confirmingLogout ? '再次点击确认退出' : '退出登录'}</span>
-            </Button>
+              <span>{confirmingLogout ? '再次点击确认退出' : '退出登录'}</span>
+            </button>
           </div>
         )}
 
         {/* Version Info */}
-        <div className="px-4 pb-3 pt-2">
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground/60">
-            <span className="font-medium">{currentVersion}</span>
+        <div className="px-3 pb-3 pt-1.5">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-5 shrink-0 items-center rounded-full border border-border/80 bg-muted/70 px-2 font-mono text-[10px] font-semibold text-foreground/75">
+              {currentVersion}
+            </span>
             {hasUpdate && (
-              <>
-                <span className="text-muted-foreground/40">·</span>
-                <span className="text-primary/80">
-                  可更新到 {latestVersion}
-                </span>
-              </>
+              <span className="animate-tide-breathe truncate text-[10px] font-medium text-primary">
+                可更新到 {latestVersion}
+              </span>
             )}
             <a
               href="https://github.com/BenZinaDaze/Meta2Cloud"
               target="_blank"
               rel="noopener noreferrer"
-              className="ml-auto inline-flex size-5 items-center justify-center rounded hover:bg-muted/50 transition-colors"
+              className="ml-auto inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
               title="GitHub"
             >
-              <GithubIcon className="size-3 opacity-50 hover:opacity-80" />
+              <GithubIcon className="size-3.5" />
             </a>
           </div>
         </div>

@@ -19,6 +19,7 @@ import { listFiles, createFolder, updateFile, deleteFile, batchAction } from '@/
 import BackToTopButton from '@/components/BackToTopButton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import PageHeader from '@/components/shared/PageHeader'
 import {
   Dialog,
   DialogContent,
@@ -39,18 +40,18 @@ import {
 } from '@/components/ui/alert-dialog'
 import ParseTestModal from '@/components/modals/ParseTestModal'
 import { StatePanel } from '@/components/StatePanel'
-import type { CloudFile, ListFilesResponse } from '@/types/api'
-import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { formatBytes } from '@/lib/format'
 import { formatDateTime } from '@/lib/time'
+import type { CloudFile, ListFilesResponse } from '@/types/api'
+import { toast } from 'sonner'
 
 function getFileIcon(file: CloudFile) {
   if (file.file_type === 'folder') {
     return <Folder className="size-5 text-warning" />
   }
   if (file.is_video) {
-    return <Film className="size-5 text-brand" />
+    return <Film className="size-5 text-primary" />
   }
   if (file.is_subtitle) {
     return <FileText className="size-5 text-info" />
@@ -163,7 +164,7 @@ export default function FileManagerPage() {
     setDebouncedSearch('')
   }
 
-  
+
   const handleDoubleClick = (file: CloudFile) => {
     if (file.file_type === 'folder') {
       handleEnterFolder(file.id, file.name)
@@ -253,206 +254,230 @@ export default function FileManagerPage() {
     }
   }
 
-  if (loading && !data) {
-    return <StatePanel title="加载中..." />
-  }
-
-  if (error) {
-    return (
-      <StatePanel
-        title="加载失败"
-        description={error}
-        tone="danger"
-        action={
-          <Button onClick={fetchFiles}>重试</Button>
-        }
-      />
-    )
-  }
-
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex items-center justify-between gap-4 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <Folder className="size-5 text-brand" />
-            <h1 className="text-lg font-semibold">文件管理</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setCreateFolderOpen(true)}>
+      <PageHeader
+        kicker="Cloud Explorer"
+        title="文件管理"
+        description="浏览和管理 115 网盘中的文件与文件夹。"
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={() => setCreateFolderOpen(true)} className="rounded-full">
               <FolderPlus className="size-4" />
               新建文件夹
             </Button>
-            <Button variant="outline" size="sm" onClick={fetchFiles}>
+            <Button variant="outline" size="sm" onClick={fetchFiles} className="rounded-full">
               <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
               刷新
             </Button>
-          </div>
-        </div>
+          </>
+        }
+      />
 
-        {/* Current folder & Search & Batch Actions */}
-        <div className="flex items-center justify-between gap-4 px-4 pb-3">
-          <div className="flex items-center gap-2 min-w-0">
-            {(currentFolderId || pathStack.length > 0) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleGoBack}
-              >
-                <ArrowLeft className="size-4" />
-                返回上一层
-              </Button>
-            )}
-            <span className="text-sm text-muted-foreground truncate">
-              {currentFolderName || '根目录'}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {selectedIds.size > 0 && (
-              <>
-                <span className="text-sm text-muted-foreground">已选择 {selectedIds.size} 项</span>
-                <Button variant="outline" size="sm" onClick={() => { setMoveFileIds(Array.from(selectedIds)); setMoveTitle(`移动 ${selectedIds.size} 个项目`); setMoveOpen(true) }}>
-                  <ArrowRight className="size-4" />
-                  批量移动
+      {error && !data ? (
+        <StatePanel
+          title="加载失败"
+          description={error}
+          tone="danger"
+          action={
+            <Button onClick={fetchFiles}>重试</Button>
+          }
+        />
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card/40">
+          {/* 工具栏 */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
+            <div className="flex min-w-0 items-center gap-2">
+              {(currentFolderId || pathStack.length > 0) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleGoBack}
+                >
+                  <ArrowLeft className="size-4" />
+                  返回上一层
                 </Button>
-                <Button variant="destructive" size="sm" onClick={handleBatchDelete}>
-                  <Trash2 className="size-4" />
-                  批量删除
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
-                  <X className="size-4" />
-                  取消
-                </Button>
-              </>
-            )}
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="搜索文件..."
-                className="w-48 pl-8"
-              />
+              )}
+              {/* 面包屑 */}
+              <div className="flex min-w-0 items-center gap-1.5 text-sm">
+                <Folder className="size-4 shrink-0 text-primary/80" />
+                <button
+                  onClick={() => {
+                    setCurrentFolderId(undefined)
+                    setCurrentFolderName(undefined)
+                    setPathStack([])
+                  }}
+                  className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  根目录
+                </button>
+                {pathStack.map((p, i) => (
+                  <span key={p.id} className="flex min-w-0 items-center gap-1.5">
+                    <span className="text-border">/</span>
+                    {i === pathStack.length - 1 && !currentFolderName ? (
+                      <span className="truncate font-medium">{p.name}</span>
+                    ) : (
+                      <span className="truncate text-muted-foreground">{p.name}</span>
+                    )}
+                  </span>
+                ))}
+                {currentFolderName && (
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="text-border">/</span>
+                    <span className="truncate font-medium text-foreground">{currentFolderName}</span>
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {selectedIds.size > 0 && (
+                <>
+                  <span className="text-sm text-muted-foreground">已选择 {selectedIds.size} 项</span>
+                  <Button variant="outline" size="sm" onClick={() => { setMoveFileIds(Array.from(selectedIds)); setMoveTitle(`移动 ${selectedIds.size} 个项目`); setMoveOpen(true) }}>
+                    <ArrowRight className="size-4" />
+                    批量移动
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={handleBatchDelete}>
+                    <Trash2 className="size-4" />
+                    批量删除
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
+                    <X className="size-4" />
+                    取消
+                  </Button>
+                </>
+              )}
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="搜索文件..."
+                  className="w-48 pl-8"
+                />
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* File List Header */}
-      <div className="flex items-center gap-4 border-b bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground">
-        <button
-          onClick={toggleSelectAll}
-          className="flex-shrink-0"
-        >
-          {selectedIds.size === sortedItems.length && sortedItems.length > 0 ? (
-            <CheckSquare className="size-4 text-brand" />
-          ) : (
-            <Square className="size-4" />
-          )}
-        </button>
-        <button
-          className="flex-1 text-left hover:text-foreground"
-          onClick={() => handleSortToggle('name')}
-        >
-          名称 {sortBy === 'name' && (sortOrder === 'asc' ? '↑' : '↓')}
-        </button>
-        <button
-          className="w-24 text-right hover:text-foreground"
-          onClick={() => handleSortToggle('size')}
-        >
-          大小 {sortBy === 'size' && (sortOrder === 'asc' ? '↑' : '↓')}
-        </button>
-        <button
-          className="w-40 text-right hover:text-foreground"
-          onClick={() => handleSortToggle('modified_time')}
-        >
-          修改时间 {sortBy === 'modified_time' && (sortOrder === 'asc' ? '↑' : '↓')}
-        </button>
-        <div className="w-32" />
-      </div>
-
-      {/* File List */}
-      <div data-scroll-container="file-manager-list" className="flex-1 overflow-y-auto">
-        {sortedItems.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            {searchQuery ? '没有找到匹配的文件' : '文件夹为空'}
+          {/* 文件列表头 */}
+          <div className="flex items-center gap-4 border-b border-border/60 bg-muted/25 px-4 py-2 text-xs font-medium text-muted-foreground">
+            <button
+              onClick={toggleSelectAll}
+              className="flex-shrink-0 transition-colors hover:text-foreground"
+            >
+              {selectedIds.size === sortedItems.length && sortedItems.length > 0 ? (
+                <CheckSquare className="size-4 text-primary" />
+              ) : (
+                <Square className="size-4" />
+              )}
+            </button>
+            <button
+              className="flex-1 text-left transition-colors hover:text-foreground"
+              onClick={() => handleSortToggle('name')}
+            >
+              名称 {sortBy === 'name' && (sortOrder === 'asc' ? '↑' : '↓')}
+            </button>
+            <button
+              className="w-24 text-right transition-colors hover:text-foreground"
+              onClick={() => handleSortToggle('size')}
+            >
+              大小 {sortBy === 'size' && (sortOrder === 'asc' ? '↑' : '↓')}
+            </button>
+            <button
+              className="w-40 text-right transition-colors hover:text-foreground"
+              onClick={() => handleSortToggle('modified_time')}
+            >
+              修改时间 {sortBy === 'modified_time' && (sortOrder === 'asc' ? '↑' : '↓')}
+            </button>
+            <div className="w-32" />
           </div>
-        ) : (
-          <div className="divide-y">
-            {sortedItems.map((file) => (
-              <div
-                key={file.id}
-                className={cn(
-                  'flex items-center gap-4 px-4 py-2.5 hover:bg-muted/50 transition-colors',
-                  selectedIds.has(file.id) && 'bg-muted/30'
-                )}
-              >
-                <button
-                  onClick={() => toggleSelect(file.id)}
-                  className="flex-shrink-0"
-                >
-                  {selectedIds.has(file.id) ? (
-                    <CheckSquare className="size-4 text-brand" />
-                  ) : (
-                    <Square className="size-4 text-muted-foreground/50 hover:text-muted-foreground" />
-                  )}
-                </button>
-                <div
-                  className="flex flex-1 cursor-pointer items-center gap-3 select-none"
-                  onDoubleClick={() => handleDoubleClick(file)}
-                >
-                  {getFileIcon(file)}
-                  <span className="truncate">{file.name}</span>
-                </div>
-                <div className="w-24 text-right text-sm text-muted-foreground select-none">
-                  {formatBytes(file.size)}
-                </div>
-                <div className="w-40 text-right text-sm text-muted-foreground select-none">
-                  {formatDateTime(file.modified_time)}
-                </div>
-                <div className="flex w-32 justify-end gap-1">
-                  {file.is_video && (
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => handleOpenParseTest(file)}
-                      title="测试解析"
-                    >
-                      <Search className="size-4" />
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => { setRenameFile(file); setRenameValue(file.name); setRenameOpen(true) }}
-                    title="重命名"
-                  >
-                    <Edit3 className="size-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => { setMoveFileIds([file.id]); setMoveTitle('移动文件'); setMoveOpen(true) }}
-                    title="移动"
-                  >
-                    <ArrowRight className="size-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => setDeleteFile_(file)}
-                    className="text-destructive hover:text-destructive"
-                    title="删除"
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
+
+          {/* 文件列表 */}
+          <div data-scroll-container="file-manager-list" className="min-h-0 flex-1 overflow-y-auto">
+            {loading && !data ? (
+              <div className="p-6 text-center text-muted-foreground">加载中...</div>
+            ) : sortedItems.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-muted-foreground">
+                {searchQuery ? '没有找到匹配的文件' : '文件夹为空'}
               </div>
-            ))}
+            ) : (
+              <div className="divide-y divide-border/50">
+                {sortedItems.map((file, idx) => (
+                  <div
+                    key={file.id}
+                    className={cn(
+                      'flex items-center gap-4 px-4 py-2.5 transition-colors duration-150 hover:bg-muted/40',
+                      selectedIds.has(file.id) && 'bg-primary/[0.05]'
+                    )}
+                    style={{ animationDelay: `${Math.min(idx * 15, 240)}ms` }}
+                  >
+                    <button
+                      onClick={() => toggleSelect(file.id)}
+                      className="flex-shrink-0"
+                    >
+                      {selectedIds.has(file.id) ? (
+                        <CheckSquare className="size-4 text-primary" />
+                      ) : (
+                        <Square className="size-4 text-muted-foreground/50 transition-colors hover:text-muted-foreground" />
+                      )}
+                    </button>
+                    <div
+                      className="flex flex-1 cursor-pointer select-none items-center gap-3"
+                      onDoubleClick={() => handleDoubleClick(file)}
+                    >
+                      {getFileIcon(file)}
+                      <span className="truncate">{file.name}</span>
+                    </div>
+                    <div className="w-24 select-none text-right text-sm tabular-nums text-muted-foreground">
+                      {formatBytes(file.size)}
+                    </div>
+                    <div className="w-40 select-none text-right text-sm tabular-nums text-muted-foreground">
+                      {formatDateTime(file.modified_time)}
+                    </div>
+                    <div className="flex w-32 justify-end gap-1">
+                      {file.is_video && (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => handleOpenParseTest(file)}
+                          title="测试解析"
+                        >
+                          <Search className="size-4" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => { setRenameFile(file); setRenameValue(file.name); setRenameOpen(true) }}
+                        title="重命名"
+                      >
+                        <Edit3 className="size-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => { setMoveFileIds([file.id]); setMoveTitle('移动文件'); setMoveOpen(true) }}
+                        title="移动"
+                      >
+                        <ArrowRight className="size-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => setDeleteFile_(file)}
+                        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        title="删除"
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Create Folder Modal */}
       <Dialog open={createFolderOpen} onOpenChange={setCreateFolderOpen}>
@@ -637,20 +662,20 @@ function MoveModal({
               {pathStack.length > 0 ? pathStack[pathStack.length - 1].name : '根目录'}
             </span>
           </div>
-          <div className="max-h-[200px] overflow-y-auto rounded border select-none">
+          <div className="max-h-[200px] select-none overflow-y-auto rounded-xl border border-border/70 bg-card/40">
             {loading ? (
               <div className="p-4 text-center text-muted-foreground">加载中...</div>
             ) : folders.length === 0 ? (
               <div className="p-4 text-center text-muted-foreground">无子文件夹</div>
             ) : (
-              <div className="divide-y">
+              <div className="divide-y divide-border/50">
                 {folders.map((folder) => (
                   <button
                     key={folder.id}
                     onClick={() => loadFolders(folder.id, folder.name)}
                     className={cn(
-                      'flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/50',
-                      targetFolderId === folder.id && 'bg-muted/50'
+                      'flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/50',
+                      targetFolderId === folder.id && 'bg-primary/10 text-primary'
                     )}
                   >
                     <Folder className="size-4 text-warning" />

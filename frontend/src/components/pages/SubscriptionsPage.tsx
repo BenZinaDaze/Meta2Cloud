@@ -16,15 +16,17 @@ import {
 } from '@/components/ui/alert-dialog'
 import DetailModal from '@/components/modals/DetailModal'
 import SubscriptionModal from '@/components/modals/SubscriptionModal'
+import PageHeader from '@/components/shared/PageHeader'
+import { cn } from '@/lib/utils'
 import type { Subscription, MediaItem } from '@/types/api'
 import { toast } from 'sonner'
 
 function TinyPill({ children, tone = 'default' }: { children: React.ReactNode; tone?: 'default' | 'success' | 'warning' | 'danger' }) {
   const styles = {
     default: 'bg-muted text-muted-foreground',
-    success: 'bg-success/20 text-success',
-    warning: 'bg-warning/20 text-warning',
-    danger: 'bg-destructive/20 text-destructive',
+    success: 'bg-success/15 text-success',
+    warning: 'bg-warning/15 text-warning',
+    danger: 'bg-destructive/15 text-destructive',
   }[tone]
 
   return (
@@ -34,7 +36,7 @@ function TinyPill({ children, tone = 'default' }: { children: React.ReactNode; t
   )
 }
 
-function SubscriptionMiniCard({ item, onEdit }: { item: Subscription; onEdit: (item: Subscription) => void }) {
+function SubscriptionMiniCard({ item, onEdit, index }: { item: Subscription; onEdit: (item: Subscription) => void; index: number }) {
   const posterUrl = item.library?.poster_url || item.tmdb?.poster_url || item.poster_url || null
   const displayTitle = item.tmdb?.title || item.media_title
   const completionText = item.library?.total_episodes
@@ -44,25 +46,28 @@ function SubscriptionMiniCard({ item, onEdit }: { item: Subscription; onEdit: (i
   return (
     <article
       onClick={() => onEdit(item)}
-      className="group relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border bg-card transition-all hover:-translate-y-1"
+      style={{ animationDelay: `${Math.min(index * 25, 360)}ms` }}
+      className="group animate-stagger-in relative flex cursor-pointer flex-col overflow-hidden rounded-xl border border-border/70 bg-card transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-1.5 hover:border-primary/40 hover:shadow-[0_16px_40px_-12px_oklch(8%_0.01_140/0.9),0_0_24px_-8px_oklch(76%_0.19_150/0.35)]"
     >
-      <div className="relative aspect-[2/3] overflow-hidden rounded-t-2xl bg-muted">
+      <div className="relative aspect-[2/3] overflow-hidden bg-muted">
         {posterUrl ? (
           <img
             src={posterUrl}
             alt={displayTitle}
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            className="h-full w-full object-cover transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.06]"
             loading="lazy"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-4xl">
-            <Rss className="size-10 text-muted-foreground" />
+          <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+            <Rss className="size-10" />
           </div>
         )}
 
         <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 to-transparent p-2.5">
           <div className="flex items-center justify-between gap-3 text-[11px] font-semibold text-white">
-            <span className="min-w-0 flex-1 text-left">{item.enabled ? '启用' : '暂停'}</span>
+            <span className={cn('min-w-0 flex-1 text-left', item.enabled ? 'text-success' : 'text-white/70')}>
+              {item.enabled ? '启用' : '暂停'}
+            </span>
             <span className="min-w-0 flex-1 text-center">{item.push_target === 'u115' ? '云下载' : '下载'}</span>
             <span className="min-w-0 flex-1 text-right">{item.hit_count || 0} 命中</span>
           </div>
@@ -77,8 +82,8 @@ function SubscriptionMiniCard({ item, onEdit }: { item: Subscription; onEdit: (i
         </div>
       </div>
 
-      <div className="flex h-14 flex-col gap-1 rounded-b-2xl bg-muted p-3 sm:h-[65px]">
-        <p className="line-clamp-2 text-sm font-semibold leading-snug">{displayTitle}</p>
+      <div className="flex h-14 flex-col gap-1 bg-card p-3 sm:h-[65px]">
+        <p className="line-clamp-2 text-[13px] font-semibold leading-snug">{displayTitle}</p>
       </div>
     </article>
   )
@@ -92,8 +97,8 @@ function InfoBlock({ label, value, tone = 'default' }: { label: string; value: s
   }[tone]
 
   return (
-    <div className="rounded-2xl border bg-muted/50 p-4">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</div>
+    <div className="rounded-xl border border-border/60 bg-muted/40 p-4">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</div>
       <div className={`mt-1 text-sm font-semibold leading-6 ${color}`}>{value}</div>
     </div>
   )
@@ -132,7 +137,7 @@ function SubscriptionDetailContent({ item }: { item: Subscription }) {
           <h3 className="mb-3 text-sm font-semibold">最近命中</h3>
           <div className="grid gap-2">
             {item.recent_hits.slice(0, 5).map((hit) => (
-              <div key={hit.id} className="rounded-2xl border bg-muted/50 p-4">
+              <div key={hit.id} className="rounded-xl border border-border/60 bg-muted/40 p-4">
                 <div className="text-sm font-semibold">{hit.episode_title}</div>
                 <div className="mt-1 text-xs text-muted-foreground">
                   {[
@@ -305,66 +310,60 @@ export default function SubscriptionsPage({
 
   return (
     <div className="flex-1">
-      <section className="flex flex-1 flex-col rounded-2xl border bg-card p-4 sm:rounded-3xl sm:p-7">
-        <div className="mb-6 flex flex-col gap-3 sm:mb-7 sm:gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-2xl">
-            <div className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-brand sm:mb-2 sm:text-[11px]">
-              Subscription Center
-            </div>
-            <h2 className="text-2xl font-bold sm:text-[34px]">RSS 订阅列表</h2>
-            <p className="mt-2 text-sm leading-7 text-muted-foreground">
-              RSS 订阅详情
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" onClick={() => setCreatingItem(true)} className="gap-2">
+      <PageHeader
+        kicker="Subscription Center"
+        title="RSS 订阅列表"
+        description="管理 RSS 订阅规则，命中后自动推送到下载器或 115 云下载。"
+        actions={
+          <>
+            <Button size="sm" onClick={() => setCreatingItem(true)} className="gap-2 rounded-full px-3.5">
               <Plus className="size-4" />
               添加订阅
             </Button>
-            <Button variant="outline" size="sm" onClick={loadData} className="gap-2">
+            <Button variant="outline" size="sm" onClick={loadData} className="gap-2 rounded-full">
               <RefreshCw className="size-4" />
               刷新列表
             </Button>
+          </>
+        }
+      />
+
+      <div className="mb-4 flex flex-wrap gap-2 sm:mb-5">
+        {[
+          ['all', `全部 ${items.length}`],
+          ['enabled', `启用 ${items.filter((item) => item.enabled).length}`],
+          ['in_library', `已入库 ${items.filter((item) => item.library?.in_library).length}`],
+          ['not_in_library', `未入库 ${items.filter((item) => !item.library?.in_library).length}`],
+        ].map(([value, label]) => (
+          <Button
+            key={value}
+            variant={filter === value ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setFilter(value)}
+            className="rounded-full"
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+
+      <div data-scroll-container="subscriptions-grid" className="min-h-0 flex-1">
+        {loading ? (
+          <StatePanel title="正在加载订阅列表" description="正在读取已保存的 RSS 订阅与命中状态。" compact />
+        ) : error ? (
+          <StatePanel icon="!" title="加载订阅失败" description={error} tone="danger" compact />
+        ) : items.length === 0 ? (
+          <StatePanel icon={<Rss className="size-6" />} title="还没有 RSS 订阅" description="去资源检索页找到对应字幕组后，点击「订阅 RSS」即可创建。" />
+        ) : filteredItems.length === 0 ? (
+          <StatePanel icon="🗂" title="当前筛选下没有订阅" description="换一个筛选条件，或者先创建新的订阅规则。" compact />
+        ) : (
+          <div className="grid grid-cols-2 gap-3 pb-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-10">
+            {filteredItems.map((item, index) => (
+              <SubscriptionMiniCard key={item.id} item={item} onEdit={setSelectedItem} index={index} />
+            ))}
           </div>
-        </div>
-
-        <div className="mb-4 flex flex-wrap gap-2 sm:mb-5">
-          {[
-            ['all', `全部 ${items.length}`],
-            ['enabled', `启用 ${items.filter((item) => item.enabled).length}`],
-            ['in_library', `已入库 ${items.filter((item) => item.library?.in_library).length}`],
-            ['not_in_library', `未入库 ${items.filter((item) => !item.library?.in_library).length}`],
-          ].map(([value, label]) => (
-            <Button
-              key={value}
-              variant={filter === value ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setFilter(value)}
-              className="rounded-full"
-            >
-              {label}
-            </Button>
-          ))}
-        </div>
-
-        <div data-scroll-container="subscriptions-grid" className="flex-1 min-h-0 overflow-y-auto">
-          {loading ? (
-            <StatePanel title="正在加载订阅列表" description="正在读取已保存的 RSS 订阅与命中状态。" compact />
-          ) : error ? (
-            <StatePanel icon="!" title="加载订阅失败" description={error} tone="danger" compact />
-          ) : items.length === 0 ? (
-            <StatePanel icon="📡" title="还没有 RSS 订阅" description="去资源检索页找到对应字幕组后，点击「订阅 RSS」即可创建。" />
-          ) : filteredItems.length === 0 ? (
-            <StatePanel icon="🗂" title="当前筛选下没有订阅" description="换一个筛选条件，或者先创建新的订阅规则。" compact />
-          ) : (
-            <div className="grid grid-cols-2 gap-3 pb-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-10">
-              {filteredItems.map((item) => (
-                <SubscriptionMiniCard key={item.id} item={item} onEdit={setSelectedItem} />
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
+        )}
+      </div>
 
       {selectedItem && (
         <DetailModal

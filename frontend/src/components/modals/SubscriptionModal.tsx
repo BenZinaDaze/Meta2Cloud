@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Loader2, Wand2 } from 'lucide-react'
 import { createSubscription, testSubscription, updateSubscription, parseSubscriptionRss, getScraperSites } from '@/api'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import type { Subscription } from '@/types/api'
 
 function parseKeywords(value: string): string[] {
@@ -196,9 +197,9 @@ export default function SubscriptionModal({
     }
   }, [availableTargets, form.push_target])
 
-  const handleClose = useCallback(() => {
+  const handleClose = () => {
     onOpenChange(false)
-  }, [onOpenChange])
+  }
 
   function updateField(key: string, value: unknown) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -335,17 +336,19 @@ export default function SubscriptionModal({
           配置 RSS 订阅规则，包括剧集标题、字幕组、关键字等
         </DialogDescription>
         {/* Header */}
-        <div className="border-b px-4 pb-4 pt-6 sm:px-6">
-          <div className="flex items-start justify-between gap-4">
+        <div className="relative border-b border-border/60 px-4 pb-4 pt-6 sm:px-6">
+          <div className="pointer-events-none absolute inset-0 bg-ambient opacity-70" />
+          <div className="relative flex items-start justify-between gap-4">
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-widest text-brand">
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary/90">
+                <span className="h-px w-5 bg-gradient-to-r from-tide to-transparent" />
                 RSS Subscription
               </div>
               <h2 className="mt-1.5 text-xl font-bold leading-snug sm:text-2xl">
                 {mode === 'edit' ? '编辑订阅' : '创建订阅'}
               </h2>
               <p className="mt-1.5 text-xs text-muted-foreground sm:text-sm">
-                订阅详情
+                配置 RSS 订阅规则，命中后自动推送到下载器或云下载
               </p>
             </div>
           </div>
@@ -355,7 +358,7 @@ export default function SubscriptionModal({
         <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">
           <form onSubmit={handleSubmit} className="grid gap-5 lg:grid-cols-2">
             {/* Left: Form */}
-            <section className="rounded-2xl p-4 sm:p-5 border bg-card">
+            <section className="rounded-2xl border border-border/70 bg-card/40 p-4 sm:p-5">
               <div className="grid gap-4">
                 <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
                   <div>
@@ -421,7 +424,7 @@ export default function SubscriptionModal({
                     />
                   </div>
                 </div>
-                <div className="text-xs text-muted-foreground -mt-2">
+                <div className="text-xs leading-5 text-muted-foreground/80 -mt-1">
                   TMDB ID 留空则无法关联媒体库；关键字用逗号分隔，必须全部命中才会推送。
                 </div>
                 <div>
@@ -431,10 +434,10 @@ export default function SubscriptionModal({
                       <Button
                         type="button"
                         variant="outline"
-                        size="sm"
+                        size="xs"
                         onClick={handleParseRss}
                         disabled={parsing || !form.rss_url.trim()}
-                        className="gap-1.5 h-6 text-xs"
+                        className="gap-1.5 rounded-full"
                       >
                         {parsing ? (
                           <>
@@ -454,7 +457,7 @@ export default function SubscriptionModal({
                     value={form.rss_url}
                     onChange={(e) => updateRssUrl(e.target.value)}
                     rows={3}
-                    className="mt-2 resize-none"
+                    className="mt-2 resize-none font-mono text-xs"
                   />
                 </div>
                 <div className="grid gap-4 sm:grid-cols-3">
@@ -493,7 +496,7 @@ export default function SubscriptionModal({
                 </div>
                 <div>
                   <Label>推送方式</Label>
-                  <div className="grid gap-2 sm:grid-cols-2 mt-2">
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
                     {availableTargets.length > 0 ? (
                       availableTargets.map((target) => (
                         <Button
@@ -501,33 +504,34 @@ export default function SubscriptionModal({
                           type="button"
                           variant={form.push_target === target.value ? 'default' : 'outline'}
                           onClick={() => updateField('push_target', target.value)}
+                          className={cn('rounded-xl', form.push_target === target.value && 'ring-1 ring-primary/40')}
                         >
                           {target.label}
                         </Button>
                       ))
                     ) : (
-                      <div className="rounded-xl px-4 py-3 text-sm bg-destructive/10 text-destructive border border-destructive/20 col-span-2">
+                      <div className="rounded-xl border border-destructive/25 bg-destructive/10 px-4 py-3 text-sm text-destructive col-span-2">
                         当前没有可用推送方式
                       </div>
                     )}
                   </div>
                 </div>
                 <div
-                  className="flex w-full items-center justify-between gap-4 rounded-xl border px-4 py-3 transition-all"
-                  style={{
-                    background: form.enabled ? 'hsl(var(--brand) / 0.1)' : 'transparent',
-                    borderColor: form.enabled ? 'hsl(var(--brand) / 0.4)' : 'hsl(var(--border))',
-                  }}
+                  className={cn(
+                    'flex w-full items-center justify-between gap-4 rounded-xl border px-4 py-3 transition-all duration-300',
+                    form.enabled
+                      ? 'border-primary/35 bg-primary/[0.07]'
+                      : 'border-border/70 bg-transparent'
+                  )}
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold">创建后立即启用</span>
                       <span
-                        className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-                        style={{
-                          background: form.enabled ? 'hsl(var(--brand))' : 'hsl(var(--muted))',
-                          color: form.enabled ? 'hsl(var(--brand-foreground))' : 'hsl(var(--muted-foreground))',
-                        }}
+                        className={cn(
+                          'rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-colors',
+                          form.enabled ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                        )}
                       >
                         {form.enabled ? '已启用' : '已禁用'}
                       </span>
@@ -545,11 +549,11 @@ export default function SubscriptionModal({
             </section>
 
             {/* Right: Test results */}
-            <section className="rounded-2xl p-4 sm:p-5 border bg-card">
+            <section className="rounded-2xl border border-border/70 bg-card/40 p-4 sm:p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold">规则测试</div>
-                  <div className="mt-1 text-xs text-muted-foreground">
+                  <div className="mt-1 text-xs leading-5 text-muted-foreground">
                     使用当前表单配置测试 RSS 会命中哪些条目，但不会真的推送下载。
                   </div>
                 </div>
@@ -571,7 +575,7 @@ export default function SubscriptionModal({
               </div>
 
               {error && (
-                <div className="mt-4 rounded-xl px-4 py-3 text-sm bg-destructive/10 text-destructive border border-destructive/20">
+                <div className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                   {error}
                 </div>
               )}
@@ -584,7 +588,7 @@ export default function SubscriptionModal({
                       { label: '解析成功', value: testResult.summary?.parsed_items ?? 0 },
                       { label: '最终命中', value: testResult.summary?.matched_items ?? 0 },
                     ].map((item) => (
-                      <div key={item.label} className="rounded-xl px-4 py-3 bg-muted/50 border">
+                      <div key={item.label} className="rounded-xl border border-border/60 bg-muted/40 px-4 py-3">
                         <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
                           {item.label}
                         </div>
@@ -598,20 +602,18 @@ export default function SubscriptionModal({
                       {(testResult.matches || []).map((item, index) => (
                         <div
                           key={`${item.title}-${index}`}
-                          className={`rounded-xl px-4 py-3 border ${
+                          className={cn(
+                            'rounded-xl border px-4 py-3 transition-colors',
                             item.would_push
-                              ? 'bg-success/5 border-success/20'
-                              : 'bg-muted/50 border-border'
-                          }`}
+                              ? 'border-success/25 bg-success/[0.06]'
+                              : 'border-border/60 bg-muted/30'
+                          )}
                         >
                           <div className="flex flex-wrap items-center gap-2">
                             <div className="flex-1 text-sm font-semibold leading-6">
                               {item.title}
                             </div>
-                            <Badge
-                              variant={item.would_push ? 'default' : 'secondary'}
-                              className={item.would_push ? 'bg-success text-success-foreground' : ''}
-                            >
+                            <Badge variant={item.would_push ? 'success' : 'secondary'}>
                               {item.would_push ? '会推送' : '不会推送'}
                             </Badge>
                           </div>
@@ -622,14 +624,7 @@ export default function SubscriptionModal({
                                 ? String(item.episode_number).padStart(2, '0')
                                 : '--'}
                             </Badge>
-                            <Badge
-                              variant={item.all_keywords_hit ? 'default' : 'secondary'}
-                              className={
-                                item.all_keywords_hit
-                                  ? 'bg-success text-success-foreground'
-                                  : ''
-                              }
-                            >
+                            <Badge variant={item.all_keywords_hit ? 'success' : 'secondary'}>
                               关键字 {item.keyword_hits?.length || 0}/
                               {parseKeywords(form.keyword_text).length}
                             </Badge>
@@ -643,14 +638,14 @@ export default function SubscriptionModal({
                   </div>
                 </>
               ) : (
-                <div className="mt-5 rounded-xl px-4 py-5 text-sm leading-6 bg-muted/50 border text-muted-foreground">
-                  先填写季、起始集数和关键字，然后点击"测试规则"，确认当前规则到底会下哪些资源。
+                <div className="mt-5 rounded-xl border border-border/60 bg-muted/40 px-4 py-5 text-sm leading-6 text-muted-foreground">
+                  先填写季、起始集数和关键字，然后点击“测试规则”，确认当前规则到底会下哪些资源。
                 </div>
               )}
             </section>
 
             {/* Footer */}
-            <div className="lg:col-span-2 flex items-center justify-end gap-3">
+            <div className="flex items-center justify-end gap-3 lg:col-span-2">
               <Button type="button" variant="outline" onClick={handleClose}>
                 取消
               </Button>

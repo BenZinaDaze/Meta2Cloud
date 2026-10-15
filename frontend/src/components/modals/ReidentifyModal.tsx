@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import type { MediaItem, ReidentifyResponse } from '@/types/api'
 
 interface ReidentifyModalProps {
@@ -34,12 +35,15 @@ function ResultRow({
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-center gap-3 rounded-2xl border px-3 py-3 text-left transition-colors ${
-        active ? 'border-brand bg-brand/10' : 'hover:bg-muted/50'
-      }`}
+      className={cn(
+        'flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition-all duration-200',
+        active
+          ? 'border-primary/45 bg-primary/10 shadow-[0_0_16px_-6px_oklch(76%_0.19_150/0.4)]'
+          : 'border-border/70 hover:border-primary/25 hover:bg-muted/50'
+      )}
     >
       {item.poster_url ? (
-        <img src={item.poster_url} alt={item.title} className="h-16 w-11 rounded-md object-cover" />
+        <img src={item.poster_url} alt={item.title} className="h-16 w-11 rounded-md border border-border/60 object-cover" />
       ) : (
         <div className="h-16 w-11 rounded-md bg-muted" />
       )}
@@ -54,7 +58,7 @@ function ResultRow({
           <Badge variant="secondary">TMDB {item.tmdb_id}</Badge>
         </div>
       </div>
-      {active && <Check className="size-4 text-brand" />}
+      {active && <Check className="size-4 shrink-0 text-primary" />}
     </button>
   )
 }
@@ -194,11 +198,21 @@ export default function ReidentifyModal({
         </DialogHeader>
 
         <div className="flex gap-2">
-          <Button variant={mode === 'search' ? 'default' : 'outline'} size="sm" onClick={() => setMode('search')}>
+          <Button
+            variant={mode === 'search' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setMode('search')}
+            className="rounded-full"
+          >
             <Search className="size-4" />
             搜索选择
           </Button>
-          <Button variant={mode === 'id' ? 'default' : 'outline'} size="sm" onClick={() => setMode('id')}>
+          <Button
+            variant={mode === 'id' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setMode('id')}
+            className="rounded-full"
+          >
             <PencilLine className="size-4" />
             直接填 ID
           </Button>
@@ -225,7 +239,7 @@ export default function ReidentifyModal({
                     搜索
                   </Button>
                 </div>
-                <div className="max-h-[360px] space-y-2 overflow-y-auto rounded-2xl border p-2">
+                <div className="max-h-[360px] space-y-2 overflow-y-auto rounded-xl border border-border/70 bg-card/40 p-2">
                   {results.length === 0 ? (
                     <div className="px-3 py-8 text-center text-sm text-muted-foreground">
                       {searching ? '搜索中...' : '先搜索，再从结果里选择正确条目。'}
@@ -246,7 +260,7 @@ export default function ReidentifyModal({
                 </div>
               </>
             ) : (
-              <div className="space-y-3 rounded-2xl border p-4">
+              <div className="space-y-3 rounded-xl border border-border/70 bg-card/40 p-4">
                 <div className="text-sm font-medium">TMDB ID</div>
                 <div className="flex gap-2">
                   <Input
@@ -276,17 +290,18 @@ export default function ReidentifyModal({
               </div>
             )}
 
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <label className="flex cursor-pointer items-center gap-2.5 text-sm text-muted-foreground">
               <input
                 type="checkbox"
                 checked={renameFolder}
                 onChange={(e) => setRenameFolder(e.target.checked)}
+                className="size-4 rounded border-input accent-[oklch(76%_0.19_150)]"
               />
               同步重命名媒体目录
             </label>
           </div>
 
-          <div className="space-y-4 rounded-2xl border p-4">
+          <div className="space-y-4 rounded-xl border border-border/70 bg-card/40 p-4">
             <div>
               <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">当前绑定</div>
               <div className="space-y-2">
@@ -298,7 +313,7 @@ export default function ReidentifyModal({
               </div>
             </div>
 
-            <div className="border-t pt-4">
+            <div className="border-t border-border/60 pt-4">
               <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">新绑定预览</div>
               {loadingPreview ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -308,7 +323,7 @@ export default function ReidentifyModal({
               ) : preview ? (
                 <div className="space-y-3">
                   {preview.poster_url && (
-                    <img src={preview.poster_url} alt={preview.title} className="h-40 w-28 rounded-lg object-cover" />
+                    <img src={preview.poster_url} alt={preview.title} className="h-40 w-28 rounded-lg border border-border/70 object-cover shadow-lg" />
                   )}
                   <div className="text-sm font-semibold">{preview.title}</div>
                   {preview.original_title && preview.original_title !== preview.title && (

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -6,7 +6,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import { RefreshCw, ExternalLink } from 'lucide-react'
+import { RefreshCw, ExternalLink, Star } from 'lucide-react'
 import type { MediaItem, SeasonStatus } from '@/types/api'
 
 const STATUS_MAP: Record<string, string> = {
@@ -36,15 +36,15 @@ interface EpisodePillProps {
 function EpisodePill({ ep }: EpisodePillProps) {
   const isAired = ep.air_date && new Date(ep.air_date) <= new Date()
   const color = ep.in_library
-    ? 'text-success border-success bg-success/10'
+    ? 'text-success border-success/40 bg-success/10 hover:bg-success/20'
     : !isAired && ep.air_date
-    ? 'text-muted-foreground border-muted-foreground'
-    : 'text-destructive border-destructive'
+    ? 'text-muted-foreground/60 border-border bg-muted/40'
+    : 'text-destructive border-destructive/35 bg-destructive/[0.07] hover:bg-destructive/15'
 
   return (
     <div
       title={`E${String(ep.episode_number).padStart(2, '0')} ${ep.episode_title}${ep.air_date ? ' · ' + ep.air_date : ''}`}
-      className={`w-8 h-8 rounded flex items-center justify-center text-xs font-bold cursor-default transition-transform hover:scale-110 border ${color}`}
+      className={`flex size-8 w-8 cursor-default items-center justify-center rounded-md border text-xs font-bold transition-transform duration-200 hover:scale-110 hover:-translate-y-0.5 ${color}`}
     >
       {ep.episode_number}
     </div>
@@ -59,7 +59,9 @@ function SeasonBlock({ season }: SeasonBlockProps) {
   const episodeCount = season.episode_count || season.episodes?.length || 0
   const inLibraryCount = season.in_library_count ?? 0
   const pct = episodeCount > 0 ? Math.round((inLibraryCount / episodeCount) * 100) : 0
-  const barColor = pct >= 100 ? 'bg-success' : pct > 50 ? 'bg-brand' : 'bg-warning'
+  const barColor = pct >= 100
+    ? 'bg-success'
+    : 'bg-lime'
 
   return (
     <div className="mb-6">
@@ -68,19 +70,19 @@ function SeasonBlock({ season }: SeasonBlockProps) {
           <img
             src={season.poster_url}
             alt={season.season_name}
-            className="rounded object-cover flex-shrink-0 w-10 h-[60px]"
+            className="w-10 flex-shrink-0 rounded-md border border-border/60 object-cover h-[60px]"
           />
         )}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center justify-between mb-1.5">
             <span className="text-sm font-semibold">{season.season_name}</span>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs tabular-nums text-muted-foreground">
               {inLibraryCount} / {episodeCount} 集 · {pct}%
             </span>
           </div>
-          <div className="h-1.5 rounded-full overflow-hidden bg-muted">
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted/80">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+              className={`h-full rounded-full ${barColor} transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${pct > 50 ? 'glow-lime' : ''}`}
               style={{ width: `${pct}%` }}
             />
           </div>
@@ -119,20 +121,6 @@ export default function DetailModal({
   const [showOverview, setShowOverview] = useState(false)
   const hasFooter = !!footerSlot
 
-  const handleClose = useCallback(() => {
-    onOpenChange(false)
-  }, [onOpenChange])
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && open) {
-        handleClose()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, handleClose])
-
   if (!item) return null
 
   const isTV = item.media_type === 'tv'
@@ -166,28 +154,26 @@ export default function DetailModal({
               style={{ opacity: loadingSlot ? 0.3 : 1 }}
             />
           ) : (
-            <div className="absolute inset-0 bg-muted" />
+            <div className="absolute inset-0 bg-gradient-to-br from-accent to-card" />
           )}
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/50 to-background" />
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/40 to-popover" />
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-tide/40 to-transparent" />
         </div>
 
         {/* Poster and title */}
         <div
-          className="flex flex-col gap-3 px-4 -mt-8 sm:-mt-12 sm:flex-row sm:items-end sm:gap-4 sm:px-6 relative z-10"
+          className="relative z-10 -mt-8 flex flex-col gap-3 px-4 sm:-mt-12 sm:flex-row sm:items-end sm:gap-4 sm:px-6"
           style={{ opacity: loadingSlot ? 0.5 : 1 }}
         >
           {item.poster_url && (
             <img
               src={item.poster_url}
               alt={item.title}
-              className="h-[112px] w-[76px] flex-shrink-0 rounded-lg shadow-xl border-2 border-border object-cover sm:h-[132px] sm:w-[88px]"
+              className="h-[112px] w-[76px] flex-shrink-0 rounded-lg border border-border/80 object-cover shadow-[0_12px_32px_-8px_oklch(5%_0.01_140/0.9)] sm:h-[132px] sm:w-[88px]"
             />
           )}
 
           <div className="min-w-0 flex-1 pb-2 sm:pb-3">
-            <div className="mb-2 hidden text-[11px] font-semibold uppercase tracking-widest text-brand sm:block">
-              Metadata detail
-            </div>
             <h2 className="text-lg font-bold leading-snug sm:text-2xl">
               {item.title}
             </h2>
@@ -201,24 +187,20 @@ export default function DetailModal({
                 <Badge variant="secondary">{item.year}</Badge>
               )}
               {item.rating > 0 && (
-                <Badge variant="secondary" className="text-warning border-warning">
-                  ★ {item.rating}
+                <Badge variant="warning">
+                  <Star className="size-3 fill-current" /> {item.rating}
                 </Badge>
               )}
               {item.status && (
-                <Badge variant="secondary" className="text-brand">
-                  {formatStatus(item.status)}
-                </Badge>
+                <Badge>{formatStatus(item.status)}</Badge>
               )}
               {isTV && item.in_library_episodes !== undefined && item.in_library && (
-                <Badge className="bg-success/10 text-success border-success">
+                <Badge variant="success">
                   {item.in_library_episodes}/{item.total_episodes || '?'} 集已入库
                 </Badge>
               )}
               {!isTV && item.in_library && (
-                <Badge variant="secondary" className="text-success border-success">
-                  已入库
-                </Badge>
+                <Badge variant="success">已入库</Badge>
               )}
               {item.tmdb_id && (
                 <div className="flex items-center gap-1.5">
@@ -226,7 +208,7 @@ export default function DetailModal({
                     href={`https://www.themoviedb.org/${isTV ? 'tv' : 'movie'}/${item.tmdb_id}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs bg-blue-500/10 text-blue-500 border border-blue-500/30 hover:bg-blue-500/20 transition-colors"
+                    className="inline-flex items-center gap-1 rounded-full border border-info/30 bg-info/10 px-2 py-0.5 text-xs text-info transition-colors hover:bg-info/20"
                   >
                     TMDB {item.tmdb_id}
                     <ExternalLink className="size-3" />
@@ -251,14 +233,14 @@ export default function DetailModal({
 
         {/* Content */}
         <div
-          className={`relative px-4 pb-4 sm:px-6 sm:pb-6 overflow-y-auto flex-1 ${
+          className={`relative flex-1 overflow-y-auto px-4 pb-4 sm:px-6 sm:pb-6 ${
             hasFooter ? '' : 'min-h-0'
           }`}
           style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}
         >
           {loadingSlot && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/50 backdrop-blur-sm">
-              <span className="text-muted-foreground text-sm animate-pulse flex items-center gap-2">
+              <span className="flex items-center gap-2 animate-pulse text-sm text-muted-foreground">
                 <RefreshCw className="size-4 animate-spin" />
                 加载详情中...
               </span>
@@ -266,11 +248,11 @@ export default function DetailModal({
           )}
 
           {summaryPairs.length > 0 && (
-            <div className="mb-3 grid grid-cols-2 gap-2 sm:hidden">
+            <div className="mb-3 mt-4 grid grid-cols-2 gap-2 sm:hidden">
               {summaryPairs.map(([label, value]) => (
                 <div
                   key={label}
-                  className="rounded-xl px-3 py-2.5 bg-muted/50 border"
+                  className="rounded-xl border border-border/60 bg-muted/40 px-3 py-2.5"
                 >
                   <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
                     {label}
@@ -283,7 +265,7 @@ export default function DetailModal({
 
           {item.overview && (
             <>
-              <div className="mb-4 rounded-xl px-4 py-3.5 bg-muted/50 border sm:hidden">
+              <div className="mb-4 mt-4 rounded-xl border border-border/60 bg-muted/40 px-4 py-3.5 sm:hidden">
                 <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
                   内容简介
                 </div>
@@ -302,13 +284,13 @@ export default function DetailModal({
                   <button
                     type="button"
                     onClick={() => setShowOverview((v) => !v)}
-                    className="mt-2 text-xs font-semibold text-brand"
+                    className="mt-2 text-xs font-semibold text-primary"
                   >
                     {showOverview ? '收起简介' : '展开简介'}
                   </button>
                 )}
               </div>
-              <p className="mb-5 hidden text-sm leading-7 text-muted-foreground sm:block">
+              <p className="mb-5 mt-4 hidden border-l-2 border-primary/30 pl-4 text-sm leading-7 text-muted-foreground sm:block">
                 {item.overview}
               </p>
             </>
@@ -316,17 +298,17 @@ export default function DetailModal({
 
           {isTV && item.seasons && item.seasons.length > 0 ? (
             <div>
-              <h3 className="text-sm font-semibold mb-3 pb-2 border-b">
+              <h3 className="mb-3 border-b border-border/60 pb-2 text-sm font-semibold">
                 季集入库状态
               </h3>
               <div className="mb-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
                 {[
-                  { className: 'border-success bg-success/10', label: '已入库' },
-                  { className: 'border-destructive bg-background', label: '未入库' },
-                  { className: 'border-muted-foreground bg-background', label: '未播出' },
+                  { className: 'border-success/40 bg-success/10', label: '已入库' },
+                  { className: 'border-destructive/35 bg-background', label: '未入库' },
+                  { className: 'border-border bg-muted/40', label: '未播出' },
                 ].map(({ className, label }) => (
                   <span key={label} className="flex items-center gap-1">
-                    <span className={`w-3 h-3 rounded-sm inline-block border ${className}`} />{' '}
+                    <span className={`inline-block size-3 rounded-sm border ${className}`} />{' '}
                     {label}
                   </span>
                 ))}
@@ -344,7 +326,7 @@ export default function DetailModal({
 
         {/* Footer */}
         {hasFooter && (
-          <div className="border-t px-4 pb-4 pt-3 sm:px-6 sm:pb-6 bg-muted/30 flex-shrink-0">
+          <div className="flex-shrink-0 border-t border-border/60 bg-card/60 px-4 pb-4 pt-3 sm:px-6 sm:pb-6">
             {footerSlot}
           </div>
         )}

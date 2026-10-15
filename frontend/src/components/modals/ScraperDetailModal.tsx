@@ -153,12 +153,9 @@ export default function ScraperDetailModal({
       onClick={handleRefreshMeta}
       disabled={refreshing || loadingDetail}
       title="刷新媒体信息（NFO + 封面）"
-      className="ml-2"
+      className="ml-1"
     >
-      <RefreshCw
-        className="size-3"
-        style={{ animation: refreshing ? 'spin 0.9s linear infinite' : 'none' }}
-      />
+      <RefreshCw className={`size-3 ${refreshing ? 'animate-spin' : ''}`} />
     </Button>
   ) : null
 
@@ -193,7 +190,7 @@ export default function ScraperDetailModal({
         size="icon-lg"
         onClick={() => onSearchResources?.(displayItem)}
         disabled={loadingDetail}
-        className="rounded-full shadow-lg bg-brand text-brand-foreground hover:bg-brand/80"
+        className="rounded-full shadow-[0_6px_20px_-4px_oklch(76%_0.19_150/0.5)]"
         title="检索资源"
       >
         <Search className="size-4" />

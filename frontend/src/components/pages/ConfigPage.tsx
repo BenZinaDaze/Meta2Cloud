@@ -20,6 +20,7 @@ import {
   BookOpen,
   Captions,
   RadioTower,
+  AlertTriangle,
 } from 'lucide-react'
 import {
   getMainConfig,
@@ -52,6 +53,8 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { SkeletonPanel } from '@/components/StatePanel'
+import PageHeader from '@/components/shared/PageHeader'
+import { cn } from '@/lib/utils'
 
 const PAGE_VARIANTS = {
   general: {
@@ -161,10 +164,10 @@ function Field({
 }) {
   return (
     <div className={fullWidth ? 'sm:col-span-2' : ''}>
-      <div className="mb-1.5 flex items-center gap-2">
+      <div className="mb-1.5 flex items-baseline gap-2">
         <label className="text-[13px] font-medium">{label}</label>
         {description && (
-          <span className="text-[11px] text-muted-foreground">{description}</span>
+          <span className="text-[11px] text-muted-foreground/80">{description}</span>
         )}
       </div>
       {children}
@@ -226,7 +229,7 @@ function NumberInput({ value, onChange, min, max }: {
       }}
       min={min}
       max={max}
-      className="w-24"
+      className="w-24 tabular-nums"
     />
   )
 }
@@ -260,14 +263,14 @@ function ListField({ value = [], onChange }: { value: string[]; onChange: (v: st
           {value.map((item, i) => (
             <div
               key={i}
-              className="inline-flex max-w-full items-center gap-2 rounded-xl border bg-muted/50 px-3 py-2"
+              className="inline-flex max-w-full items-center gap-2 rounded-full border border-border/70 bg-muted/50 py-1.5 pl-3 pr-1.5"
             >
-              <span className="truncate text-xs font-mono">{item}</span>
+              <span className="truncate font-mono text-xs">{item}</span>
               <Button
                 variant="ghost"
                 size="icon-xs"
                 onClick={() => onChange(value.filter((_, j) => j !== i))}
-                className="text-destructive"
+                className="text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
               >
                 <X className="size-3" />
               </Button>
@@ -279,7 +282,7 @@ function ListField({ value = [], onChange }: { value: string[]; onChange: (v: st
         <Input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && add()}
+          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), add())}
           placeholder="输入后按 Enter 或点击添加"
           className="font-mono text-xs"
         />
@@ -325,12 +328,28 @@ function MultilineRulesField({ value = [], onChange, placeholder = '' }: {
         }}
         placeholder={placeholder}
         spellCheck={false}
-        className="font-mono resize-none"
+        className="resize-none font-mono text-[13px] leading-6"
         rows={Math.max(8, Math.min(18, lineCount + 2))}
       />
       <div className="text-xs text-muted-foreground">
         一行一个规则，空行会自动忽略。当前 {value.length} 条。
       </div>
+    </div>
+  )
+}
+
+function NoticeMessage({ message }: { message: { type: 'success' | 'error'; text: string } | null }) {
+  if (!message) return null
+  return (
+    <div
+      className={cn(
+        'mt-3 animate-stagger-in rounded-lg border px-3 py-2 text-xs',
+        message.type === 'success'
+          ? 'border-success/25 bg-success/10 text-success'
+          : 'border-destructive/25 bg-destructive/10 text-destructive'
+      )}
+    >
+      {message.text}
     </div>
   )
 }
@@ -641,37 +660,41 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
   }
 
   return (
-    <div className="flex flex-1 flex-col min-w-0">
-      <div className="mb-6 flex flex-wrap items-center gap-4">
-        <div>
-          <h1 className="text-xl font-bold">{pageMeta.title}</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">{pageMeta.description}</p>
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          {isDirty && !saving && (
-            <span className="rounded-full bg-warning/20 px-2 py-1 text-xs text-warning">未保存</span>
-          )}
-          {saved && (
-            <span className="rounded-full bg-success/20 px-2 py-1 text-xs text-success">✓ 已保存</span>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => { setCfg(original); setError(null) }}
-            disabled={!isDirty || saving}
-          >
-            <RotateCcw className="size-4" />
-            重置
-          </Button>
-          <Button size="sm" onClick={handleSave} disabled={!isDirty || saving}>
-            {saving ? <RefreshCw className="size-4 animate-spin" /> : <Save className="size-4" />}
-            {saving ? '保存中…' : '保存'}
-          </Button>
-        </div>
-      </div>
+    <div className="flex min-w-0 flex-1 flex-col">
+      <PageHeader
+        title={pageMeta.title}
+        description={pageMeta.description}
+        actions={
+          <>
+            {isDirty && !saving && (
+              <span className="flex items-center gap-1.5 rounded-full bg-warning/12 px-2.5 py-1 text-xs text-warning">
+                <AlertTriangle className="size-3" />
+                未保存
+              </span>
+            )}
+            {saved && (
+              <span className="animate-stagger-in rounded-full bg-success/12 px-2.5 py-1 text-xs text-success">✓ 已保存</span>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setCfg(original); setError(null) }}
+              disabled={!isDirty || saving}
+              className="rounded-full"
+            >
+              <RotateCcw className="size-4" />
+              重置
+            </Button>
+            <Button size="sm" onClick={handleSave} disabled={!isDirty || saving} className="rounded-full px-4">
+              {saving ? <RefreshCw className="size-4 animate-spin" /> : <Save className="size-4" />}
+              {saving ? '保存中…' : '保存'}
+            </Button>
+          </>
+        }
+      />
 
       {error && (
-        <div className="mb-5 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <div className="mb-5 rounded-xl border border-destructive/25 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       )}
@@ -679,7 +702,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
       {isFilenameRulesPage ? (
         <Tabs defaultValue="words" className="w-full">
           <div className="mb-6 overflow-x-auto">
-            <TabsList className="h-auto gap-1 bg-transparent p-0">
+            <TabsList className="h-auto gap-1 bg-card/40 p-1">
               {PARSER_TABS.map((tab) => {
                 const Icon = tab.icon
                 const wordsCount = ((cfg?.parser as Record<string, unknown>)?.custom_words as string[] | undefined)?.length ?? 0
@@ -689,7 +712,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                   <TabsTrigger
                     key={tab.key}
                     value={tab.key}
-                    className="gap-1.5 rounded-md border border-transparent px-3 py-2 text-[13px] data-[state=active]:border-border data-[state=active]:bg-card data-[state=active]:shadow-sm"
+                    className="gap-1.5 px-3 py-2 text-[13px]"
                   >
                     <Icon className="size-4" />
                     {tab.label}
@@ -705,7 +728,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
           </div>
 
           <TabsContent value="words" className="mt-0">
-            <Card>
+            <Card className="border-border/70 bg-card/40">
               <CardHeader>
                 <CardTitle className="text-base">自定义识别词</CardTitle>
                 <CardDescription>
@@ -723,7 +746,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
           </TabsContent>
 
           <TabsContent value="groups" className="mt-0">
-            <Card>
+            <Card className="border-border/70 bg-card/40">
               <CardHeader>
                 <CardTitle className="text-base">自定义字幕组</CardTitle>
                 <CardDescription>
@@ -740,7 +763,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
           </TabsContent>
 
           <TabsContent value="help" className="mt-0">
-            <Card>
+            <Card className="border-border/70 bg-card/40">
               <CardHeader>
                 <CardTitle className="text-base">规则格式说明</CardTitle>
                 <CardDescription>
@@ -748,7 +771,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <CustomWordsHelp />
+                <CustomWordsHelp defaultOpen />
               </CardContent>
             </Card>
           </TabsContent>
@@ -756,14 +779,14 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
       ) : (
         <Tabs defaultValue="storage" className="w-full">
           <div className="mb-6 overflow-x-auto">
-            <TabsList className="h-auto gap-1 bg-transparent p-0">
+            <TabsList className="h-auto gap-1 bg-card/40 p-1">
               {CONFIG_TABS.map((tab) => {
                 const Icon = tab.icon
                 return (
                   <TabsTrigger
                     key={tab.key}
                     value={tab.key}
-                    className="gap-1.5 rounded-md border border-transparent px-3 py-2 text-[13px] data-[state=active]:border-border data-[state=active]:bg-card data-[state=active]:shadow-sm"
+                    className="gap-1.5 px-3 py-2 text-[13px]"
                   >
                     <Icon className="size-4" />
                     {tab.label}
@@ -774,7 +797,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
           </div>
 
           <TabsContent value="storage" className="mt-0">
-            <Card>
+            <Card className="border-border/70 bg-card/40">
               <CardHeader>
                 <CardTitle className="text-base">云存储选择</CardTitle>
                 <CardDescription>选择媒体文件存放在哪个网盘</CardDescription>
@@ -796,11 +819,11 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                   </Field>
                 </FieldGroup>
 
-                <Separator />
+                <Separator className="opacity-60" />
 
                 <div>
                   <div className="mb-3 text-[13px] font-medium">媒体库全量刷新</div>
-                  <p className="mb-3 text-xs text-muted-foreground">
+                  <p className="mb-3 text-xs leading-5 text-muted-foreground">
                     全量扫描所有文件并重建媒体库。日常使用无需操作，仅在增量刷新出现数据不一致时使用。
                   </p>
                   <Button
@@ -809,21 +832,17 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                     onClick={handleFullRefresh}
                     disabled={fullRefreshing}
                   >
-                    <RefreshCw className={`size-5 ${fullRefreshing ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={cn('size-5', fullRefreshing && 'animate-spin')} />
                     {fullRefreshing ? '刷新中…' : '全量刷新媒体库'}
                   </Button>
-                  {fullRefreshMessage && (
-                    <div className={`mt-3 rounded-md px-3 py-2 text-xs ${fullRefreshMessage.type === 'success' ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
-                      {fullRefreshMessage.text}
-                    </div>
-                  )}
+                  <NoticeMessage message={fullRefreshMessage} />
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="auth" className="mt-0">
-            <Card>
+            <Card className="border-border/70 bg-card/40">
               <CardHeader>
                 <CardTitle className="text-base">WebUI 认证</CardTitle>
                 <CardDescription>登录凭据与会话设置</CardDescription>
@@ -876,7 +895,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
           </TabsContent>
 
           <TabsContent value="tmdb" className="mt-0">
-            <Card>
+            <Card className="border-border/70 bg-card/40">
               <CardHeader>
                 <CardTitle className="text-base">TMDB 设置</CardTitle>
                 <CardDescription>元数据源配置</CardDescription>
@@ -929,7 +948,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
           </TabsContent>
 
           <TabsContent value="aria2" className="mt-0">
-            <Card>
+            <Card className="border-border/70 bg-card/40">
               <CardHeader>
                 <CardTitle className="text-base">Aria2 下载</CardTitle>
                 <CardDescription>RPC 连接配置</CardDescription>
@@ -972,8 +991,8 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
             </Card>
           </TabsContent>
 
-                    <TabsContent value="u115" className="mt-0">
-            <Card>
+          <TabsContent value="u115" className="mt-0">
+            <Card className="border-border/70 bg-card/40">
               <CardHeader>
                 <CardTitle className="text-base">115 网盘</CardTitle>
                 <CardDescription>OAuth、Cookie 与目录配置</CardDescription>
@@ -1003,19 +1022,15 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                     </Button>
                   </div>
                   {u115QrUrl && u115QrPreviewUrl && (
-                    <div className="mt-3 inline-block rounded-lg border bg-muted/50 p-3">
+                    <div className="mt-3 inline-block animate-stagger-in rounded-xl border border-border/70 bg-muted/40 p-3">
                       <div className="text-xs text-muted-foreground">使用 115 App 扫码</div>
-                      <img src={u115QrPreviewUrl} alt="QR" className="mt-2 size-36 rounded" />
+                      <img src={u115QrPreviewUrl} alt="QR" className="mt-2 size-36 rounded-lg bg-white p-1" />
                     </div>
                   )}
-                  {u115OauthMessage && (
-                    <div className={`mt-3 rounded-md px-3 py-2 text-xs ${u115OauthMessage.type === 'success' ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
-                      {u115OauthMessage.text}
-                    </div>
-                  )}
+                  <NoticeMessage message={u115OauthMessage} />
                 </div>
 
-                <Separator />
+                <Separator className="opacity-60" />
 
                 <FieldGroup>
                   <Field label="Client ID">
@@ -1068,7 +1083,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                   </Field>
                 </FieldGroup>
 
-                <Separator />
+                <Separator className="opacity-60" />
 
                 <div>
                   <div className="mb-3 text-[13px] font-medium">自动整理</div>
@@ -1098,7 +1113,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                   </FieldGroup>
                 </div>
 
-                <Separator />
+                <Separator className="opacity-60" />
 
                 <div>
                   <div className="mb-3 flex items-center gap-3">
@@ -1112,7 +1127,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                       {u115CookieTestBusy ? '测试中…' : '测试'}
                     </Button>
                     {u115CookieMessage && (
-                      <span className={`text-xs ${u115CookieMessage.type === 'success' ? 'text-success' : 'text-destructive'}`}>
+                      <span className={cn('text-xs', u115CookieMessage.type === 'success' ? 'text-success' : 'text-destructive')}>
                         {u115CookieMessage.text}
                       </span>
                     )}
@@ -1129,7 +1144,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
           </TabsContent>
 
           <TabsContent value="rss" className="mt-0">
-            <Card>
+            <Card className="border-border/70 bg-card/40">
               <CardHeader>
                 <CardTitle className="text-base">RSS 订阅</CardTitle>
                 <CardDescription>后台轮询设置</CardDescription>
@@ -1150,7 +1165,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
           </TabsContent>
 
           <TabsContent value="telegram" className="mt-0">
-            <Card>
+            <Card className="border-border/70 bg-card/40">
               <CardHeader>
                 <CardTitle className="text-base">Telegram 通知</CardTitle>
                 <CardDescription>入库完成推送</CardDescription>
@@ -1188,7 +1203,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
           </TabsContent>
 
           <TabsContent value="mediavault" className="mt-0">
-            <Card>
+            <Card className="border-border/70 bg-card/40">
               <CardHeader>
                 <CardTitle className="text-base">MediaVault</CardTitle>
                 <CardDescription>整理完成后触发目录监控</CardDescription>
@@ -1206,7 +1221,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                       {mediavaultTestBusy ? '测试中…' : '测试'}
                     </Button>
                     {mediavaultMessage && (
-                      <span className={`text-xs ${mediavaultMessage.type === 'success' ? 'text-success' : 'text-destructive'}`}>
+                      <span className={cn('text-xs', mediavaultMessage.type === 'success' ? 'text-success' : 'text-destructive')}>
                         {mediavaultMessage.text}
                       </span>
                     )}
@@ -1273,7 +1288,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
           </TabsContent>
 
           <TabsContent value="pipeline" className="mt-0">
-            <Card>
+            <Card className="border-border/70 bg-card/40">
               <CardHeader>
                 <CardTitle className="text-base">扫描与入库策略</CardTitle>
                 <CardDescription>整理行为控制</CardDescription>
@@ -1316,7 +1331,7 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
           </TabsContent>
 
           <TabsContent value="subtitle" className="mt-0">
-            <Card>
+            <Card className="border-border/70 bg-card/40">
               <CardHeader>
                 <CardTitle className="text-base">字幕整理</CardTitle>
                 <CardDescription>外挂字幕文件自动跟随视频整理</CardDescription>
@@ -1330,9 +1345,9 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                     />
                   </Field>
                 </FieldGroup>
-                <div className="mt-4 text-xs text-muted-foreground">
-                  <p>支持的字幕格式：<code className="rounded bg-muted px-1">.srt</code> <code className="rounded bg-muted px-1">.ass</code> <code className="rounded bg-muted px-1">.ssa</code></p>
-                  <p className="mt-1">语言代码标准化：简体中文 → <code className="rounded bg-muted px-1">zh-CN</code>，繁体中文 → <code className="rounded bg-muted px-1">zh-TW</code></p>
+                <div className="mt-4 text-xs leading-6 text-muted-foreground">
+                  <p>支持的字幕格式：<code className="rounded bg-muted px-1 font-mono">.srt</code> <code className="rounded bg-muted px-1 font-mono">.ass</code> <code className="rounded bg-muted px-1 font-mono">.ssa</code></p>
+                  <p className="mt-1">语言代码标准化：简体中文 → <code className="rounded bg-muted px-1 font-mono">zh-CN</code>，繁体中文 → <code className="rounded bg-muted px-1 font-mono">zh-TW</code></p>
                 </div>
               </CardContent>
             </Card>

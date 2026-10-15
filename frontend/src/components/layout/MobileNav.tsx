@@ -25,7 +25,7 @@ export default function MobileNav({
   ]
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background lg:hidden pb-[env(safe-area-inset-bottom)]">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-border/60 glass-strong lg:hidden pb-[env(safe-area-inset-bottom)]">
       <div className="flex">
         {tabs.map((tab) => {
           const Icon = tab.icon
@@ -34,11 +34,14 @@ export default function MobileNav({
               key={tab.key}
               onClick={() => onSelect(tab.key)}
               className={cn(
-                "flex min-h-16 flex-1 flex-col items-center justify-center gap-1 py-2.5 transition-all",
+                "relative flex min-h-16 flex-1 flex-col items-center justify-center gap-1 py-2.5 transition-colors duration-300",
                 tab.isActive ? "text-primary" : "text-muted-foreground"
               )}
             >
-              <Icon className="size-[22px]" />
+              {tab.isActive && (
+                <span className="absolute top-0 h-[2px] w-8 rounded-full bg-gradient-to-r from-tide to-tide-2 glow-tide-sm" />
+              )}
+              <Icon className={cn("size-[22px] transition-transform duration-300", tab.isActive && "scale-110")} />
               <span className={cn("text-[10px]", tab.isActive ? "font-semibold" : "font-medium")}>
                 {tab.label}
               </span>
@@ -49,11 +52,14 @@ export default function MobileNav({
         <button
           onClick={onToggleSidebar}
           className={cn(
-            "flex min-h-16 flex-1 flex-col items-center justify-center gap-1 py-2.5 transition-all",
+            "relative flex min-h-16 flex-1 flex-col items-center justify-center gap-1 py-2.5 transition-colors duration-300",
             isMore ? "text-primary" : "text-muted-foreground"
           )}
         >
-          <Menu className="size-[22px]" />
+          {isMore && (
+            <span className="absolute top-0 h-[2px] w-8 rounded-full bg-gradient-to-r from-tide to-tide-2 glow-tide-sm" />
+          )}
+          <Menu className={cn("size-[22px] transition-transform duration-300", isMore && "scale-110")} />
           <span className={cn("text-[10px]", isMore ? "font-semibold" : "font-medium")}>更多</span>
         </button>
       </div>

@@ -41,7 +41,7 @@ export default function BackToTopButton({
     <Button
       size="icon"
       onClick={() => containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
-      className={className}
+      className={`${className} animate-stagger-in border-border/80 bg-card/80 backdrop-blur-md`}
       aria-label="返回顶部"
     >
       <ArrowUp className="size-5" />

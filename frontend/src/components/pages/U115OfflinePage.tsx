@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { RefreshCw, Trash2, Search, Link } from 'lucide-react'
+import { RefreshCw, Trash2, Search, Link, Cloud } from 'lucide-react'
 import {
   addU115OfflineUrls,
   clearU115OfflineTasks,
@@ -13,6 +13,7 @@ import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
+import PageHeader from '@/components/shared/PageHeader'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,6 +25,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import ParseTestModal from '@/components/modals/ParseTestModal'
+import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
 interface U115Task {
@@ -82,18 +84,19 @@ function formatTime(ts: string | number | undefined): string {
 }
 
 function statusMeta(status: number): { label: string; className: string } {
-  if (status === 2) return { label: '已完成', className: 'bg-success/20 text-success' }
-  if (status === 1) return { label: '下载中', className: 'bg-info/20 text-info' }
-  if (status === -1) return { label: '失败', className: 'bg-destructive/20 text-destructive' }
+  if (status === 2) return { label: '已完成', className: 'bg-success/12 text-success' }
+  if (status === 1) return { label: '下载中', className: 'bg-info/12 text-info' }
+  if (status === -1) return { label: '失败', className: 'bg-destructive/12 text-destructive' }
   return { label: '等待中', className: 'bg-muted text-muted-foreground' }
 }
 
 function SummaryCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="flex min-h-[132px] flex-col justify-between gap-3 rounded-2xl border bg-card p-5">
-      <div className="space-y-2">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
-        <span className="block text-3xl font-bold tabular-nums">{value}</span>
+    <div className="card-lift relative flex min-h-[120px] flex-col justify-between gap-3 overflow-hidden rounded-2xl border border-border/70 bg-card/50 p-5">
+      <div className="pointer-events-none absolute inset-0 bg-ambient opacity-50" />
+      <div className="relative space-y-2">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</span>
+        <span className="block text-3xl font-bold tabular-nums tracking-tight">{value}</span>
         {sub && <span className="block text-xs leading-5 text-muted-foreground">{sub}</span>}
       </div>
     </div>
@@ -240,35 +243,32 @@ export default function U115OfflinePage({ onToast }: U115OfflinePageProps) {
 
   return (
     <div className="flex flex-1 flex-col gap-5">
-      <div className="mb-2 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div className="max-w-2xl">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-brand">
-            Offline Download Center
-          </div>
-          <h1 className="text-[34px] font-bold leading-tight">115 云下载</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            提交离线下载链接，并管理当前 115 云下载任务
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              loadOverview()
-              loadQuota()
-              loadDriveSpace()
-            }}
-            disabled={busy}
-          >
-            <RefreshCw className="size-4" />
-            刷新
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => handleClear('0')} disabled={busy}>
-            清空已完成
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        kicker="Offline Download Center"
+        title="115 云下载"
+        description="提交离线下载链接，并管理当前 115 云下载任务"
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                loadOverview()
+                loadQuota()
+                loadDriveSpace()
+              }}
+              disabled={busy}
+              className="rounded-full"
+            >
+              <RefreshCw className="size-4" />
+              刷新
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => handleClear('0')} disabled={busy} className="rounded-full">
+              清空已完成
+            </Button>
+          </>
+        }
+      />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <SummaryCard
@@ -284,43 +284,48 @@ export default function U115OfflinePage({ onToast }: U115OfflinePageProps) {
         />
       </div>
 
-      <div className="rounded-2xl border bg-muted/30 p-5">
-        <div className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-brand">
-          新建云下载
-        </div>
-        <Textarea
-          value={urls}
-          onChange={(e) => setUrls(e.target.value)}
-          placeholder="每行一个链接，支持 HTTP、HTTPS、磁力链"
-          className="h-28 resize-none"
-        />
-        <div className="mt-3">
-          <Input
-            value={wpPathId}
-            onChange={(e) => setWpPathId(e.target.value)}
-            placeholder="保存目录 ID（可选，留空则使用配置页中的云下载目录 ID）"
-            className="rounded-full"
-          />
-          <div className="mt-3 flex flex-wrap items-center gap-2.5">
-            <Button onClick={handleAddUrls} disabled={busy}>
-              <Link className="size-4" />
-              {busy ? '提交中…' : '提交链接'}
-            </Button>
+      <div className="relative overflow-hidden rounded-2xl border border-border/70 bg-muted/25 p-5">
+        <div className="pointer-events-none absolute inset-0 bg-ambient opacity-60" />
+        <div className="relative">
+          <div className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary/90">
+            <span className="h-px w-5 bg-gradient-to-r from-tide to-transparent" />
+            新建云下载
           </div>
+          <Textarea
+            value={urls}
+            onChange={(e) => setUrls(e.target.value)}
+            placeholder="每行一个链接，支持 HTTP、HTTPS、磁力链"
+            className="h-28 resize-none font-mono text-[13px]"
+          />
+          <div className="mt-3">
+            <Input
+              value={wpPathId}
+              onChange={(e) => setWpPathId(e.target.value)}
+              placeholder="保存目录 ID（可选，留空则使用配置页中的云下载目录 ID）"
+              className="rounded-full font-mono text-xs"
+            />
+            <div className="mt-3 flex flex-wrap items-center gap-2.5">
+              <Button onClick={handleAddUrls} disabled={busy} className="rounded-full px-4">
+                <Link className="size-4" />
+                {busy ? '提交中…' : '提交链接'}
+              </Button>
+            </div>
+          </div>
+          <div className="mt-2 text-xs text-muted-foreground">提交后任务会出现在下方列表中</div>
         </div>
-        <div className="mt-2 text-xs text-muted-foreground">提交后任务会出现在下方列表中</div>
       </div>
 
-      <section className="rounded-3xl border bg-card p-7">
+      <section className="rounded-2xl border border-border/70 bg-card/40 p-5 sm:p-7">
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <div>
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-brand">
+            <div className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary/90">
+              <span className="h-px w-5 bg-gradient-to-r from-tide to-transparent" />
               Offline Queue
             </div>
-            <div className="text-base font-semibold">任务列表</div>
+            <div className="text-base font-semibold tracking-tight">任务列表</div>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => handleClear('2')} disabled={busy}>
+            <Button variant="outline" size="sm" onClick={() => handleClear('2')} disabled={busy} className="rounded-full">
               清空失败任务
             </Button>
           </div>
@@ -329,30 +334,36 @@ export default function U115OfflinePage({ onToast }: U115OfflinePageProps) {
         {loading ? (
           <StatePanel title="正在加载云下载任务" description="任务列表和空间状态正在同步中。" compact />
         ) : tasks.length === 0 ? (
-          <StatePanel icon="☁" title="当前没有云下载任务" description="在上方提交链接后，任务会出现在这里。" />
+          <StatePanel icon={<Cloud className="size-6" />} title="当前没有云下载任务" description="在上方提交链接后，任务会出现在这里。" />
         ) : (
           <div className="grid gap-3">
             {tasks.map((task) => {
               const status = statusMeta(task.status)
+              const pct = Math.max(Math.min(Number(task.percent_done) || 0, 100), task.status === 2 ? 100 : 0)
+              const isActive = task.status === 1
               return (
                 <div
                   key={task.info_hash}
-                  className="rounded-2xl border bg-card p-5 transition-all hover:bg-muted/50"
+                  className="rounded-2xl border border-border/70 bg-card/50 p-5 transition-all duration-300 hover:border-primary/25 hover:bg-card/80"
                 >
                   <div className="flex flex-wrap items-start gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="mb-2 flex flex-wrap items-center gap-2">
-                        <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider ${status.className}`}>
+                        <span className={cn('flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider', status.className)}>
+                          {isActive && <span className="relative flex size-1.5">
+                            <span className="absolute inline-flex size-1.5 rounded-full bg-current opacity-60 animate-tide-ping" />
+                            <span className="relative inline-flex size-1.5 rounded-full bg-current" />
+                          </span>}
                           {status.label}
                         </span>
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs tabular-nums text-muted-foreground">
                           {Math.round(Number(task.percent_done) || 0)}%
                         </span>
                         <div className="ml-auto">
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            className="size-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                             onClick={() => setDeleteConfirmTask(task)}
                             disabled={busy}
                             aria-label="删除任务"
@@ -362,23 +373,23 @@ export default function U115OfflinePage({ onToast }: U115OfflinePageProps) {
                         </div>
                       </div>
                       <div className="mb-3">
-                        <div className="mb-1.5 flex justify-between text-xs text-muted-foreground">
+                        <div className="mb-1.5 flex justify-between text-xs tabular-nums text-muted-foreground">
                           <span>{formatBytes(task.size)}</span>
-                          <span>{Math.round(Number(task.percent_done) || 0)}%</span>
+                          <span className="font-semibold text-foreground/80">{pct}%</span>
                         </div>
-                        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                        <div className="h-1.5 overflow-hidden rounded-full bg-muted/80">
                           <div
-                            className={`h-full rounded-full transition-all ${
-                              task.status === -1 ? 'bg-destructive' : 'bg-brand'
-                            }`}
-                            style={{
-                              width: `${Math.max(Math.min(Number(task.percent_done) || 0, 100), task.status === 2 ? 100 : 0)}%`,
-                            }}
+                            className={cn(
+                              'h-full rounded-full transition-all duration-500',
+                              task.status === -1 ? 'bg-destructive' : 'bg-lime',
+                              isActive && 'progress-flow glow-lime'
+                            )}
+                            style={{ width: `${pct}%` }}
                           />
                         </div>
                       </div>
                       <div className="flex items-start gap-2">
-                        <div className="min-w-0 flex-1 text-sm font-medium break-all">
+                        <div className="min-w-0 flex-1 break-all text-sm font-medium">
                           {task.name || task.url || task.info_hash}
                         </div>
                         <Button
@@ -393,9 +404,9 @@ export default function U115OfflinePage({ onToast }: U115OfflinePageProps) {
                       <div className="mt-3 grid gap-1 text-xs text-muted-foreground">
                         <div>添加时间：{formatTime(task.add_time)}</div>
                         <div>更新时间：{formatTime(task.last_update)}</div>
-                        <div className="break-all">Info Hash：{task.info_hash || '-'}</div>
-                        {task.wp_path_id && <div className="break-all">保存目录：{task.wp_path_id}</div>}
-                        {task.url && <div className="break-all">链接：{task.url}</div>}
+                        <div className="break-all font-mono">Info Hash：{task.info_hash || '-'}</div>
+                        {task.wp_path_id && <div className="break-all font-mono">保存目录：{task.wp_path_id}</div>}
+                        {task.url && <div className="break-all font-mono">链接：{task.url}</div>}
                       </div>
                     </div>
                   </div>
@@ -446,7 +457,7 @@ export default function U115OfflinePage({ onToast }: U115OfflinePageProps) {
               请选择要执行的删除方式。删除源文件后，115 网盘中的对应文件也会一并删除。
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="mb-4 rounded-xl border bg-muted/50 p-4 text-sm break-all">
+          <div className="mb-4 break-all rounded-xl border border-border/60 bg-muted/40 p-4 text-sm">
             {deleteConfirmTask?.name || deleteConfirmTask?.url || deleteConfirmTask?.info_hash}
           </div>
           <AlertDialogFooter className="flex-col gap-2 sm:flex-row">

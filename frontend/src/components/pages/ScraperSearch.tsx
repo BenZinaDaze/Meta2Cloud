@@ -5,6 +5,7 @@ import MediaCard from '@/components/MediaCard'
 import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import PageHeader from '@/components/shared/PageHeader'
 import ScraperDetailModal from '@/components/modals/ScraperDetailModal'
 import ScraperResultsView from '@/components/pages/ScraperResultsView'
 import { clearResultsCache } from '@/utils/resultsCache'
@@ -95,35 +96,30 @@ export default function ScraperSearch({
 
   return (
     <div className="flex flex-1 flex-col gap-5">
-      <div className="mb-2 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div className="max-w-2xl">
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-brand sm:mb-2 sm:text-[11px]">
-            Source Detector
-          </div>
-          <h2 className="text-2xl font-bold sm:text-[34px]">全局资源检索</h2>
-          <p className="mt-2 text-sm leading-7 text-muted-foreground">
-            TMDB搜索结果
-          </p>
-        </div>
-
-        <form onSubmit={handleSearch} className="relative w-full max-w-[480px]">
-          <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="text"
-            placeholder="搜索任何电影或电视剧..."
-            className="h-12 rounded-full pl-12 pr-24"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <Button
-            type="submit"
-            disabled={loading}
-            className="absolute right-1.5 top-1.5 bottom-1.5 h-auto min-w-[72px] rounded-full"
-          >
-            {loading ? '搜索中...' : '搜索'}
-          </Button>
-        </form>
-      </div>
+      <PageHeader
+        kicker="Source Detector"
+        title="全局资源检索"
+        description="从 TMDB 定位条目，再聚合各大站点的字幕组资源。"
+        actions={
+          <form onSubmit={handleSearch} className="relative w-full max-w-[480px]">
+            <Search className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="搜索任何电影或电视剧..."
+              className="h-11 rounded-full pl-11 pr-24"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <Button
+              type="submit"
+              disabled={loading}
+              className="absolute bottom-1.5 right-1.5 top-1.5 h-auto min-w-[72px] rounded-full"
+            >
+              {loading ? '搜索中...' : '搜索'}
+            </Button>
+          </form>
+        }
+      />
 
       {error && (
         <StatePanel
@@ -135,7 +131,7 @@ export default function ScraperSearch({
         />
       )}
 
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {results.length === 0 && !loading && !error && (
           <StatePanel
             icon={<Search className="size-6" />}
@@ -144,9 +140,26 @@ export default function ScraperSearch({
           />
         )}
 
+        {loading && results.length === 0 && (
+          <div className="grid grid-cols-2 gap-3 pb-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
+            {Array.from({ length: 12 }, (_, i) => (
+              <div key={i} className="animate-pulse">
+                <div className="aspect-[2/3] rounded-xl bg-muted/70" />
+                <div className="mt-2 h-3 w-3/4 rounded bg-muted/50" />
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3 pb-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
           {results.map((item, idx) => (
-            <MediaCard key={idx} item={item} onClick={setSelectedMedia} />
+            <div
+              key={idx}
+              className="animate-stagger-in"
+              style={{ animationDelay: `${Math.min(idx * 25, 360)}ms` }}
+            >
+              <MediaCard item={item} onClick={setSelectedMedia} />
+            </div>
           ))}
         </div>
       </div>

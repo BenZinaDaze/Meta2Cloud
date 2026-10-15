@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
 /* === 暗色模式变体 === */
 @custom-variant dark (&:is(.dark *));
 
@@ -30,129 +33,82 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-info: var(--info);
-  --color-priority: var(--priority);
-  /* === 圆角系统（扁平设计）=== */
-  /* 语义：sm=徽章/标签, md=按钮/输入框, lg=卡片, xl=弹窗, 2xl+=特殊容器 */
-  --radius-sm: 2px;   /* badge, tag, chip */
-  --radius-md: 4px;   /* button, input, select */
-  --radius-lg: 6px;   /* card, dropdown */
-  --radius-xl: 8px;   /* modal, dialog */
-  --radius-2xl: 12px; /* large container */
-  --radius-3xl: 16px; /* hero section */
-  --radius-4xl: 999px; /* pill shape */
+  --color-tide: var(--tide);
+  --color-tide-2: var(--tide-2);
+  --color-lime: var(--lime);
+
+  /* === 圆角系统（0.75rem 基准）=== */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+
+  /* === 缓动 === */
+  --ease-tide: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* === 字体 === */
+  --font-sans: "Geist Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
 }
 
-/* === 亮色模式 === */
+/* === 主题：中性近黑底 + 亮绿主色 + 柠檬绿进度（参考 cirvel 仪表盘）=== */
 :root {
-  /* 背景层 */
-  --background: oklch(1 0 0);
-  --card: oklch(1 0 0);
-  --popover: oklch(1 0 0);
+  color-scheme: dark;
 
-  /* 文字 */
-  --foreground: oklch(0.141 0.005 285.823);
-  --muted-foreground: oklch(0.552 0.016 285.938);
+  /* 背景层：中性近黑，卡片明显更亮以区分层次 */
+  --background: oklch(16% 0.004 140);
+  --foreground: oklch(97% 0.003 140);
+  --card: oklch(20.5% 0.005 140);
+  --card-foreground: var(--foreground);
+  --popover: oklch(22% 0.005 140);
+  --popover-foreground: var(--foreground);
 
   /* 交互 */
-  --primary: oklch(0.21 0.006 285.885);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.967 0.001 286.375);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.21 0.006 285.885);
+  --primary: oklch(76% 0.19 150);
+  --primary-foreground: oklch(16% 0.04 150);
+  --secondary: oklch(25% 0.006 140);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(24% 0.005 140);
+  --muted-foreground: oklch(71% 0.008 140);
+  --accent: oklch(27% 0.007 140);
+  --accent-foreground: var(--foreground);
 
   /* 边框 */
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.705 0.015 286.067);
+  --border: oklch(100% 0 0 / 0.11);
+  --input: oklch(100% 0 0 / 0.15);
+  --ring: oklch(76% 0.19 150 / 0.55);
+
+  /* 主色：亮绿；辅助：柠檬绿（进度条专用） */
+  --tide: oklch(76% 0.19 150);
+  --tide-2: oklch(84% 0.17 128);
+  --lime: oklch(84% 0.17 128);
+  --brand: var(--tide);
+  --brand-foreground: oklch(16% 0.04 150);
 
   /* 功能色 */
-  --brand: oklch(0.55 0.16 255);
-  --brand-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.55 0.16 145);
-  --warning: oklch(0.75 0.16 85);
-  --info: oklch(0.55 0.18 250);
-  --priority: oklch(0.65 0.18 50);
+  --destructive: oklch(68% 0.2 25);
+  --destructive-foreground: oklch(97% 0.003 140);
+  --success: oklch(79% 0.16 152);
+  --warning: oklch(81% 0.15 80);
+  --info: oklch(72% 0.12 235);
+
+  /* 圆角基准 */
+  --radius: 0.75rem;
 
   /* 滚动条 */
-  --scrollbar-thumb: oklch(0 0 0 / 10%);
-  --scrollbar-thumb-hover: oklch(0 0 0 / 18%);
+  --scrollbar-thumb: oklch(100% 0 0 / 0.12);
+  --scrollbar-thumb-hover: oklch(100% 0 0 / 0.22);
   --scrollbar-track: transparent;
-}
-
-/* === 暗色模式 === */
-.dark {
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.141 0.005 285.823);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.141 0.005 285.823);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.141 0.005 285.823);
-  --secondary: oklch(0.21 0.006 285.885);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.21 0.006 285.885);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.21 0.006 285.885);
-  --accent-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 10%);
-  --ring: oklch(0.705 0.015 286.067);
-  --brand: oklch(0.65 0.16 255);
-  --brand-foreground: oklch(0.141 0.005 285.823);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --scrollbar-thumb: oklch(1 0 0 / 8%);
-  --scrollbar-thumb-hover: oklch(1 0 0 / 18%);
-}
-
-/* === 彩色模式（金棕色风格）=== */
-.warm {
-  --background: oklch(17.4% 0.0344 269.0);
-  --foreground: oklch(0.956 0.0237 310.6);
-  --card: oklch(21.8% 0.0414 271.0);
-  --card-foreground: oklch(0.956 0.0237 310.6);
-  --popover: oklch(21.8% 0.0414 271.0);
-  --popover-foreground: oklch(0.956 0.0237 310.6);
-  --primary: oklch(69.7% 0.1081 68.9);
-  --primary-foreground: oklch(0.141 0.005 285.823);
-  --secondary: oklch(25.8% 0.0493 268.2);
-  --secondary-foreground: oklch(0.956 0.0237 310.6);
-  --muted: oklch(25.8% 0.0493 268.2);
-  --muted-foreground: oklch(71.3% 0.0518 276.9);
-  --accent: oklch(69.7% 0.1081 68.9);
-  --accent-foreground: oklch(0.141 0.005 285.823);
-  --border: oklch(74.7% 0.0768 271.6 / 0.18);
-  --input: oklch(99.4% 0.0189 342.4 / 0.1);
-  --ring: oklch(69.7% 0.1081 68.9);
-  --brand: oklch(69.7% 0.1081 68.9);
-  --brand-foreground: oklch(0.141 0.005 285.823);
-  --destructive: oklch(71.4% 0.1471 23.4);
-  --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(78.1% 0.1246 159.4);
-  --warning: oklch(83.9% 0.1176 80.8);
-  --info: oklch(61.1% 0.197 271.2);
-  --scrollbar-thumb: oklch(74.7% 0.0768 271.6 / 0.24);
-  --scrollbar-thumb-hover: oklch(69.7% 0.1081 68.9 / 0.36);
-}
-
-/* === 字体系统 === */
-:root {
-  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI",
-               "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
-  --font-serif: "Source Serif 4", ui-serif, "Iowan Old Style",
-                "Apple Garamond", Baskerville, "Times New Roman", serif;
-  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular",
-               Menlo, Consolas, monospace;
 }
 
 /* === 基础样式 === */
 @layer base {
-  html, body, #root {
+  html,
+  body,
+  #root {
     height: 100%;
     overflow: hidden;
   }
@@ -160,10 +116,204 @@
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
   }
+
+  ::selection {
+    background: oklch(84% 0.17 128 / 0.3);
+  }
+}
+
+/* === 环境光晕（页面顶部的绿色辉光）=== */
+@layer utilities {
+  .bg-ambient {
+    background-image:
+      radial-gradient(70% 55% at 50% 0%, oklch(76% 0.19 150 / 0.06), transparent 70%),
+      radial-gradient(45% 40% at 88% -5%, oklch(84% 0.17 128 / 0.045), transparent 70%);
+  }
+
+  .glass {
+    background: oklch(17.5% 0.005 140 / 0.78);
+    backdrop-filter: blur(16px) saturate(1.3);
+    -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  }
+
+  .glass-strong {
+    background: oklch(19.5% 0.005 140 / 0.9);
+    backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  }
+
+  /* 亮绿渐变文字 */
+  .text-gradient-tide {
+    background: linear-gradient(100deg, var(--tide) 15%, var(--tide-2) 85%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* 亮绿辉光（进度条 / 指示元素）*/
+  .glow-tide {
+    box-shadow: 0 0 12px oklch(76% 0.19 150 / 0.5), 0 0 3px oklch(84% 0.17 128 / 0.6);
+  }
+
+  .glow-tide-sm {
+    box-shadow: 0 0 7px oklch(84% 0.17 128 / 0.45);
+  }
+
+  .glow-lime {
+    box-shadow: 0 0 10px oklch(84% 0.17 128 / 0.5);
+  }
+
+  /* 卡片悬停点亮 */
+  .card-lift {
+    transition: transform 0.35s var(--ease-tide), border-color 0.35s var(--ease-tide), box-shadow 0.35s var(--ease-tide);
+  }
+  .card-lift:hover {
+    transform: translateY(-3px);
+    border-color: oklch(76% 0.19 150 / 0.4);
+    box-shadow: 0 12px 32px -12px oklch(8% 0.01 140 / 0.9), 0 0 0 1px oklch(76% 0.19 150 / 0.1);
+  }
+
+  /* 按钮扫光（sheen）——宿主需自带 relative（Button 基类已包含）*/
+  .sheen {
+    overflow: hidden;
+  }
+  .sheen::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(105deg, transparent 42%, oklch(100% 0 0 / 0.3) 50%, transparent 58%);
+    background-size: 240% 100%;
+    background-position: 170% 0;
+    transition: background-position 0.9s var(--ease-tide);
+  }
+  .sheen:hover::after {
+    background-position: -70% 0;
+  }
+
+  /* 流动进度条（活跃下载）*/
+  .progress-flow {
+    position: relative;
+    overflow: hidden;
+  }
+  .progress-flow::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      100deg,
+      transparent 20%,
+      oklch(100% 0 0 / 0.4) 50%,
+      transparent 80%
+    );
+    background-size: 200% 100%;
+    animation: tide-flow 1.4s linear infinite;
+  }
+
+  /* 细网格纹理（用于空态/英雄区）*/
+  .bg-grid-fade {
+    background-image:
+      linear-gradient(oklch(100% 0 0 / 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, oklch(100% 0 0 / 0.045) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: radial-gradient(60% 60% at 50% 30%, black, transparent);
+    -webkit-mask-image: radial-gradient(60% 60% at 50% 30%, black, transparent);
+  }
+}
+
+/* === 环境光晕层（fixed 装饰）=== */
+.ambient-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(70% 50% at 50% 0%, oklch(76% 0.19 150 / 0.055), transparent 70%),
+    radial-gradient(40% 35% at 90% -5%, oklch(84% 0.17 128 / 0.04), transparent 70%);
+}
+
+/* === 动画 === */
+@keyframes tide-flow {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes tide-ping {
+  75%,
+  100% {
+    opacity: 0;
+    transform: scale(2.2);
+  }
+}
+
+@keyframes tide-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes tide-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes stagger-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-tide-ping {
+  animation: tide-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+.animate-tide-float {
+  animation: tide-float 5s ease-in-out infinite;
+}
+.animate-tide-breathe {
+  animation: tide-breathe 2.4s ease-in-out infinite;
+}
+.animate-page-enter {
+  animation: page-enter 0.45s var(--ease-tide) both;
+}
+.animate-stagger-in {
+  animation: stagger-in 0.5s var(--ease-tide) both;
 }
 
 /* === 移除数字输入框的调节按钮 === */
@@ -174,6 +324,7 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 input[type="number"] {
   -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 /* === 自定义滚动条 === */
@@ -181,42 +332,17 @@ input[type="number"] {
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
-*::-webkit-scrollbar { width: 6px; height: 6px; }
-*::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
-*::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
-
-/* === 自定义动画 === */
-@keyframes entrance-spin {
-  0% { transform: rotate(0deg); opacity: 0; }
-  50% { opacity: 1; }
-  100% { transform: rotate(360deg); opacity: 1; }
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
-.animate-entrance-spin { animation: entrance-spin 0.6s ease-out forwards; }
-
-@keyframes onboarding-enter {
-  from { opacity: 0; transform: translateY(4px); }
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
-.animate-onboarding-enter { animation: onboarding-enter 0.4s ease both; }
-
-@keyframes completion-badge {
-  0% { transform: scale(0); opacity: 0; }
-  60% { transform: scale(1.12); opacity: 1; }
-  100% { transform: scale(1); opacity: 1; }
+*::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
 }
-.animate-completion-badge {
-  animation: completion-badge 500ms cubic-bezier(0.5, 1.5, 0.4, 1) both;
-}
-
-@keyframes chat-impulse {
-  0%, 100% { color: var(--muted-foreground); }
-  50% { color: var(--brand); }
-}
-.animate-chat-impulse { animation: chat-impulse 1.6s ease-in-out infinite; }
-
-/* === 自定义工具类 === */
-@layer utilities {
-  .shadow-brand-glow {
-    filter: brightness(1.1) drop-shadow(0 0 4px var(--brand));
-  }
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
 }

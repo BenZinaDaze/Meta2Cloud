@@ -10,6 +10,9 @@ import {
   Link,
   ChevronLeft,
   ChevronRight,
+  Gauge,
+  ArrowDownToLine,
+  Radio,
 } from 'lucide-react'
 import {
   addAria2Torrent,
@@ -42,7 +45,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import PageHeader from '@/components/shared/PageHeader'
 import ParseTestModal from '@/components/modals/ParseTestModal'
+import { cn } from '@/lib/utils'
 import type { Aria2Task, Aria2Overview } from '@/types/api'
 import { toast } from 'sonner'
 
@@ -71,12 +76,16 @@ function statusLabel(status: string): string {
   }[status] || status
 }
 
-function SummaryCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function SummaryCard({ label, value, sub, icon }: { label: string; value: string; sub?: string; icon?: React.ReactNode }) {
   return (
-    <div className="flex min-h-[132px] flex-col justify-between gap-3 rounded-2xl border bg-card p-5">
-      <div className="space-y-2">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
-        <span className="block text-3xl font-bold tabular-nums">{value}</span>
+    <div className="card-lift relative flex min-h-[120px] flex-col justify-between gap-3 overflow-hidden rounded-2xl border border-border/70 bg-card/50 p-5">
+      <div className="pointer-events-none absolute inset-0 bg-ambient opacity-50" />
+      <div className="relative space-y-2">
+        <div className="flex items-center gap-2 text-primary/80">
+          {icon}
+          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</span>
+        </div>
+        <span className="block text-3xl font-bold tabular-nums tracking-tight">{value}</span>
         {sub && <span className="block text-xs leading-5 text-muted-foreground">{sub}</span>}
       </div>
     </div>
@@ -135,22 +144,24 @@ function TaskCard({
   const displayName = queueItem.name || task.filename || task.title || '未知任务'
   const directory = queueItem.dir || task.title || task.filename || '未指定目录'
   const errorMessage = task.error || queueItem.errorMessage
+  const isActive = task.status === 'active'
 
   return (
     <div
       onClick={() => onOpen(task)}
-      className="cursor-pointer rounded-2xl border bg-card p-4 transition-all hover:bg-muted/50 sm:p-5"
+      className="cursor-pointer rounded-2xl border border-border/70 bg-card/50 p-4 transition-all duration-300 hover:border-primary/25 hover:bg-card/80 sm:p-5"
     >
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div className="min-w-0 flex-1 flex items-start gap-2 sm:gap-4">
+        <div className="flex min-w-0 flex-1 items-start gap-2 sm:gap-4">
           <div
             className="flex-shrink-0 cursor-pointer p-3 -ml-3 -mt-2.5 transition-opacity hover:opacity-80"
             onClick={(e) => { e.stopPropagation(); onToggleSelect(task.gid) }}
           >
             <div
-              className={`flex size-5 items-center justify-center rounded transition-colors ${
-                selected ? 'bg-brand text-primary-foreground' : 'border bg-muted'
-              }`}
+              className={cn(
+                'flex size-5 items-center justify-center rounded-md transition-all duration-200',
+                selected ? 'bg-primary text-primary-foreground shadow-[0_0_10px_oklch(76%_0.19_150/0.5)]' : 'border border-input bg-muted/60'
+              )}
             >
               {selected && (
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="size-3">
@@ -163,10 +174,15 @@ function TaskCard({
           <div className="min-w-0 flex-1">
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <span
-                className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider ${
-                  errored ? 'bg-destructive/10 text-destructive' : 'bg-brand/10 text-brand'
-                }`}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider',
+                  errored ? 'bg-destructive/12 text-destructive' : 'bg-primary/12 text-primary'
+                )}
               >
+                {isActive && <span className="relative flex size-1.5">
+                  <span className="absolute inline-flex size-1.5 rounded-full bg-current opacity-60 animate-tide-ping" />
+                  <span className="relative inline-flex size-1.5 rounded-full bg-current" />
+                </span>}
                 {statusLabel(task.status)}
               </span>
               <span className="text-xs font-mono text-muted-foreground">{task.gid}</span>
@@ -174,7 +190,7 @@ function TaskCard({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                  className="size-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                   onClick={(e) => { e.stopPropagation(); onRemove(task.gid) }}
                   disabled={pendingAction === 'remove'}
                   aria-label="移除任务"
@@ -193,14 +209,16 @@ function TaskCard({
 
             <div className="mt-3 sm:mt-4">
               <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-                <span>{formatBytes(task.completedLength)} / {formatBytes(task.totalLength)}</span>
-                <span>{progress.toFixed(1)}%</span>
+                <span className="tabular-nums">{formatBytes(task.completedLength)} / {formatBytes(task.totalLength)}</span>
+                <span className="font-semibold tabular-nums text-foreground/80">{progress.toFixed(1)}%</span>
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-muted">
+              <div className="h-2 overflow-hidden rounded-full bg-muted/80">
                 <div
-                  className={`h-full rounded-full transition-all ${
-                    errored ? 'bg-destructive' : 'bg-brand'
-                  }`}
+                  className={cn(
+                    'h-full rounded-full transition-all duration-500',
+                    errored ? 'bg-destructive' : 'bg-lime',
+                    isActive && !errored && 'progress-flow glow-lime'
+                  )}
                   style={{
                     width: `${Math.min(progress, 100)}%`,
                   }}
@@ -209,26 +227,26 @@ function TaskCard({
             </div>
 
             <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:mt-4 sm:gap-3 md:grid-cols-4">
-              <div className="rounded-2xl border bg-muted/50 p-2.5">
+              <div className="rounded-xl border border-border/60 bg-muted/35 p-2.5">
                 <div className="text-[11px] text-muted-foreground">下载速度</div>
-                <div className="mt-1 text-sm font-semibold">{formatSpeed(task.downloadSpeed)}</div>
+                <div className="mt-1 text-sm font-semibold tabular-nums">{formatSpeed(task.downloadSpeed)}</div>
               </div>
-              <div className="hidden rounded-2xl border bg-muted/50 p-2.5 md:block">
+              <div className="hidden rounded-xl border border-border/60 bg-muted/35 p-2.5 md:block">
                 <div className="text-[11px] text-muted-foreground">上传速度</div>
-                <div className="mt-1 text-sm font-semibold">{formatSpeed(task.uploadSpeed || 0)}</div>
+                <div className="mt-1 text-sm font-semibold tabular-nums">{formatSpeed(task.uploadSpeed || 0)}</div>
               </div>
-              <div className="rounded-2xl border bg-muted/50 p-2.5">
+              <div className="rounded-xl border border-border/60 bg-muted/35 p-2.5">
                 <div className="text-[11px] text-muted-foreground">文件数</div>
-                <div className="mt-1 text-sm font-semibold">{task.totalLength}</div>
+                <div className="mt-1 text-sm font-semibold tabular-nums">{task.totalLength}</div>
               </div>
-              <div className="hidden rounded-2xl border bg-muted/50 p-2.5 md:block">
+              <div className="hidden rounded-xl border border-border/60 bg-muted/35 p-2.5 md:block">
                 <div className="text-[11px] text-muted-foreground">连接数</div>
-                <div className="mt-1 text-sm font-semibold">{task.connections || '-'}</div>
+                <div className="mt-1 text-sm font-semibold tabular-nums">{task.connections || '-'}</div>
               </div>
             </div>
 
             {errorMessage && (
-              <div className="mt-4 rounded-2xl border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+              <div className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 p-3 text-sm text-destructive">
                 {errorMessage}
               </div>
             )}
@@ -286,27 +304,31 @@ function ActionPanel({
   torrentName: string
 }) {
   return (
-    <div className="rounded-2xl border bg-muted/30 p-4 sm:p-5">
-      <div className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-brand">
-        新建下载
-      </div>
-      <Textarea
-        value={uriInput}
-        onChange={(e) => setUriInput(e.target.value)}
-        placeholder="每行一个链接，支持 HTTP、HTTPS、FTP、磁力链"
-        className="h-24 resize-none"
-      />
-      <div className="mt-3 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
-        <Button onClick={onSubmitUri} className="gap-2">
-          <Link className="size-4" />
-          添加链接下载
-        </Button>
-        <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border bg-muted px-4 py-2 text-sm font-medium transition-colors hover:bg-muted/80">
-          <Upload className="size-4" />
-          上传 Torrent
-          <input type="file" accept=".torrent,application/x-bittorrent" hidden onChange={onTorrentChange} />
-        </label>
-        {torrentName && <span className="text-xs text-muted-foreground">{torrentName}</span>}
+    <div className="relative overflow-hidden rounded-2xl border border-border/70 bg-muted/25 p-4 sm:p-5">
+      <div className="pointer-events-none absolute inset-0 bg-ambient opacity-60" />
+      <div className="relative">
+        <div className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary/90">
+          <span className="h-px w-5 bg-gradient-to-r from-tide to-transparent" />
+          新建下载
+        </div>
+        <Textarea
+          value={uriInput}
+          onChange={(e) => setUriInput(e.target.value)}
+          placeholder="每行一个链接，支持 HTTP、HTTPS、FTP、磁力链"
+          className="h-24 resize-none font-mono text-[13px]"
+        />
+        <div className="mt-3 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
+          <Button onClick={onSubmitUri} className="gap-2 rounded-full px-4">
+            <Link className="size-4" />
+            添加链接下载
+          </Button>
+          <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-full border border-border bg-card/60 px-4 py-2 text-sm font-medium transition-all duration-300 hover:border-primary/35 hover:bg-accent">
+            <Upload className="size-4" />
+            上传 Torrent
+            <input type="file" accept=".torrent,application/x-bittorrent" hidden onChange={onTorrentChange} />
+          </label>
+          {torrentName && <span className="text-xs text-muted-foreground">{torrentName}</span>}
+        </div>
       </div>
     </div>
   )
@@ -513,39 +535,33 @@ export default function DownloadsPage({
 
   return (
     <div className="flex flex-1 flex-col gap-5">
-      <div className="mb-2 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div className="max-w-2xl">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-brand">
-            Native Download Center
-          </div>
-          <h1 className="text-[28px] font-bold leading-tight sm:text-[34px]">
-            {showDashboard ? '下载管理' : statusLabel(queue)}
-          </h1>
-        </div>
-
-        <div className="flex flex-nowrap items-center gap-2 overflow-x-auto px-1 sm:flex-wrap sm:overflow-visible sm:px-0">
-          <Button variant="outline" size="sm" onClick={handleRefreshOverview} disabled={busy || !aria2Enabled}>
-            <RefreshCw className="size-4" />
+      <PageHeader
+        kicker="Native Download Center"
+        title={showDashboard ? '下载管理' : statusLabel(queue)}
+        actions={
+          <Button variant="outline" size="sm" onClick={handleRefreshOverview} disabled={busy || !aria2Enabled} className="rounded-full">
+            <RefreshCw className={cn('size-4', busy && 'animate-spin')} />
             刷新
           </Button>
-        </div>
-      </div>
+        }
+      />
 
       {showDashboard && summary && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <SummaryCard label="下载速度" value={formatSpeed(summary.downloadSpeed || 0)} sub="当前全局吞吐" />
-          <SummaryCard label="上传速度" value={formatSpeed(summary.uploadSpeed || 0)} sub="适用于 BT 做种场景" />
+          <SummaryCard label="下载速度" value={formatSpeed(summary.downloadSpeed || 0)} sub="当前全局吞吐" icon={<ArrowDownToLine className="size-3.5" />} />
+          <SummaryCard label="上传速度" value={formatSpeed(summary.uploadSpeed || 0)} sub="适用于 BT 做种场景" icon={<Radio className="size-3.5" />} />
           <SummaryCard
             label="活跃任务"
             value={String(summary.activeCount ?? '--')}
             sub={`等待 ${summary.waitingCount ?? '--'} · 已停止 ${summary.stoppedCount ?? '--'}`}
+            icon={<Gauge className="size-3.5" />}
           />
-          <SummaryCard label="Aria2 版本" value={getVersionLabel(overview)} sub="等待连接" />
+          <SummaryCard label="Aria2 版本" value={getVersionLabel(overview)} sub="等待连接" icon={<Gauge className="size-3.5" />} />
         </div>
       )}
 
       <div className="flex flex-col gap-4">
-        <div className="flex flex-nowrap gap-2 overflow-x-auto sm:flex-wrap">
+        <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
           {['all', 'active', 'waiting', 'stopped'].map((q) => {
             const count = q === 'all'
               ? (summary?.activeCount || 0) + (summary?.waitingCount || 0) + (summary?.stoppedCount || 0)
@@ -570,13 +586,13 @@ export default function DownloadsPage({
 
         <div className="w-full sm:max-w-xs">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="text"
               placeholder="搜索任务名称 或 GID..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-11 rounded-full pl-10"
+              className="h-10 rounded-full pl-10"
             />
           </div>
         </div>
@@ -635,7 +651,7 @@ export default function DownloadsPage({
           )}
 
           {pagination && totalPages > 1 && (
-            <div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/50 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-sm text-muted-foreground">
                 第 <span className="font-semibold text-foreground">{page}</span> / {totalPages} 页，共 {totalItems} 个任务
               </div>
@@ -674,9 +690,10 @@ export default function DownloadsPage({
             <div className="space-y-4">
               <div className="flex flex-wrap gap-2">
                 <span
-                  className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider ${
-                    selectedTask.status === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-brand/10 text-brand'
-                  }`}
+                  className={cn(
+                    'rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider',
+                    selectedTask.status === 'error' ? 'bg-destructive/12 text-destructive' : 'bg-primary/12 text-primary'
+                  )}
                 >
                   {statusLabel(selectedTask.status)}
                 </span>
@@ -684,17 +701,17 @@ export default function DownloadsPage({
               </div>
 
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <div className="rounded-xl border bg-muted/50 p-3">
+                <div className="rounded-xl border border-border/60 bg-muted/40 p-3">
                   <div className="text-[11px] uppercase tracking-wider text-muted-foreground">下载速度</div>
-                  <div className="mt-1 text-sm font-semibold">{formatSpeed(selectedTask.downloadSpeed)}</div>
+                  <div className="mt-1 text-sm font-semibold tabular-nums">{formatSpeed(selectedTask.downloadSpeed)}</div>
                 </div>
-                <div className="rounded-xl border bg-muted/50 p-3">
+                <div className="rounded-xl border border-border/60 bg-muted/40 p-3">
                   <div className="text-[11px] uppercase tracking-wider text-muted-foreground">上传速度</div>
-                  <div className="mt-1 text-sm font-semibold">{formatSpeed(selectedTask.uploadSpeed || 0)}</div>
+                  <div className="mt-1 text-sm font-semibold tabular-nums">{formatSpeed(selectedTask.uploadSpeed || 0)}</div>
                 </div>
-                <div className="rounded-xl border bg-muted/50 p-3">
+                <div className="rounded-xl border border-border/60 bg-muted/40 p-3">
                   <div className="text-[11px] uppercase tracking-wider text-muted-foreground">连接数</div>
-                  <div className="mt-1 text-sm font-semibold">{selectedTask.connections || '-'}</div>
+                  <div className="mt-1 text-sm font-semibold tabular-nums">{selectedTask.connections || '-'}</div>
                 </div>
               </div>
 

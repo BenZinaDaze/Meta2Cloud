@@ -42,7 +42,7 @@ export default defineConfig({
           if (id.includes('/lucide-react/')) {
             return 'icons-vendor'
           }
-          if (id.includes('/sonner/') || id.includes('/next-themes/')) {
+          if (id.includes('/sonner/')) {
             return 'app-vendor'
           }
         },

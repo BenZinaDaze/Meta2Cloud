@@ -32,7 +32,10 @@ const DOWNLOAD_QUEUE_MAP: Record<string, string | undefined> = {
 function PageFallback() {
   return (
     <div className="flex min-h-[240px] items-center justify-center">
-      <div className="text-sm text-muted-foreground">页面加载中...</div>
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <span className="size-1.5 animate-tide-breathe rounded-full bg-primary" />
+        页面加载中...
+      </div>
     </div>
   )
 }
@@ -170,8 +173,12 @@ export default function App() {
 
   if (checkingAuth) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-muted-foreground">正在验证身份...</div>
+      <div className="relative flex min-h-screen items-center justify-center">
+        <div className="pointer-events-none absolute inset-0 bg-ambient" />
+        <div className="relative flex items-center gap-2.5 text-muted-foreground">
+          <span className="size-1.5 animate-tide-breathe rounded-full bg-primary" />
+          正在验证身份...
+        </div>
       </div>
     )
   }
@@ -190,7 +197,10 @@ export default function App() {
   const downloadQueue = DOWNLOAD_QUEUE_MAP[activeNav]
 
   return (
-    <div className="h-screen overflow-hidden bg-background">
+    <div className="relative h-screen overflow-hidden bg-background">
+      {/* 环境光晕装饰层 */}
+      <div className="ambient-layer" />
+
       <Topbar
         onToggleSidebar={() => setMobileSidebarOpen((o) => !o)}
         onOpenParseTest={() => setShowParseTest(true)}
@@ -214,8 +224,12 @@ export default function App() {
         />
       )}
 
-      <main className="h-full pt-14 pb-20 lg:pb-0 lg:ml-[260px]">
-        <div data-main-scroll-container="true" className="h-full overflow-y-auto p-4 lg:p-8">
+      <main className="relative z-10 h-full pb-20 pt-14 lg:ml-[248px] lg:pb-0">
+        <div
+          key={activeNav}
+          data-main-scroll-container="true"
+          className="h-full overflow-y-auto p-4 animate-page-enter lg:p-8"
+        >
           <Suspense fallback={<PageFallback />}>
             {activeNav === 'config' ? (
               <ConfigPage onAria2EnabledChange={setAria2Enabled} page="general" />

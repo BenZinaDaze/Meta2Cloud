@@ -12,7 +12,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import PageHeader from '@/components/shared/PageHeader'
 import { useWebSocket, type WsMessage } from '@/hooks/useWebSocket'
+import { cn } from '@/lib/utils'
 
 interface LogItem {
   ts: string
@@ -120,6 +122,13 @@ function wsToLogItem(msg: WsMessage): LogItem {
   }
 }
 
+function levelColor(line: string): string {
+  if (line.includes('[ERROR]')) return 'text-destructive'
+  if (line.includes('[WARNING]')) return 'text-warning'
+  if (line.includes('[SUCCESS]')) return 'text-success'
+  return 'text-foreground/80'
+}
+
 const STATUS_POLL_MS = 5000
 const MAX_ITEMS = 1000
 
@@ -212,61 +221,75 @@ export default function LogsPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold leading-tight sm:text-[34px] flex items-center gap-2">
+      <PageHeader
+        kicker="System Activity"
+        title={
+          <span className="flex items-center gap-3">
             日志
             {!isLive && (
-              <span className={`size-2 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+              <span className="relative flex size-2.5">
+                <span
+                  className={cn(
+                    'absolute inline-flex size-2.5 rounded-full opacity-60',
+                    connected ? 'bg-success animate-tide-ping' : ''
+                  )}
+                />
+                <span className={cn('relative inline-flex size-2.5 rounded-full', connected ? 'bg-success' : 'bg-destructive')} />
+              </span>
             )}
-          </h1>
-          {isLive && (
-            <span className="flex items-center gap-1.5 rounded-full bg-success/20 px-3 py-1 text-xs font-semibold text-success">
-              <span className="size-2 animate-pulse rounded-full bg-success" />
-              整理中
-            </span>
-          )}
-        </div>
+          </span>
+        }
+        description="实时跟踪整理流水线、下载任务与系统事件。"
+        actions={
+          <>
+            {isLive && (
+              <span className="flex items-center gap-1.5 rounded-full bg-success/12 px-3 py-1.5 text-xs font-semibold text-success">
+                <span className="relative flex size-2">
+                  <span className="absolute inline-flex size-2 animate-tide-ping rounded-full bg-success opacity-60" />
+                  <span className="relative inline-flex size-2 rounded-full bg-success" />
+                </span>
+                整理中
+              </span>
+            )}
+            <div className="relative w-60">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="text"
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                placeholder="搜索日志"
+                className="h-10 rounded-full pl-10"
+              />
+            </div>
+            <Select value={level} onValueChange={setLevel}>
+              <SelectTrigger className="h-10 w-36 rounded-full border-border/70 bg-card/50 focus:ring-0 focus:ring-offset-0">
+                <SelectValue placeholder="级别: 全部" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部</SelectItem>
+                <SelectItem value="INFO">INFO</SelectItem>
+                <SelectItem value="WARNING">WARNING</SelectItem>
+                <SelectItem value="ERROR">ERROR</SelectItem>
+                <SelectItem value="SUCCESS">SUCCESS</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              onClick={handleRefresh}
+              disabled={refreshing || loading}
+              className="h-10 gap-2 rounded-full px-4"
+            >
+              <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
+              刷新
+            </Button>
+          </>
+        }
+      />
 
-        <div className="flex items-center gap-3">
-          <div className="relative w-60">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="text"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              placeholder="搜索日志"
-              className="h-11 rounded-full pl-10"
-            />
-          </div>
-          <Select value={level} onValueChange={setLevel}>
-            <SelectTrigger className="h-11 w-36 rounded-full focus:ring-0 focus:ring-offset-0">
-              <SelectValue placeholder="级别: 全部" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部</SelectItem>
-              <SelectItem value="INFO">INFO</SelectItem>
-              <SelectItem value="WARNING">WARNING</SelectItem>
-              <SelectItem value="ERROR">ERROR</SelectItem>
-              <SelectItem value="SUCCESS">SUCCESS</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            variant="outline"
-            onClick={handleRefresh}
-            disabled={refreshing || loading}
-            className="h-11 gap-2 px-4"
-          >
-            <RefreshCw className={`size-4 ${refreshing ? 'animate-spin' : ''}`} />
-            刷新
-          </Button>
-        </div>
-      </div>
-
-      <section className="rounded-3xl border bg-card px-6 py-6">
+      <section className="rounded-2xl border border-border/70 bg-card/40 px-4 py-5 sm:px-6 sm:py-6">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold">日志内容</h2>
+            <h2 className="text-lg font-semibold tracking-tight">日志内容</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               最新 500 条日志，当前显示 {filteredLines.length} 条
             </p>
@@ -280,10 +303,10 @@ export default function LogsPage() {
         ) : filteredLines.length === 0 ? (
           <StatePanel icon="≡" title="当前筛选条件下没有日志" description="调整级别或关键词后再试一次。" compact />
         ) : (
-          <div data-scroll-container="logs-panel" className="h-[70vh] overflow-auto rounded-2xl border bg-muted/30 px-5 py-4">
-            <div className="space-y-1 font-mono text-sm leading-7">
+          <div data-scroll-container="logs-panel" className="h-[70vh] overflow-auto rounded-xl border border-border/60 bg-background/60 px-5 py-4">
+            <div className="space-y-0.5 font-mono text-[13px] leading-6">
               {filteredLines.map((line, index) => (
-                <div key={`${index}-${line}`} className="break-all">
+                <div key={`${index}-${line}`} className={cn('break-all transition-colors hover:text-foreground', levelColor(line))}>
                   {line}
                 </div>
               ))}

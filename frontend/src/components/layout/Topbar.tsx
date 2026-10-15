@@ -1,9 +1,8 @@
 import { Zap, Search, Menu } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { ThemeToggle } from '@/components/ThemeToggle'
 import { triggerPipeline } from '@/api'
 import { toast } from 'sonner'
-import BrandMark from '@/components/BrandMark'
+import Logo from '@/components/layout/Logo'
 
 interface TopbarProps {
   onOpenParseTest?: () => void
@@ -22,7 +21,7 @@ export default function Topbar({ onOpenParseTest, onToggleSidebar }: TopbarProps
   }
 
   return (
-    <header className="fixed left-0 right-0 top-0 z-50 h-14 border-b bg-background">
+    <header className="fixed left-0 right-0 top-0 z-50 h-14 border-b border-border/60 glass-strong lg:left-[248px]">
       <div className="flex h-full items-center justify-between px-4 lg:px-6">
         <div className="flex items-center gap-3">
           <Button
@@ -35,24 +34,20 @@ export default function Topbar({ onOpenParseTest, onToggleSidebar }: TopbarProps
             <span className="sr-only">打开导航</span>
           </Button>
 
-          <BrandMark className="size-8" compact />
-          <div>
-            <div className="hidden text-[9px] font-semibold uppercase tracking-widest text-muted-foreground sm:block">
-              Media Archive
-            </div>
-            <span className="block text-sm font-semibold">
-              Meta<span className="text-primary">2Cloud</span>
+          {/* 移动端品牌 */}
+          <div className="flex items-center gap-2 lg:hidden">
+            <Logo className="size-7" />
+            <span className="text-sm font-bold tracking-tight">
+              Meta<span className="text-gradient-tide">2</span>Cloud
             </span>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <ThemeToggle />
-
           <Button
             onClick={handleTriggerPipeline}
             size="sm"
-            className="gap-1.5"
+            className="gap-1.5 rounded-full px-3.5"
           >
             <Zap className="size-3.5" />
             <span className="hidden sm:inline">一键整理</span>
@@ -62,7 +57,7 @@ export default function Topbar({ onOpenParseTest, onToggleSidebar }: TopbarProps
             variant="outline"
             size="sm"
             onClick={onOpenParseTest}
-            className="hidden min-[430px]:flex gap-1.5"
+            className="hidden min-[430px]:flex gap-1.5 rounded-full px-3.5"
           >
             <Search className="size-3.5" />
             <span className="hidden sm:inline">解析测试</span>
