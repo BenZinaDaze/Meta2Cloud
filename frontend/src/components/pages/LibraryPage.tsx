@@ -237,7 +237,7 @@ export default function LibraryPage({
                 setSortOrder(order)
               }}
             >
-              <SelectTrigger className="h-10 min-w-0 gap-1.5 rounded-full border-border/70 bg-card/50 px-3.5 text-sm font-medium focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="h-10 w-36 rounded-full border-border/70 bg-card/50 focus:ring-0 focus:ring-offset-0">
                 <ArrowUpDown className="size-3.5 text-muted-foreground" />
                 <SelectValue />
               </SelectTrigger>
