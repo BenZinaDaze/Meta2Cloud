@@ -1,0 +1,59 @@
+name: Create GitHub Release
+
+# 推送 v* tag 时：从 CHANGELOG.md 提取对应版本段落，创建 GitHub Release
+# （Docker 镜像构建由 docker-publish.yml 并行处理）
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # 创建 Release 需要写权限
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      # 从 CHANGELOG.md 提取 "## [vX.Y.Z]" 段落作为 Release 正文
+      # 找不到对应段落时回退为自动生成的提交列表
+      - name: Extract changelog for this version
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          BODY=$(awk -v tag="$VERSION" '
+            $0 == "## [" tag "]" || index($0, "## [" tag "] - ") == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md)
+
+          # 去掉首尾空行
+          BODY=$(printf '%s' "$BODY" | sed -e '/./,$!d' -e ':a' -e '/^\n*$/{$d;N;ba' -e '}')
+
+          if [ -n "$BODY" ]; then
+            printf '%s\n' "$BODY" > release_body.md
+          else
+            echo "::warning::CHANGELOG.md 中未找到 ${VERSION} 段落，回退为自动生成说明"
+            {
+              echo "## ${VERSION}"
+              echo
+              echo "完整变更请查看 [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/CHANGELOG.md)。"
+              echo
+              echo "### Docker 镜像"
+              echo
+              echo '```'
+              echo "docker pull benz1/meta2cloud:${VERSION}"
+              echo '```'
+            } > release_body.md
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --notes-file release_body.md \
+            --verify-tag
