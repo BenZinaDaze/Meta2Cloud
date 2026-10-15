@@ -381,8 +381,8 @@ export default function U115OfflinePage({ onToast }: U115OfflinePageProps) {
                           <div
                             className={cn(
                               'h-full rounded-full transition-all duration-500',
-                              task.status === -1 ? 'bg-destructive' : 'bg-lime',
-                              isActive && 'progress-flow glow-lime'
+                              task.status === -1 ? 'bg-destructive' : task.status === 2 ? 'bg-success' : 'bg-lime',
+                              task.status === 1 && 'progress-flow glow-lime'
                             )}
                             style={{ width: `${pct}%` }}
                           />

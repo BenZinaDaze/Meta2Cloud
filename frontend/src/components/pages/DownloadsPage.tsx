@@ -216,7 +216,7 @@ function TaskCard({
                 <div
                   className={cn(
                     'h-full rounded-full transition-all duration-500',
-                    errored ? 'bg-destructive' : 'bg-lime',
+                    errored ? 'bg-destructive' : task.status === 'complete' ? 'bg-success' : 'bg-lime',
                     isActive && !errored && 'progress-flow glow-lime'
                   )}
                   style={{
