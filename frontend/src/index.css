@@ -81,10 +81,10 @@
   --input: oklch(100% 0 0 / 0.15);
   --ring: oklch(76% 0.19 150 / 0.55);
 
-  /* 主色：亮绿；辅助：柠檬绿（进度条专用） */
+  /* 主色：亮绿；辅助：柠檬绿（仅渐变过渡）；lime：进度条强调色，与主色同族 */
   --tide: oklch(76% 0.19 150);
   --tide-2: oklch(84% 0.17 128);
-  --lime: oklch(84% 0.17 128);
+  --lime: oklch(78% 0.18 150);
   --brand: var(--tide);
   --brand-foreground: oklch(16% 0.04 150);
 
@@ -166,7 +166,7 @@
   }
 
   .glow-lime {
-    box-shadow: 0 0 10px oklch(84% 0.17 128 / 0.5);
+    box-shadow: 0 0 10px oklch(78% 0.18 150 / 0.5);
   }
 
   /* 卡片悬停点亮 */
