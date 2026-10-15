@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import PageHeader from '@/components/shared/PageHeader'
+import { formatDateTime } from '@/lib/time'
 import { useWebSocket, type WsMessage } from '@/hooks/useWebSocket'
 import { cn } from '@/lib/utils'
 
@@ -22,13 +23,6 @@ interface LogItem {
   message: string
   event?: string
   details?: Record<string, unknown>
-}
-
-function formatTime(value: string | undefined): string {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString('zh-CN', { hour12: false })
 }
 
 function formatEventDetails(item: LogItem): string {
@@ -109,7 +103,7 @@ function formatEventDetails(item: LogItem): string {
 function formatLogLine(item: LogItem): string {
   const detail = formatEventDetails(item)
   const detailSuffix = detail ? ` | ${detail}` : ''
-  return `[${formatTime(item.ts)}] [${item.level}] ${item.message}${detailSuffix}`
+  return `[${formatDateTime(item.ts)}] [${item.level}] ${item.message}${detailSuffix}`
 }
 
 function wsToLogItem(msg: WsMessage): LogItem {

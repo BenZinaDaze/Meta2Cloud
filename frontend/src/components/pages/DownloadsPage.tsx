@@ -48,17 +48,9 @@ import {
 import PageHeader from '@/components/shared/PageHeader'
 import ParseTestModal from '@/components/modals/ParseTestModal'
 import { cn } from '@/lib/utils'
+import { formatBytes } from '@/lib/format'
 import type { Aria2Task, Aria2Overview } from '@/types/api'
 import { toast } from 'sonner'
-
-function formatBytes(bytes: string | number): string {
-  const value = Number(bytes) || 0
-  if (value <= 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1)
-  const size = value / 1024 ** index
-  return `${size >= 100 ? size.toFixed(0) : size.toFixed(1)} ${units[index]}`
-}
 
 function formatSpeed(bytes: string | number): string {
   return `${formatBytes(bytes)}/s`

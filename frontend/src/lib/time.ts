@@ -14,13 +14,22 @@ export function relativeTime(
 }
 
 export function formatDateTime(
-  dateStr?: string,
+  dateStr?: string | number | null,
   opts?: { locale?: string; fallback?: string }
 ): string {
   const fallback = opts?.fallback ?? '-'
-  if (!dateStr) return fallback
+  if (dateStr === undefined || dateStr === null || dateStr === '') return fallback
+  let ms: number
+  if (typeof dateStr === 'number') {
+    // 秒级时间戳自动升级为毫秒
+    ms = dateStr < 1e12 ? dateStr * 1000 : dateStr
+  } else {
+    const parsed = new Date(dateStr).getTime()
+    if (Number.isNaN(parsed)) return dateStr
+    ms = parsed
+  }
   try {
-    return new Date(dateStr).toLocaleString(opts?.locale ?? 'zh-CN', {
+    return new Date(ms).toLocaleString(opts?.locale ?? 'zh-CN', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
@@ -28,6 +37,6 @@ export function formatDateTime(
       minute: '2-digit',
     })
   } catch {
-    return dateStr
+    return String(dateStr)
   }
 }

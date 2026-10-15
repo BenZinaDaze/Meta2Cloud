@@ -14,6 +14,8 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import PageHeader from '@/components/shared/PageHeader'
+import { formatBytes } from '@/lib/format'
+import { formatDateTime } from '@/lib/time'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -54,33 +56,6 @@ interface U115Overview {
 interface U115Quota {
   count: number
   surplus: number
-}
-
-function formatBytes(bytes: string | number): string {
-  const value = Number(bytes)
-  if (!Number.isFinite(value) || value <= 0) return '-'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let size = value
-  let index = 0
-  while (size >= 1024 && index < units.length - 1) {
-    size /= 1024
-    index += 1
-  }
-  return `${size.toFixed(index === 0 ? 0 : 2)} ${units[index]}`
-}
-
-function formatTime(ts: string | number | undefined): string {
-  if (!ts) return '-'
-  const asNumber = Number(ts)
-  let ms: number
-  if (!Number.isFinite(asNumber)) {
-    const parsed = new Date(ts)
-    if (Number.isNaN(parsed.getTime())) return '-'
-    ms = parsed.getTime()
-  } else {
-    ms = asNumber < 1e12 ? asNumber * 1000 : asNumber
-  }
-  return new Date(ms).toLocaleString('zh-CN', { hour12: false })
 }
 
 function statusMeta(status: number): { label: string; className: string } {
@@ -402,8 +377,8 @@ export default function U115OfflinePage({ onToast }: U115OfflinePageProps) {
                         </Button>
                       </div>
                       <div className="mt-3 grid gap-1 text-xs text-muted-foreground">
-                        <div>添加时间：{formatTime(task.add_time)}</div>
-                        <div>更新时间：{formatTime(task.last_update)}</div>
+                        <div>添加时间：{formatDateTime(task.add_time)}</div>
+                        <div>更新时间：{formatDateTime(task.last_update)}</div>
                         <div className="break-all font-mono">Info Hash：{task.info_hash || '-'}</div>
                         {task.wp_path_id && <div className="break-all font-mono">保存目录：{task.wp_path_id}</div>}
                         {task.url && <div className="break-all font-mono">链接：{task.url}</div>}
