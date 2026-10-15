@@ -212,18 +212,25 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
 
       const subgroupAggs = aggregates.filter(agg => agg.sources.some(s => s.subgroup_id))
 
-      const initialGroups: SubgroupGroup[] = subgroupAggs.map(agg => {
-        const src = agg.sources.find(s => s.subgroup_id)
-        const rssUrl = src?.rss_url || null
+      // 同名聚合可能包含多个站点源，每个源各生成一行，避免只展示先注册站点（mikan）的结果
+      const initialGroups: SubgroupGroup[] = subgroupAggs.flatMap(agg =>
+        agg.sources
+          .filter(s => s.subgroup_id)
+          .map(src => {
+            const match = agg.name.match(/^(.*?)\s*\[(.+?)\]\s*$/)
+            const mediaTitle = match ? match[1].trim() : agg.name
+            const name = match ? match[2].trim() : agg.name
+            const uniqueKey = `${src.site}-${mediaTitle}-${name}`
 
-        const match = agg.name.match(/^(.*?)\s*\[(.+?)\]\s*$/)
-        const mediaTitle = match ? match[1].trim() : agg.name
-        const name = match ? match[2].trim() : agg.name
-        const site = src?.site || 'unknown'
-        const uniqueKey = `${site}-${mediaTitle}-${name}`
-
-        return { site, name, mediaTitle, uniqueKey, rssUrl, src: src ? { site: src.site, media_id: src.media_id, subgroup_id: src.subgroup_id } : null, episodes: [], loading: true }
-      })
+            return {
+              site: src.site, name, mediaTitle, uniqueKey,
+              rssUrl: src.rss_url || null,
+              src: { site: src.site, media_id: src.media_id, subgroup_id: src.subgroup_id },
+              episodes: [] as Episode[],
+              loading: true,
+            }
+          })
+      )
       setGroupedEpisodes(initialGroups)
       setSearchState('done')
 
@@ -231,10 +238,9 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
       let nextIndex = 0
 
       const worker = async () => {
-        while (nextIndex < subgroupAggs.length && !signal.aborted) {
+        while (nextIndex < initialGroups.length && !signal.aborted) {
           const idx = nextIndex++
-          const agg = subgroupAggs[idx]
-          const src = agg.sources.find(s => s.subgroup_id)
+          const src = initialGroups[idx]?.src
           if (!src) continue
           try {
             const epRes = await getEpisodes(src.site, src.media_id, src.subgroup_id, { signal })
@@ -242,7 +248,7 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
             const episodes = (epRes.data.episodes || []).map((e: Episode) => ({ ...e, _site: src.site }))
             setGroupedEpisodes(prev => {
               const updated = [...prev]
-              updated[idx] = { ...updated[idx], episodes, loading: false, src: updated[idx].src }
+              updated[idx] = { ...updated[idx], episodes, loading: false }
               return updated
             })
           } catch {
@@ -256,7 +262,7 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
         }
       }
 
-      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, subgroupAggs.length) }, worker))
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, initialGroups.length) }, worker))
 
     } catch (e) {
       if (signal.aborted) return
