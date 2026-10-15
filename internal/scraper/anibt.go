@@ -2,6 +2,7 @@
 package scraper
 
 import (
+	"bytes"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -231,15 +232,58 @@ func (s *AniBTSpider) BuildRssURL(mediaID, subgroupID string) string {
 	return fmt.Sprintf("%s/rss/anime.xml?%s", s.baseURL, values.Encode())
 }
 
-// anibtRssItem 扩展 RSS 结构（含 magnet/infohash 扩展标签）。
-type anibtRssItem struct {
-	rssItemXML
-	Extended []xmlExtElement `xml:",any"`
-}
-
-type xmlExtElement struct {
-	XMLName xml.Name
-	Text    string `xml:",chardata"`
+// collectItemExtTexts 按文档顺序收集每个 <item> 子树内全部后代元素的
+// local 名 → 首个非空文本。encoding/xml 的 `,any` 只匹配直接子元素，
+// 而 AniBT 把 infohash 嵌套在 <anibt:torrent> 容器内
+// （对应 Python 版 item.iter() 的递归语义）。
+func collectItemExtTexts(body []byte) []map[string]string {
+	decoder := xml.NewDecoder(bytes.NewReader(body))
+	var out []map[string]string
+	var current map[string]string
+	var stack []string
+	depth := 0 // >0 表示位于某个 <item> 子树内；1 为 item 本身
+	for {
+		tok, err := decoder.Token()
+		if err != nil {
+			break
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			name := strings.ToLower(t.Name.Local)
+			if depth == 0 {
+				if name == "item" {
+					current = map[string]string{}
+					depth = 1
+				}
+				continue
+			}
+			depth++
+			stack = append(stack, name)
+			if _, seen := current[name]; !seen {
+				current[name] = "" // 占位，等待 chardata
+			}
+		case xml.CharData:
+			if depth > 1 && len(stack) > 0 {
+				tag := stack[len(stack)-1]
+				if text := strings.TrimSpace(string(t)); text != "" && current[tag] == "" {
+					current[tag] = text
+				}
+			}
+		case xml.EndElement:
+			if depth == 0 {
+				continue
+			}
+			depth--
+			if depth == 0 {
+				out = append(out, current)
+				current = nil
+				stack = stack[:0]
+				continue
+			}
+			stack = stack[:len(stack)-1]
+		}
+	}
+	return out
 }
 
 // GetEpisodes 获取种子条目。
@@ -250,15 +294,16 @@ func (s *AniBTSpider) GetEpisodes(mediaID, subgroupID string) ([]MagnetItem, err
 	}
 	var rss struct {
 		Channel struct {
-			Items []anibtRssItem `xml:"item"`
+			Items []rssItemXML `xml:"item"`
 		} `xml:"channel"`
 	}
 	if err := xml.Unmarshal(body, &rss); err != nil {
 		return []MagnetItem{}, nil
 	}
+	extTexts := collectItemExtTexts(body)
 
 	episodes := make([]MagnetItem, 0, len(rss.Channel.Items))
-	for _, item := range rss.Channel.Items {
+	for i, item := range rss.Channel.Items {
 		var torrentURL, magnetURL, infohash string
 		var fileSizeMB float64
 		if item.Enclosure.URL != "" {
@@ -273,18 +318,20 @@ func (s *AniBTSpider) GetEpisodes(mediaID, subgroupID string) ([]MagnetItem, err
 			fmt.Sscanf(item.Enclosure.Length, "%d", &bytes)
 			fileSizeMB = float64(int64(float64(bytes)/1024/1024*100+0.5)) / 100
 		}
-		// 扩展标签：magneturi / magnet / magnetlink / infohash
-		for _, ext := range item.Extended {
-			tag := ext.XMLName.Local
-			tag = tag[strings.LastIndex(tag, "}")+1:]
-			tag = strings.ToLower(tag)
-			text := strings.TrimSpace(ext.Text)
-			switch {
-			case (tag == "magneturi" || tag == "magnet" || tag == "magnetlink") && strings.HasPrefix(text, "magnet:"):
+		// 扩展标签（含嵌套元素）：magneturi / magnet / magnetlink / infohash / torrenturl
+		var ext map[string]string
+		if i < len(extTexts) {
+			ext = extTexts[i]
+		}
+		for _, tag := range []string{"magneturi", "magnet", "magnetlink"} {
+			if text := ext[tag]; strings.HasPrefix(text, "magnet:") {
 				magnetURL = text
-			case tag == "infohash" && text != "":
-				infohash = text
+				break
 			}
+		}
+		infohash = ext["infohash"]
+		if torrentURL == "" {
+			torrentURL = ext["torrenturl"]
 		}
 		if strings.HasPrefix(item.Link, "magnet:") && magnetURL == "" {
 			magnetURL = item.Link

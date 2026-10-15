@@ -333,12 +333,14 @@ func withRecentHits(rssStore *store.RSSStore, payload map[string]any) map[string
 // ── 推送 ────────────────────────────────────────────────────
 
 func pushItem(pushTarget string, item map[string]any) error {
-	targetURL := firstNonEmptyStr(anyStrValue(item["magnet_url"]), anyStrValue(item["torrent_url"]))
-	if targetURL == "" {
-		return fmt.Errorf("RSS 条目缺少下载地址")
-	}
+	magnetURL := anyStrValue(item["magnet_url"])
+	torrentURL := anyStrValue(item["torrent_url"])
 	switch pushTarget {
 	case "aria2":
+		targetURL := firstNonEmptyStr(magnetURL, torrentURL)
+		if targetURL == "" {
+			return fmt.Errorf("RSS 条目缺少下载地址")
+		}
 		_, err := aria2AddURI([]string{targetURL})
 		return err
 	case "u115":
@@ -346,12 +348,11 @@ func pushItem(pushTarget string, item map[string]any) error {
 		if authorized, _ := auth["authorized"].(bool); !authorized {
 			return fmt.Errorf("115 未授权，无法推送云下载")
 		}
-		offline := offlineClient()
-		if offline == nil {
-			return fmt.Errorf("115 客户端不可用")
+		if magnetURL == "" && torrentURL == "" {
+			return fmt.Errorf("RSS 条目缺少下载地址")
 		}
-		_, err := offline.AddTaskURLs([]string{targetURL}, "")
-		return err
+		// 磁力/普通链接走链接任务；.torrent 链接在 pushU115Download 内转 BT 任务
+		return pushU115Download(magnetURL, torrentURL)
 	}
 	return fmt.Errorf("未知推送目标：%s", pushTarget)
 }

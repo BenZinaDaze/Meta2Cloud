@@ -81,11 +81,22 @@ func TestAniBTSearchAndEpisodes(t *testing.T) {
 		case r.URL.Path == "/api/anime/groups":
 			w.Write([]byte(`[{"group": {"slug": "sub-a", "name": "组A"}}]`))
 		case strings.HasPrefix(r.URL.Path, "/rss/anime.xml"):
+			// 模拟真实 anibt 结构：infohash 嵌套在 <anibt:torrent> 容器内
 			w.Write([]byte(`<?xml version="1.0"?>
-				<rss><channel>
+				<rss xmlns:anibt="https://anibt.net/xmlns/rss/1.0/"><channel>
 				<item>
 					<title>测试番 - 02</title>
 					<pubDate>Tue, 13 Oct 2026 08:00:00 GMT</pubDate>
+					<link>https://anibt.net/anime/42</link>
+					<enclosure url="https://anibt.net/api/torrent/rel_xxx.torrent" length="104857600" type="application/x-bittorrent"/>
+					<anibt:torrent>
+						<link>https://anibt.net/anime/42</link>
+						<infohash>e1ddc119073b1609863eae79ce26713375dd3787</infohash>
+					</anibt:torrent>
+				</item>
+				<item>
+					<title>测试番 - 01</title>
+					<pubDate>Tue, 13 Oct 2026 07:00:00 GMT</pubDate>
 					<link>https://anibt.net/anime/42</link>
 					<magneturi>magnet:?xt=urn:btih:abcdefabcdefabcdefabcdefabcdefabcdefabcdef</magneturi>
 					<enclosure url="https://anibt.net/dl/xxx" length="104857600" type="application/x-bittorrent"/>
@@ -115,11 +126,19 @@ func TestAniBTSearchAndEpisodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(episodes) != 1 {
+	if len(episodes) != 2 {
 		t.Fatalf("episodes = %d", len(episodes))
 	}
-	if episodes[0].MagnetURL != "magnet:?xt=urn:btih:abcdefabcdefabcdefabcdefabcdefabcdefabcdef" {
+	// 第 1 条：infohash 嵌套在 <anibt:torrent> 内，应递归取到并生成 magnet
+	if episodes[0].MagnetURL != "magnet:?xt=urn:btih:e1ddc119073b1609863eae79ce26713375dd3787" {
 		t.Errorf("magnet = %q", episodes[0].MagnetURL)
+	}
+	if episodes[0].TorrentURL != "https://anibt.net/api/torrent/rel_xxx.torrent" {
+		t.Errorf("torrentURL = %q", episodes[0].TorrentURL)
+	}
+	// 第 2 条：直接子元素 magneturi
+	if episodes[1].MagnetURL != "magnet:?xt=urn:btih:abcdefabcdefabcdefabcdefabcdefabcdefabcdef" {
+		t.Errorf("magnet = %q", episodes[1].MagnetURL)
 	}
 }
 

@@ -2,17 +2,20 @@ package webui
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"meta2cloud/internal/cloudfile"
 	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/scraper"
 	"meta2cloud/internal/u115"
@@ -599,6 +602,156 @@ func TestU115OfflineEndpoints(t *testing.T) {
 	emptyResp.Body.Close()
 	if emptyResp.StatusCode != 400 {
 		t.Errorf("empty urls code = %d", emptyResp.StatusCode)
+	}
+}
+
+// ── .torrent 链接推送（BT 任务） ───────────────────────────
+
+// fakeTorrentProvider 测试用 Provider：记录 UploadBytes 内容并返回固定 pick_code。
+type fakeTorrentProvider struct {
+	uploadedName  string
+	uploadedBytes []byte
+}
+
+func (f *fakeTorrentProvider) ProviderName() string { return "fake" }
+func (f *fakeTorrentProvider) ListFiles(string, int) ([]cloudfile.CloudFile, error) {
+	return nil, nil
+}
+func (f *fakeTorrentProvider) ListAllFiles(string) ([]cloudfile.CloudFile, error) {
+	return nil, nil
+}
+func (f *fakeTorrentProvider) GetFile(fileID string) (cloudfile.CloudFile, error) {
+	return cloudfile.CloudFile{ID: fileID}, nil
+}
+func (f *fakeTorrentProvider) ReadText(cloudfile.CloudFile) (string, error) { return "", nil }
+func (f *fakeTorrentProvider) FindFile(name string, _ string) (*cloudfile.CloudFile, error) {
+	if f.uploadedName == name {
+		return &cloudfile.CloudFile{ID: "f1", Name: name, FileType: cloudfile.TypeFile,
+			Extra: map[string]any{"pick_code": "pick123"}}, nil
+	}
+	return nil, nil
+}
+func (f *fakeTorrentProvider) RenameFile(fileID, newName string) (cloudfile.CloudFile, error) {
+	return cloudfile.CloudFile{ID: fileID, Name: newName}, nil
+}
+func (f *fakeTorrentProvider) MoveFile(fileID, _, _ string) (cloudfile.CloudFile, error) {
+	return cloudfile.CloudFile{ID: fileID}, nil
+}
+func (f *fakeTorrentProvider) UploadText(content string, name, _, _ string, _ bool) (cloudfile.CloudFile, error) {
+	return f.UploadBytes([]byte(content), name, "", "", false)
+}
+func (f *fakeTorrentProvider) UploadBytes(content []byte, name, _, _ string, _ bool) (cloudfile.CloudFile, error) {
+	f.uploadedName = name
+	f.uploadedBytes = content
+	return cloudfile.CloudFile{ID: "f1", Name: name, FileType: cloudfile.TypeFile,
+		Extra: map[string]any{"pick_code": "pick123"}}, nil
+}
+func (f *fakeTorrentProvider) TrashFile(string) (cloudfile.CloudFile, error) {
+	return cloudfile.CloudFile{}, nil
+}
+func (f *fakeTorrentProvider) DeleteFile(string) error { return nil }
+func (f *fakeTorrentProvider) CreateFolder(name, _ string) (cloudfile.CloudFile, error) {
+	return cloudfile.CloudFile{ID: "c1", Name: name, FileType: cloudfile.TypeFolder}, nil
+}
+
+func TestIsTorrentLink(t *testing.T) {
+	cases := map[string]bool{
+		"https://anibt.net/api/torrent/rel_xxx.torrent":                    true,
+		"https://mikan/Download/x/" + strings.Repeat("a", 40) + ".TORRENT": true,
+		"magnet:?xt=urn:btih:abc":                                          false,
+		"https://example.com/file":                                         false,
+		"https://example.com/a.mkv":                                        false,
+		"":                                                                 false,
+	}
+	for raw, want := range cases {
+		if got := isTorrentLink(raw); got != want {
+			t.Errorf("isTorrentLink(%q) = %v, want %v", raw, got, want)
+		}
+	}
+}
+
+func TestPushTorrentLinkAddsBTTask(t *testing.T) {
+	torrentBytes := []byte("d4:infod6:lengthi123e6:name5:helloee")
+	torrentSHA1 := fmt.Sprintf("%x", sha1.Sum(torrentBytes))
+
+	// mock 种子下载站
+	torrentSite := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write(torrentBytes)
+	}))
+	t.Cleanup(torrentSite.Close)
+
+	// mock 115 API：记录 add_task_bt 参数
+	var btForm url.Values
+	u115Server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/open/folder/get_info"):
+			json.NewEncoder(w).Encode(map[string]any{"state": true, "code": 0,
+				"data": map[string]any{"file_id": "100", "file_name": "种子文件"}})
+		case strings.HasSuffix(r.URL.Path, "/open/offline/torrent"):
+			json.NewEncoder(w).Encode(map[string]any{"state": true, "code": 0,
+				"data": []any{map[string]any{
+					"info_hash": "abc123", "torrent_name": "hello", "file_size": 123, "file_count": 1,
+					"torrent_filelist": []any{map[string]any{"path": "hello.mp4", "size": 123, "wanted": 1}},
+				}}})
+		case strings.HasSuffix(r.URL.Path, "/open/offline/add_task_bt"):
+			btForm = r.PostForm
+			json.NewEncoder(w).Encode(map[string]any{"state": true, "code": 0, "data": map[string]any{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]any{"state": true, "code": 0, "data": map[string]any{}})
+		}
+	}))
+	t.Cleanup(u115Server.Close)
+
+	rootDir := t.TempDir()
+	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
+	cfgYAML := "webui:\n  username: admin\n  password: secret123\n" +
+		"u115:\n  client_id: cid\n  download_folder_id: \"555\"\n"
+	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
+	// 持久化 token 文件 → authorized = true
+	tokenData := fmt.Sprintf(`{"access_token":"at","refresh_token":"rt","expires_in":3600,"refresh_time":%d}`, time.Now().Unix())
+	os.WriteFile(filepath.Join(rootDir, "config", "115-token.json"), []byte(tokenData), 0o600)
+	ResetJWTSecretCache()
+	InitRuntime(rootDir)
+
+	client := u115.NewClient("cid",
+		u115.WithToken(u115.Token{AccessToken: "at", RefreshToken: "rt", ExpiresIn: 3600, RefreshTime: time.Now().Unix()}),
+		u115.WithQPS(1000, 1000))
+	client.SetTestBaseURL(u115Server.URL)
+	RT().SetU115ClientForTest(client)
+	provider := &fakeTorrentProvider{}
+	RT().SetProviderForTest(provider)
+
+	// 无 magnet、仅 .torrent 链接的条目 → 应创建 BT 任务而非链接任务
+	err := pushItem("u115", map[string]any{
+		"torrent_url": torrentSite.URL + "/api/torrent/rel_xxx.torrent",
+	})
+	if err != nil {
+		t.Fatalf("pushItem = %v", err)
+	}
+	if btForm == nil {
+		t.Fatal("add_task_bt 未被调用")
+	}
+	if got := btForm.Get("info_hash"); got != "abc123" {
+		t.Errorf("info_hash = %q", got)
+	}
+	if got := btForm.Get("torrent_sha1"); got != torrentSHA1 {
+		t.Errorf("torrent_sha1 = %q, want %q", got, torrentSHA1)
+	}
+	if got := btForm.Get("pick_code"); got != "pick123" {
+		t.Errorf("pick_code = %q", got)
+	}
+	if got := btForm.Get("wp_path_id"); got != "555" {
+		t.Errorf("wp_path_id = %q, want 555（下载目录）", got)
+	}
+	if got := btForm.Get("wanted"); got != "0" {
+		t.Errorf("wanted = %q, want 0（种子内标记的文件）", got)
+	}
+	if string(provider.uploadedBytes) != string(torrentBytes) {
+		t.Errorf("上传内容不匹配：%q", provider.uploadedBytes)
+	}
+	if provider.uploadedName != "rel_xxx.torrent" {
+		t.Errorf("上传文件名 = %q", provider.uploadedName)
 	}
 }
 

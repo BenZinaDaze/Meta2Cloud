@@ -2,10 +2,14 @@
 package webui
 
 import (
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -441,20 +445,44 @@ func handleU115OfflineAddURLs(w http.ResponseWriter, r *http.Request) {
 	if targetPathID == "" {
 		targetPathID = strings.TrimSpace(cfg.DownloadFolderID)
 	}
-	results, err := offline.AddTaskURLs(urlLines, targetPathID)
-	if err != nil {
-		u115AuthError(w, err)
-		return
+	// .torrent 链接需走 BT 任务流程（链接任务只会保存种子文件本身）
+	var urlTasks []string
+	for _, line := range urlLines {
+		if isTorrentLink(line) {
+			continue
+		}
+		urlTasks = append(urlTasks, line)
 	}
-	serialized := make([]map[string]any, 0, len(results))
-	for _, item := range results {
+	serialized := make([]map[string]any, 0, len(urlLines))
+	if len(urlTasks) > 0 {
+		results, err := offline.AddTaskURLs(urlTasks, targetPathID)
+		if err != nil {
+			u115AuthError(w, err)
+			return
+		}
+		for _, item := range results {
+			serialized = append(serialized, map[string]any{
+				"state": item.State, "code": item.Code, "message": item.Message,
+				"url": item.URL, "info_hash": item.InfoHash,
+			})
+		}
+	}
+	for _, line := range urlLines {
+		if !isTorrentLink(line) {
+			continue
+		}
+		if err := addU115TorrentTask(line, targetPathID); err != nil {
+			serialized = append(serialized, map[string]any{
+				"state": false, "code": -1, "message": err.Error(), "url": line,
+			})
+			continue
+		}
 		serialized = append(serialized, map[string]any{
-			"state": item.State, "code": item.Code, "message": item.Message,
-			"url": item.URL, "info_hash": item.InfoHash,
+			"state": true, "code": 0, "message": "已创建 BT 任务", "url": line,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok": true, "count": len(results), "results": serialized, "wp_path_id": targetPathID,
+		"ok": true, "count": len(serialized), "results": serialized, "wp_path_id": targetPathID,
 	})
 }
 
@@ -514,4 +542,166 @@ func handleU115OfflineClearTasks(w http.ResponseWriter, r *http.Request) {
 // handleU115AutoOrganizeStatus 115 自动整理监听状态。
 func handleU115AutoOrganizeStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, U115AutoOrganizeStatusPayload())
+}
+
+// ── 种子链接转 BT 云下载任务 ────────────────────────────────
+
+// u115TorrentUploadPath 115 官方约定：提交 BT 任务前种子文件上传到「云下载/种子文件」目录。
+const u115TorrentUploadPath = "/云下载/种子文件"
+
+// maxTorrentSize 种子文件大小上限（10MB，实际种子远小于此）。
+const maxTorrentSize = 10 << 20
+
+// torrentFetchUA 下载种子文件用的浏览器 UA（mikan 等站点校验 UA）。
+const torrentFetchUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+
+// isTorrentLink 判断链接是否指向 .torrent 种子文件。
+// 115 云下载的链接任务会把 .torrent 链接当作普通 HTTP 下载，
+// 最终保存的是种子文件本身（如 xxx.mkv.torrent），必须转 BT 任务。
+func isTorrentLink(rawURL string) bool {
+	if rawURL == "" || strings.HasPrefix(rawURL, "magnet:") {
+		return false
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return strings.HasSuffix(strings.ToLower(parsed.Path), ".torrent")
+}
+
+// fetchTorrentContent 下载种子文件内容（bencode 字典以 'd' 开头）。
+func fetchTorrentContent(torrentURL string) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodGet, torrentURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("种子链接无效：%v", err)
+	}
+	req.Header.Set("User-Agent", torrentFetchUA)
+	if parsed, perr := url.Parse(torrentURL); perr == nil && parsed.Host != "" {
+		req.Header.Set("Referer", parsed.Scheme+"://"+parsed.Host+"/")
+	}
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("下载种子文件失败：%v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("下载种子文件失败：HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxTorrentSize+1))
+	if err != nil {
+		return nil, fmt.Errorf("下载种子文件失败：%v", err)
+	}
+	if len(data) > maxTorrentSize {
+		return nil, fmt.Errorf("种子文件超过大小限制（%dMB）", maxTorrentSize>>20)
+	}
+	if len(data) == 0 || data[0] != 'd' {
+		return nil, fmt.Errorf("下载内容不是有效的种子文件：%s", torrentURL)
+	}
+	return data, nil
+}
+
+// torrentFileName 从种子链接推断文件名。
+func torrentFileName(torrentURL string) string {
+	parsed, err := url.Parse(torrentURL)
+	if err == nil {
+		if base := path.Base(parsed.Path); base != "" && base != "/" && base != "." {
+			if decoded, derr := url.PathUnescape(base); derr == nil && decoded != "" {
+				return decoded
+			}
+			return base
+		}
+	}
+	return "meta2cloud.torrent"
+}
+
+// wantedFileIndexes 依据种子解析结果生成选中文件序号；无标记时全选。
+func wantedFileIndexes(files []u115.TorrentFileItem) []int {
+	var wanted []int
+	for i, f := range files {
+		if f.Wanted != 0 {
+			wanted = append(wanted, i)
+		}
+	}
+	if len(wanted) > 0 || len(files) == 0 {
+		return wanted
+	}
+	all := make([]int, len(files))
+	for i := range all {
+		all[i] = i
+	}
+	return all
+}
+
+// pushU115Download 按链接类型推送 115 云下载：
+// 磁力/普通链接走链接任务（保存到 wp_path_id），.torrent 链接转 BT 任务。
+// 未配置下载目录时任务落到根目录（与 Python 版一致）。
+func pushU115Download(magnetURL, torrentURL string) error {
+	offline := offlineClient()
+	if offline == nil {
+		return fmt.Errorf("115 客户端不可用")
+	}
+	wpPathID := strings.TrimSpace(RT().GetConfig().U115.DownloadFolderID)
+	if magnetURL != "" {
+		_, err := offline.AddTaskURLs([]string{magnetURL}, wpPathID)
+		return err
+	}
+	if isTorrentLink(torrentURL) {
+		return addU115TorrentTask(torrentURL, wpPathID)
+	}
+	_, err := offline.AddTaskURLs([]string{torrentURL}, wpPathID)
+	return err
+}
+
+// addU115TorrentTask .torrent 链接 → 下载种子 → 上传至「云下载/种子文件」
+// → 解析 info_hash → 提交 BT 任务（保存到 wp_path_id）。
+func addU115TorrentTask(torrentURL, wpPathID string) error {
+	data, err := fetchTorrentContent(torrentURL)
+	if err != nil {
+		return err
+	}
+	client := RT().GetU115Client()
+	if client == nil {
+		return fmt.Errorf("115 客户端不可用")
+	}
+	provider := RT().GetStorageProvider()
+	if provider == nil {
+		return fmt.Errorf("115 存储 Provider 不可用")
+	}
+	folder, err := client.EnsureFolderPath(u115TorrentUploadPath)
+	if err != nil {
+		return fmt.Errorf("创建种子上传目录失败：%v", err)
+	}
+	name := torrentFileName(torrentURL)
+	uploaded, err := provider.UploadBytes(data, name, folder.ID, "application/x-bittorrent", true)
+	if err != nil {
+		return fmt.Errorf("上传种子文件失败：%v", err)
+	}
+	pickCode, _ := uploaded.Extra["pick_code"].(string)
+	if pickCode == "" {
+		// 秒传路径不返回 pick_code，回查一次文件
+		if found, ferr := provider.FindFile(name, folder.ID); ferr == nil && found != nil {
+			pickCode, _ = found.Extra["pick_code"].(string)
+		}
+	}
+	if pickCode == "" {
+		return fmt.Errorf("上传种子缺少 pick_code，无法创建 BT 任务")
+	}
+	torrentSHA1 := fmt.Sprintf("%x", sha1.Sum(data))
+	offline := u115.NewOfflineClient(client)
+	infos, err := offline.ParseTorrent(torrentSHA1, pickCode)
+	if err != nil {
+		return fmt.Errorf("解析种子失败：%v", err)
+	}
+	if len(infos) == 0 {
+		return fmt.Errorf("解析种子失败：未返回任务信息")
+	}
+	return offline.AddTaskBT(u115.AddTaskBTArgs{
+		InfoHash:    infos[0].InfoHash,
+		Wanted:      wantedFileIndexes(infos[0].Files),
+		SavePath:    "",
+		TorrentSHA1: torrentSHA1,
+		PickCode:    pickCode,
+		WpPathID:    wpPathID,
+	})
 }
