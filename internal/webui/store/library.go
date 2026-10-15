@@ -286,8 +286,13 @@ func (s *LibraryStore) hydrateLibraryPayload(payload map[string]any) map[string]
 }
 
 func anyStr(v any) string {
-	if s, ok := v.(string); ok {
+	switch s := v.(type) {
+	case string:
 		return s
+	case *string:
+		if s != nil {
+			return *s
+		}
 	}
 	return ""
 }
@@ -709,16 +714,36 @@ func nullableInt(v any) any {
 		return int64(n)
 	case int64:
 		return n
+	case *int64:
+		if n == nil {
+			return nil
+		}
+		return *n
+	case *int:
+		if n == nil {
+			return nil
+		}
+		return int64(*n)
 	}
 	return nil
 }
 
 func nullableString(v any) any {
-	if s, ok := v.(string); ok {
+	switch s := v.(type) {
+	case string:
 		if tmdb.ExtractImagePath(s) != "" {
 			return tmdb.ExtractImagePath(s)
 		}
 		return s
+	case *string:
+		// 结构体字段直传 map 时是指针，不能静默丢成 NULL
+		if s == nil {
+			return nil
+		}
+		if tmdb.ExtractImagePath(*s) != "" {
+			return tmdb.ExtractImagePath(*s)
+		}
+		return *s
 	}
 	return nil
 }

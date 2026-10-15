@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -214,6 +215,9 @@ func scanSubscription(row interface{ Scan(...any) error }) *SubscriptionRecord {
 		&r.Site, &r.RssURL, &r.SubgroupName, &r.SeasonNumber, &r.StartEpisode,
 		&r.KeywordAll, &r.PushTarget, &enabled,
 		&r.LastCheckedAt, &r.LastMatchedAt, &r.LastError, &r.CreatedAt, &r.UpdatedAt); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			log.Printf("读取订阅行失败: %v", err)
+		}
 		return nil
 	}
 	r.Enabled = enabled != 0
@@ -233,6 +237,9 @@ func scanHit(row interface{ Scan(...any) error }) *HitRecord {
 	if err := row.Scan(&r.ID, &r.SubscriptionID, &r.EpisodeTitle, &r.SeasonNumber, &r.EpisodeNumber,
 		&r.TorrentURL, &r.MagnetURL, &r.PublishedAt, &r.DedupeKey, &r.PushedTo,
 		&r.PushStatus, &r.PushError, &r.CreatedAt); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			log.Printf("读取订阅命中行失败: %v", err)
+		}
 		return nil
 	}
 	return &r
@@ -314,6 +321,10 @@ func (s *RSSStore) serializeJoined(row interface{ Scan(...any) error }) map[stri
 		&tmTitle, &tmOriginalTitle, &tmOverview, &tmPoster, &tmBackdrop,
 		&tmRelease, &tmFirstAir, &tmStatus, &tmVote,
 		&libFolder, &libTitle, &libYear, &libPoster, &libTotal, &libInLib); err != nil {
+		// 扫描失败会让整条订阅从列表静默消失，必须留痕
+		if !errors.Is(err, sql.ErrNoRows) {
+			log.Printf("读取订阅（含 TMDB/库状态）失败: %v", err)
+		}
 		return nil
 	}
 
@@ -443,6 +454,12 @@ func nullableInt64FromAny(v any) any {
 			return nil
 		}
 		return n
+	case *int64:
+		// HTTP 处理器 payload 里的指针类型（subscriptionBody.toPayload）不能静默丢成 NULL
+		if n == nil || *n == 0 {
+			return nil
+		}
+		return *n
 	}
 	return nil
 }
@@ -455,6 +472,14 @@ func intFromAny(v any, def int) int {
 		return n
 	case int64:
 		return int(n)
+	case *int:
+		if n != nil {
+			return *n
+		}
+	case *int64:
+		if n != nil {
+			return int(*n)
+		}
 	}
 	return def
 }
@@ -467,6 +492,10 @@ func boolFromAny(v any, def bool) bool {
 		return b != 0
 	case float64:
 		return b != 0
+	case *bool:
+		if b != nil {
+			return *b
+		}
 	}
 	return def
 }

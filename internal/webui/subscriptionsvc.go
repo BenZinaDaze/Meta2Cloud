@@ -141,7 +141,7 @@ func decodeKeywordAll(s string) []string {
 	out := []string{}
 	if s != "" {
 		var parsed []string
-		if json.Unmarshal([]byte(s), &parsed) == nil {
+		if json.Unmarshal([]byte(s), &parsed) == nil && parsed != nil {
 			return parsed
 		}
 	}
@@ -149,7 +149,11 @@ func decodeKeywordAll(s string) []string {
 }
 
 func encodeKeywordAll(items []string) string {
-	data, _ := json.Marshal(normalizeKeywords(items))
+	normalized := normalizeKeywords(items)
+	if normalized == nil {
+		normalized = []string{} // 避免 nil 切片被存成字面量 "null"
+	}
+	data, _ := json.Marshal(normalized)
 	return string(data)
 }
 
@@ -594,6 +598,11 @@ func handleCreateSubscription(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if record.TmdbID != nil && *record.TmdbID > 0 {
+		// 资源检索等直创流程不经过 parse-rss，这里补拉详情入缓存，
+		// 创建响应与订阅卡片立即可显示中文标题/海报
+		ensureSubscriptionTmdbCache(record.MediaType, *record.TmdbID)
+	}
 	appLog("subscription", "created", "SUCCESS", "已创建 RSS 订阅："+record.Name, map[string]any{
 		"subscription_id": record.ID, "site": record.Site, "push_target": record.PushTarget,
 	})
@@ -750,6 +759,10 @@ func handleUpdateSubscription(w http.ResponseWriter, r *http.Request) {
 	if record == nil {
 		writeJSONError(w, http.StatusNotFound, "订阅不存在")
 		return
+	}
+	if record.TmdbID != nil && *record.TmdbID > 0 {
+		// 更新可能补填/更换 tmdb_id，同步补拉详情入缓存
+		ensureSubscriptionTmdbCache(record.MediaType, *record.TmdbID)
 	}
 	appLog("subscription", "updated", "SUCCESS", "已更新 RSS 订阅："+record.Name,
 		map[string]any{"subscription_id": record.ID})

@@ -270,6 +270,9 @@ func handleIngestRecent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items := is.GetRecent(intQuery(r, "limit", 10))
+	if items == nil {
+		items = []map[string]any{}
+	}
 	for _, item := range items {
 		if path, ok := item["poster_path"].(string); ok && path != "" {
 			item["poster_url"] = tmdbImageURL(path, "w500")
