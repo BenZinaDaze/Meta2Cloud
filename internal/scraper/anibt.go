@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -144,6 +145,19 @@ func pickTitle(item map[string]any) string {
 	return ""
 }
 
+// idFromItem 依次取各 ID 字段，兼容字符串与数字两种 JSON 类型。
+func idFromItem(item map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if v := jsonx.Str(item, key); v != "" {
+			return v
+		}
+		if id := jsonx.Int(item, key, 0); id != 0 {
+			return strconv.FormatInt(id, 10)
+		}
+	}
+	return ""
+}
+
 // SearchMedia 搜索媒体（含字幕组条目）。
 func (s *AniBTSpider) SearchMedia(keyword string) ([]MediaItem, error) {
 	payload, err := s.apiGet("/api/bgm/search", map[string]string{"q": keyword, "limit": "5"})
@@ -153,15 +167,8 @@ func (s *AniBTSpider) SearchMedia(keyword string) ([]MediaItem, error) {
 	var items []MediaItem
 	seen := map[string]bool{}
 	for _, candidate := range itemsFromPayload(payload) {
-		bgmID := firstNonEmpty3(
-			jsonx.Str(candidate, "bgmId"),
-			jsonx.Str(candidate, "bangumiId"),
-		)
-		if bgmID == "" {
-			if id := jsonx.Int(candidate, "id", 0); id != 0 {
-				bgmID = fmt.Sprintf("%d", id)
-			}
-		}
+		// 真实接口返回的 bgmId 是数字（如 634708），需兼容字符串与数字两种形式
+		bgmID := idFromItem(candidate, "bgmId", "bangumiId", "id")
 		if bgmID == "" || seen[bgmID] {
 			continue
 		}

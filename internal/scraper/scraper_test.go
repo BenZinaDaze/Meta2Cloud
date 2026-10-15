@@ -84,7 +84,8 @@ func TestAniBTSearchAndEpisodes(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/bgm/search":
-			w.Write([]byte(`{"data": [{"bgmId": "42", "nameCn": "测试番", "image": "/cover.jpg"}]}`))
+			// 真实接口的 bgmId 为数字，同时保留字符串形式覆盖兼容分支
+			w.Write([]byte(`{"data": [{"bgmId": 42, "nameCn": "测试番", "image": "/cover.jpg"}, {"bgmId": "77", "nameCn": "字符串ID番"}]}`))
 		case r.URL.Path == "/api/anime/groups":
 			w.Write([]byte(`[{"group": {"slug": "sub-a", "name": "组A"}}]`))
 		case strings.HasPrefix(r.URL.Path, "/rss/anime.xml"):
@@ -122,11 +123,17 @@ func TestAniBTSearchAndEpisodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 2 { // (全部) + [组A]
+	if len(items) != 4 { // 数字 bgmId 42 + 字符串 bgmId "77"，各 (全部) + [组A]
 		t.Fatalf("items = %d: %+v", len(items), items)
+	}
+	if items[0].MediaID != "42" {
+		t.Errorf("数字 bgmId 应解析为 \"42\": items[0] = %+v", items[0])
 	}
 	if items[1].SubgroupID != "sub-a" {
 		t.Errorf("items[1] = %+v", items[1])
+	}
+	if items[2].MediaID != "77" {
+		t.Errorf("字符串 bgmId 应解析为 \"77\": items[2] = %+v", items[2])
 	}
 
 	episodes, err := spider.GetEpisodes("42", "")
