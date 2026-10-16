@@ -42,7 +42,6 @@ interface SearchHandoffState {
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem('auth_token'))
   const [checkingAuth, setChecking] = useState(true)
-  const [u115Authorized, setU115Authorized] = useState(false)
 
   useEffect(() => {
     if (!token) { setChecking(false); return }
@@ -54,24 +53,6 @@ export default function App() {
         setChecking(false)
       }
     })
-    return () => { cancelled = true }
-  }, [token])
-
-  useEffect(() => {
-    if (!token) {
-      setU115Authorized(false)
-      return
-    }
-
-    let cancelled = false
-    getU115OauthStatus()
-      .then((res) => {
-        if (!cancelled) setU115Authorized(!!res?.data?.authorized)
-      })
-      .catch(() => {
-        if (!cancelled) setU115Authorized(false)
-      })
-
     return () => { cancelled = true }
   }, [token])
 
@@ -112,7 +93,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <AppShell u115Authorized={u115Authorized} onLogout={() => {
+      <AppShell onLogout={() => {
         localStorage.removeItem('auth_token')
         setToken(null)
       }} />
@@ -150,15 +131,30 @@ function LibraryRoute({ filter, base, shared }: { filter: string; base: string; 
 }
 
 // AppShell 登录后的应用骨架（路由在此层消费）
-function AppShell({ u115Authorized, onLogout }: { u115Authorized: boolean; onLogout: () => void }) {
+function AppShell({ onLogout }: { onLogout: () => void }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [showParseTest, setShowParseTest] = useState(false)
+  const [u115Authorized, setU115Authorized] = useState(false)
 
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
+
+  // 115 授权状态：挂载时查询；未授权时随导航自动复查（在配置页完成授权后无需手动刷新）
+  useEffect(() => {
+    if (u115Authorized) return
+    let cancelled = false
+    getU115OauthStatus()
+      .then((res) => {
+        if (!cancelled) setU115Authorized(!!res?.data?.authorized)
+      })
+      .catch(() => {
+        if (!cancelled) setU115Authorized(false)
+      })
+    return () => { cancelled = true }
+  }, [u115Authorized, location.pathname])
 
   const handoff = (location.state ?? null) as SearchHandoffState | null
 
@@ -193,6 +189,7 @@ function AppShell({ u115Authorized, onLogout }: { u115Authorized: boolean; onLog
       <Topbar
         onToggleSidebar={() => setMobileSidebarOpen((o) => !o)}
         onOpenParseTest={() => setShowParseTest(true)}
+        u115Authorized={u115Authorized}
       />
       <Sidebar
         u115Authorized={u115Authorized}
@@ -238,13 +235,19 @@ function AppShell({ u115Authorized, onLogout }: { u115Authorized: boolean; onLog
                 }
               />
               <Route path="/subscriptions" element={<SubscriptionsPage onToast={handleToast} u115Authorized={u115Authorized} />} />
-              <Route path="/files" element={<FileManagerPage />} />
+              <Route
+                path="/files"
+                element={u115Authorized ? <FileManagerPage /> : <Navigate to="/library" replace />}
+              />
               <Route path="/ingest-history" element={<IngestHistoryPage onToast={handleToast} />} />
               <Route path="/title-pins" element={<TitlePinsPage onToast={handleToast} />} />
               <Route path="/strm-sync" element={<StrmSyncPage onToast={handleToast} />} />
               <Route path="/strm-playback" element={<StrmPlaybackPage onToast={handleToast} />} />
               <Route path="/logs" element={<LogsPage />} />
-              <Route path="/u115-offline" element={<U115OfflinePage onToast={handleToast} />} />
+              <Route
+                path="/u115-offline"
+                element={u115Authorized ? <U115OfflinePage onToast={handleToast} /> : <Navigate to="/library" replace />}
+              />
               <Route path="/config" element={<ConfigPage page="general" />} />
               <Route path="/config/filename-rules" element={<ConfigPage page="filenameRules" />} />
               <Route path="*" element={<Navigate to="/library" replace />} />

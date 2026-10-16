@@ -7,9 +7,11 @@ import Logo from '@/components/layout/Logo'
 interface TopbarProps {
   onOpenParseTest?: () => void
   onToggleSidebar?: () => void
+  /** 115 未授权时整理不可用，隐藏入口 */
+  u115Authorized?: boolean
 }
 
-export default function Topbar({ onOpenParseTest, onToggleSidebar }: TopbarProps) {
+export default function Topbar({ onOpenParseTest, onToggleSidebar, u115Authorized = false }: TopbarProps) {
   const handleTriggerPipeline = async () => {
     try {
       await triggerPipeline()
@@ -44,14 +46,16 @@ export default function Topbar({ onOpenParseTest, onToggleSidebar }: TopbarProps
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            onClick={handleTriggerPipeline}
-            size="sm"
-            className="gap-1.5 rounded-full px-3.5"
-          >
-            <Zap className="size-3.5" />
-            <span className="hidden sm:inline">一键整理</span>
-          </Button>
+          {u115Authorized && (
+            <Button
+              onClick={handleTriggerPipeline}
+              size="sm"
+              className="gap-1.5 rounded-full px-3.5"
+            >
+              <Zap className="size-3.5" />
+              <span className="hidden sm:inline">一键整理</span>
+            </Button>
+          )}
 
           <Button
             variant="outline"

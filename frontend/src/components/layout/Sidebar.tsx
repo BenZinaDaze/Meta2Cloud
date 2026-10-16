@@ -300,13 +300,15 @@ export default function Sidebar({
         )}
 
         <NavGroupLabel label="系统" />
-        <NavItem
-          icon={<FolderOpen className="size-4" />}
-          label="文件管理"
-          to="/files"
-          active={pathname === '/files'}
-          onClick={closeMobile}
-        />
+        {u115Authorized && (
+          <NavItem
+            icon={<FolderOpen className="size-4" />}
+            label="文件管理"
+            to="/files"
+            active={pathname === '/files'}
+            onClick={closeMobile}
+          />
+        )}
         <NavItem
           icon={<History className="size-4" />}
           label="入库记录"
