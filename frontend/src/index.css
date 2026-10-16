@@ -1,5 +1,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+/* solid-glass 玻璃材质主题（https://github.com/deeplethe/solid-glass）
+   置于自定义变量之前：保留本项目潮汐绿配色，仅取其组件玻璃材质；
+   如需整站换肤（含它的烟灰配色），把此 import 移到文件末尾即可。 */
+@import "./solid-glass.css";
 
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
@@ -345,4 +349,44 @@ input[type="number"] {
 }
 *::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
+}
+
+/* ═══ solid-glass 暗色材质变量 ═══
+   本应用为"常暗"设计（html 无 .dark 类），solid-glass 的 :root 浅色材质
+   （白 90% 边线、44% 近白面板）会误生效导致卡片白边、表格发白。
+   此处以其 .dark 块的暗色材质值在未分层 :root 中覆盖（仅材质变量，
+   配色仍用本项目潮汐绿主题；--brand/--success 等排除以保留自有配色）。 */
+:root {
+  --panel: oklch(1 0 0 / 4.5%);
+  --glass-rim: oklch(1 0 0 / 16%);
+  --glass-inner: oklch(1 0 0 / 4%);
+  --glass-edge: oklch(1 0 0 / 6%);
+  --glass-shade: oklch(0 0 0 / 60%);
+  --glass-contact: oklch(0 0 0 / 10%);
+  --glass-lift: oklch(0 0 0 / 22%);
+  --glass-control: oklch(1 0 0 / 7%);
+  --glass-control-rim: oklch(1 0 0 / 11%);
+  --glass-state: var(--glass-control);
+  --glass-state-rim: var(--glass-control-rim);
+  --glass-state-edge: var(--glass-edge);
+  --glass-state-armed: var(--glass-control-rim);
+  --glass-blur: blur(26px);
+  --glass-blur-control: blur(14px);
+  --hover: oklch(1 0 0 / 8%);
+  --hover-faint: oklch(1 0 0 / 4%);
+  --field: oklch(1 0 0 / 6%);
+  --field-rim: oklch(1 0 0 / 15%);
+  --field-edge: oklch(1 0 0 / 8%);
+  --well-shade: oklch(0 0 0 / 38%);
+  --well-rim: oklch(1 0 0 / 9%);
+  --focus-line: oklch(1 0 0 / 40%);
+  --knob: oklch(0.97 0 0);
+  --knob-shade: oklch(0 0 0 / 55%);
+  --mark-solid: 68%;
+  --mark-rim: oklch(1 0 0);
+  --mark-edge: oklch(1 0 0 / 22%);
+  --mark-line: oklch(1 0 0 / 46%);
+  --light-1: transparent;
+  --light-2: transparent;
+  --light-3: transparent;
 }

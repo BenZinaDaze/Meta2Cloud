@@ -199,8 +199,6 @@ export default function Sidebar({
 
   const isLibraryExpanded = libraryExpanded || pathname === '/movies' || pathname === '/tv'
   const isConfigExpanded = configExpanded || pathname.startsWith('/config')
-  // 配置组父项仅作为点击展开的反馈；处于配置子页时让位给子项，避免父子同时高亮
-  const onConfigPage = pathname === '/config' || pathname.startsWith('/config/')
   const closeMobile = () => onMobileClose?.()
 
   function handleLogoutClick() {
@@ -347,7 +345,7 @@ export default function Sidebar({
         <NavItem
           icon={<Settings className="size-4" />}
           label="配置"
-          active={configExpanded && !onConfigPage}
+          active={false}
           onClick={() => setConfigExpanded(!configExpanded)}
           right={<Chevron expanded={isConfigExpanded} />}
         />
