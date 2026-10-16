@@ -425,5 +425,166 @@ func TestBuildCleanName(t *testing.T) {
 	}
 }
 
+// ── 标题钉扎 ────────────────────────────────────────────────
+
+// fakeTitlePinStore 内存版标题钉扎存储。
+type fakeTitlePinStore struct {
+	mu   sync.Mutex
+	pins map[string][2]string
+}
+
+func newFakeTitlePinStore(pins map[string][2]string) *fakeTitlePinStore {
+	return &fakeTitlePinStore{pins: pins}
+}
+
+func titlePinKey(mediaType string, tmdbID int64) string {
+	return fmt.Sprintf("%s:%d", mediaType, tmdbID)
+}
+
+func (f *fakeTitlePinStore) GetTitlePin(mediaType string, tmdbID int64) (string, string, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p, ok := f.pins[titlePinKey(mediaType, tmdbID)]
+	if !ok {
+		return "", "", false
+	}
+	return p[0], p[1], true
+}
+
+func (f *fakeTitlePinStore) ResolveTitlePin(mediaType string, tmdbID int64, fallbackTitle, fallbackYear string) (string, string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	k := titlePinKey(mediaType, tmdbID)
+	if p, ok := f.pins[k]; ok {
+		return p[0], p[1], nil
+	}
+	if fallbackTitle == "" {
+		return "", "", nil
+	}
+	f.pins[k] = [2]string{fallbackTitle, fallbackYear}
+	return fallbackTitle, fallbackYear, nil
+}
+
+// fakeDuplicateSource 内存版重复目录分组来源。
+type fakeDuplicateSource struct {
+	groups []DuplicateFolderGroup
+}
+
+func (f *fakeDuplicateSource) DuplicateFolderGroups() []DuplicateFolderGroup {
+	return f.groups
+}
+
+func TestPipelineTitlePinReuse(t *testing.T) {
+	server := newTmdbServer(t)
+	defer server.Close()
+
+	provider := newFakeProvider()
+	scan := provider.AddFolder("扫描", "0")
+	provider.AddFile("Breaking.Bad.S01E03.1080p.BluRay.HEVC-TTG.mkv", scan.ID)
+
+	cfg := newTestConfig()
+	cfg.U115.DownloadFolderID = scan.ID
+	tmdbClient := tmdb.NewClient("key", "zh-CN", "", 5, nil)
+	tmdbClient.SetTestBaseURL(server.URL)
+
+	// TMDB 当前译名为「绝命毒师」，钉扎名「旧译名」→ 目录沿用钉扎名
+	p := New(provider, cfg, Options{
+		TmdbClient: tmdbClient,
+		SkipImages: true,
+		TitlePinStore: newFakeTitlePinStore(map[string][2]string{
+			"tv:1396": {"旧译名", "2008"},
+		}),
+	})
+	summary := p.Run()
+	if summary.OKCount != 1 {
+		t.Fatalf("summary = %+v", summary)
+	}
+
+	top, err := provider.FindFile("旧译名 (2008)", "root")
+	if err != nil || top == nil {
+		t.Fatalf("未使用钉扎目录名: %v", err)
+	}
+	season, _ := provider.FindFile("Season 01", top.ID)
+	if season == nil {
+		t.Fatal("Season 文件夹未创建")
+	}
+	if moved, _ := provider.FindFile("旧译名 - S01E03.mkv", season.ID); moved == nil {
+		t.Fatal("文件名未使用钉扎名")
+	}
+	if other, _ := provider.FindFile("绝命毒师 (2008)", "root"); other != nil {
+		t.Fatal("不应创建 TMDB 新译名目录")
+	}
+}
+
+func TestPipelineMergeDuplicateFolders(t *testing.T) {
+	provider := newFakeProvider()
+	scan := provider.AddFolder("扫描", "0")
+
+	// 媒体库根目录下同一剧集的两个目录（历史译名差异）
+	oldFolder := provider.AddFolder("旧译名 (2025)", "root")
+	oldSeason := provider.AddFolder("Season 01", oldFolder.ID)
+	provider.AddFile("旧译名 - S01E01.mkv", oldSeason.ID)
+	provider.AddFile("tvshow.nfo", oldFolder.ID)
+	newFolder := provider.AddFolder("新译名 (2025)", "root")
+	newSeason := provider.AddFolder("Season 01", newFolder.ID)
+	provider.AddFile("新译名 - S01E02.mkv", newSeason.ID)
+	provider.AddFile("tvshow.nfo", newFolder.ID)
+
+	cfg := newTestConfig()
+	cfg.U115.DownloadFolderID = scan.ID
+	p := New(provider, cfg, Options{
+		SkipTmdb:      true,
+		TitlePinStore: newFakeTitlePinStore(map[string][2]string{"tv:501": {"旧译名", "2025"}}),
+		DuplicateFolders: &fakeDuplicateSource{groups: []DuplicateFolderGroup{{
+			MediaType: "tv", TmdbID: 501, FolderIDs: []string{oldFolder.ID, newFolder.ID},
+		}}},
+	})
+	p.Run()
+
+	// 重复目录文件已并入钉扎目录
+	if f, _ := provider.FindFile("新译名 - S01E02.mkv", oldSeason.ID); f == nil {
+		t.Fatal("重复目录文件未并入钉扎目录")
+	}
+	// 钉扎目录原文件仍在
+	if f, _ := provider.FindFile("旧译名 - S01E01.mkv", oldSeason.ID); f == nil {
+		t.Fatal("钉扎目录原文件丢失")
+	}
+	// 重复目录已回收
+	cf, err := provider.GetFile(newFolder.ID)
+	if err != nil || !cf.Trashed {
+		t.Fatalf("重复目录未回收: %v", err)
+	}
+	// 钉扎目录本身未回收
+	if cf, _ := provider.GetFile(oldFolder.ID); cf.Trashed {
+		t.Fatal("钉扎目录不应被回收")
+	}
+}
+
+func TestPipelineMergeSkippedWhenDisabled(t *testing.T) {
+	provider := newFakeProvider()
+	scan := provider.AddFolder("扫描", "0")
+	oldFolder := provider.AddFolder("旧译名 (2025)", "root")
+	newFolder := provider.AddFolder("新译名 (2025)", "root")
+	provider.AddFile("新译名 - S01E02.mkv", newFolder.ID)
+
+	cfg := newTestConfig()
+	cfg.U115.DownloadFolderID = scan.ID
+	disabled := false
+	cfg.Pipeline.MergeDuplicateFolders = &disabled
+
+	p := New(provider, cfg, Options{
+		SkipTmdb:      true,
+		TitlePinStore: newFakeTitlePinStore(map[string][2]string{"tv:501": {"旧译名", "2025"}}),
+		DuplicateFolders: &fakeDuplicateSource{groups: []DuplicateFolderGroup{{
+			MediaType: "tv", TmdbID: 501, FolderIDs: []string{oldFolder.ID, newFolder.ID},
+		}}},
+	})
+	p.Run()
+
+	if f, _ := provider.FindFile("新译名 - S01E02.mkv", newFolder.ID); f == nil {
+		t.Fatal("开关关闭时不应移动文件")
+	}
+}
+
 // 静态确认 MetaInfo 解析被 pipeline 正确使用
 var _ = mediaparser.MetaInfo

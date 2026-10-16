@@ -1,0 +1,170 @@
+// titlepinsvc.go —— 整理名称（标题钉扎）查询与改用最新译名。
+package webui
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+
+	"meta2cloud/internal/jsonx"
+	"meta2cloud/internal/mediaparser"
+)
+
+// titlePinItem 整理名称列表条目。
+type titlePinItem struct {
+	MediaType    string   `json:"media_type"`
+	TmdbID       int64    `json:"tmdb_id"`
+	PinnedTitle  string   `json:"pinned_title"`
+	PinnedYear   string   `json:"pinned_year"`
+	Source       string   `json:"source"`
+	CreatedAt    string   `json:"created_at"`
+	UpdatedAt    string   `json:"updated_at"`
+	CurrentTitle string   `json:"current_title"` // TMDB 当前译名（缓存，可为空）
+	CurrentYear  string   `json:"current_year"`
+	Drifted      bool     `json:"drifted"`
+	FolderIDs    []string `json:"folder_ids"`
+}
+
+func handleListTitlePins(w http.ResponseWriter, _ *http.Request) {
+	ls := RT().GetLibraryStore()
+	if ls == nil {
+		writeJSONError(w, http.StatusInternalServerError, "媒体库存储不可用")
+		return
+	}
+	pins, err := ls.ListTitlePins()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	items := make([]titlePinItem, 0, len(pins))
+	for _, pin := range pins {
+		item := titlePinItem{
+			MediaType:   pin.MediaType,
+			TmdbID:      pin.TmdbID,
+			PinnedTitle: pin.PinnedTitle,
+			PinnedYear:  pin.PinnedYear,
+			Source:      pin.Source,
+			CreatedAt:   pin.CreatedAt,
+			UpdatedAt:   pin.UpdatedAt,
+			FolderIDs:   ls.ListFolderIDsByTmdb(pin.MediaType, pin.TmdbID),
+		}
+		if entry := ls.GetTmdbEntry(pin.MediaType, pin.TmdbID); entry != nil {
+			item.CurrentTitle = entry.Title
+			date := entry.FirstAirDate
+			if pin.MediaType == "movie" {
+				date = entry.ReleaseDate
+			}
+			item.CurrentYear = firstN4Str(date)
+			item.Drifted = item.CurrentTitle != "" && item.CurrentTitle != pin.PinnedTitle
+		}
+		items = append(items, item)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func handleAdoptTitlePin(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		MediaType string `json:"media_type"`
+		TmdbID    int64  `json:"tmdb_id"`
+	}
+	if err := jsonDecodeBody(r, &body); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "请求体格式错误")
+		return
+	}
+	if body.TmdbID <= 0 || (body.MediaType != "movie" && body.MediaType != "tv") {
+		writeJSONError(w, http.StatusBadRequest, "media_type 或 tmdb_id 无效")
+		return
+	}
+	ls := RT().GetLibraryStore()
+	if ls == nil {
+		writeJSONError(w, http.StatusInternalServerError, "媒体库存储不可用")
+		return
+	}
+	provider := RT().GetStorageProvider()
+	if provider == nil {
+		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
+		return
+	}
+
+	// 1. 取 TMDB 当前译名（实时优先，缓存兜底）
+	title, year, err := fetchCurrentTmdbTitle(body.MediaType, body.TmdbID)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	// 2. 重命名网盘中与旧钉扎名一致的目录
+	oldPin, hasPin := ls.GetTitlePin(body.MediaType, body.TmdbID)
+	renamed := 0
+	if hasPin {
+		oldName := movieFolderName(oldPin.PinnedTitle, oldPin.PinnedYear)
+		newName := movieFolderName(title, year)
+		if newName != "" && newName != oldName {
+			for _, fid := range ls.ListFolderIDsByTmdb(body.MediaType, body.TmdbID) {
+				cf, err := provider.GetFile(fid)
+				if err != nil || cf.Trashed || cf.Name != oldName {
+					continue
+				}
+				if _, err := provider.RenameFile(fid, newName); err != nil {
+					log.Printf("采用新译名：重命名目录失败 [%s]: %v", cf.Name, err)
+					continue
+				}
+				renamed++
+			}
+		}
+	}
+
+	// 3. 更新钉扎记录
+	if err := ls.AdoptTitlePin(body.MediaType, body.TmdbID, title, year); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	oldTitle := title
+	if hasPin {
+		oldTitle = oldPin.PinnedTitle
+	}
+	appLog("library", "title_pin_adopt", "SUCCESS",
+		fmt.Sprintf("已采用 TMDB 最新译名：%s → %s", oldTitle, title), map[string]any{
+			"media_type": body.MediaType, "tmdb_id": body.TmdbID,
+			"title": title, "renamed_folders": renamed,
+		})
+
+	// 4. 触发整理（合并可能残留的重复目录）与 STRM 同步
+	SchedulePipeline(0)
+	TriggerStrmSync("title-pin-adopt")
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"media_type": body.MediaType, "tmdb_id": body.TmdbID,
+		"title": title, "year": year, "renamed_folders": renamed,
+	})
+}
+
+// fetchCurrentTmdbTitle 实时获取 TMDB 当前译名与年份（缓存兜底）。
+func fetchCurrentTmdbTitle(mediaType string, tmdbID int64) (string, string, error) {
+	if client := RT().GetTmdbClient(); client != nil {
+		mtype := mediaparser.MediaTypeFromAgent(mediaType)
+		if detail := client.GetByID(mtype, int(tmdbID)); detail != nil {
+			title := firstNonEmptyStr(jsonx.Str(detail, "name"), jsonx.Str(detail, "title"))
+			date := firstNonEmptyStr(jsonx.Str(detail, "first_air_date"), jsonx.Str(detail, "release_date"))
+			if title != "" {
+				return title, firstN4Str(date), nil
+			}
+		}
+	}
+	if entry := RT().GetLibraryStore().GetTmdbEntry(mediaType, tmdbID); entry != nil && entry.Title != "" {
+		date := entry.FirstAirDate
+		if mediaType == "movie" {
+			date = entry.ReleaseDate
+		}
+		return entry.Title, firstN4Str(date), nil
+	}
+	return "", "", fmt.Errorf("获取 TMDB 当前译名失败：tmdb_id=%d", tmdbID)
+}
+
+func firstN4Str(date string) string {
+	if len(date) >= 4 {
+		return date[:4]
+	}
+	return date
+}

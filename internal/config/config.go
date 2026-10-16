@@ -75,6 +75,14 @@ type Pipeline struct {
 	DryRun               bool `yaml:"dry_run"`
 	ReplaceExistingVideo bool `yaml:"replace_existing_video"`
 	SkipMetadataUpload   bool `yaml:"skip_metadata_upload"`
+	// MergeDuplicateFolders 同一媒体存在多个目录（历史译名差异）时自动合并进钉扎目录；
+	// nil/未配置时默认开启。
+	MergeDuplicateFolders *bool `yaml:"merge_duplicate_folders"`
+}
+
+// MergeDuplicatesEnabled 是否开启重复目录自动合并（默认 true）。
+func (p Pipeline) MergeDuplicatesEnabled() bool {
+	return p.MergeDuplicateFolders == nil || *p.MergeDuplicateFolders
 }
 
 // Subtitle 字幕整理配置。

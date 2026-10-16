@@ -49,6 +49,41 @@ func (a ingestStoreAdapter) RecordIngest(r pipeline.IngestRecord) error {
 	return err
 }
 
+// titlePinAdapter 将 *store.LibraryStore 适配为 pipeline.TitlePinStore 接口。
+type titlePinAdapter struct{ s *store.LibraryStore }
+
+func (a titlePinAdapter) GetTitlePin(mediaType string, tmdbID int64) (string, string, bool) {
+	pin, ok := a.s.GetTitlePin(mediaType, tmdbID)
+	if !ok {
+		return "", "", false
+	}
+	return pin.PinnedTitle, pin.PinnedYear, true
+}
+
+func (a titlePinAdapter) ResolveTitlePin(mediaType string, tmdbID int64, fallbackTitle, fallbackYear string) (string, string, error) {
+	return a.s.ResolveTitlePin(mediaType, tmdbID, fallbackTitle, fallbackYear)
+}
+
+// duplicateFolderAdapter 将 *store.LibraryStore 适配为 pipeline.DuplicateFolderSource 接口。
+type duplicateFolderAdapter struct{ s *store.LibraryStore }
+
+func (a duplicateFolderAdapter) DuplicateFolderGroups() []pipeline.DuplicateFolderGroup {
+	groups, err := a.s.ListDuplicateFolderGroups()
+	if err != nil {
+		log.Printf("查询重复目录分组失败：%v", err)
+		return nil
+	}
+	out := make([]pipeline.DuplicateFolderGroup, 0, len(groups))
+	for _, g := range groups {
+		out = append(out, pipeline.DuplicateFolderGroup{
+			MediaType: g.MediaType,
+			TmdbID:    g.TmdbID,
+			FolderIDs: g.FolderIDs,
+		})
+	}
+	return out
+}
+
 // runID 生成短运行 ID。
 func newRunID() string {
 	pipelineMu.Lock()
@@ -92,6 +127,10 @@ func doRunPipeline() {
 	}
 	if is := RT().GetIngestStore(); is != nil {
 		opts.IngestStore = ingestStoreAdapter{is}
+	}
+	if ls := RT().GetLibraryStore(); ls != nil {
+		opts.TitlePinStore = titlePinAdapter{ls}
+		opts.DuplicateFolders = duplicateFolderAdapter{ls}
 	}
 	if cfg.Strm.Enabled {
 		opts.OnVideoIngested = HandleVideoIngested

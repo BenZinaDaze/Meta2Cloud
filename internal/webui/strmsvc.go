@@ -7,12 +7,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -280,7 +282,29 @@ func syncMapping(provider cloudfile.Provider, st *store.StrmStore, cfg *config.C
 		st.InsertSyncFileDetail(runID, rec.FileName, rec.PanPath, rec.LocalPath, "removed", true, "")
 		removed++
 	}
+
+	// 自内向外清理因网盘目录改名/合并而残留的本地空目录
+	pruneEmptyDirs(localRoot)
 	return created, updated, removed, skipped, nil
+}
+
+// pruneEmptyDirs 自内向外删除本地根目录下的空目录（仅删除真正为空的目录；根目录本身保留）。
+func pruneEmptyDirs(root string) {
+	var dirs []string
+	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || !d.IsDir() || p == root {
+			return nil
+		}
+		dirs = append(dirs, p)
+		return nil
+	})
+	// 路径倒序保证子目录先于父目录处理；os.Remove 仅对空目录生效
+	sort.Sort(sort.Reverse(sort.StringSlice(dirs)))
+	for _, dir := range dirs {
+		if err := os.Remove(dir); err == nil {
+			log.Printf("[strm] 清理本地空目录：%s", dir)
+		}
+	}
 }
 
 func strmLocalPath(localRoot, relPath, fileName string) string {

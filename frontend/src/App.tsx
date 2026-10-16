@@ -19,9 +19,10 @@ const U115OfflinePage = lazy(() => import('@/components/pages/U115OfflinePage'))
 const ScraperSearch = lazy(() => import('@/components/pages/ScraperSearch'))
 const StrmSyncPage = lazy(() => import('@/components/pages/StrmSyncPage'))
 const StrmPlaybackPage = lazy(() => import('@/components/pages/StrmPlaybackPage'))
+const TitlePinsPage = lazy(() => import('@/components/pages/TitlePinsPage'))
 const ParseTestModal = lazy(() => import('@/components/modals/ParseTestModal'))
 
-type NavKey = 'all' | 'movies' | 'tv' | 'config' | 'config-filename-rules' | 'calendar' | 'scraper-search' | 'subscriptions' | 'files' | 'ingest-history' | 'strm-sync' | 'strm-playback' | 'logs' | 'u115-offline'
+type NavKey = 'all' | 'movies' | 'tv' | 'config' | 'config-filename-rules' | 'calendar' | 'scraper-search' | 'subscriptions' | 'files' | 'ingest-history' | 'title-pins' | 'strm-sync' | 'strm-playback' | 'logs' | 'u115-offline'
 
 function PageFallback() {
   return (
@@ -191,6 +192,8 @@ export default function App() {
               <FileManagerPage />
             ) : activeNav === 'ingest-history' ? (
               <IngestHistoryPage onToast={handleToast} />
+            ) : activeNav === 'title-pins' ? (
+              <TitlePinsPage onToast={handleToast} />
             ) : activeNav === 'strm-sync' ? (
               <StrmSyncPage onToast={handleToast} />
             ) : activeNav === 'strm-playback' ? (

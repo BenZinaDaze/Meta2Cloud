@@ -15,6 +15,7 @@ import {
   FolderOpen,
   FileVideo,
   Play,
+  Tag,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Logo from '@/components/layout/Logo'
@@ -287,6 +288,12 @@ export default function Sidebar({
           label="入库记录"
           active={active === 'ingest-history'}
           onClick={() => onSelect('ingest-history')}
+        />
+        <NavItem
+          icon={<Tag className="size-4" />}
+          label="整理名称"
+          active={active === 'title-pins'}
+          onClick={() => onSelect('title-pins')}
         />
         <NavItem
           icon={<FileVideo className="size-4" />}

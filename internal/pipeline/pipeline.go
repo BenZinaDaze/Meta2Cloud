@@ -78,6 +78,27 @@ type IngestStore interface {
 	RecordIngest(record IngestRecord) error
 }
 
+// TitlePinStore 标题钉扎存储接口（webui 层实现，可为 nil）。
+// 记录每个媒体首次整理时的目录名，TMDB 后续改译名不再影响目录结构。
+type TitlePinStore interface {
+	// GetTitlePin 只读查询钉扎记录。
+	GetTitlePin(mediaType string, tmdbID int64) (title, year string, ok bool)
+	// ResolveTitlePin 返回钉扎标题/年份；无记录时按「最早入库历史 → fallback」落库。
+	ResolveTitlePin(mediaType string, tmdbID int64, fallbackTitle, fallbackYear string) (title, year string, err error)
+}
+
+// DuplicateFolderSource 重复目录分组来源接口（webui 层实现，可为 nil）。
+type DuplicateFolderSource interface {
+	DuplicateFolderGroups() []DuplicateFolderGroup
+}
+
+// DuplicateFolderGroup 同一媒体对应的多个网盘目录分组。
+type DuplicateFolderGroup struct {
+	MediaType string
+	TmdbID    int64
+	FolderIDs []string
+}
+
 // LogFunc 日志回调 (level, message)。
 type LogFunc func(level, message string)
 
@@ -118,6 +139,10 @@ type Pipeline struct {
 	notifyItems []notifyItem
 	// 入库历史存储（可选）
 	ingestStore IngestStore
+	// 标题钉扎存储（可选）
+	pinStore TitlePinStore
+	// 重复目录分组来源（可选）
+	dupSource DuplicateFolderSource
 	// 入库成功回调（可选；dry-run 不触发，用于 STRM 生成等后处理）
 	onVideoIngested func(ProcessResult)
 }
@@ -134,6 +159,10 @@ type Options struct {
 	TmdbClient *tmdb.Client
 	// IngestStore 入库历史存储（可为 nil）
 	IngestStore IngestStore
+	// TitlePinStore 标题钉扎存储（可为 nil）
+	TitlePinStore TitlePinStore
+	// DuplicateFolders 重复目录分组来源（可为 nil）
+	DuplicateFolders DuplicateFolderSource
 	// OnVideoIngested 单文件整理成功（入库）后回调，dry-run 不触发（可为 nil）
 	OnVideoIngested func(ProcessResult)
 }
@@ -169,6 +198,8 @@ func New(provider cloudfile.Provider, cfg *config.Config, opts Options) *Pipelin
 		seasonDetailCache: map[string]map[string]any{},
 		notifyItems:       []notifyItem{},
 		ingestStore:       opts.IngestStore,
+		pinStore:          opts.TitlePinStore,
+		dupSource:         opts.DuplicateFolders,
 		onVideoIngested:   opts.OnVideoIngested,
 	}
 
@@ -284,6 +315,9 @@ func (p *Pipeline) Run() PipelineSummary {
 		p.log("  ℹ️  跳过图片下载", "INFO")
 	}
 	p.log(strings.Repeat("=", 68))
+
+	// 重复目录合并：历史译名差异导致同一媒体存在多个目录时，先收敛进钉扎目录
+	p.mergeDuplicateFoldersPass()
 
 	p.log(fmt.Sprintf("\n📂 扫描文件夹：%s（含子文件夹）", scanFolder))
 	var allFiles []cloudfile.CloudFile
@@ -513,6 +547,241 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
+// resolvePinnedTitle 查询标题钉扎；dry-run 只读不写（避免污染钉扎表）。
+func (p *Pipeline) resolvePinnedTitle(isTV bool, tmdbInfo map[string]any, fallbackTitle, fallbackYear string) (string, string) {
+	if p.pinStore == nil {
+		return "", ""
+	}
+	mediaType := "movie"
+	if isTV {
+		mediaType = "tv"
+	}
+	id, err := strconv.ParseInt(tmdbIDOf(tmdbInfo), 10, 64)
+	if err != nil || id <= 0 {
+		return "", ""
+	}
+	if p.dryRun {
+		if title, year, ok := p.pinStore.GetTitlePin(mediaType, id); ok {
+			return title, year
+		}
+		return "", ""
+	}
+	title, year, err := p.pinStore.ResolveTitlePin(mediaType, id, fallbackTitle, fallbackYear)
+	if err != nil || title == "" {
+		return "", ""
+	}
+	return title, year
+}
+
+// buildCleanNameFromMeta 与 buildCleanName 等价，但标题/年份取自 meta（可能为钉扎名）。
+func buildCleanNameFromMeta(meta *mediaparser.MetaBase, isTV bool, seasonNum int, episodeNum *int, ext string) string {
+	title := meta.Name()
+	if title == "" {
+		return ""
+	}
+	if isTV {
+		epStr := fmt.Sprintf("S%02d", seasonNum)
+		if episodeNum != nil {
+			epStr = fmt.Sprintf("S%02dE%02d", seasonNum, *episodeNum)
+		}
+		return fmt.Sprintf("%s - %s%s", safeFilename(title), epStr, ext)
+	}
+	yearStr := ""
+	if meta.Year != "" {
+		yearStr = " (" + meta.Year + ")"
+	}
+	return fmt.Sprintf("%s%s%s", safeFilename(title), yearStr, ext)
+}
+
+// ── 重复目录合并 ────────────────────────────────────────────
+
+// mergeDuplicateFoldersPass 把同一媒体因译名差异产生的多个目录合并进钉扎目录。
+// 每轮每个媒体只处理一次；dry-run 只记录日志。
+func (p *Pipeline) mergeDuplicateFoldersPass() {
+	if p.dupSource == nil || p.pinStore == nil {
+		return
+	}
+	if !p.cfg.Pipeline.MergeDuplicatesEnabled() {
+		return
+	}
+	groups := p.dupSource.DuplicateFolderGroups()
+	if len(groups) == 0 {
+		return
+	}
+	p.log("\n🔀 检查重复目录...")
+	merged := 0
+	for _, g := range groups {
+		if p.mergeDuplicateGroup(g) {
+			merged++
+		}
+	}
+	if merged > 0 {
+		p.log(fmt.Sprintf("  共合并 %d 个重复目录", merged), "SUCCESS")
+	}
+}
+
+// mergeDuplicateGroup 合并一个媒体分组的重复目录，返回是否有目录被回收。
+func (p *Pipeline) mergeDuplicateGroup(g DuplicateFolderGroup) bool {
+	var pinTitle, pinYear string
+	if p.dryRun {
+		// dry-run 只读，不落库
+		title, year, ok := p.pinStore.GetTitlePin(g.MediaType, g.TmdbID)
+		if !ok {
+			return false
+		}
+		pinTitle, pinYear = title, year
+	} else {
+		title, year, err := p.pinStore.ResolveTitlePin(g.MediaType, g.TmdbID, "", "")
+		if err != nil || title == "" {
+			return false
+		}
+		pinTitle, pinYear = title, year
+	}
+
+	rootID := p.cfg.ActiveMovieRootID()
+	if g.MediaType == "tv" {
+		rootID = p.cfg.ActiveTvRootID()
+	}
+	if rootID == "" {
+		rootID = p.cfg.ActiveRootFolderID()
+	}
+	if rootID == "" {
+		return false
+	}
+	children, err := p.provider.ListFiles(rootID, 500)
+	if err != nil {
+		log.Printf("合并重复目录：列举根目录失败 [%s]: %v", rootID, err)
+		return false
+	}
+	targetName := pinnedFolderName(pinTitle, pinYear)
+	var target *cloudfile.CloudFile
+	byID := map[string]cloudfile.CloudFile{}
+	for _, c := range children {
+		byID[c.ID] = c
+		if c.Name == targetName {
+			cp := c
+			target = &cp
+		}
+	}
+	if target == nil {
+		// 钉扎目录不存在（可能已被手动改名），跳过等待下次整理建立
+		return false
+	}
+	recycled := false
+	for _, fid := range g.FolderIDs {
+		if fid == target.ID {
+			continue
+		}
+		candidate, exists := byID[fid]
+		if !exists || candidate.Trashed {
+			continue
+		}
+		if p.mergeFolderInto(candidate, *target) {
+			recycled = true
+		}
+	}
+	return recycled
+}
+
+// mergeFolderInto 把 candidate 目录内容搬入 target（镜像子目录结构，同名文件跳过）。
+// 腾空（或仅剩元数据）后整个目录进回收站；返回是否完成回收。
+func (p *Pipeline) mergeFolderInto(candidate, target cloudfile.CloudFile) bool {
+	p.log(fmt.Sprintf("  🔀 合并重复目录：%s → %s", candidate.Name, target.Name))
+	moved, skipped := p.moveFolderContents(candidate.ID, target.ID)
+	if moved == 0 && skipped == 0 {
+		return false
+	}
+	if p.dryRun {
+		p.log(fmt.Sprintf("      [dry-run] 将移动 %d 个文件，跳过 %d 个同名文件", moved, skipped), "INFO")
+		return false
+	}
+	p.log(fmt.Sprintf("      移动 %d 个文件，跳过 %d 个同名文件", moved, skipped), "INFO")
+	if p.folderHasContent(candidate.ID) {
+		p.log(fmt.Sprintf("      ⚠ 目录内仍有视频/字幕残留，保留目录：%s", candidate.Name), "WARNING")
+		return false
+	}
+	if _, err := p.provider.TrashFile(candidate.ID); err != nil {
+		log.Printf("回收重复目录失败 [%s]: %v", candidate.Name, err)
+		p.log(fmt.Sprintf("      ❌ 回收目录失败：%v", err), "ERROR")
+		return false
+	}
+	p.log(fmt.Sprintf("      🗑️ 已回收重复目录：%s（可在网盘回收站恢复）", candidate.Name), "SUCCESS")
+	// 清理搬迁过程中在 target 下可能产生的空目录
+	p.cleanupEmptyFolders(target.ID, target.Name, false)
+	return true
+}
+
+// moveFolderContents 递归把 src 目录内容搬入 dst（镜像子目录，同名文件跳过）。
+func (p *Pipeline) moveFolderContents(srcID, dstID string) (moved, skipped int) {
+	items, err := p.provider.ListFiles(srcID, 200)
+	if err != nil {
+		log.Printf("合并重复目录：列举目录失败 [%s]: %v", srcID, err)
+		return 0, 0
+	}
+	for _, item := range items {
+		if item.IsFolder() {
+			subDst := dstID
+			if !p.dryRun {
+				sub, err := cloudfile.GetOrCreateFolder(p.provider, item.Name, dstID)
+				if err != nil {
+					log.Printf("合并重复目录：创建子目录失败 %q: %v", item.Name, err)
+					skipped++
+					continue
+				}
+				subDst = sub.ID
+			}
+			m, s := p.moveFolderContents(item.ID, subDst)
+			moved += m
+			skipped += s
+			continue
+		}
+		if p.dryRun {
+			moved++
+			continue
+		}
+		if existing, err := p.provider.FindFile(item.Name, dstID); err == nil && existing != nil {
+			p.log(fmt.Sprintf("      跳过同名文件：%s", item.Name), "INFO")
+			skipped++
+			continue
+		}
+		if _, err := p.provider.MoveFile(item.ID, dstID, item.Name); err != nil {
+			log.Printf("合并重复目录：移动文件失败 [%s]: %v", item.Name, err)
+			skipped++
+			continue
+		}
+		moved++
+	}
+	return moved, skipped
+}
+
+// folderHasContent 目录（含子目录）内是否还有视频或字幕文件。
+func (p *Pipeline) folderHasContent(folderID string) bool {
+	items, err := p.provider.ListFiles(folderID, 200)
+	if err != nil {
+		return true // 出错时保守处理，不回收
+	}
+	for _, item := range items {
+		if item.IsFolder() {
+			if p.folderHasContent(item.ID) {
+				return true
+			}
+			continue
+		}
+		if item.IsVideo() || item.IsSubtitle() {
+			return true
+		}
+	}
+	return false
+}
+
+// pinnedFolderName 钉扎目录名：标题 (年份)。
+func pinnedFolderName(title, year string) string {
+	if year != "" {
+		return fmt.Sprintf("%s (%s)", title, year)
+	}
+	return title
+}
+
 func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitleIndex map[string][]cloudfile.CloudFile) ProcessResult {
 	p.log(fmt.Sprintf("[%d/%d] 🎬  %s", idx, total, video.Name), "INFO")
 	result := ProcessResult{File: video, Status: "ok"}
@@ -600,17 +869,27 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 	// Step 5: 用 TMDB 数据更新 Meta，以便 Organizer 创建正确的中文目录
 	if tmdbInfo != nil {
 		tmdbTitle := firstNonEmpty(jsonx.Str(tmdbInfo, "name"), jsonx.Str(tmdbInfo, "title"), meta.Name())
-		meta.SetName(safeFilename(tmdbTitle))
 		tmdbYear := firstN4(firstNonEmpty(jsonx.Str(tmdbInfo, "release_date"), jsonx.Str(tmdbInfo, "first_air_date")))
+		// 标题钉扎：目录/文件名沿用首次整理名，TMDB 译名变更不再产生新目录
+		if pinnedTitle, pinnedYear := p.resolvePinnedTitle(isTV, tmdbInfo, tmdbTitle, tmdbYear); pinnedTitle != "" {
+			if pinnedTitle != tmdbTitle {
+				p.log(fmt.Sprintf("      📌 TMDB 译名已变更（%s → %s），沿用首次整理目录名", tmdbTitle, pinnedTitle), "INFO")
+			}
+			tmdbTitle = pinnedTitle
+			if pinnedYear != "" {
+				tmdbYear = pinnedYear
+			}
+		}
+		meta.SetName(safeFilename(tmdbTitle))
 		if tmdbYear != "" {
 			meta.Year = tmdbYear
 		}
 	}
 
-	// Step 5.5: 生成 NFO 内容
+	// Step 5.5: 生成 NFO 内容（NFO 正文用 TMDB 当前译名，文件名用 meta 钉扎名）
 	var nfoContent, nfoName, cleanName string
 	if tmdbInfo != nil {
-		cleanName = buildCleanName(tmdbInfo, isTV, seasonNum, episodeNum, fileExt(video.Name))
+		cleanName = buildCleanNameFromMeta(meta, isTV, seasonNum, episodeNum, fileExt(video.Name))
 		nfoContent = p.nfoGen.Generate(tmdbInfo, meta.Type, episodeDetail)
 		if cleanName != "" {
 			nfoName = strings.TrimSuffix(cleanName, fileExt(cleanName)) + ".nfo"

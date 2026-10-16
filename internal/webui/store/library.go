@@ -81,6 +81,17 @@ CREATE TABLE IF NOT EXISTS app_state (
     key    TEXT PRIMARY KEY,
     value  TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS media_title_pins (
+    media_type   TEXT    NOT NULL,
+    tmdb_id      INTEGER NOT NULL,
+    pinned_title TEXT    NOT NULL,
+    pinned_year  TEXT    NOT NULL DEFAULT '',
+    source       TEXT    NOT NULL DEFAULT '',
+    created_at   TEXT    NOT NULL,
+    updated_at   TEXT    NOT NULL,
+    PRIMARY KEY (media_type, tmdb_id)
+);
 `
 
 const scanAtKey = "library.last_scanned_at"

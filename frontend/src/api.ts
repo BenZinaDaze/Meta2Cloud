@@ -143,6 +143,11 @@ export const getIngestHistory = (params?: {
 export const getIngestStats = (days?: number) =>
   api.get('/ingest/stats', { params: { days } })
 
+// ── 整理名称（标题钉扎）──
+export const listTitlePins = () => api.get('/title-pins')
+export const adoptTitlePin = (media_type: string, tmdb_id: number) =>
+  api.post('/title-pins:adopt', { media_type, tmdb_id })
+
 
 // ── Bangumi 新番 ──
 export const getBangumiCalendar = () => api.get('/bangumi/calendar')

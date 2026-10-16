@@ -195,3 +195,22 @@ export interface ListFilesResponse {
   root_id: string
   path: PathBreadcrumbItem[]
 }
+
+// 整理名称（标题钉扎）
+export interface TitlePin {
+  media_type: string
+  tmdb_id: number
+  pinned_title: string
+  pinned_year: string
+  source: string
+  created_at: string
+  updated_at: string
+  current_title: string
+  current_year: string
+  drifted: boolean
+  folder_ids: string[]
+}
+
+export interface TitlePinsResponse {
+  items: TitlePin[]
+}
