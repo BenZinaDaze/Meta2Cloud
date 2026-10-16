@@ -39,6 +39,8 @@
 - 📁 **整理目录** — 符合播放器识别规范
 - 🔄 **移动文件** — 自动重命名
 - 📝 **字幕整理** — 自动跟随视频移动
+- 🎬 **STRM 直链播放** — 生成本地 STRM 文件（外挂字幕自动跟随），播放时 302 直连网盘，无需下载
+- 📊 **播放记录** — 记录每次播放的客户端、直链耗时与结果
 - 📲 **Telegram 通知** — 整理完成推送
 
 ## 整理效果
@@ -128,6 +130,8 @@ services:
       - TZ=Asia/Shanghai
     volumes:
       - ./meta2cloud-config:/app/config
+      # 启用 STRM 直链播放：取消注释，local_path 填容器内路径 /media/strm
+      # - ./strm:/media/strm
     network_mode: host
     restart: unless-stopped
 ```
@@ -226,6 +230,27 @@ curl -X POST http://localhost:38765/trigger \
 ```
 
 支持防抖，批量下载时合并为一次整理。
+
+### STRM 直链播放
+
+为网盘媒体库生成本地 `.strm` 文件（目录结构镜像网盘，外挂字幕自动跟随下载），播放时由 Meta2Cloud 实时 302 跳转 115 直链——媒体库不占本地空间，原画直连播放。
+
+```yaml
+strm:
+  enabled: true
+  url_base: "http://192.168.1.10:38765"   # 播放器能访问到 Meta2Cloud 的地址，支持域名/反代
+  url_secret: ""                           # 可选，防未授权调用；配置页可一键随机生成
+  mappings:
+    - pan_folder_id: "媒体库根目录 ID"      # 网盘目录
+      local_path: "/media/strm"            # 本地输出目录（Docker 中须为容器内路径）
+```
+
+- **触发**：整理入库成功后自动生成 + 定时增量同步 + WebUI「STRM 同步」页手动触发
+- **播放**：`.strm` 内容指向 `/strm/redirect`，按播放器 User-Agent 换取 115 直链并缓存（过期前 5 分钟刷新）
+- **限流**：直链获取并发上限 + 失败负缓存 + 排队超时，媒体服务器刮削扫描不影响正常播放
+- **播放记录**页可查看每次播放的客户端、直链耗时与结果
+
+将 STRM 输出目录加入 Emby/Jellyfin 媒体库即可播放。Docker 部署记得在 compose 中挂载该目录（见 `docker-compose.yml` 注释），且 `local_path` 填容器内路径。
 
 ### Telegram 通知
 
