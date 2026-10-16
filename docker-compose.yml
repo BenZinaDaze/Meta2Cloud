@@ -1,7 +1,5 @@
-version: "3.8"
 services:
   # ── Meta2Cloud ────────────────────────────────────────────────
-  # host 网络模式下 upload.sh 用 localhost:38765/trigger 触发
   # WebUI 地址：http://localhost:38765
   meta2cloud:
     container_name: meta2cloud
@@ -11,6 +9,10 @@ services:
     volumes:
       # 运行时配置与数据（115 token、library.db 等），不打包进镜像
       - ${PWD}/meta2cloud-config:/app/config
+      # STRM 输出目录（可选）：启用 STRM 时取消注释
+      # 注意：WebUI 里 strm.mappings.local_path 必须填容器内路径（如 /media/strm），
+      # Emby/Jellyfin 挂载同一个宿主目录 ./strm 即可读取（媒体服务器侧路径可不同）
+      # - ${PWD}/strm:/media/strm
     network_mode: host
     restart: unless-stopped
     logging:
