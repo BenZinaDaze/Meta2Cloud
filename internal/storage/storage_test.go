@@ -87,7 +87,7 @@ func TestWalkAllOrderAndFullListing(t *testing.T) {
 
 	client := u115.NewClient("test",
 		u115.WithToken(u115.Token{AccessToken: "at", RefreshToken: "rt", ExpiresIn: 3600, RefreshTime: time.Now().Unix()}),
-		u115.WithQPS(1000, 1000),
+		u115.WithQPS(1000),
 	)
 	client.SetTestBaseURL(server.URL)
 

@@ -14,6 +14,7 @@ import {
   LogOut,
   FolderOpen,
   FileVideo,
+  Play,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Logo from '@/components/layout/Logo'
@@ -292,6 +293,12 @@ export default function Sidebar({
           label="STRM 同步"
           active={active === 'strm-sync'}
           onClick={() => onSelect('strm-sync')}
+        />
+        <NavItem
+          icon={<Play className="size-4" />}
+          label="播放记录"
+          active={active === 'strm-playback'}
+          onClick={() => onSelect('strm-playback')}
         />
         <NavItem
           icon={<Activity className="size-4" />}

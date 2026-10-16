@@ -161,7 +161,7 @@ func (rt *Runtime) getU115ClientLocked() *u115.Client {
 		if !filepath.IsAbs(tokenPath) {
 			tokenPath = filepath.Join(rt.RootDir, tokenPath)
 		}
-		client, err := u115.NewClientFromTokenFile(cfg.U115.ClientID, tokenPath)
+		client, err := u115.NewClientFromTokenFile(cfg.U115.ClientID, tokenPath, u115.WithQPS(float64(cfg.U115.QPS)))
 		if err != nil {
 			log.Printf("115 客户端初始化失败：%v", err)
 			return nil

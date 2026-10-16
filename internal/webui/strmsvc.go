@@ -27,6 +27,14 @@ import (
 // strmWalkMaxDepth 网盘映射目录遍历深度上限。
 const strmWalkMaxDepth = 8
 
+// strmSidecarMaxBytes 伴随文件（字幕/图片/NFO）单文件下载大小上限。
+const strmSidecarMaxBytes = 20 << 20
+
+// sidecarFetcher 下载网盘小文件内容的能力（由 Pan115Provider / 测试 fake 实现）。
+type sidecarFetcher interface {
+	FetchBytes(pickCode string, limit int64) ([]byte, error)
+}
+
 // ingestRunFlushIdle 入库钩子 run 的合并窗口：静默该时长后收尾 run。
 const ingestRunFlushIdle = 20 * time.Second
 
@@ -84,6 +92,17 @@ func BuildStrmURL(urlBase, urlSecret, pickCode, fileName string) string {
 func strmMediaExtSet(cfg *config.Config) map[string]struct{} {
 	set := map[string]struct{}{}
 	for _, ext := range cfg.Strm.MediaExt {
+		ext = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(ext), "."))
+		if ext != "" {
+			set[ext] = struct{}{}
+		}
+	}
+	return set
+}
+
+func strmSidecarExtSet(cfg *config.Config) map[string]struct{} {
+	set := map[string]struct{}{}
+	for _, ext := range cfg.Strm.SidecarExt {
 		ext = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(ext), "."))
 		if ext != "" {
 			set[ext] = struct{}{}
@@ -175,6 +194,14 @@ func runStrmSync(trigger string) {
 // syncMapping 同步单个映射，返回统计。遍历成功后清理该映射下网盘已不存在的 .strm。
 func syncMapping(provider cloudfile.Provider, st *store.StrmStore, cfg *config.Config, mapping config.StrmMapping, runID int64) (created, updated, removed, skipped int, err error) {
 	extSet := strmMediaExtSet(cfg)
+	sidecarSet := map[string]struct{}{}
+	var fetcher sidecarFetcher
+	if cfg.Strm.FetchSidecar {
+		sidecarSet = strmSidecarExtSet(cfg)
+		if f, ok := provider.(sidecarFetcher); ok {
+			fetcher = f
+		}
+	}
 	localRoot := filepath.Clean(mapping.LocalPath)
 	seen := map[string]bool{}
 
@@ -199,22 +226,40 @@ func syncMapping(provider cloudfile.Provider, st *store.StrmStore, cfg *config.C
 				continue
 			}
 			ext := strings.TrimPrefix(item.Extension(), ".")
-			if _, ok := extSet[ext]; !ok {
-				continue
-			}
 			pickCode := pickCodeOf(item)
-			if pickCode == "" {
-				continue
+			_, isMedia := extSet[ext]
+			_, isSidecar := sidecarSet[ext]
+			switch {
+			case isMedia:
+				if pickCode == "" {
+					continue
+				}
+				localPath := strmLocalPath(localRoot, relPath, item.Name)
+				switch upsertStrmFile(st, cfg, mapping, item, relPath, pickCode, localRoot, runID) {
+				case "created":
+					created++
+				case "updated":
+					updated++
+				default:
+					skipped++
+				}
+				seen[localPath] = true
+			case isSidecar:
+				// 外挂字幕/元数据/图片：下载到本地与 .strm 同目录（镜像网盘命名）
+				if fetcher == nil || pickCode == "" {
+					continue
+				}
+				localPath := sidecarLocalPath(localRoot, relPath, item.Name)
+				switch upsertSidecarFile(st, item, relPath, pickCode, localPath, fetcher, runID) {
+				case "created":
+					created++
+				case "updated":
+					updated++
+				default:
+					skipped++
+				}
+				seen[localPath] = true
 			}
-			switch upsertStrmFile(st, cfg, mapping, item, relPath, pickCode, localRoot, runID) {
-			case "created":
-				created++
-			case "updated":
-				updated++
-			default:
-				skipped++
-			}
-			seen[strmLocalPath(localRoot, relPath, item.Name)] = true
 		}
 		return nil
 	}
@@ -222,8 +267,8 @@ func syncMapping(provider cloudfile.Provider, st *store.StrmStore, cfg *config.C
 		return created, updated, removed, skipped, err
 	}
 
-	// 清理：该映射前缀下、本次遍历未见的记录 → 删除本地 .strm 与记录
-	for _, rec := range st.ListStrmFilesByLocalPrefix(localRoot+string(os.PathSeparator)) {
+	// 清理：该映射前缀下、本次遍历未见的记录（.strm 与伴随文件）→ 删除本地文件与记录
+	for _, rec := range st.ListStrmFilesByLocalPrefix(localRoot + string(os.PathSeparator)) {
 		if seen[rec.LocalPath] {
 			continue
 		}
@@ -245,10 +290,15 @@ func strmLocalPath(localRoot, relPath, fileName string) string {
 	} else {
 		name = fileName + ".strm"
 	}
+	return sidecarLocalPath(localRoot, relPath, name)
+}
+
+// sidecarLocalPath 伴随文件保持网盘原始命名（整理阶段已完成字幕改名与语言标注）。
+func sidecarLocalPath(localRoot, relPath, fileName string) string {
 	if relPath == "" {
-		return filepath.Join(localRoot, name)
+		return filepath.Join(localRoot, fileName)
 	}
-	return filepath.Join(localRoot, filepath.FromSlash(relPath), name)
+	return filepath.Join(localRoot, filepath.FromSlash(relPath), fileName)
 }
 
 // upsertStrmFile 为单个网盘视频文件写 .strm 并更新记录。
@@ -303,6 +353,56 @@ func writeStrmFile(localPath, content string) error {
 	return os.WriteFile(localPath, []byte(content+"\n"), 0o644)
 }
 
+// upsertSidecarFile 下载网盘伴随文件（外挂字幕/图片/NFO）到本地 .strm 同目录，
+// 保持网盘原始命名（整理阶段已完成字幕改名与语言标注）。
+// 增量策略与 .strm 一致：记录未变且本地文件大小一致则跳过，避免重复下载。
+func upsertSidecarFile(st *store.StrmStore, f cloudfile.CloudFile, relPath, pickCode, localPath string, fetcher sidecarFetcher, runID int64) string {
+	panPath := "/" + path.Join(relPath, f.Name)
+	size := int64(0)
+	if f.Size != nil {
+		size = *f.Size
+	}
+	record := store.StrmFile{
+		PickCode:  pickCode,
+		FileID:    f.ID,
+		PanPath:   panPath,
+		LocalPath: localPath,
+		FileName:  f.Name,
+		Size:      &size,
+	}
+
+	action := st.UpsertStrmFile(record)
+	if action == "skipped" {
+		if fi, err := os.Stat(localPath); err == nil && (f.Size == nil || fi.Size() == *f.Size) {
+			return "skipped"
+		}
+		if _, err := os.Stat(localPath); os.IsNotExist(err) {
+			action = "created"
+		} else {
+			action = "updated"
+		}
+	}
+
+	data, err := fetcher.FetchBytes(pickCode, strmSidecarMaxBytes)
+	if err != nil {
+		st.InsertSyncFileDetail(runID, f.Name, panPath, localPath, action, false, "下载失败："+err.Error())
+		return action
+	}
+	if err := writeSidecarFile(localPath, data); err != nil {
+		st.InsertSyncFileDetail(runID, f.Name, panPath, localPath, action, false, err.Error())
+		return action
+	}
+	st.InsertSyncFileDetail(runID, f.Name, panPath, localPath, action, true, "")
+	return action
+}
+
+func writeSidecarFile(localPath string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+		return fmt.Errorf("创建目录失败：%w", err)
+	}
+	return os.WriteFile(localPath, data, 0o644)
+}
+
 // ── 入库钩子 ────────────────────────────────────────────────
 
 // HandleVideoIngested 整理流水线入库成功后的回调（单文件实时生成 STRM）。
@@ -331,6 +431,16 @@ func HandleVideoIngested(result pipeline.ProcessResult) {
 	}
 	localRoot := filepath.Clean(mapping.LocalPath)
 
+	// 视频同目录的伴随文件（外挂字幕/图片/NFO，整理阶段已随视频改名就位）
+	var fetcher sidecarFetcher
+	sidecarSet := map[string]struct{}{}
+	if cfg.Strm.FetchSidecar {
+		sidecarSet = strmSidecarExtSet(cfg)
+		if f, ok := provider.(sidecarFetcher); ok {
+			fetcher = f
+		}
+	}
+
 	strmSvc.hookMu.Lock()
 	defer strmSvc.hookMu.Unlock()
 	ensureIngestRunLocked()
@@ -342,6 +452,33 @@ func HandleVideoIngested(result pipeline.ProcessResult) {
 		strmSvc.hookStats.Updated++
 	default:
 		strmSvc.hookStats.Skipped++
+	}
+	if fetcher != nil {
+		// 注意：hookMu 为非重入锁，upsertSidecarFile 内部不得再取本锁（其本身不取）
+		if siblings, err := provider.ListAllFiles(result.TargetFolder.ID); err == nil {
+			for _, item := range siblings {
+				if item.IsFolder() {
+					continue
+				}
+				ext := strings.TrimPrefix(item.Extension(), ".")
+				if _, ok := sidecarSet[ext]; !ok {
+					continue
+				}
+				sidePickCode := pickCodeOf(item)
+				if sidePickCode == "" {
+					continue
+				}
+				sideLocal := sidecarLocalPath(localRoot, relPath, item.Name)
+				switch upsertSidecarFile(st, item, relPath, sidePickCode, sideLocal, fetcher, strmSvc.hookRunID) {
+				case "created":
+					strmSvc.hookStats.Created++
+				case "updated":
+					strmSvc.hookStats.Updated++
+				default:
+					strmSvc.hookStats.Skipped++
+				}
+			}
+		}
 	}
 	strmSvc.hookLastAt = time.Now()
 	scheduleIngestFlush()

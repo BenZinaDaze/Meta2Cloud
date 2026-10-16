@@ -135,7 +135,7 @@ func newTestClient(t *testing.T, handler http.Handler) (*Client, *httptest.Serve
 	server := httptest.NewServer(handler)
 	c := NewClient("test-client",
 		WithToken(Token{AccessToken: "at", RefreshToken: "rt", ExpiresIn: 3600, RefreshTime: time.Now().Unix()}),
-		WithQPS(1000, 1000),
+		WithQPS(1000),
 		WithCooldownSeconds(1),
 		WithHTTPClient(server.Client()),
 	)
@@ -295,5 +295,47 @@ func TestGetDownloadURLParse(t *testing.T) {
 	}
 	if urlStr != "https://dl.example.com/file.mkv" {
 		t.Errorf("url = %q", urlStr)
+	}
+}
+
+// TestFetchBytesUsesClientUA 直链与 UA 绑定：FetchBytes 拉取内容必须携带与
+// 申请直链相同的 User-Agent，否则 CDN 返回 403。
+func TestFetchBytesUsesClientUA(t *testing.T) {
+	var srvURL string
+	var downUA, fileUA string
+	client, server := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/open/ufile/downurl":
+			downUA = r.Header.Get("User-Agent")
+			json.NewEncoder(w).Encode(map[string]any{
+				"state": true,
+				"data": map[string]any{
+					"pc1": map[string]any{
+						"url": map[string]any{"url": srvURL + "/file"},
+					},
+				},
+			})
+		case "/file":
+			fileUA = r.Header.Get("User-Agent")
+			_, _ = w.Write([]byte("subtitle-content"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	srvURL = server.URL
+
+	data, err := client.FetchBytes("pc1", 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "subtitle-content" {
+		t.Errorf("content = %q", string(data))
+	}
+	if downUA == "" {
+		t.Fatal("downurl 请求应携带 User-Agent")
+	}
+	if fileUA != downUA {
+		t.Errorf("拉取内容 UA 应与申请直链一致：downurl=%q file=%q", downUA, fileUA)
 	}
 }

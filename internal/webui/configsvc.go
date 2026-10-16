@@ -400,6 +400,7 @@ func validateMainConfigPayload(payload map[string]any) string {
 		{tmdbSec, "timeout", "TMDB 请求超时", 1, 120},
 		{u115Sec, "auto_organize_poll_seconds", "115 自动整理轮询间隔", 10, 600},
 		{u115Sec, "auto_organize_stable_seconds", "115 完成稳定等待", 0, 600},
+		{u115Sec, "qps", "115 共享请求 QPS", 1, 10},
 		{rssSec, "poll_seconds", "RSS 订阅轮询间隔", 10, 3600},
 		{telegramSec, "debounce_seconds", "Telegram 防抖延时", 0, 600},
 		{mediavaultSec, "timeout", "MediaVault 请求超时", 1, 120},

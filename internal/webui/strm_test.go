@@ -1,17 +1,21 @@
 package webui
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"meta2cloud/internal/cloudfile"
 	"meta2cloud/internal/config"
+	"meta2cloud/internal/u115"
 	"meta2cloud/internal/webui/store"
 )
 
@@ -29,6 +33,29 @@ func (f *fakeWebProvider) addVideoWithPickCode(name, parentID, pickCode string, 
 		}
 	}
 	return cf
+}
+
+// fetchCount 记录 FetchBytes 调用次数（测试断言增量下载）。
+var fetchCount atomic.Int64
+
+// FetchBytes 假下载：内容长度与网盘声明的文件大小一致（模拟真实下载）。
+func (f *fakeWebProvider) FetchBytes(pickCode string, limit int64) ([]byte, error) {
+	fetchCount.Add(1)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	size := len("SIDECAR:") + len(pickCode)
+	for _, cf := range f.byID {
+		if pc, _ := cf.Extra["pick_code"].(string); pc == pickCode && cf.Size != nil {
+			size = int(*cf.Size)
+			break
+		}
+	}
+	if int64(size) > limit {
+		size = int(limit)
+	}
+	out := make([]byte, size)
+	copy(out, "SIDECAR:"+pickCode)
+	return out, nil
 }
 
 // replacePickCode 模拟网盘重新上传：替换已有文件的 pick_code 与大小（不新增条目）。
@@ -175,6 +202,180 @@ func TestHandleStrmRedirectCacheHit(t *testing.T) {
 	if cd := rr.Header().Get("Content-Disposition"); !strings.Contains(cd, "filename*=UTF-8''") || !strings.Contains(cd, "mkv") {
 		t.Fatalf("Content-Disposition 应含直链文件名：%q", cd)
 	}
+
+	// 播放记录异步落库，轮询等待
+	st := RT().GetStrmStore()
+	if st == nil {
+		t.Fatalf("STRM 存储不可用")
+	}
+	var logs []store.StrmPlaybackLog
+	for i := 0; i < 50; i++ {
+		logs, _ = st.ListPlaybackLogs(10, 0)
+		if len(logs) > 0 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("应记录 1 条播放日志，实际 %d", len(logs))
+	}
+	l := logs[0]
+	if l.PickCode != pickCode || !l.CacheHit || l.Status != http.StatusFound {
+		t.Fatalf("播放日志字段异常：%+v", l)
+	}
+	if l.UserAgent == nil || *l.UserAgent != "test-ua" {
+		t.Fatalf("UA 未记录：%v", l.UserAgent)
+	}
+
+	// 签名失败也应记录（403）
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/strm/redirect?pickcode="+pickCode+"&sign=bad", nil)
+	req.Header.Set("User-Agent", "test-ua")
+	handleStrmRedirect(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("错误签名应 403，得到 %d", rr.Code)
+	}
+	for i := 0; i < 50; i++ {
+		logs, _ = st.ListPlaybackLogs(10, 0)
+		if len(logs) == 2 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(logs) != 2 || logs[0].Status != http.StatusForbidden {
+		t.Fatalf("签名失败应记录 403 日志：%+v", logs)
+	}
+}
+
+func TestPlaybackStoreRoundtrip(t *testing.T) {
+	tmp := t.TempDir()
+	st, err := store.OpenStrmStore(filepath.Join(tmp, "strm.db"))
+	if err != nil {
+		t.Fatalf("打开 strm.db 失败：%v", err)
+	}
+	defer st.Close()
+
+	ua := "Infuse-Direct/8.1"
+	st.InsertPlaybackLog("abc123def456ghi78", ptrStr("a.mkv"), &ua, false, 1234, 302, "")
+	st.InsertPlaybackLog("abc123def456ghi78", ptrStr("a.mkv"), &ua, true, 0, 302, "")
+	st.InsertPlaybackLog("bbb123def456ghi78", nil, nil, false, 900, 502, "115 授权失效")
+
+	logs, total := st.ListPlaybackLogs(10, 0)
+	if total != 3 || len(logs) != 3 {
+		t.Fatalf("记录数异常：total=%d len=%d", total, len(logs))
+	}
+	if logs[0].Status != 502 || logs[0].Error == nil {
+		t.Fatalf("最新记录应为 502 失败：%+v", logs[0])
+	}
+	if !logs[1].CacheHit || logs[1].DurationMs != 0 {
+		t.Fatalf("缓存命中记录异常：%+v", logs[1])
+	}
+	if logs[2].DurationMs != 1234 || logs[2].CacheHit {
+		t.Fatalf("直链延迟未记录：%+v", logs[2])
+	}
+
+	stats := st.GetPlaybackStats()
+	if stats.Total != 3 || stats.Today != 3 {
+		t.Fatalf("统计异常：total=%d today=%d", stats.Total, stats.Today)
+	}
+	if stats.AvgLatencyMs != 1234 {
+		t.Fatalf("平均延迟异常（仅实时获取且成功的 302 参与统计）：%v", stats.AvgLatencyMs)
+	}
+	if stats.CacheHitRate <= 0 || stats.CacheHitRate >= 1 {
+		t.Fatalf("缓存命中率异常：%v", stats.CacheHitRate)
+	}
+}
+
+func ptrStr(s string) *string { return &s }
+
+// countingTransport 计数并返回固定 downurl 响应的假传输层。
+type countingTransport struct {
+	mu    sync.Mutex
+	count int
+	resp  string
+}
+
+func (t *countingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	t.mu.Lock()
+	t.count++
+	t.mu.Unlock()
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(t.resp)),
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+	}, nil
+}
+
+func (t *countingTransport) calls() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.count
+}
+
+func fakeDownurlResp(pickCode string) string {
+	return `{"state":true,"data":{"` + pickCode + `":{"url":{"url":"https://cdn.115.com/x/a.mkv?t=99999999999"}}}}`
+}
+
+func TestStrmFetchLimiter(t *testing.T) {
+	initStrmTestRuntime(t, "")
+	resetStrmLimiter()
+	t.Cleanup(resetStrmLimiter)
+
+	pickA := "abc123def456ghi78"
+	pickB := "bbb123def456ghi78"
+	doReq := func(pickCode string) *httptest.ResponseRecorder {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/strm/redirect?pickcode="+pickCode, nil)
+		req.Header.Set("User-Agent", "limiter-ua")
+		handleStrmRedirect(rr, req)
+		return rr
+	}
+
+	// 1) 失败（无 token client → 授权错误）→ 负缓存
+	RT().SetU115ClientForTest(u115.NewClient("test"))
+	if rr := doReq(pickA); rr.Code != http.StatusBadGateway {
+		t.Fatalf("无 token 应 502，得到 %d", rr.Code)
+	}
+	// 2) 换成正常 client，同 pickcode 再请求：应命中负缓存，不打 115
+	transport := &countingTransport{resp: fakeDownurlResp(pickA)}
+	goodToken := u115.Token{AccessToken: "x", ExpiresIn: 86400, RefreshTime: time.Now().Unix()}
+	RT().SetU115ClientForTest(u115.NewClient("test", u115.WithToken(goodToken), u115.WithHTTPClient(&http.Client{Transport: transport})))
+	if rr := doReq(pickA); rr.Code != http.StatusBadGateway {
+		t.Fatalf("负缓存应返回同状态 502，得到 %d", rr.Code)
+	}
+	if n := transport.calls(); n != 0 {
+		t.Fatalf("负缓存命中不应请求 115，实际 %d 次", n)
+	}
+
+	// 3) 不同 pickcode：正常 302，且 t 极大 → 直链缓存生效
+	if rr := doReq(pickB); rr.Code != http.StatusFound {
+		t.Fatalf("正常请求应 302，得到 %d（body=%s）", rr.Code, rr.Body.String())
+	}
+	if n := transport.calls(); n != 1 {
+		t.Fatalf("应恰好请求 1 次 115，实际 %d", n)
+	}
+	if rr := doReq(pickB); rr.Code != http.StatusFound {
+		t.Fatalf("直链缓存命中应 302")
+	}
+	if n := transport.calls(); n != 1 {
+		t.Fatalf("直链缓存命中不应再请求 115，实际 %d 次", n)
+	}
+
+	// 4) 排队超时：占满信号量（向缓冲 channel 填充令牌）后请求应快速 503
+	originWait := strmFetchWait
+	strmFetchWait = 50 * time.Millisecond
+	t.Cleanup(func() { strmFetchWait = originWait })
+	strmFetchSem <- struct{}{}
+	strmFetchSem <- struct{}{}
+	rr := doReq("ccc123def456ghi78")
+	<-strmFetchSem
+	<-strmFetchSem
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("信号量占满应 503，得到 %d", rr.Code)
+	}
+	if ra := rr.Header().Get("Retry-After"); ra == "" {
+		t.Fatalf("503 应带 Retry-After")
+	}
 }
 
 func TestSyncMappingFlow(t *testing.T) {
@@ -255,6 +456,107 @@ func TestSyncMappingFlow(t *testing.T) {
 	if st.CountStrmFiles() != 0 {
 		t.Fatalf("记录应被清空，实际 %d", st.CountStrmFiles())
 	}
+}
+
+func TestSyncSidecarFlow(t *testing.T) {
+	tmp := t.TempDir()
+	st, err := store.OpenStrmStore(filepath.Join(tmp, "strm.db"))
+	if err != nil {
+		t.Fatalf("打开 strm.db 失败：%v", err)
+	}
+	defer st.Close()
+
+	fp := newFakeWebProvider()
+	movieRoot := fp.addFolder("电影", "0")
+	titleDir := fp.addFolder("流浪地球 2 (2023)", movieRoot.ID)
+	fp.addVideoWithPickCode("流浪地球 2.mkv", titleDir.ID, "abc123def456ghi78", 1<<30)
+	sub := fp.addVideoWithPickCode("流浪地球 2.zh-CN.srt", titleDir.ID, "sub123def456ghi78", 25)
+	fp.addVideoWithPickCode("poster.jpg", titleDir.ID, "pic123def456ghi78", 25)
+
+	cfg := testStrmConfig()
+	// 默认白名单仅含字幕；显式加入 jpg 以覆盖图片类伴随文件
+	cfg.Strm.SidecarExt = append(cfg.Strm.SidecarExt, "jpg")
+	localRoot := filepath.Join(tmp, "media")
+	mapping := config.StrmMapping{PanFolderID: movieRoot.ID, LocalPath: localRoot}
+
+	fetchCount.Store(0)
+	created, _, _, _, err := syncMapping(fp, st, cfg, mapping, 0)
+	if err != nil {
+		t.Fatalf("首次同步失败：%v", err)
+	}
+	if created != 3 {
+		t.Fatalf("首次同步应产出 strm+字幕+图片 3 项，实际 %d", created)
+	}
+	if n := fetchCount.Load(); n != 2 {
+		t.Fatalf("应下载 2 个伴随文件，实际 %d", n)
+	}
+	subData, err := os.ReadFile(filepath.Join(localRoot, "流浪地球 2 (2023)", "流浪地球 2.zh-CN.srt"))
+	if err != nil || string(subData) != "SIDECAR:sub123def456ghi78" {
+		t.Fatalf("字幕内容异常：%v %q", err, string(subData))
+	}
+	if _, err := os.Stat(filepath.Join(localRoot, "流浪地球 2 (2023)", "poster.jpg")); err != nil {
+		t.Fatalf("图片未下载：%v", err)
+	}
+
+	// 二次同步：全部跳过，不重复下载
+	fetchCount.Store(0)
+	created, updated, _, skipped, err := syncMapping(fp, st, cfg, mapping, 0)
+	if err != nil {
+		t.Fatalf("二次同步失败：%v", err)
+	}
+	if created != 0 || updated != 0 || skipped != 3 {
+		t.Fatalf("二次同步应全部跳过：created=%d updated=%d skipped=%d", created, updated, skipped)
+	}
+	if n := fetchCount.Load(); n != 0 {
+		t.Fatalf("增量同步不应重复下载，实际 %d 次", n)
+	}
+
+	// 字幕在网盘更新（大小变化）→ 重新下载（updated）
+	fp.replacePickCode(sub.ID, "sub123def456ghi78", 4096)
+	_, updated, _, _, err = syncMapping(fp, st, cfg, mapping, 0)
+	if err != nil {
+		t.Fatalf("三次同步失败：%v", err)
+	}
+	if updated != 1 {
+		t.Fatalf("字幕更新应产生 updated，实际 %d", updated)
+	}
+
+	// 网盘删除字幕 → 同步清理本地字幕（.strm 保留）
+	// 先放入一个「播放器刮削产物」（无 DB 记录），验证不会被清理
+	foreign := filepath.Join(localRoot, "流浪地球 2 (2023)", "fanart.jpg")
+	if err := os.WriteFile(foreign, []byte("emby-scratch"), 0o644); err != nil {
+		t.Fatalf("写入刮削产物失败：%v", err)
+	}
+	fp.mu.Lock()
+	fp.children[titleDir.ID] = filterOut(fp.children[titleDir.ID], sub.ID)
+	delete(fp.byID, sub.ID)
+	fp.mu.Unlock()
+	created, updated, removed, skipped, err := syncMapping(fp, st, cfg, mapping, 0)
+	if err != nil {
+		t.Fatalf("清理同步失败：%v", err)
+	}
+	if removed != 1 || skipped != 2 {
+		t.Fatalf("应清理 1 条字幕记录：removed=%d skipped=%d created=%d updated=%d", removed, skipped, created, updated)
+	}
+	if _, err := os.Stat(filepath.Join(localRoot, "流浪地球 2 (2023)", "流浪地球 2.zh-CN.srt")); !os.IsNotExist(err) {
+		t.Fatalf("本地字幕应被清理")
+	}
+	if _, err := os.Stat(filepath.Join(localRoot, "流浪地球 2 (2023)", "流浪地球 2.strm")); err != nil {
+		t.Fatalf("strm 应保留：%v", err)
+	}
+	if _, err := os.Stat(foreign); err != nil {
+		t.Fatalf("播放器刮削产物（无记录文件）不应被清理：%v", err)
+	}
+}
+
+func filterOut(items []cloudfile.CloudFile, id string) []cloudfile.CloudFile {
+	out := items[:0]
+	for _, it := range items {
+		if it.ID != id {
+			out = append(out, it)
+		}
+	}
+	return out
 }
 
 func TestSyncRewritesWhenURLBaseChanges(t *testing.T) {

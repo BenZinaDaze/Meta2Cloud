@@ -46,6 +46,21 @@ CREATE TABLE IF NOT EXISTS strm_sync_files (
 );
 
 CREATE INDEX IF NOT EXISTS idx_strm_sync_files_run ON strm_sync_files(run_id);
+
+CREATE TABLE IF NOT EXISTS strm_playback_log (
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	played_at   TEXT    NOT NULL,
+	pick_code   TEXT    NOT NULL,
+	file_name   TEXT,
+	user_agent  TEXT,
+	cache_hit   INTEGER NOT NULL DEFAULT 0,
+	duration_ms INTEGER NOT NULL DEFAULT 0,
+	status      INTEGER NOT NULL,
+	error       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_strm_playback_played_at ON strm_playback_log(played_at DESC);
+CREATE INDEX IF NOT EXISTS idx_strm_playback_pick ON strm_playback_log(pick_code);
 `
 
 // StrmFile 一条网盘文件 ↔ 本地 .strm 映射。
@@ -308,4 +323,113 @@ func (s *StrmStore) ListSyncFiles(runID int64, limit int) []StrmSyncFile {
 		out = append(out, f)
 	}
 	return out
+}
+
+// ── 播放记录 ────────────────────────────────────────────────
+
+// playbackRetention 播放记录保留上限（超出时裁剪最旧记录）。
+const playbackRetention = 5000
+
+// StrmPlaybackLog 一次 302 播放跳转的记录。
+// PanPath / LocalPath 为查询时按 pick_code 关联 strm_files 得到的播放内容路径，记录可能已被清理。
+type StrmPlaybackLog struct {
+	ID         int64
+	PlayedAt   string
+	PickCode   string
+	FileName   *string
+	UserAgent  *string
+	CacheHit   bool
+	DurationMs int
+	Status     int
+	Error      *string
+	// 关联信息（列表查询时填充）
+	PanPath   *string
+	LocalPath *string
+}
+
+// StrmPlaybackStats 播放统计。
+type StrmPlaybackStats struct {
+	Total        int     `json:"total"`
+	Today        int     `json:"today"`
+	AvgLatencyMs float64 `json:"avg_latency_ms"`
+	CacheHitRate float64 `json:"cache_hit_rate"`
+	Clients      int     `json:"distinct_clients"`
+}
+
+// InsertPlaybackLog 写一条播放记录（error 非空时记录失败原因）。
+func (s *StrmStore) InsertPlaybackLog(pickCode string, fileName, userAgent *string, cacheHit bool, durationMs, status int, errMsg string) {
+	successInt := 0
+	if cacheHit {
+		successInt = 1
+	}
+	var errArg any
+	if errMsg != "" {
+		errArg = errMsg
+	}
+	_, _ = s.db.Exec(`INSERT INTO strm_playback_log(played_at, pick_code, file_name, user_agent, cache_hit, duration_ms, status, error)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		strmNow(), pickCode, fileName, userAgent, successInt, durationMs, status, errArg)
+	s.maybePrunePlayback()
+}
+
+// maybePrunePlayback 每 100 次写入裁剪一次超限旧记录（COUNT 概率性触发，成本低）。
+func (s *StrmStore) maybePrunePlayback() {
+	if time.Now().UnixNano()%100 != 0 {
+		return
+	}
+	_, _ = s.db.Exec(`DELETE FROM strm_playback_log WHERE id NOT IN (
+		SELECT id FROM strm_playback_log ORDER BY id DESC LIMIT ?)`, playbackRetention)
+}
+
+// ListPlaybackLogs 分页列出播放记录（新→旧），按 pick_code 关联映射路径。
+func (s *StrmStore) ListPlaybackLogs(limit, offset int) ([]StrmPlaybackLog, int) {
+	var total int
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM strm_playback_log").Scan(&total)
+	if limit <= 0 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := s.db.Query(`SELECT p.id, p.played_at, p.pick_code, p.file_name, p.user_agent,
+			p.cache_hit, p.duration_ms, p.status, p.error, f.pan_path, f.local_path
+		FROM strm_playback_log p
+		LEFT JOIN strm_files f ON f.pick_code = p.pick_code
+		ORDER BY p.id DESC LIMIT ? OFFSET ?`, limit, offset)
+	if err != nil {
+		return nil, total
+	}
+	defer rows.Close()
+	out := []StrmPlaybackLog{}
+	for rows.Next() {
+		var l StrmPlaybackLog
+		var cacheHit int
+		if err := rows.Scan(&l.ID, &l.PlayedAt, &l.PickCode, &l.FileName, &l.UserAgent,
+			&cacheHit, &l.DurationMs, &l.Status, &l.Error, &l.PanPath, &l.LocalPath); err != nil {
+			continue
+		}
+		l.CacheHit = cacheHit == 1
+		out = append(out, l)
+	}
+	return out, total
+}
+
+// GetPlaybackStats 播放统计：总数、当日（以本地时区自然日）、平均直链延迟（仅实时获取）、缓存命中率。
+func (s *StrmStore) GetPlaybackStats() StrmPlaybackStats {
+	stats := StrmPlaybackStats{}
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM strm_playback_log").Scan(&stats.Total)
+	// 本地自然日零点（用户视角的"今天"）转 UTC 存储格式比较
+	now := time.Now()
+	localDayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	dayStartUTC := localDayStart.UTC().Format("2006-01-02T15:04:05.000000-07:00")
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM strm_playback_log WHERE played_at >= ?", dayStartUTC).Scan(&stats.Today)
+	_ = s.db.QueryRow(`SELECT COALESCE(AVG(duration_ms), 0) FROM strm_playback_log
+		WHERE cache_hit = 0 AND status = 302`).Scan(&stats.AvgLatencyMs)
+	var redirects, cacheHits int
+	_ = s.db.QueryRow("SELECT COUNT(*), COALESCE(SUM(cache_hit), 0) FROM strm_playback_log WHERE status = 302").Scan(&redirects, &cacheHits)
+	if redirects > 0 {
+		stats.CacheHitRate = float64(cacheHits) / float64(redirects)
+	}
+	_ = s.db.QueryRow(`SELECT COUNT(DISTINCT user_agent) FROM strm_playback_log WHERE user_agent IS NOT NULL`).Scan(&stats.Clients)
+	return stats
 }

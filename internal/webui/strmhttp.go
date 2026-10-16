@@ -33,6 +33,71 @@ const strmURLExpiryMargin = 5 * time.Minute
 // pickCodeRe 115 pick_code：17 位字母数字。
 var pickCodeRe = regexp.MustCompile(`^[a-zA-Z0-9]{17}$`)
 
+// ── 直链获取限流（缓存命中不经过此层） ──────────────────────
+// 媒体服务器刮削/扫描会对 302 端点高频探测，三层防护：
+//  1. 单飞双检：同 pickcode+UA 并发只有一个真正请求 115
+//  2. 失败负缓存：同一 pickcode 短时间内的重复失败直接返回，不打 115
+//  3. 全局并发上限 + 排队超时：超出时快速 503，避免全库扫描风暴拖垮播放
+
+const (
+	strmFetchConcurrency = 2                // 同时处于「获取直链中」的最大请求数
+	strmFetchWaitTimeout = 3 * time.Second  // 排队等待上限，超时快速失败
+	strmNegativeCacheTTL = 30 * time.Second // 失败负缓存时长
+)
+
+// 测试可注入
+var (
+	strmFetchWait = strmFetchWaitTimeout
+	strmNegTTL    = strmNegativeCacheTTL
+	strmFetchSem  = make(chan struct{}, strmFetchConcurrency)
+)
+
+// negativeEntry 负缓存条目：短时间内的重复失败直接按同状态返回。
+type negativeEntry struct {
+	status int
+	msg    string
+	until  time.Time
+}
+
+var (
+	strmNegMu sync.Mutex
+	strmNeg   = map[string]negativeEntry{}
+)
+
+func strmNegativeGet(pickCode string) (negativeEntry, bool) {
+	strmNegMu.Lock()
+	defer strmNegMu.Unlock()
+	e, ok := strmNeg[pickCode]
+	if ok && time.Now().After(e.until) {
+		delete(strmNeg, pickCode)
+		return negativeEntry{}, false
+	}
+	return e, ok
+}
+
+func strmNegativeSet(pickCode string, status int, msg string) {
+	strmNegMu.Lock()
+	defer strmNegMu.Unlock()
+	if len(strmNeg) > 1024 {
+		now := time.Now()
+		for k, v := range strmNeg {
+			if now.After(v.until) {
+				delete(strmNeg, k)
+			}
+		}
+	}
+	strmNeg[pickCode] = negativeEntry{status: status, msg: msg, until: time.Now().Add(strmNegTTL)}
+}
+
+// resetStrmLimiter 测试用：清空直链缓存、负缓存与信号量。
+func resetStrmLimiter() {
+	strmLinkCache.clear()
+	strmNegMu.Lock()
+	strmNeg = map[string]negativeEntry{}
+	strmNegMu.Unlock()
+	strmFetchSem = make(chan struct{}, strmFetchConcurrency)
+}
+
 // directLink 缓存的直链条目。
 type directLink struct {
 	url      string
@@ -60,6 +125,12 @@ func (c *directLinkCache) get(pickCode, ua string) (directLink, bool) {
 		return directLink{}, false
 	}
 	return link, true
+}
+
+func (c *directLinkCache) clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries = map[string]directLink{}
 }
 
 func (c *directLinkCache) set(pickCode, ua, rawURL string, expires time.Time) {
@@ -96,6 +167,7 @@ func urlFileName(rawURL string) string {
 // ── HTTP 处理器 ─────────────────────────────────────────────
 
 func handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
 	if method := r.Method; method != http.MethodGet && method != http.MethodHead && method != http.MethodPost {
 		writeJSONError(w, http.StatusMethodNotAllowed, "仅支持 GET/HEAD/POST")
 		return
@@ -103,8 +175,33 @@ func handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	pickCode := strings.ToLower(strings.TrimSpace(query.Get("pickcode")))
 	if !pickCodeRe.MatchString(pickCode) {
+		// 无效参数非播放行为，不记录
 		writeJSONError(w, http.StatusBadRequest, "无效的 pickcode")
 		return
+	}
+
+	// 播放记录公共字段（UA 截断防御超长值）
+	rawUA := r.Header.Get("User-Agent")
+	if len(rawUA) > 512 {
+		rawUA = rawUA[:512]
+	}
+	recordPlayback := func(cacheHit bool, status int, errMsg string, fileName string) {
+		go func() {
+			defer func() { _ = recover() }()
+			st := RT().GetStrmStore()
+			if st == nil {
+				return
+			}
+			var nameArg, uaArg *string
+			if fileName != "" {
+				nameArg = &fileName
+			}
+			if rawUA != "" {
+				uaArg = &rawUA
+			}
+			st.InsertPlaybackLog(pickCode, nameArg, uaArg, cacheHit,
+				int(time.Since(start).Milliseconds()), status, errMsg)
+		}()
 	}
 
 	// 可选防滥用签名
@@ -113,6 +210,7 @@ func handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 		sign := query.Get("sign")
 		expect := StrmSign(cfg.Strm.URLSecret, pickCode)
 		if sign == "" || subtle.ConstantTimeCompare([]byte(sign), []byte(expect)) != 1 {
+			recordPlayback(false, http.StatusForbidden, "签名无效", query.Get("file_name"))
 			writeJSONError(w, http.StatusForbidden, "签名无效")
 			return
 		}
@@ -123,27 +221,93 @@ func handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 
 	if link, ok := strmLinkCache.get(pickCode, ua); ok {
 		strmRedirect(w, r, link)
+		recordPlayback(true, http.StatusFound, "", link.fileName)
+		return
+	}
+
+	// 失败负缓存：同一 pickcode 短时间内重复失败直接返回，不打 115
+	if neg, ok := strmNegativeGet(pickCode); ok {
+		w.Header().Set("Retry-After", "30")
+		recordPlayback(false, neg.status, neg.msg+"（负缓存）", query.Get("file_name"))
+		writeJSONError(w, neg.status, neg.msg+"（近期失败，请稍后重试）")
 		return
 	}
 
 	client := RT().GetU115Client()
 	if client == nil {
+		recordPlayback(false, http.StatusServiceUnavailable, "115 客户端不可用", query.Get("file_name"))
 		writeJSONError(w, http.StatusServiceUnavailable, "115 客户端不可用，请先完成授权")
 		return
 	}
-	rawURL, err := client.GetDownloadURLWithUA(pickCode, ua)
-	if err != nil {
-		writeStrmUpstreamError(w, err)
+
+	// 全局并发上限 + 排队超时：刮削扫描风暴时快速失败，不堆积
+	select {
+	case strmFetchSem <- struct{}{}:
+		defer func() { <-strmFetchSem }()
+		// 双检：排队期间同 pickcode+UA 可能已被其他请求取到
+		if link, ok := strmLinkCache.get(pickCode, ua); ok {
+			strmRedirect(w, r, link)
+			recordPlayback(true, http.StatusFound, "", link.fileName)
+			return
+		}
+		rawURL, err := client.GetDownloadURLWithUA(pickCode, ua)
+		if err != nil {
+			status, detail := strmUpstreamError(err)
+			strmNegativeSet(pickCode, status, detail)
+			recordPlayback(false, status, detail, query.Get("file_name"))
+			writeStrmUpstreamError(w, err)
+			return
+		}
+		expires := directURLExpiry(rawURL)
+		strmLinkCache.set(pickCode, ua, rawURL, expires)
+
+		fileName := query.Get("file_name")
+		if fileName == "" {
+			fileName = urlFileName(rawURL)
+		}
+		strmRedirectWithURL(w, r, rawURL, fileName)
+		recordPlayback(false, http.StatusFound, "", fileName)
+		return
+
+	case <-time.After(strmFetchWait):
+		w.Header().Set("Retry-After", "10")
+		recordPlayback(false, http.StatusServiceUnavailable, "直链获取排队超时", query.Get("file_name"))
+		writeJSONError(w, http.StatusServiceUnavailable, "直链获取排队超时（扫描限流中），请稍后重试")
+	}
+}
+
+// strmUpstreamError 将 115 错误映射为 HTTP 状态码与简述。
+func strmUpstreamError(err error) (int, string) {
+	switch {
+	case u115.IsRateLimit(err):
+		return http.StatusServiceUnavailable, "115 限流/冷却"
+	case u115.IsAuth(err):
+		return http.StatusBadGateway, "115 授权失效"
+	default:
+		return http.StatusBadGateway, "获取直链失败"
+	}
+}
+
+func handleStrmPlaybackHistory(w http.ResponseWriter, r *http.Request) {
+	st := RT().GetStrmStore()
+	if st == nil {
+		writeJSONError(w, http.StatusInternalServerError, "STRM 存储不可用")
 		return
 	}
-	expires := directURLExpiry(rawURL)
-	strmLinkCache.set(pickCode, ua, rawURL, expires)
-
-	fileName := query.Get("file_name")
-	if fileName == "" {
-		fileName = urlFileName(rawURL)
+	logs, total := st.ListPlaybackLogs(queryIntDefault(r, "limit", 50), queryIntDefault(r, "offset", 0))
+	items := make([]map[string]any, 0, len(logs))
+	for _, l := range logs {
+		items = append(items, map[string]any{
+			"id": l.ID, "played_at": l.PlayedAt, "pick_code": l.PickCode,
+			"file_name": l.FileName, "user_agent": l.UserAgent,
+			"cache_hit": l.CacheHit, "duration_ms": l.DurationMs,
+			"status": l.Status, "error": l.Error,
+			"pan_path": l.PanPath, "local_path": l.LocalPath,
+		})
 	}
-	strmRedirectWithURL(w, r, rawURL, fileName)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"total": total, "items": items, "stats": st.GetPlaybackStats(),
+	})
 }
 
 func strmRedirect(w http.ResponseWriter, r *http.Request, link directLink) {
@@ -154,6 +318,8 @@ func strmRedirectWithURL(w http.ResponseWriter, r *http.Request, rawURL, fileNam
 	if fileName != "" {
 		w.Header().Set("Content-Disposition", contentDisposition(fileName))
 	}
+	// 302 按请求 UA 生成，禁止 CDN/代理缓存（缓存会让后续不同 UA 的播放器拿到失效直链）
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Location", rawURL)
 	w.WriteHeader(http.StatusFound)
 }

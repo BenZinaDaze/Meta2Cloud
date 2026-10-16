@@ -59,14 +59,14 @@ type Client struct {
 	HTTP      *http.Client
 	userAgent string
 
-	apiQPS       float64
-	downloadQPS  float64
+	// qps 全项目共享的请求速率上限：整理/302 直链/下载/上传控制请求走同一个节拍，
+	// 总请求率不再叠加，降低触发 115 风控（429）的概率。<=0 视为不限速。
+	qps          float64
 	CooldownSecs int
 
-	rateMu         sync.Mutex
-	nextAPIAt      time.Time
-	nextDownloadAt time.Time
-	cooldownUntil  time.Time
+	rateMu        sync.Mutex
+	nextAt        time.Time
+	cooldownUntil time.Time
 
 	webCookieMu sync.Mutex
 	webCookie   string
@@ -97,10 +97,8 @@ func WithTimeout(seconds int) Option {
 // WithUserAgent 覆盖默认 User-Agent。
 func WithUserAgent(ua string) Option { return func(c *Client) { c.userAgent = ua } }
 
-// WithQPS 分别设置普通接口与下载接口的 QPS。
-func WithQPS(apiQPS, downloadQPS float64) Option {
-	return func(c *Client) { c.apiQPS = apiQPS; c.downloadQPS = downloadQPS }
-}
+// WithQPS 设置全项目共享的请求 QPS。
+func WithQPS(qps float64) Option { return func(c *Client) { c.qps = qps } }
 
 // WithCooldownSeconds 设置风控冷却时长（秒）。
 func WithCooldownSeconds(sec int) Option { return func(c *Client) { c.CooldownSecs = sec } }
@@ -108,13 +106,12 @@ func WithCooldownSeconds(sec int) Option { return func(c *Client) { c.CooldownSe
 // WithHTTPClient 注入自定义 http.Client（测试用）。
 func WithHTTPClient(hc *http.Client) Option { return func(c *Client) { c.HTTP = hc } }
 
-// NewClient 构造客户端。默认 api_qps=3、download_qps=1、冷却 1 小时。
+// NewClient 构造客户端。默认共享 QPS=3、冷却 1 小时。
 func NewClient(clientID string, opts ...Option) *Client {
 	c := &Client{
 		ClientID:     clientID,
 		HTTP:         &http.Client{Timeout: 30 * time.Second},
-		apiQPS:       3.0,
-		downloadQPS:  1.0,
+		qps:          3.0,
 		CooldownSecs: 3600,
 		userAgent:    defaultUserAgent,
 	}
@@ -209,11 +206,8 @@ func (c *Client) enterCooldown() {
 	if until.After(c.cooldownUntil) {
 		c.cooldownUntil = until
 	}
-	if until.After(c.nextAPIAt) {
-		c.nextAPIAt = until
-	}
-	if until.After(c.nextDownloadAt) {
-		c.nextDownloadAt = until
+	if until.After(c.nextAt) {
+		c.nextAt = until
 	}
 	c.rateMu.Unlock()
 }
@@ -222,7 +216,9 @@ func rateLimitError(message string, code *float64, payload map[string]any) *APIE
 	return &APIError{Kind: KindRateLimit, Message: message, Code: code, Payload: payload}
 }
 
-func (c *Client) sleepRateLimit(isDownload bool) error {
+// sleepRateLimit 全项目共享的单桶限流：所有 115 请求（整理 API / 302 直链 / 下载 /
+// 上传控制）按同一节拍排队，总请求率不超过 qps，避免叠加触发 429。
+func (c *Client) sleepRateLimit() error {
 	c.rateMu.Lock()
 	now := time.Now()
 	if now.Before(c.cooldownUntil) {
@@ -232,25 +228,15 @@ func (c *Client) sleepRateLimit(isDownload bool) error {
 			"retry_after": retryAfter,
 		})
 	}
-	qps := c.apiQPS
-	nextAt := c.nextAPIAt
-	if isDownload {
-		qps = c.downloadQPS
-		nextAt = c.nextDownloadAt
-	}
 	reserveAt := now
-	if nextAt.After(reserveAt) {
-		reserveAt = nextAt
+	if c.nextAt.After(reserveAt) {
+		reserveAt = c.nextAt
 	}
 	wait := reserveAt.Sub(now)
-	if qps > 0 {
-		reserveAt = reserveAt.Add(time.Duration(float64(time.Second) / qps))
+	if c.qps > 0 {
+		reserveAt = reserveAt.Add(time.Duration(float64(time.Second) / c.qps))
 	}
-	if isDownload {
-		c.nextDownloadAt = reserveAt
-	} else {
-		c.nextAPIAt = reserveAt
-	}
+	c.nextAt = reserveAt
 	c.rateMu.Unlock()
 	if wait > 0 {
 		time.Sleep(wait)
@@ -267,7 +253,6 @@ type requestOpts struct {
 	form           url.Values // POST 表单体
 	authRequired   bool
 	allowCode20004 bool
-	isDownload     bool
 	maxAttempts    int    // 0 → 默认 3
 	userAgent      string // 非空时覆盖客户端默认 User-Agent（115 直链与 UA 绑定）
 }
@@ -285,7 +270,7 @@ func (c *Client) request(method, baseURL, pathStr string, opts requestOpts) (map
 
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		if err := c.sleepRateLimit(opts.isDownload); err != nil {
+		if err := c.sleepRateLimit(); err != nil {
 			return nil, err
 		}
 
@@ -802,7 +787,6 @@ func (c *Client) GetDownloadURLWithUA(pickCode, userAgent string) (string, error
 	payload, err := c.request(http.MethodPost, proAPI, "/open/ufile/downurl", requestOpts{
 		form:         url.Values{"pick_code": {pickCode}},
 		authRequired: true,
-		isDownload:   true,
 		userAgent:    userAgent,
 	})
 	if err != nil {
@@ -834,6 +818,38 @@ func downloadURLFromPayload(payload map[string]any) (string, error) {
 
 // GetHTTPClient 暴露底层 http.Client（下载等直接使用）。
 func (c *Client) GetHTTPClient() *http.Client { return c.HTTP }
+
+// FetchBytes 下载小文件内容到内存（外挂字幕/图片/NFO 等伴随文件），limit 为最大字节数。
+// 直链获取与内容拉取使用同一 UA 保证直链可用；请求计入共享 QPS 节拍。
+func (c *Client) FetchBytes(pickCode string, limit int64) ([]byte, error) {
+	url, err := c.GetDownloadURL(pickCode)
+	if err != nil {
+		return nil, err
+	}
+	// 115 直链与 UA 绑定：申请直链用的是 c.userAgent，拉取内容必须带同一 UA，
+	// 否则 CDN 返回 403（Go 的 http.Client.Get 默认不发送 User-Agent 头）。
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", c.userAgent)
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return nil, &APIError{Message: "下载文件失败：HTTP " + strconv.Itoa(resp.StatusCode)}
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, &APIError{Message: fmt.Sprintf("文件超过大小限制 %d 字节，跳过下载", limit)}
+	}
+	return data, nil
+}
 
 // DownloadFile 下载文件到本地，异常时删除残留文件。
 // pickCode 为空时按 path 查询详情获取 pick_code。
@@ -1196,7 +1212,7 @@ func (c *Client) webRequest(method, pathStr string, params, form url.Values) (ma
 	}
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		if err := c.sleepRateLimit(false); err != nil {
+		if err := c.sleepRateLimit(); err != nil {
 			return nil, err
 		}
 		var body io.Reader

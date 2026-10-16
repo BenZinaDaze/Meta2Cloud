@@ -120,6 +120,8 @@ export const listStrmSyncRuns = (params?: { limit?: number; offset?: number }) =
   api.get('/strm/sync/runs', { params })
 export const getStrmSyncRunFiles = (runId: number | string, params?: { limit?: number }) =>
   api.get(`/strm/sync/runs/${runId}/files`, { params })
+export const getStrmPlaybackHistory = (params?: { limit?: number; offset?: number }) =>
+  api.get('/strm/playback/history', { params })
 
 // ── 其他 ──
 export const getLogs = (params?: { limit?: number; offset?: number }) =>

@@ -139,6 +139,7 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("POST /api/strm/sync", handleStrmSyncTrigger)
 	m.HandleFunc("GET /api/strm/sync/runs", handleStrmSyncRuns)
 	m.HandleFunc("GET /api/strm/sync/runs/{runID}/files", handleStrmSyncRunFiles)
+	m.HandleFunc("GET /api/strm/playback/history", handleStrmPlaybackHistory)
 
 	// 兜底：静态资源 / SPA
 	m.HandleFunc("/", s.handleRoot)

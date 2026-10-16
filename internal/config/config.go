@@ -65,6 +65,7 @@ type U115 struct {
 	AutoOrganizeEnabled       bool   `yaml:"auto_organize_enabled"`
 	AutoOrganizePollSeconds   int    `yaml:"auto_organize_poll_seconds"`
 	AutoOrganizeStableSeconds int    `yaml:"auto_organize_stable_seconds"`
+	QPS                       int    `yaml:"qps"`
 }
 
 // Pipeline 整理流水线开关。
@@ -127,6 +128,8 @@ type Strm struct {
 	URLSecret           string        `yaml:"url_secret"`
 	SyncIntervalSeconds int           `yaml:"sync_interval_seconds"`
 	MediaExt            []string      `yaml:"media_ext"`
+	FetchSidecar        bool          `yaml:"fetch_sidecar"`
+	SidecarExt          []string      `yaml:"sidecar_ext"`
 	Mappings            []StrmMapping `yaml:"mappings"`
 }
 
@@ -155,12 +158,17 @@ func Default() *Config {
 			SessionJSON:               "config/115-device-session.json",
 			AutoOrganizePollSeconds:   45,
 			AutoOrganizeStableSeconds: 30,
+			QPS:                       3,
 		},
 		Subtitle:   Subtitle{Enabled: true},
 		MediaVault: MediaVault{Scheme: "http", Timeout: 10},
-		WebUI:   WebUI{Username: "admin", TokenExpireHours: 24, LogRetentionDays: 7},
-		Storage: Storage{Primary: "pan115"},
-		Strm:    Strm{MediaExt: append([]string{}, DefaultStrmMediaExt...)},
+		WebUI:      WebUI{Username: "admin", TokenExpireHours: 24, LogRetentionDays: 7},
+		Storage:    Storage{Primary: "pan115"},
+		Strm: Strm{
+			MediaExt:     append([]string{}, DefaultStrmMediaExt...),
+			FetchSidecar: true,
+			SidecarExt:   append([]string{}, DefaultStrmSidecarExt...),
+		},
 	}
 }
 
@@ -336,6 +344,7 @@ func parseU115(m map[string]any) U115 {
 		AutoOrganizeEnabled:       boolean(m, "auto_organize_enabled", false),
 		AutoOrganizePollSeconds:   maxInt(integer(m, "auto_organize_poll_seconds", 45), 10),
 		AutoOrganizeStableSeconds: maxInt(integer(m, "auto_organize_stable_seconds", 30), 0),
+		QPS:                       maxInt(integer(m, "qps", 3), 1),
 	}
 	return cfg
 }
@@ -394,6 +403,10 @@ var DefaultStrmMediaExt = []string{
 	"rmvb", "rm", "mpg", "mpeg", "vob", "iso", "3gp",
 }
 
+// DefaultStrmSidecarExt STRM 同步默认下载的伴随文件扩展名（默认仅外挂字幕）。
+// NFO/图片不下载：媒体服务器对 strm 用文件名+刮削即可，海报图片可由刮削器自行拉取。
+var DefaultStrmSidecarExt = []string{"srt", "ass", "ssa"}
+
 func parseStrm(m map[string]any) Strm {
 	mediaExt := strList(m, "media_ext")
 	if len(mediaExt) == 0 {
@@ -415,12 +428,18 @@ func parseStrm(m map[string]any) Strm {
 			}
 		}
 	}
+	sidecarExt := strList(m, "sidecar_ext")
+	if len(sidecarExt) == 0 {
+		sidecarExt = append([]string{}, DefaultStrmSidecarExt...)
+	}
 	return Strm{
 		Enabled:             boolean(m, "enabled", false),
 		URLBase:             strings.TrimRight(strings.TrimSpace(str(m, "url_base", "")), "/"),
 		URLSecret:           strings.TrimSpace(str(m, "url_secret", "")),
 		SyncIntervalSeconds: integer(m, "sync_interval_seconds", 0),
 		MediaExt:            mediaExt,
+		FetchSidecar:        boolean(m, "fetch_sidecar", true),
+		SidecarExt:          sidecarExt,
 		Mappings:            mappings,
 	}
 }

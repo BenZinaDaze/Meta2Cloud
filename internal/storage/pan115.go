@@ -44,6 +44,11 @@ func (p *Pan115Provider) ProviderName() string { return "pan115" }
 // RawClient 暴露底层 u115.Client，供需要平台特有功能的场景使用。
 func (p *Pan115Provider) RawClient() *u115.Client { return p.clientGetter() }
 
+// FetchBytes 下载小文件内容到内存（外挂字幕/图片/NFO 等伴随文件）。
+func (p *Pan115Provider) FetchBytes(pickCode string, limit int64) ([]byte, error) {
+	return p.client().FetchBytes(pickCode, limit)
+}
+
 func (p *Pan115Provider) client() *u115.Client { return p.clientGetter() }
 
 // normalizeFolderID 兼容 "root" → "0" 映射与空串默认根目录。

@@ -479,7 +479,7 @@ func newU115TestServer(t *testing.T, confirmed bool) (*httptest.Server, string) 
 
 	client := u115.NewClient("test-cid",
 		u115.WithToken(u115.Token{AccessToken: "at", RefreshToken: "rt", ExpiresIn: 3600, RefreshTime: time.Now().Unix()}),
-		u115.WithQPS(1000, 1000))
+		u115.WithQPS(1000))
 	client.SetTestBaseURL(apiServer.URL)
 	RT().SetU115ClientForTest(client)
 
@@ -716,7 +716,7 @@ func TestPushTorrentLinkAddsBTTask(t *testing.T) {
 
 	client := u115.NewClient("cid",
 		u115.WithToken(u115.Token{AccessToken: "at", RefreshToken: "rt", ExpiresIn: 3600, RefreshTime: time.Now().Unix()}),
-		u115.WithQPS(1000, 1000))
+		u115.WithQPS(1000))
 	client.SetTestBaseURL(u115Server.URL)
 	RT().SetU115ClientForTest(client)
 	provider := &fakeTorrentProvider{}
@@ -799,7 +799,7 @@ func newSubscriptionTestServer(t *testing.T) (*httptest.Server, string) {
 	// 注入测试 115 客户端
 	u115Client := u115.NewClient("cid",
 		u115.WithToken(u115.Token{AccessToken: "at", RefreshToken: "rt", ExpiresIn: 3600, RefreshTime: time.Now().Unix()}),
-		u115.WithQPS(1000, 1000))
+		u115.WithQPS(1000))
 	u115Client.SetTestBaseURL(u115Server.URL)
 	RT().SetU115ClientForTest(u115Client)
 

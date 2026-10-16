@@ -21,6 +21,7 @@ import {
   Captions,
   RadioTower,
   AlertTriangle,
+  Dices,
 } from 'lucide-react'
 import {
   getMainConfig,
@@ -115,6 +116,9 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   if (u115.auto_organize_stable_seconds === undefined || u115.auto_organize_stable_seconds === null || u115.auto_organize_stable_seconds === '') {
     u115.auto_organize_stable_seconds = 30
   }
+  if (u115.qps === undefined || u115.qps === null || u115.qps === '') {
+    u115.qps = 3
+  }
   if (rss.poll_seconds === undefined || rss.poll_seconds === null || rss.poll_seconds === '') {
     rss.poll_seconds = 300
   }
@@ -141,6 +145,12 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   }
   if (!Array.isArray(strm.media_ext) || strm.media_ext.length === 0) {
     strm.media_ext = ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'ts', 'm2ts', 'webm', 'rmvb', 'rm', 'mpg', 'mpeg', 'vob', 'iso', '3gp']
+  }
+  if (strm.fetch_sidecar === undefined || strm.fetch_sidecar === null) {
+    strm.fetch_sidecar = true
+  }
+  if (!Array.isArray(strm.sidecar_ext) || strm.sidecar_ext.length === 0) {
+    strm.sidecar_ext = ['srt', 'ass', 'ssa']
   }
 
   next.webui = webui
@@ -343,6 +353,13 @@ function MultilineRulesField({ value = [], onChange, placeholder = '' }: {
       </div>
     </div>
   )
+}
+
+/** 生成 128 位熵的随机签名密钥（浏览器密码学安全随机源）。 */
+function randomSecret(): string {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
 function NoticeMessage({ message }: { message: { type: 'success' | 'error'; text: string } | null }) {
@@ -1007,6 +1024,14 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                       mono
                     />
                   </Field>
+                  <Field label="共享请求 QPS" description="整理/播放/下载全项目共用，调低更防风控">
+                    <NumberInput
+                      value={(cfg?.u115 as Record<string, unknown>)?.qps as number | undefined}
+                      onChange={(v) => set('u115', 'qps', v)}
+                      min={1}
+                      max={10}
+                    />
+                  </Field>
                   <Field label="媒体库根目录 ID">
                     <TextInput
                       value={(cfg?.u115 as Record<string, unknown>)?.root_folder_id as string | undefined}
@@ -1333,21 +1358,33 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                       max={86400}
                     />
                   </Field>
-                  <Field label="服务地址 (url_base)" description="写入 .strm 的地址，播放器需能访问" fullWidth>
+                  <Field label="服务地址 (url_base)" description="写入 .strm 的地址，支持 IP:端口或域名（含反代/HTTPS）" fullWidth>
                     <TextInput
                       value={(cfg?.strm as Record<string, unknown>)?.url_base as string | undefined}
                       onChange={(v) => set('strm', 'url_base', v)}
-                      placeholder="http://192.168.1.10:38765"
+                      placeholder="http://192.168.1.10:38765 或 https://strm.example.com"
                       mono
                     />
                   </Field>
-                  <Field label="访问签名 (url_secret)" description="可选，防止未授权调用 302 直链" fullWidth>
-                    <TextInput
-                      value={(cfg?.strm as Record<string, unknown>)?.url_secret as string | undefined}
-                      onChange={(v) => set('strm', 'url_secret', v)}
-                      placeholder="留空不启用签名校验"
-                      mono
-                    />
+                  <Field label="访问签名 (url_secret)" description="可选，防止未授权调用 302 直链；修改后需重新同步" fullWidth>
+                    <div className="flex gap-2">
+                      <Input
+                        value={((cfg?.strm as Record<string, unknown>)?.url_secret as string) ?? ''}
+                        onChange={(e) => set('strm', 'url_secret', e.target.value)}
+                        placeholder="留空不启用签名校验"
+                        className="font-mono text-[13px]"
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        title="生成 128 位随机密钥"
+                        onClick={() => set('strm', 'url_secret', randomSecret())}
+                      >
+                        <Dices className="size-4" />
+                        随机
+                      </Button>
+                    </div>
                   </Field>
                 </FieldGroup>
 
@@ -1407,12 +1444,29 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                   </div>
                 </div>
 
-                <Field label="媒体扩展名" description="这些扩展名的网盘文件会生成 STRM" fullWidth>
-                  <ListField
-                    value={((cfg?.strm as Record<string, unknown>)?.media_ext as string[]) || []}
-                    onChange={(v) => set('strm', 'media_ext', v)}
-                  />
-                </Field>
+                <FieldGroup>
+                  <Field label="媒体扩展名" description="这些扩展名的网盘文件会生成 STRM" fullWidth>
+                    <ListField
+                      value={((cfg?.strm as Record<string, unknown>)?.media_ext as string[]) || []}
+                      onChange={(v) => set('strm', 'media_ext', v)}
+                    />
+                  </Field>
+                </FieldGroup>
+
+                <FieldGroup>
+                  <Field label="下载伴随文件" description="外挂字幕/元数据/图片下载到本地，否则 STRM 播放无法加载外挂字幕">
+                    <Toggle
+                      value={((cfg?.strm as Record<string, unknown>)?.fetch_sidecar as boolean) || false}
+                      onChange={(v) => set('strm', 'fetch_sidecar', v)}
+                    />
+                  </Field>
+                  <Field label="伴随文件扩展名" description="单文件上限 20MB，与 .strm 同目录存放" fullWidth>
+                    <ListField
+                      value={((cfg?.strm as Record<string, unknown>)?.sidecar_ext as string[]) || []}
+                      onChange={(v) => set('strm', 'sidecar_ext', v)}
+                    />
+                  </Field>
+                </FieldGroup>
 
                 <div className="text-xs leading-6 text-muted-foreground">
                   <p>.strm 内容形如 <code className="rounded bg-muted px-1 font-mono">http://服务地址/strm/redirect?pickcode=...</code>，播放时实时向 115 换取直链（直链与播放器 User-Agent 绑定，服务端自动透传并缓存）。</p>
