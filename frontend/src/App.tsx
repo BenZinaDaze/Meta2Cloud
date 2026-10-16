@@ -1,4 +1,5 @@
 import { Suspense, lazy, useState, useEffect, useCallback } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useSearchParams } from 'react-router'
 import { setUnauthorizedHandler, getMe, getU115OauthStatus, refreshLibrary } from './api'
 import type { MediaItem } from '@/types/api'
 import { Toaster } from '@/components/ui/sonner'
@@ -22,8 +23,6 @@ const StrmPlaybackPage = lazy(() => import('@/components/pages/StrmPlaybackPage'
 const TitlePinsPage = lazy(() => import('@/components/pages/TitlePinsPage'))
 const ParseTestModal = lazy(() => import('@/components/modals/ParseTestModal'))
 
-type NavKey = 'all' | 'movies' | 'tv' | 'config' | 'config-filename-rules' | 'calendar' | 'scraper-search' | 'subscriptions' | 'files' | 'ingest-history' | 'title-pins' | 'strm-sync' | 'strm-playback' | 'logs' | 'u115-offline'
-
 function PageFallback() {
   return (
     <div className="flex min-h-[240px] items-center justify-center">
@@ -35,18 +34,15 @@ function PageFallback() {
   )
 }
 
+// 跨页跳转的交接数据（location.state 携带）
+interface SearchHandoffState {
+  initialItem?: MediaItem
+}
+
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem('auth_token'))
   const [checkingAuth, setChecking] = useState(true)
-
-  const [activeNav, setActiveNav] = useState<NavKey>('all')
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [u115Authorized, setU115Authorized] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
-  const [refreshKey, setRefreshKey] = useState(0)
-  const [globalSearchItem, setGlobalSearchItem] = useState<MediaItem | null>(null)
-  const [globalSearchQuery, setGlobalSearchQuery] = useState('')
-  const [showParseTest, setShowParseTest] = useState(false)
 
   useEffect(() => {
     if (!token) { setChecking(false); return }
@@ -91,25 +87,6 @@ export default function App() {
     setToken(newToken)
   }, [])
 
-  const handleLogout = useCallback(() => {
-    localStorage.removeItem('auth_token')
-    setToken(null)
-  }, [])
-
-  const handleToast = useCallback((type: 'success' | 'error' | 'warning', title: string, message?: string) => {
-    toast[type](title, { description: message })
-  }, [])
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true)
-    try {
-      await refreshLibrary()
-      setRefreshKey((k) => k + 1)
-    } finally {
-      setRefreshing(false)
-    }
-  }, [])
-
   if (checkingAuth) {
     return (
       <div className="relative flex min-h-screen items-center justify-center">
@@ -134,6 +111,56 @@ export default function App() {
   }
 
   return (
+    <BrowserRouter>
+      <AppShell u115Authorized={u115Authorized} onLogout={() => {
+        localStorage.removeItem('auth_token')
+        setToken(null)
+      }} />
+      <Toaster />
+    </BrowserRouter>
+  )
+}
+
+// AppShell 登录后的应用骨架（路由在此层消费）
+function AppShell({ u115Authorized, onLogout }: { u115Authorized: boolean; onLogout: () => void }) {
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [showParseTest, setShowParseTest] = useState(false)
+
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const handoff = (location.state ?? null) as SearchHandoffState | null
+
+  const handleToast = useCallback((type: 'success' | 'error' | 'warning', title: string, message?: string) => {
+    toast[type](title, { description: message })
+  }, [])
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      await refreshLibrary()
+      setRefreshKey((k) => k + 1)
+    } finally {
+      setRefreshing(false)
+    }
+  }, [])
+
+  const renderLibrary = (filter: string) => (
+    <LibraryPage
+      filter={filter}
+      onChangeFilter={(f) => navigate(`/${f}`)}
+      onRefresh={handleRefresh}
+      refreshing={refreshing}
+      refreshKey={refreshKey}
+      onToast={handleToast}
+      onGlobalSearch={(item) => navigate('/search', { state: { initialItem: item } })}
+    />
+  )
+
+  return (
     <div className="relative h-screen overflow-hidden bg-background">
       {/* 环境光晕装饰层 */}
       <div className="ambient-layer" />
@@ -143,12 +170,10 @@ export default function App() {
         onOpenParseTest={() => setShowParseTest(true)}
       />
       <Sidebar
-        active={activeNav}
-        onSelect={(key) => { setActiveNav(key as NavKey); setMobileSidebarOpen(false) }}
         u115Authorized={u115Authorized}
         mobileOpen={mobileSidebarOpen}
         onMobileClose={() => setMobileSidebarOpen(false)}
-        onLogout={handleLogout}
+        onLogout={onLogout}
       />
 
       {mobileSidebarOpen && (
@@ -160,69 +185,48 @@ export default function App() {
 
       <main className="relative z-10 h-full pb-20 pt-14 lg:ml-[248px] lg:pb-0">
         <div
-          key={activeNav}
+          key={location.pathname}
           data-main-scroll-container="true"
           className="h-full overflow-y-auto p-4 animate-page-enter lg:p-8"
         >
           <Suspense fallback={<PageFallback />}>
-            {activeNav === 'config' ? (
-              <ConfigPage page="general" />
-            ) : activeNav === 'config-filename-rules' ? (
-              <ConfigPage page="filenameRules" />
-            ) : activeNav === 'calendar' ? (
-              <CalendarPage
-                onSearch={(title) => {
-                  setGlobalSearchQuery(title)
-                  setActiveNav('scraper-search')
-                }}
+            <Routes>
+              <Route path="/" element={<Navigate to="/library" replace />} />
+              <Route path="/library" element={renderLibrary('all')} />
+              <Route path="/movies" element={renderLibrary('movies')} />
+              <Route path="/tv" element={renderLibrary('tv')} />
+              <Route
+                path="/calendar"
+                element={<CalendarPage onSearch={(title) => navigate(`/search?q=${encodeURIComponent(title)}`)} />}
               />
-            ) : activeNav === 'scraper-search' ? (
-              <ScraperSearch
-                initialSearchItem={globalSearchItem}
-                onClearInitialSearchItem={() => setGlobalSearchItem(null)}
-                initialQuery={globalSearchQuery}
-                onClearInitialQuery={() => setGlobalSearchQuery('')}
+              <Route
+                path="/search"
+                element={
+                  <ScraperSearch
+                    initialSearchItem={handoff?.initialItem ?? null}
+                    onClearInitialSearchItem={() => navigate('/search', { replace: true, state: null })}
+                    initialQuery={searchParams.get('q') ?? undefined}
+                    onClearInitialQuery={() => setSearchParams({}, { replace: true })}
+                  />
+                }
               />
-            ) : activeNav === 'subscriptions' ? (
-              <SubscriptionsPage
-                onToast={handleToast}
-                u115Authorized={u115Authorized}
-              />
-            ) : activeNav === 'files' ? (
-              <FileManagerPage />
-            ) : activeNav === 'ingest-history' ? (
-              <IngestHistoryPage onToast={handleToast} />
-            ) : activeNav === 'title-pins' ? (
-              <TitlePinsPage onToast={handleToast} />
-            ) : activeNav === 'strm-sync' ? (
-              <StrmSyncPage onToast={handleToast} />
-            ) : activeNav === 'strm-playback' ? (
-              <StrmPlaybackPage onToast={handleToast} />
-            ) : activeNav === 'logs' ? (
-              <LogsPage />
-            ) : activeNav === 'u115-offline' ? (
-              <U115OfflinePage onToast={handleToast} />
-            ) : (
-              <LibraryPage
-                filter={activeNav}
-                onChangeFilter={(f) => setActiveNav(f as NavKey)}
-                onRefresh={handleRefresh}
-                refreshing={refreshing}
-                refreshKey={refreshKey}
-                onToast={handleToast}
-                onGlobalSearch={(item) => {
-                  setGlobalSearchItem(item)
-                  setActiveNav('scraper-search')
-                }}
-              />
-            )}
+              <Route path="/subscriptions" element={<SubscriptionsPage onToast={handleToast} u115Authorized={u115Authorized} />} />
+              <Route path="/files" element={<FileManagerPage />} />
+              <Route path="/ingest-history" element={<IngestHistoryPage onToast={handleToast} />} />
+              <Route path="/title-pins" element={<TitlePinsPage onToast={handleToast} />} />
+              <Route path="/strm-sync" element={<StrmSyncPage onToast={handleToast} />} />
+              <Route path="/strm-playback" element={<StrmPlaybackPage onToast={handleToast} />} />
+              <Route path="/logs" element={<LogsPage />} />
+              <Route path="/u115-offline" element={<U115OfflinePage onToast={handleToast} />} />
+              <Route path="/config" element={<ConfigPage page="general" />} />
+              <Route path="/config/filename-rules" element={<ConfigPage page="filenameRules" />} />
+              <Route path="*" element={<Navigate to="/library" replace />} />
+            </Routes>
           </Suspense>
         </div>
       </main>
 
       <MobileNav
-        active={activeNav}
-        onSelect={(key) => setActiveNav(key as NavKey)}
         onToggleSidebar={() => setMobileSidebarOpen((o) => !o)}
         u115Authorized={u115Authorized}
       />
@@ -233,8 +237,6 @@ export default function App() {
           onOpenChange={setShowParseTest}
         />
       </Suspense>
-
-      <Toaster />
     </div>
   )
 }

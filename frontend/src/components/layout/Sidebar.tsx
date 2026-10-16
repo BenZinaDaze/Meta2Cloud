@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { NavLink, useLocation } from 'react-router'
 import {
   BookOpen,
   Search,
@@ -69,6 +70,8 @@ function NavGroupLabel({ label }: NavGroupLabelProps) {
 interface NavItemProps {
   icon: React.ReactNode
   label: string
+  /** 路由目标；缺省时渲染为普通按钮（折叠开关等） */
+  to?: string
   active?: boolean
   onClick?: () => void
   indent?: boolean
@@ -76,20 +79,18 @@ interface NavItemProps {
   meta?: number | null
 }
 
-function NavItem({ icon, label, active, onClick, indent, right, meta }: NavItemProps) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "group relative flex w-full items-center gap-2.5 overflow-hidden rounded-lg text-left font-medium transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
-        indent
-          ? "mx-2 w-[calc(100%-1rem)] py-1.5 pl-9 pr-2.5"
-          : "mx-2 w-[calc(100%-1rem)] px-2.5 py-2",
-        active
-          ? "bg-foreground text-[oklch(18%_0.01_140)] shadow-[0_4px_14px_-4px_oklch(0%_0_0/0.6)]"
-          : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-      )}
-    >
+function NavItem({ icon, label, to, active, onClick, indent, right, meta }: NavItemProps) {
+  const className = cn(
+    "group relative flex w-full items-center gap-2.5 overflow-hidden rounded-lg text-left font-medium transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+    indent
+      ? "mx-2 w-[calc(100%-1rem)] py-1.5 pl-9 pr-2.5"
+      : "mx-2 w-[calc(100%-1rem)] px-2.5 py-2",
+    active
+      ? "bg-foreground text-[oklch(18%_0.01_140)] shadow-[0_4px_14px_-4px_oklch(0%_0_0/0.6)]"
+      : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+  )
+  const content = (
+    <>
       <span className={cn("flex-shrink-0 transition-colors", active ? "opacity-80" : "text-muted-foreground/80 group-hover:text-foreground")}>
         {icon}
       </span>
@@ -107,6 +108,18 @@ function NavItem({ icon, label, active, onClick, indent, right, meta }: NavItemP
         )}
         {right}
       </span>
+    </>
+  )
+  if (to) {
+    return (
+      <NavLink to={to} onClick={onClick} className={className}>
+        {content}
+      </NavLink>
+    )
+  }
+  return (
+    <button onClick={onClick} className={className}>
+      {content}
     </button>
   )
 }
@@ -142,8 +155,6 @@ function NavCollapse({ expanded, children }: { expanded: boolean; children: Reac
 }
 
 interface SidebarProps {
-  active: string
-  onSelect: (key: string) => void
   u115Authorized?: boolean
   mobileOpen?: boolean
   onMobileClose?: () => void
@@ -151,16 +162,17 @@ interface SidebarProps {
 }
 
 export default function Sidebar({
-  active,
-  onSelect,
   u115Authorized = false,
   mobileOpen = false,
+  onMobileClose,
   onLogout,
 }: SidebarProps) {
   const [libraryExpanded, setLibraryExpanded] = useState(true)
   const [configExpanded, setConfigExpanded] = useState(false)
   const [confirmingLogout, setConfirmingLogout] = useState(false)
   const [latestVersion, setLatestVersion] = useState<string | null>(null)
+
+  const { pathname } = useLocation()
 
   const currentVersion = import.meta.env.VITE_APP_VERSION || 'v0.0.0'
 
@@ -185,7 +197,9 @@ export default function Sidebar({
 
   const hasUpdate = latestVersion && currentVersion !== 'dev' && compareVer(latestVersion, currentVersion) > 0
 
-  const isLibraryExpanded = libraryExpanded || active === 'movies' || active === 'tv'
+  const isLibraryExpanded = libraryExpanded || pathname === '/movies' || pathname === '/tv'
+  const isLibraryActive = pathname === '/library' || pathname === '/movies' || pathname === '/tv'
+  const closeMobile = () => onMobileClose?.()
 
   function handleLogoutClick() {
     if (!confirmingLogout) {
@@ -222,23 +236,26 @@ export default function Sidebar({
         <NavItem
           icon={<BookOpen className="size-4" />}
           label="媒体库总览"
-          active={active === 'all'}
-          onClick={() => { setLibraryExpanded(!libraryExpanded); onSelect('all') }}
+          to="/library"
+          active={isLibraryActive}
+          onClick={() => { setLibraryExpanded(!libraryExpanded); closeMobile() }}
           right={<Chevron expanded={isLibraryExpanded} />}
         />
         <NavCollapse expanded={isLibraryExpanded}>
           <NavItem
             icon={<Film className="size-4" />}
             label="电影"
-            active={active === 'movies'}
-            onClick={() => onSelect('movies')}
+            to="/movies"
+            active={pathname === '/movies'}
+            onClick={closeMobile}
             indent
           />
           <NavItem
             icon={<Tv className="size-4" />}
             label="电视剧"
-            active={active === 'tv'}
-            onClick={() => onSelect('tv')}
+            to="/tv"
+            active={pathname === '/tv'}
+            onClick={closeMobile}
             indent
           />
         </NavCollapse>
@@ -247,22 +264,25 @@ export default function Sidebar({
           <NavItem
             icon={<Calendar className="size-4" />}
             label="新番列表"
-            active={active === 'calendar'}
-            onClick={() => onSelect('calendar')}
+            to="/calendar"
+            active={pathname === '/calendar'}
+            onClick={closeMobile}
           />
           <NavItem
             icon={<Search className="size-4" />}
             label="资源检索"
-            active={active === 'scraper-search'}
-            onClick={() => onSelect('scraper-search')}
+            to="/search"
+            active={pathname === '/search'}
+            onClick={closeMobile}
           />
         </div>
 
         <NavItem
           icon={<Rss className="size-4" />}
           label="订阅列表"
-          active={active === 'subscriptions'}
-          onClick={() => onSelect('subscriptions')}
+          to="/subscriptions"
+          active={pathname === '/subscriptions'}
+          onClick={closeMobile}
         />
 
         {u115Authorized && (
@@ -270,8 +290,9 @@ export default function Sidebar({
             <NavItem
               icon={<Cloud className="size-4" />}
               label="云下载"
-              active={active === 'u115-offline'}
-              onClick={() => onSelect('u115-offline')}
+              to="/u115-offline"
+              active={pathname === '/u115-offline'}
+              onClick={closeMobile}
             />
           </div>
         )}
@@ -280,38 +301,44 @@ export default function Sidebar({
         <NavItem
           icon={<FolderOpen className="size-4" />}
           label="文件管理"
-          active={active === 'files'}
-          onClick={() => onSelect('files')}
+          to="/files"
+          active={pathname === '/files'}
+          onClick={closeMobile}
         />
         <NavItem
           icon={<History className="size-4" />}
           label="入库记录"
-          active={active === 'ingest-history'}
-          onClick={() => onSelect('ingest-history')}
+          to="/ingest-history"
+          active={pathname === '/ingest-history'}
+          onClick={closeMobile}
         />
         <NavItem
           icon={<Tag className="size-4" />}
           label="整理名称"
-          active={active === 'title-pins'}
-          onClick={() => onSelect('title-pins')}
+          to="/title-pins"
+          active={pathname === '/title-pins'}
+          onClick={closeMobile}
         />
         <NavItem
           icon={<FileVideo className="size-4" />}
           label="STRM 同步"
-          active={active === 'strm-sync'}
-          onClick={() => onSelect('strm-sync')}
+          to="/strm-sync"
+          active={pathname === '/strm-sync'}
+          onClick={closeMobile}
         />
         <NavItem
           icon={<Play className="size-4" />}
           label="播放记录"
-          active={active === 'strm-playback'}
-          onClick={() => onSelect('strm-playback')}
+          to="/strm-playback"
+          active={pathname === '/strm-playback'}
+          onClick={closeMobile}
         />
         <NavItem
           icon={<Activity className="size-4" />}
           label="日志"
-          active={active === 'logs'}
-          onClick={() => onSelect('logs')}
+          to="/logs"
+          active={pathname === '/logs'}
+          onClick={closeMobile}
         />
         <NavItem
           icon={<Settings className="size-4" />}
@@ -324,15 +351,17 @@ export default function Sidebar({
           <NavItem
             icon={<Settings className="size-4" />}
             label="基础配置"
-            active={active === 'config'}
-            onClick={() => onSelect('config')}
+            to="/config"
+            active={pathname === '/config'}
+            onClick={closeMobile}
             indent
           />
           <NavItem
             icon={<Search className="size-4" />}
             label="识别规则"
-            active={active === 'config-filename-rules'}
-            onClick={() => onSelect('config-filename-rules')}
+            to="/config/filename-rules"
+            active={pathname === '/config/filename-rules'}
+            onClick={closeMobile}
             indent
           />
         </NavCollapse>
