@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { ChevronLeft, ChevronDown, RefreshCw, Rss, Copy } from 'lucide-react'
-import { searchMedia, getEpisodes, addAria2Uri, addU115OfflineUrls, getU115OauthStatus, tmdbGetAlternativeNames } from '@/api'
+import { searchMedia, getEpisodes, addU115OfflineUrls, getU115OauthStatus, tmdbGetAlternativeNames } from '@/api'
 import BackToTopButton from '@/components/BackToTopButton'
 import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
@@ -33,7 +33,6 @@ export interface SubgroupGroup {
 interface ScraperResultsViewProps {
   item: MediaItem
   onBack: () => void
-  aria2Enabled?: boolean
 }
 
 function jaccardSimilarity(a: string, b: string): number {
@@ -64,7 +63,7 @@ function filterByKnownNames(candidates: { name: string; sources: { site: string;
   })
 }
 
-export default function ScraperResultsView({ item, onBack, aria2Enabled = false }: ScraperResultsViewProps) {
+export default function ScraperResultsView({ item, onBack }: ScraperResultsViewProps) {
   const displayTitle = item.title || item.original_title || ''
   const searchKey = `${item.tmdb_id || ''}:${displayTitle}`
 
@@ -293,20 +292,6 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
         updated[index] = { ...updated[index], loading: false }
         return updated
       })
-    }
-  }
-
-  const handlePushAria2 = async (ep: Episode) => {
-    const url = ep.magnet_url || ep.torrent_url
-    if (!url) {
-      toast.warning('无效下载链接', { description: '该资源缺少真实下载地址' })
-      return
-    }
-    try {
-      await addAria2Uri({ uris: [url], title: ep.title })
-      toast.success('已推送到下载器', { description: ep.title })
-    } catch (e) {
-      toast.error('下载失败', { description: (e as Error).message })
     }
   }
 
@@ -542,7 +527,7 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
                                       season_number: 1,
                                       start_episode: 1,
                                       keyword_all: [],
-                                      push_target: u115Authorized ? 'u115' : 'aria2',
+                                      push_target: 'u115',
                                       enabled: true,
                                     })
                                   }}
@@ -600,17 +585,8 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
                                           <Button onClick={() => handlePushU115(ep)} className="w-full md:w-[132px]">
                                             推送云下载
                                           </Button>
-                                        ) : aria2Enabled ? (
-                                          <Button onClick={() => handlePushAria2(ep)} className="w-full md:w-[132px]">
-                                            推送下载
-                                          </Button>
                                         ) : null}
                                         <div className="grid grid-cols-2 gap-2 md:flex">
-                                          {u115Authorized && aria2Enabled ? (
-                                            <Button variant="outline" onClick={() => handlePushAria2(ep)} className="md:w-[132px]">
-                                              推送下载
-                                            </Button>
-                                          ) : null}
                                           <Button variant="outline" onClick={() => handleCopy(ep)}>
                                             <Copy className="size-4" />
                                             复制链接
@@ -639,7 +615,6 @@ export default function ScraperResultsView({ item, onBack, aria2Enabled = false 
       <SubscriptionModal
         mode="create"
         initialValue={subscriptionDraft as Subscription}
-        aria2Enabled={aria2Enabled}
         u115Authorized={u115Authorized}
         open={!!subscriptionDraft}
         onOpenChange={(open) => !open && setSubscriptionDraft(null)}

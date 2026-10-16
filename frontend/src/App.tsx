@@ -1,6 +1,6 @@
 import { Suspense, lazy, useState, useEffect, useCallback } from 'react'
-import { setUnauthorizedHandler, getMe, getAria2Overview, getConfig, getU115OauthStatus, refreshLibrary } from './api'
-import type { Aria2Overview, MediaItem } from '@/types/api'
+import { setUnauthorizedHandler, getMe, getU115OauthStatus, refreshLibrary } from './api'
+import type { MediaItem } from '@/types/api'
 import { Toaster } from '@/components/ui/sonner'
 import Sidebar from '@/components/layout/Sidebar'
 import Topbar from '@/components/layout/Topbar'
@@ -11,7 +11,6 @@ const LoginPage = lazy(() => import('@/components/pages/LoginPage'))
 const LibraryPage = lazy(() => import('@/components/pages/LibraryPage'))
 const ConfigPage = lazy(() => import('@/components/pages/ConfigPage'))
 const FileManagerPage = lazy(() => import('@/components/pages/FileManagerPage'))
-const DownloadsPage = lazy(() => import('@/components/pages/DownloadsPage'))
 const CalendarPage = lazy(() => import('@/components/pages/CalendarPage'))
 const SubscriptionsPage = lazy(() => import('@/components/pages/SubscriptionsPage'))
 const LogsPage = lazy(() => import('@/components/pages/LogsPage'))
@@ -20,14 +19,7 @@ const U115OfflinePage = lazy(() => import('@/components/pages/U115OfflinePage'))
 const ScraperSearch = lazy(() => import('@/components/pages/ScraperSearch'))
 const ParseTestModal = lazy(() => import('@/components/modals/ParseTestModal'))
 
-type NavKey = 'all' | 'movies' | 'tv' | 'config' | 'config-filename-rules' | 'calendar' | 'scraper-search' | 'subscriptions' | 'files' | 'ingest-history' | 'logs' | 'u115-offline' | 'downloads' | 'downloads-active' | 'downloads-waiting' | 'downloads-stopped'
-
-const DOWNLOAD_QUEUE_MAP: Record<string, string | undefined> = {
-  downloads: 'all',
-  'downloads-active': 'active',
-  'downloads-waiting': 'waiting',
-  'downloads-stopped': 'stopped',
-}
+type NavKey = 'all' | 'movies' | 'tv' | 'config' | 'config-filename-rules' | 'calendar' | 'scraper-search' | 'subscriptions' | 'files' | 'ingest-history' | 'logs' | 'u115-offline'
 
 function PageFallback() {
   return (
@@ -46,10 +38,7 @@ export default function App() {
 
   const [activeNav, setActiveNav] = useState<NavKey>('all')
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
-  const [aria2Overview, setAria2Overview] = useState<Aria2Overview | null>(null)
-  const [aria2Enabled, setAria2Enabled] = useState<boolean | null>(null)
   const [u115Authorized, setU115Authorized] = useState(false)
-  const [aria2ConnectionStatus, setAria2ConnectionStatus] = useState<'connecting' | 'connected' | 'error' | 'disabled'>('connecting')
   const [refreshing, setRefreshing] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [globalSearchItem, setGlobalSearchItem] = useState<MediaItem | null>(null)
@@ -71,22 +60,11 @@ export default function App() {
 
   useEffect(() => {
     if (!token) {
-      setAria2Enabled(null)
       setU115Authorized(false)
       return
     }
 
     let cancelled = false
-    getConfig()
-      .then((res) => {
-        if (!cancelled) {
-          setAria2Enabled(res?.data?.aria2?.enabled !== false && res?.data?.aria2?.auto_connect !== false)
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setAria2Enabled(false)
-      })
-
     getU115OauthStatus()
       .then((res) => {
         if (!cancelled) setU115Authorized(!!res?.data?.authorized)
@@ -104,48 +82,6 @@ export default function App() {
       setToken(null)
     })
   }, [])
-
-  useEffect(() => {
-    if (!token || aria2Enabled === null) {
-      setAria2Overview(null)
-      setAria2ConnectionStatus('connecting')
-      return
-    }
-
-    if (!aria2Enabled) {
-      setAria2Overview(null)
-      setAria2ConnectionStatus('disabled')
-      return
-    }
-
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout>
-
-    async function poll() {
-      try {
-        const res = await getAria2Overview()
-        if (!cancelled) {
-          setAria2Overview(res.data)
-          setAria2ConnectionStatus('connected')
-        }
-      } catch {
-        if (!cancelled) {
-          setAria2Overview(null)
-          setAria2ConnectionStatus('error')
-        }
-      } finally {
-        if (!cancelled) {
-          timer = setTimeout(poll, 5000)
-        }
-      }
-    }
-
-    poll()
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
-  }, [token, aria2Enabled])
 
   const handleLogin = useCallback((newToken: string) => {
     localStorage.setItem('auth_token', newToken)
@@ -194,8 +130,6 @@ export default function App() {
     )
   }
 
-  const downloadQueue = DOWNLOAD_QUEUE_MAP[activeNav]
-
   return (
     <div className="relative h-screen overflow-hidden bg-background">
       {/* 环境光晕装饰层 */}
@@ -208,13 +142,10 @@ export default function App() {
       <Sidebar
         active={activeNav}
         onSelect={(key) => { setActiveNav(key as NavKey); setMobileSidebarOpen(false) }}
-        aria2Overview={aria2Overview}
-        aria2Enabled={aria2Enabled}
         u115Authorized={u115Authorized}
         mobileOpen={mobileSidebarOpen}
         onMobileClose={() => setMobileSidebarOpen(false)}
         onLogout={handleLogout}
-        aria2ConnectionStatus={aria2ConnectionStatus}
       />
 
       {mobileSidebarOpen && (
@@ -232,9 +163,9 @@ export default function App() {
         >
           <Suspense fallback={<PageFallback />}>
             {activeNav === 'config' ? (
-              <ConfigPage onAria2EnabledChange={setAria2Enabled} page="general" />
+              <ConfigPage page="general" />
             ) : activeNav === 'config-filename-rules' ? (
-              <ConfigPage onAria2EnabledChange={setAria2Enabled} page="filenameRules" />
+              <ConfigPage page="filenameRules" />
             ) : activeNav === 'calendar' ? (
               <CalendarPage
                 onSearch={(title) => {
@@ -248,12 +179,10 @@ export default function App() {
                 onClearInitialSearchItem={() => setGlobalSearchItem(null)}
                 initialQuery={globalSearchQuery}
                 onClearInitialQuery={() => setGlobalSearchQuery('')}
-                aria2Enabled={aria2Enabled ?? false}
               />
             ) : activeNav === 'subscriptions' ? (
               <SubscriptionsPage
                 onToast={handleToast}
-                aria2Enabled={aria2Enabled ?? false}
                 u115Authorized={u115Authorized}
               />
             ) : activeNav === 'files' ? (
@@ -264,13 +193,6 @@ export default function App() {
               <LogsPage />
             ) : activeNav === 'u115-offline' ? (
               <U115OfflinePage onToast={handleToast} />
-            ) : downloadQueue ? (
-              <DownloadsPage
-                queue={downloadQueue}
-                onChangeQueue={(q) => setActiveNav(q === 'all' ? 'downloads' : `downloads-${q}` as NavKey)}
-                onToast={handleToast}
-                aria2Enabled={aria2Enabled}
-              />
             ) : (
               <LibraryPage
                 filter={activeNav}

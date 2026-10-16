@@ -10,7 +10,6 @@ import {
   Cloud,
   Shield,
   Database,
-  Download,
   HardDrive,
   Rss,
   Bell,
@@ -77,7 +76,6 @@ const CONFIG_TABS = [
   { key: 'storage', label: '存储', icon: Cloud },
   { key: 'auth', label: '认证', icon: Shield },
   { key: 'tmdb', label: 'TMDB', icon: Database },
-  { key: 'aria2', label: '下载', icon: Download },
   { key: 'u115', label: '115', icon: HardDrive },
   { key: 'rss', label: 'RSS', icon: Rss },
   { key: 'telegram', label: '通知', icon: Bell },
@@ -88,7 +86,6 @@ const CONFIG_TABS = [
 
 function normalizeConfig(data: Record<string, unknown>): Record<string, unknown> {
   const next = structuredClone(data || {})
-  const aria2 = { ...(next.aria2 as Record<string, unknown> || {}) }
   const webui = { ...(next.webui as Record<string, unknown> || {}) }
   const tmdb = { ...(next.tmdb as Record<string, unknown> || {}) }
   const u115 = { ...(next.u115 as Record<string, unknown> || {}) }
@@ -96,11 +93,6 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   const telegram = { ...(next.telegram as Record<string, unknown> || {}) }
   const mediavault = { ...(next.mediavault as Record<string, unknown> || {}) }
   const pipeline = { ...(next.pipeline as Record<string, unknown> || {}) }
-
-  if (aria2.enabled === undefined) {
-    aria2.enabled = aria2.auto_connect !== false
-  }
-  delete aria2.auto_connect
 
   if (webui.token_expire_hours === undefined || webui.token_expire_hours === null || webui.token_expire_hours === '') {
     webui.token_expire_hours = 24
@@ -136,7 +128,6 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
     pipeline.skip_metadata_upload = false
   }
 
-  next.aria2 = aria2
   next.webui = webui
   next.tmdb = tmdb
   next.u115 = u115
@@ -355,11 +346,10 @@ function NoticeMessage({ message }: { message: { type: 'success' | 'error'; text
 }
 
 interface ConfigPageProps {
-  onAria2EnabledChange?: (enabled: boolean) => void
   page?: string
 }
 
-export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: ConfigPageProps) {
+export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
   const [cfg, setCfg] = useState<Record<string, unknown> | null>(null)
   const [original, setOriginal] = useState<Record<string, unknown> | null>(null)
   const [loading, setLoading] = useState(true)
@@ -520,10 +510,6 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
       }
       setCfg(normalized)
       setOriginal(normalized)
-      if (page !== 'filenameRules' && onAria2EnabledChange) {
-        const aria2Config = normalized?.aria2 as Record<string, unknown> | undefined
-        onAria2EnabledChange(aria2Config?.enabled !== false)
-      }
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (e) {
@@ -939,50 +925,6 @@ export default function ConfigPage({ onAria2EnabledChange, page = 'general' }: C
                       value={(cfg?.tmdb as Record<string, unknown>)?.image_base_url as string | undefined}
                       onChange={(v) => set('tmdb', 'image_base_url', v)}
                       placeholder="https://image-proxy.example.com"
-                      mono
-                    />
-                  </Field>
-                </FieldGroup>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="aria2" className="mt-0">
-            <Card className="border-border/70 bg-card/40">
-              <CardHeader>
-                <CardTitle className="text-base">Aria2 下载</CardTitle>
-                <CardDescription>RPC 连接配置</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <FieldGroup>
-                  <Field label="启用 Aria2">
-                    <Toggle
-                      value={(cfg?.aria2 as Record<string, unknown>)?.enabled !== false}
-                      onChange={(v) => set('aria2', 'enabled', v)}
-                    />
-                  </Field>
-                  <Field label="RPC 端口">
-                    <NumberInput
-                      value={(cfg?.aria2 as Record<string, unknown>)?.port as number | undefined}
-                      onChange={(v) => set('aria2', 'port', v)}
-                      min={1}
-                      max={65535}
-                    />
-                  </Field>
-                  <Field label="RPC 主机">
-                    <TextInput
-                      value={(cfg?.aria2 as Record<string, unknown>)?.host as string | undefined}
-                      onChange={(v) => set('aria2', 'host', v)}
-                      placeholder="rpc-host"
-                      mono
-                    />
-                  </Field>
-                  <Field label="RPC 密钥" description="可选">
-                    <TextInput
-                      value={(cfg?.aria2 as Record<string, unknown>)?.secret as string | undefined}
-                      onChange={(v) => set('aria2', 'secret', v)}
-                      type="password"
-                      placeholder="留空表示无密钥"
                       mono
                     />
                   </Field>

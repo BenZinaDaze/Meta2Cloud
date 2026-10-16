@@ -108,16 +108,6 @@ type WebUI struct {
 	LogRetentionDays int    `yaml:"log_retention_days"`
 }
 
-// Aria2 Aria2 下载器配置。
-type Aria2 struct {
-	Enabled bool   `yaml:"enabled"`
-	Host    string `yaml:"host"`
-	Port    int    `yaml:"port"`
-	Path    string `yaml:"path"`
-	Secret  string `yaml:"secret"`
-	Secure  bool   `yaml:"secure"`
-}
-
 // Storage 存储后端选择配置。
 // 主存储 Provider：pipeline / organizer 使用此 provider。当前仅支持 pan115。
 type Storage struct {
@@ -134,7 +124,6 @@ type Config struct {
 	Telegram   Telegram   `yaml:"telegram"`
 	MediaVault MediaVault `yaml:"mediavault"`
 	WebUI      WebUI      `yaml:"webui"`
-	Aria2      Aria2      `yaml:"aria2"`
 	Storage    Storage    `yaml:"storage"`
 }
 
@@ -152,9 +141,8 @@ func Default() *Config {
 		},
 		Subtitle:   Subtitle{Enabled: true},
 		MediaVault: MediaVault{Scheme: "http", Timeout: 10},
-		WebUI:      WebUI{Username: "admin", TokenExpireHours: 24, LogRetentionDays: 7},
-		Aria2:      Aria2{Enabled: true, Host: "127.0.0.1", Port: 6800, Path: "/jsonrpc"},
-		Storage:    Storage{Primary: "pan115"},
+		WebUI:   WebUI{Username: "admin", TokenExpireHours: 24, LogRetentionDays: 7},
+		Storage: Storage{Primary: "pan115"},
 	}
 }
 
@@ -168,7 +156,6 @@ type rawConfig struct {
 	Telegram   map[string]any `yaml:"telegram"`
 	MediaVault map[string]any `yaml:"mediavault"`
 	WebUI      map[string]any `yaml:"webui"`
-	Aria2      map[string]any `yaml:"aria2"`
 	Storage    map[string]any `yaml:"storage"`
 }
 
@@ -214,7 +201,6 @@ func parseConfig(data []byte) (*Config, error) {
 	cfg.Telegram = parseTelegram(raw.Telegram)
 	cfg.MediaVault = parseMediaVault(raw.MediaVault)
 	cfg.WebUI = parseWebUI(raw.WebUI)
-	cfg.Aria2 = parseAria2(raw.Aria2)
 	cfg.Storage = parseStorage(raw.Storage)
 	return cfg, nil
 }
@@ -375,18 +361,6 @@ func parseWebUI(m map[string]any) WebUI {
 		TokenExpireHours: integer(m, "token_expire_hours", 24),
 		WebhookSecret:    str(m, "webhook_secret", ""),
 		LogRetentionDays: maxInt(integer(m, "log_retention_days", 7), 1),
-	}
-}
-
-func parseAria2(m map[string]any) Aria2 {
-	enabled := boolean(m, "enabled", boolean(m, "auto_connect", true))
-	return Aria2{
-		Enabled: enabled,
-		Host:    str(m, "host", "127.0.0.1"),
-		Port:    integer(m, "port", 6800),
-		Path:    str(m, "path", "/jsonrpc"),
-		Secret:  str(m, "secret", ""),
-		Secure:  boolean(m, "secure", false),
 	}
 }
 

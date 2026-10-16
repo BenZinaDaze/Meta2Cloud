@@ -119,45 +119,6 @@ export interface Subscription {
   recent_hits?: SubscriptionHit[]
 }
 
-// Aria2 任务
-export interface Aria2Task {
-  gid: string
-  status: 'active' | 'waiting' | 'paused' | 'error' | 'complete' | 'removed'
-  totalLength: string
-  completedLength: string
-  downloadSpeed: string
-  uploadSpeed?: string
-  connections?: number
-  filename?: string
-  title?: string
-  error?: string
-  progress?: number
-}
-
-// Aria2 分页信息
-export interface Aria2Pagination {
-  page: number
-  page_size: number
-  total: number
-  total_pages: number
-  queue?: string
-  search?: string
-}
-
-// Aria2 概览
-export interface Aria2Overview {
-  items: Aria2Task[]
-  pagination: Aria2Pagination
-  summary?: {
-    activeCount: number
-    waitingCount: number
-    stoppedCount: number
-    downloadSpeed: number
-    uploadSpeed: number
-  }
-  version?: string
-}
-
 // 用户
 export interface User {
   username: string

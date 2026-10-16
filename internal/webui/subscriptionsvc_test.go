@@ -96,7 +96,7 @@ func TestCreateSubscriptionKeepsTmdbIDAndPoster(t *testing.T) {
 		"season_number": 1,
 		"start_episode": 1,
 		"keyword_all":   []string{},
-		"push_target":   "aria2",
+		"push_target":   "u115",
 		"enabled":       true,
 	}
 	code, created := authedRequest(t, ts, token, "POST", "/api/subscriptions", body)

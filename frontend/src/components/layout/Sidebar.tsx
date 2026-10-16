@@ -5,11 +5,7 @@ import {
   Rss,
   Film,
   Tv,
-  Download,
   Cloud,
-  Zap,
-  List,
-  Archive,
   Activity,
   History,
   Calendar,
@@ -20,7 +16,6 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Logo from '@/components/layout/Logo'
-import type { Aria2Overview } from '@/types/api'
 
 // GitHub SVG 图标
 function GithubIcon({ className }: { className?: string }) {
@@ -146,9 +141,6 @@ function NavCollapse({ expanded, children }: { expanded: boolean; children: Reac
 interface SidebarProps {
   active: string
   onSelect: (key: string) => void
-  aria2Overview?: Aria2Overview | null
-  aria2ConnectionStatus?: 'connecting' | 'connected' | 'error' | 'disabled'
-  aria2Enabled?: boolean | null
   u115Authorized?: boolean
   mobileOpen?: boolean
   onMobileClose?: () => void
@@ -158,15 +150,11 @@ interface SidebarProps {
 export default function Sidebar({
   active,
   onSelect,
-  aria2Overview = null,
-  aria2ConnectionStatus = 'connecting',
-  aria2Enabled = null,
   u115Authorized = false,
   mobileOpen = false,
   onLogout,
 }: SidebarProps) {
   const [libraryExpanded, setLibraryExpanded] = useState(true)
-  const [downloadsExpanded, setDownloadsExpanded] = useState(false)
   const [configExpanded, setConfigExpanded] = useState(false)
   const [confirmingLogout, setConfirmingLogout] = useState(false)
   const [latestVersion, setLatestVersion] = useState<string | null>(null)
@@ -195,21 +183,6 @@ export default function Sidebar({
   const hasUpdate = latestVersion && currentVersion !== 'dev' && compareVer(latestVersion, currentVersion) > 0
 
   const isLibraryExpanded = libraryExpanded || active === 'movies' || active === 'tv'
-  const isDownloadsExpanded = downloadsExpanded || ['downloads-active', 'downloads-waiting', 'downloads-stopped'].includes(active)
-
-  const activeCount = aria2Overview?.summary?.activeCount ?? 0
-  const waitingCount = aria2Overview?.summary?.waitingCount ?? 0
-  const stoppedCount = aria2Overview?.summary?.stoppedCount ?? 0
-  const totalDownloadCount = activeCount + waitingCount + stoppedCount
-  const aria2Connected = !!aria2Overview
-  const showDownloads = aria2Enabled !== false
-
-  const connectionState = {
-    connected: { label: '已连接', color: 'bg-success' },
-    disabled: { label: '已禁用', color: 'bg-muted-foreground/50' },
-    connecting: { label: '连接中', color: 'bg-warning' },
-    error: { label: '未连接', color: 'bg-destructive' },
-  }[aria2ConnectionStatus] || { label: '未连接', color: 'bg-destructive' }
 
   function handleLogoutClick() {
     if (!confirmingLogout) {
@@ -288,53 +261,6 @@ export default function Sidebar({
           active={active === 'subscriptions'}
           onClick={() => onSelect('subscriptions')}
         />
-
-        {showDownloads && (
-          <>
-            <NavGroupLabel label="下载" />
-            <NavItem
-              icon={<Download className="size-4" />}
-              label="下载管理"
-              active={active === 'downloads'}
-              onClick={() => { setDownloadsExpanded(!downloadsExpanded); onSelect('downloads') }}
-              meta={aria2Connected ? totalDownloadCount : null}
-              right={
-                <span className="relative mr-1 flex items-center">
-                  {aria2ConnectionStatus === 'connected' && (
-                    <span className={cn("absolute inline-flex size-2 rounded-full opacity-60 animate-tide-ping", connectionState.color)} />
-                  )}
-                  <span className={cn("relative inline-flex size-2 rounded-full", connectionState.color)} />
-                </span>
-              }
-            />
-            <NavCollapse expanded={isDownloadsExpanded}>
-              <NavItem
-                icon={<Zap className="size-4" />}
-                label="下载中"
-                active={active === 'downloads-active'}
-                onClick={() => onSelect('downloads-active')}
-                indent
-                meta={activeCount}
-              />
-              <NavItem
-                icon={<List className="size-4" />}
-                label="等待中"
-                active={active === 'downloads-waiting'}
-                onClick={() => onSelect('downloads-waiting')}
-                indent
-                meta={waitingCount}
-              />
-              <NavItem
-                icon={<Archive className="size-4" />}
-                label="已停止"
-                active={active === 'downloads-stopped'}
-                onClick={() => onSelect('downloads-stopped')}
-                indent
-                meta={stoppedCount}
-              />
-            </NavCollapse>
-          </>
-        )}
 
         {u115Authorized && (
           <div className="hidden lg:block">

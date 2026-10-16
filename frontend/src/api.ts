@@ -92,21 +92,6 @@ export const testMediaVault = (data: Record<string, unknown>) =>
 export const testParse = (filename: string, skipTmdb: boolean = false) =>
   api.post('/parser/test', { filename }, { params: { skip_tmdb: skipTmdb } })
 
-// ── Aria2 ──
-export const getAria2Overview = (params?: { queue?: string; page?: number; page_size?: number; search?: string }) =>
-  api.get('/aria2/overview', { params })
-export const addAria2Uri = (data: Record<string, unknown>) =>
-  api.post('/aria2/add-uri', data)
-export const addAria2Torrent = (data: Record<string, unknown>) =>
-  api.post('/aria2/add-torrent', data)
-export const pauseAria2Tasks = (gids: string[]) =>
-  api.post('/aria2/tasks/pause', { gids })
-export const unpauseAria2Tasks = (gids: string[]) =>
-  api.post('/aria2/tasks/unpause', { gids })
-export const removeAria2Tasks = (gids: string[]) =>
-  api.post('/aria2/tasks/remove', { gids })
-export const retryAria2Tasks = (gids: string[]) =>
-  api.post('/aria2/tasks/retry', { gids })
 
 // ── 115 网盘 ──
 export const getU115OauthStatus = () => api.get('/u115/oauth/status')

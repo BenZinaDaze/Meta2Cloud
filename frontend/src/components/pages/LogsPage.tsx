@@ -76,16 +76,6 @@ function formatEventDetails(item: LogItem): string {
     }
     case 'options_updated':
       return Array.isArray(details.keys) && details.keys.length ? `更新项：${details.keys.join('、')}` : ''
-    case 'aria2_rpc_error':
-      return '请检查 aria2 服务是否正在运行'
-    case 'aria2_rpc_invalid_json':
-      return 'aria2 返回了意外的响应格式'
-    case 'aria2_rpc_api_error': {
-      const parts: string[] = []
-      if (details.message) parts.push(String(details.message))
-      if (details.code !== undefined) parts.push(`错误码 ${details.code}`)
-      return parts.join('，')
-    }
     case 'webhook_trigger': {
       const parts: string[] = []
       if (details.path) parts.push(`来源路径：${details.path}`)

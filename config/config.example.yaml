@@ -16,7 +16,7 @@ webui:
   token_expire_hours: 24
 
   # /trigger 端点的 Webhook 密钥（留空则不校验，适合内网部署）
-  # rclone/aria2 通知时需在请求头 X-Webhook-Secret 中携带此密钥
+  # rclone 通知时需在请求头 X-Webhook-Secret 中携带此密钥
   webhook_secret: ""
 
   # 日志保留天数
@@ -32,30 +32,6 @@ storage:
   # pipeline.py / organizer 会使用此 Provider 进行文件整理
   # 也可以通过 CLI 参数 --storage 覆盖
   primary: "pan115"
-
-# ─────────────────────────────────────────────────────────
-# Aria2 RPC 设置
-# ─────────────────────────────────────────────────────────
-aria2:
-  # 是否启用 Aria2 集成
-  # true  = 启用下载中心、RPC 状态读取与任务操作
-  # false = 关闭整个 Aria2 集成，前端不会主动连接，也不会显示可操作状态
-  enabled: true
-
-  # Aria2 RPC 主机
-  host: ""
-
-  # Aria2 RPC 端口
-  port: 6800
-
-  # JSON-RPC 路径
-  path: "/jsonrpc"
-
-  # RPC 密钥，对应 aria2.conf / docker-compose 里的 RPC_SECRET
-  secret: ""
-
-  # 是否使用 HTTPS/WSS
-  secure: false
 
 # Meta2Cloud 配置文件
 

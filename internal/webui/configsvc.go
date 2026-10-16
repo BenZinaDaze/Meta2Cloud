@@ -385,7 +385,6 @@ func validateMainConfigPayload(payload map[string]any) string {
 	tmdbSec := getSection("tmdb")
 	u115Sec := getSection("u115")
 	rssSec := getSection("rss")
-	aria2Sec := getSection("aria2")
 	telegramSec := getSection("telegram")
 	mediavaultSec := getSection("mediavault")
 
@@ -402,7 +401,6 @@ func validateMainConfigPayload(payload map[string]any) string {
 		{u115Sec, "auto_organize_poll_seconds", "115 自动整理轮询间隔", 10, 600},
 		{u115Sec, "auto_organize_stable_seconds", "115 完成稳定等待", 0, 600},
 		{rssSec, "poll_seconds", "RSS 订阅轮询间隔", 10, 3600},
-		{aria2Sec, "port", "Aria2 RPC 端口", 1, 65535},
 		{telegramSec, "debounce_seconds", "Telegram 防抖延时", 0, 600},
 		{mediavaultSec, "timeout", "MediaVault 请求超时", 1, 120},
 	} {

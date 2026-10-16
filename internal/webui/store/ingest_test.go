@@ -147,7 +147,7 @@ func TestRSSStoreFlow(t *testing.T) {
 		"poster_url": "https://image.tmdb.org/t/p/w500/p.jpg",
 		"site":       "mikan", "rss_url": "https://mikanani.me/RSS/Bangumi?bangumiId=3065",
 		"subgroup_name": "", "season_number": 1, "start_episode": 1,
-		"keyword_all": `["测试"]`, "push_target": "aria2",
+		"keyword_all": `["测试"]`, "push_target": "u115",
 	})
 	if err != nil || sub == nil {
 		t.Fatalf("create err=%v sub=%v", err, sub)
@@ -157,7 +157,7 @@ func TestRSSStoreFlow(t *testing.T) {
 		"name": "测试番2", "media_title": "测试番", "media_type": "tv", "tmdb_id": tmdbID,
 		"site": "mikan", "rss_url": "https://mikanani.me/RSS/Bangumi?bangumiId=3065",
 		"subgroup_name": "", "season_number": 1, "start_episode": 1,
-		"keyword_all": "[]", "push_target": "aria2",
+		"keyword_all": "[]", "push_target": "u115",
 	}); err != ErrDuplicateSubscription {
 		t.Errorf("重复订阅 err = %v", err)
 	}
@@ -175,7 +175,7 @@ func TestRSSStoreFlow(t *testing.T) {
 	if _, err := s.RecordHit(map[string]any{
 		"subscription_id": sub.ID, "episode_title": "第2集",
 		"season_number": season, "episode_number": episode,
-		"dedupe_key": "s1e2", "pushed_to": "aria2", "push_status": "success",
+		"dedupe_key": "s1e2", "pushed_to": "u115", "push_status": "success",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestRSSStoreFlow(t *testing.T) {
 	}
 	if _, err := s.RecordHit(map[string]any{
 		"subscription_id": sub.ID, "episode_title": "重复",
-		"dedupe_key": "s1e2", "pushed_to": "aria2", "push_status": "success",
+		"dedupe_key": "s1e2", "pushed_to": "u115", "push_status": "success",
 	}); err == nil {
 		t.Error("重复 dedupe_key 应报错")
 	}

@@ -68,7 +68,6 @@ function inferRssSite(rssUrl: string, sites: RssSite[]): string | null {
 interface SubscriptionModalProps {
   mode?: 'create' | 'edit'
   initialValue?: Subscription
-  aria2Enabled?: boolean
   u115Authorized?: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -78,7 +77,6 @@ interface SubscriptionModalProps {
 export default function SubscriptionModal({
   mode = 'create',
   initialValue,
-  aria2Enabled = false,
   u115Authorized = false,
   open,
   onOpenChange,
@@ -96,7 +94,7 @@ export default function SubscriptionModal({
     season_number: initialValue?.season_number || 1,
     start_episode: initialValue?.start_episode || 1,
     keyword_text: (initialValue?.keyword_all || []).join(', '),
-    push_target: initialValue?.push_target || (u115Authorized ? 'u115' : 'aria2'),
+    push_target: initialValue?.push_target || 'u115',
     enabled: initialValue?.enabled ?? true,
   }))
   const [saving, setSaving] = useState(false)
@@ -124,10 +122,9 @@ export default function SubscriptionModal({
 
   const availableTargets = useMemo(() => {
     const items: { value: string; label: string }[] = []
-    if (aria2Enabled) items.push({ value: 'aria2', label: '推送下载' })
     if (u115Authorized) items.push({ value: 'u115', label: '推送云下载' })
     return items
-  }, [aria2Enabled, u115Authorized])
+  }, [u115Authorized])
 
   useEffect(() => {
     let cancelled = false
@@ -166,7 +163,7 @@ export default function SubscriptionModal({
         season_number: initialValue.season_number || 1,
         start_episode: initialValue.start_episode || 1,
         keyword_text: (initialValue.keyword_all || []).join(', '),
-        push_target: initialValue.push_target || (u115Authorized ? 'u115' : 'aria2'),
+        push_target: initialValue.push_target || 'u115',
         enabled: initialValue.enabled ?? true,
       })
     } else if (mode === 'create') {
@@ -182,7 +179,7 @@ export default function SubscriptionModal({
         season_number: 1,
         start_episode: 1,
         keyword_text: '',
-        push_target: u115Authorized ? 'u115' : 'aria2',
+        push_target: 'u115',
         enabled: true,
       })
     }
@@ -285,7 +282,7 @@ export default function SubscriptionModal({
     if (savingRef.current) return
     if (!form.name.trim() || !form.rss_url.trim() || !form.media_title.trim()) return
     if (availableTargets.length === 0) {
-      setError('当前没有可用的推送方式，请先连接下载器或授权 115')
+      setError('当前没有可用的推送方式，请先授权 115')
       return
     }
     savingRef.current = true

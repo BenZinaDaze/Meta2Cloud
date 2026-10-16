@@ -215,21 +215,9 @@ u115:
 
 ## 高级功能
 
-### Aria2 集成
-
-配置 Aria2 RPC 后，Web UI 可查看下载状态。
-
-```yaml
-aria2:
-  enabled: true
-  host: "127.0.0.1"
-  port: 6800
-  secret: "你的 RPC 密钥"
-```
-
 ### 自动触发整理
 
-下载完成后自动触发整理，配合 Aria2 或 rclone 使用：
+下载完成后自动触发整理，配合 rclone 使用：
 
 ```bash
 curl -X POST http://localhost:38765/trigger \
@@ -251,7 +239,7 @@ telegram:
 
 ### RSS 订阅
 
-支持 Mikan Project、AniBT 动漫订阅，自动追新番（推送至 Aria2 或 115 云下载）。
+支持 Mikan Project、AniBT 动漫订阅，自动追新番（推送至 115 云下载）。
 
 ## 常见问题
 

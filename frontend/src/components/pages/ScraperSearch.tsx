@@ -20,7 +20,6 @@ interface ScraperSearchProps {
   onClearInitialSearchItem?: () => void
   initialQuery?: string
   onClearInitialQuery?: () => void
-  aria2Enabled?: boolean
 }
 
 export default function ScraperSearch({
@@ -28,7 +27,6 @@ export default function ScraperSearch({
   onClearInitialSearchItem,
   initialQuery,
   onClearInitialQuery,
-  aria2Enabled = false,
 }: ScraperSearchProps) {
   const [query, setQuery] = useState(_cachedQuery)
   const [loading, setLoading] = useState(false)
@@ -89,7 +87,6 @@ export default function ScraperSearch({
       <ScraperResultsView
         item={searchModeItem}
         onBack={() => setSearchModeItem(null)}
-        aria2Enabled={aria2Enabled}
       />
     )
   }

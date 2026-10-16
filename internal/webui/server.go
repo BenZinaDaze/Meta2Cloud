@@ -74,18 +74,6 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("PUT /api/config/main", handleWriteMainConfig)
 	m.HandleFunc("PUT /api/config/parser-rules", handleWriteParserRules)
 
-	// aria2
-	m.HandleFunc("GET /api/aria2/overview", handleAria2Overview)
-	m.HandleFunc("GET /api/aria2/options", handleAria2OptionsGet)
-	m.HandleFunc("PUT /api/aria2/options", handleAria2OptionsPut)
-	m.HandleFunc("POST /api/aria2/add-uri", handleAria2AddURI)
-	m.HandleFunc("POST /api/aria2/add-torrent", handleAria2AddTorrent)
-	m.HandleFunc("POST /api/aria2/tasks/pause", handleAria2TasksPause)
-	m.HandleFunc("POST /api/aria2/tasks/unpause", handleAria2TasksUnpause)
-	m.HandleFunc("POST /api/aria2/tasks/remove", handleAria2TasksRemove)
-	m.HandleFunc("POST /api/aria2/tasks/retry", handleAria2TasksRetry)
-	m.HandleFunc("POST /api/aria2/tasks/purge", handleAria2TasksPurge)
-
 	// mediavault / tmdb season
 	m.HandleFunc("POST /api/mediavault/test", handleMediavaultTest)
 	m.HandleFunc("GET /api/tmdb/tv/{tmdbID}/season/{season}", handleTmdbSeasonDetail)

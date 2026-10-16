@@ -1,34 +1,7 @@
 version: "3.8"
 services:
-  Aria2-Pro:
-    container_name: aria2-pro
-    image: p3terx/aria2-pro
-    environment:
-      - PUID=0
-      - PGID=0
-      - UMASK_SET=022
-      - RPC_SECRET=a7226307
-      - RPC_PORT=6800
-      - LISTEN_PORT=6888
-      - DISK_CACHE=128M
-      - IPV6_MODE=true
-      - UPDATE_TRACKERS=true
-      - CUSTOM_TRACKER_URL=
-      - TZ=Asia/Shanghai
-      - SPECIAL_MODE=rclone
-    volumes:
-      - ${PWD}/aria2-config:/config
-      - ${PWD}/aria2-downloads:/downloads
-    network_mode: host
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: 1m
-
-
   # ── Meta2Cloud ────────────────────────────────────────────────
-  # host 网络与 aria2-pro 共享，upload.sh 用 localhost:38765/trigger 触发
+  # host 网络模式下 upload.sh 用 localhost:38765/trigger 触发
   # WebUI 地址：http://localhost:38765
   meta2cloud:
     container_name: meta2cloud

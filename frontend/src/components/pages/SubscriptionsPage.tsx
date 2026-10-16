@@ -158,12 +158,10 @@ function SubscriptionDetailContent({ item }: { item: Subscription }) {
 
 interface SubscriptionsPageProps {
   onToast?: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void
-  aria2Enabled?: boolean
   u115Authorized?: boolean
 }
 
 export default function SubscriptionsPage({
-  aria2Enabled = false,
   u115Authorized = false,
 }: SubscriptionsPageProps) {
   const [items, setItems] = useState<Subscription[]>([])
@@ -433,7 +431,6 @@ export default function SubscriptionsPage({
       <SubscriptionModal
         mode="edit"
         initialValue={editingItem || undefined}
-        aria2Enabled={aria2Enabled}
         u115Authorized={u115Authorized}
         open={!!editingItem}
         onOpenChange={(open) => { if (!open) setEditingItem(null) }}
@@ -442,7 +439,6 @@ export default function SubscriptionsPage({
 
       <SubscriptionModal
         mode="create"
-        aria2Enabled={aria2Enabled}
         u115Authorized={u115Authorized}
         open={creatingItem}
         onOpenChange={(open) => { if (!open) setCreatingItem(false) }}

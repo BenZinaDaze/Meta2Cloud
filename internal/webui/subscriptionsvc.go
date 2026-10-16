@@ -340,13 +340,6 @@ func pushItem(pushTarget string, item map[string]any) error {
 	magnetURL := anyStrValue(item["magnet_url"])
 	torrentURL := anyStrValue(item["torrent_url"])
 	switch pushTarget {
-	case "aria2":
-		targetURL := firstNonEmptyStr(magnetURL, torrentURL)
-		if targetURL == "" {
-			return fmt.Errorf("RSS 条目缺少下载地址")
-		}
-		_, err := aria2AddURI([]string{targetURL})
-		return err
 	case "u115":
 		auth := u115OauthStatusPayload()
 		if authorized, _ := auth["authorized"].(bool); !authorized {
@@ -514,8 +507,8 @@ func (b *subscriptionBody) validate() string {
 	if strings.TrimSpace(b.Site) == "" || strings.TrimSpace(b.RssURL) == "" {
 		return "site / rss_url 不能为空"
 	}
-	if b.PushTarget != "aria2" && b.PushTarget != "u115" {
-		return "push_target 仅支持 aria2 / u115"
+	if b.PushTarget != "u115" {
+		return "push_target 仅支持 u115"
 	}
 	if b.SeasonNumber < 1 || b.SeasonNumber > 99 {
 		return "season_number 必须在 1 到 99 之间"
