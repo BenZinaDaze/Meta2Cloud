@@ -298,6 +298,40 @@ func TestGetDownloadURLParse(t *testing.T) {
 	}
 }
 
+// TestCreateDeviceCodeNumericTime 115 可能以数字类型下发 authDeviceCode 的
+// time 字段（服务端变更）：必须容错解析为字符串，否则轮询签名报 key invalid。
+func TestCreateDeviceCodeNumericTime(t *testing.T) {
+	client, server := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"state":true,"data":{"uid":"abc123","time":1792145872,"sign":"sig001","qrcode":"https://115.com/scan/dg-x"}}`))
+	}))
+	defer server.Close()
+
+	session, err := client.CreateDeviceCode("verifier-123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.TimeValue != "1792145872" {
+		t.Errorf("数字型 time 应解析为字符串，实际 %q", session.TimeValue)
+	}
+	if session.UID != "abc123" || session.Sign != "sig001" || session.Qrcode != "https://115.com/scan/dg-x" {
+		t.Errorf("会话字段异常：%+v", session)
+	}
+
+	// 字符串型 time 同样兼容
+	client2, server2 := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"state":true,"data":{"uid":"u2","time":"1792145999","sign":"s2","qrcode":"https://115.com/scan/dg-y"}}`))
+	}))
+	defer server2.Close()
+	session2, err := client2.CreateDeviceCode("v2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session2.TimeValue != "1792145999" {
+		t.Errorf("字符串型 time 应原样返回，实际 %q", session2.TimeValue)
+	}
+}
+
 // TestFetchBytesUsesClientUA 直链与 UA 绑定：FetchBytes 拉取内容必须携带与
 // 申请直链相同的 User-Agent，否则 CDN 返回 403。
 func TestFetchBytesUsesClientUA(t *testing.T) {

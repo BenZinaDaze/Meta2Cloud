@@ -2,9 +2,34 @@
 // 转调 internal/jsonx 消除双实现；仅保留 jsonx 未覆盖的指针语义变体。
 package u115
 
-import "meta2cloud/internal/jsonx"
+import (
+	"strconv"
+
+	"meta2cloud/internal/jsonx"
+)
 
 func jString(m map[string]any, key string) string { return jsonx.Str(m, key) }
+
+// jStringAny 取字段值的字符串形式；字符串原样返回，数字/布尔按 Python str() 语义
+// 格式化（整值不带小数点）。115 部分字段（如 authDeviceCode 的 time）会在
+// 字符串与数字之间变动， strictly 类型断言会得到空串导致下游签名校验失败。
+func jStringAny(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	switch v := m[key].(type) {
+	case string:
+		return v
+	case float64:
+		if v == float64(int64(v)) {
+			return strconv.FormatInt(int64(v), 10)
+		}
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(v)
+	}
+	return ""
+}
 
 func jStringPtr(m map[string]any, key string) *string { return jsonx.StrPtr(m, key) }
 

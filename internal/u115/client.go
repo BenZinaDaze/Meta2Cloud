@@ -437,11 +437,13 @@ func (c *Client) CreateDeviceCode(codeVerifier string) (DeviceCodeSession, error
 		return DeviceCodeSession{}, err
 	}
 	data := jMap(payload, "data")
+	// uid/time/sign 用 jStringAny：115 可能以数字下发（time 现为 int），
+	// 严格字符串断言会得到空串，轮询时报 key invalid (40199002)
 	return DeviceCodeSession{
-		Qrcode:       jString(data, "qrcode"),
-		UID:          jString(data, "uid"),
-		TimeValue:    jString(data, "time"),
-		Sign:         jString(data, "sign"),
+		Qrcode:       jStringAny(data, "qrcode"),
+		UID:          jStringAny(data, "uid"),
+		TimeValue:    jStringAny(data, "time"),
+		Sign:         jStringAny(data, "sign"),
 		CodeVerifier: codeVerifier,
 	}, nil
 }
