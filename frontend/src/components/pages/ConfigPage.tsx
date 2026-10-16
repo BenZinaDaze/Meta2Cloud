@@ -15,6 +15,7 @@ import {
   Bell,
   FolderSync,
   FileText,
+  FileVideo,
   Users,
   BookOpen,
   Captions,
@@ -82,6 +83,7 @@ const CONFIG_TABS = [
   { key: 'mediavault', label: 'MediaVault', icon: RadioTower },
   { key: 'pipeline', label: '策略', icon: FolderSync },
   { key: 'subtitle', label: '字幕', icon: Captions },
+  { key: 'strm', label: 'STRM', icon: FileVideo },
 ]
 
 function normalizeConfig(data: Record<string, unknown>): Record<string, unknown> {
@@ -93,6 +95,7 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   const telegram = { ...(next.telegram as Record<string, unknown> || {}) }
   const mediavault = { ...(next.mediavault as Record<string, unknown> || {}) }
   const pipeline = { ...(next.pipeline as Record<string, unknown> || {}) }
+  const strm = { ...(next.strm as Record<string, unknown> || {}) }
 
   if (webui.token_expire_hours === undefined || webui.token_expire_hours === null || webui.token_expire_hours === '') {
     webui.token_expire_hours = 24
@@ -127,6 +130,18 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   if (pipeline.skip_metadata_upload === undefined || pipeline.skip_metadata_upload === null) {
     pipeline.skip_metadata_upload = false
   }
+  if (strm.enabled === undefined || strm.enabled === null) {
+    strm.enabled = false
+  }
+  if (strm.sync_interval_seconds === undefined || strm.sync_interval_seconds === null || strm.sync_interval_seconds === '') {
+    strm.sync_interval_seconds = 0
+  }
+  if (!Array.isArray(strm.mappings)) {
+    strm.mappings = []
+  }
+  if (!Array.isArray(strm.media_ext) || strm.media_ext.length === 0) {
+    strm.media_ext = ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'ts', 'm2ts', 'webm', 'rmvb', 'rm', 'mpg', 'mpeg', 'vob', 'iso', '3gp']
+  }
 
   next.webui = webui
   next.tmdb = tmdb
@@ -135,6 +150,7 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   next.telegram = telegram
   next.mediavault = mediavault
   next.pipeline = pipeline
+  next.strm = strm
   return next
 }
 
@@ -1290,6 +1306,117 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                 <div className="mt-4 text-xs leading-6 text-muted-foreground">
                   <p>支持的字幕格式：<code className="rounded bg-muted px-1 font-mono">.srt</code> <code className="rounded bg-muted px-1 font-mono">.ass</code> <code className="rounded bg-muted px-1 font-mono">.ssa</code></p>
                   <p className="mt-1">语言代码标准化：简体中文 → <code className="rounded bg-muted px-1 font-mono">zh-CN</code>，繁体中文 → <code className="rounded bg-muted px-1 font-mono">zh-TW</code></p>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="strm" className="mt-0">
+            <Card className="border-border/70 bg-card/40">
+              <CardHeader>
+                <CardTitle className="text-base">STRM 生成与 302 播放</CardTitle>
+                <CardDescription>为网盘媒体库生成本地 .strm 文件，播放时 302 直链串流，无需下载到本地</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <FieldGroup>
+                  <Field label="启用 STRM" description="整理入库成功后自动生成">
+                    <Toggle
+                      value={((cfg?.strm as Record<string, unknown>)?.enabled as boolean) || false}
+                      onChange={(v) => set('strm', 'enabled', v)}
+                    />
+                  </Field>
+                  <Field label="定时同步间隔（秒）" description="0 仅手动/入库触发；≥60 开启定时增量">
+                    <NumberInput
+                      value={(cfg?.strm as Record<string, unknown>)?.sync_interval_seconds as number | undefined}
+                      onChange={(v) => set('strm', 'sync_interval_seconds', v)}
+                      min={0}
+                      max={86400}
+                    />
+                  </Field>
+                  <Field label="服务地址 (url_base)" description="写入 .strm 的地址，播放器需能访问" fullWidth>
+                    <TextInput
+                      value={(cfg?.strm as Record<string, unknown>)?.url_base as string | undefined}
+                      onChange={(v) => set('strm', 'url_base', v)}
+                      placeholder="http://192.168.1.10:38765"
+                      mono
+                    />
+                  </Field>
+                  <Field label="访问签名 (url_secret)" description="可选，防止未授权调用 302 直链" fullWidth>
+                    <TextInput
+                      value={(cfg?.strm as Record<string, unknown>)?.url_secret as string | undefined}
+                      onChange={(v) => set('strm', 'url_secret', v)}
+                      placeholder="留空不启用签名校验"
+                      mono
+                    />
+                  </Field>
+                </FieldGroup>
+
+                <div>
+                  <div className="mb-2 flex items-baseline gap-2">
+                    <label className="text-[13px] font-medium">路径映射</label>
+                    <span className="text-[11px] text-muted-foreground/80">网盘媒体库目录 ID → 本地 STRM 输出目录，目录结构镜像网盘</span>
+                  </div>
+                  <div className="space-y-2">
+                    {(((cfg?.strm as Record<string, unknown>)?.mappings as Array<Record<string, unknown>>) || []).map((m, i) => (
+                      <div key={i} className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <Input
+                          value={(m.pan_folder_id as string) ?? ''}
+                          onChange={(e) => {
+                            const list = [...(((cfg?.strm as Record<string, unknown>)?.mappings as Array<Record<string, unknown>>) || [])]
+                            list[i] = { ...list[i], pan_folder_id: e.target.value }
+                            set('strm', 'mappings', list)
+                          }}
+                          placeholder="网盘目录 ID（如媒体库根目录）"
+                          className="font-mono text-[13px]"
+                        />
+                        <Input
+                          value={(m.local_path as string) ?? ''}
+                          onChange={(e) => {
+                            const list = [...(((cfg?.strm as Record<string, unknown>)?.mappings as Array<Record<string, unknown>>) || [])]
+                            list[i] = { ...list[i], local_path: e.target.value }
+                            set('strm', 'mappings', list)
+                          }}
+                          placeholder="/mnt/media/115/movies"
+                          className="font-mono text-[13px]"
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          className="text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+                          onClick={() => {
+                            const list = [...(((cfg?.strm as Record<string, unknown>)?.mappings as Array<Record<string, unknown>>) || [])]
+                            list.splice(i, 1)
+                            set('strm', 'mappings', list)
+                          }}
+                        >
+                          <X className="size-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const list = [...(((cfg?.strm as Record<string, unknown>)?.mappings as Array<Record<string, unknown>>) || []), { pan_folder_id: '', local_path: '' }]
+                        set('strm', 'mappings', list)
+                      }}
+                    >
+                      <Plus className="size-4" />
+                      添加映射
+                    </Button>
+                  </div>
+                </div>
+
+                <Field label="媒体扩展名" description="这些扩展名的网盘文件会生成 STRM" fullWidth>
+                  <ListField
+                    value={((cfg?.strm as Record<string, unknown>)?.media_ext as string[]) || []}
+                    onChange={(v) => set('strm', 'media_ext', v)}
+                  />
+                </Field>
+
+                <div className="text-xs leading-6 text-muted-foreground">
+                  <p>.strm 内容形如 <code className="rounded bg-muted px-1 font-mono">http://服务地址/strm/redirect?pickcode=...</code>，播放时实时向 115 换取直链（直链与播放器 User-Agent 绑定，服务端自动透传并缓存）。</p>
+                  <p className="mt-1">触发方式：整理入库成功后自动生成 + 定时增量同步 + 本页保存后到「STRM 同步」页手动触发。将本地 STRM 目录作为媒体库加入 Emby / Jellyfin / Infuse 即可播放。</p>
                 </div>
               </CardContent>
             </Card>

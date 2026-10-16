@@ -13,6 +13,7 @@ import {
   Settings,
   LogOut,
   FolderOpen,
+  FileVideo,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Logo from '@/components/layout/Logo'
@@ -285,6 +286,12 @@ export default function Sidebar({
           label="入库记录"
           active={active === 'ingest-history'}
           onClick={() => onSelect('ingest-history')}
+        />
+        <NavItem
+          icon={<FileVideo className="size-4" />}
+          label="STRM 同步"
+          active={active === 'strm-sync'}
+          onClick={() => onSelect('strm-sync')}
         />
         <NavItem
           icon={<Activity className="size-4" />}

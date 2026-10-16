@@ -118,6 +118,8 @@ type Pipeline struct {
 	notifyItems []notifyItem
 	// 入库历史存储（可选）
 	ingestStore IngestStore
+	// 入库成功回调（可选；dry-run 不触发，用于 STRM 生成等后处理）
+	onVideoIngested func(ProcessResult)
 }
 
 // Options Pipeline 构造参数。
@@ -132,6 +134,8 @@ type Options struct {
 	TmdbClient *tmdb.Client
 	// IngestStore 入库历史存储（可为 nil）
 	IngestStore IngestStore
+	// OnVideoIngested 单文件整理成功（入库）后回调，dry-run 不触发（可为 nil）
+	OnVideoIngested func(ProcessResult)
 }
 
 // New 构造流水线。
@@ -165,6 +169,7 @@ func New(provider cloudfile.Provider, cfg *config.Config, opts Options) *Pipelin
 		seasonDetailCache: map[string]map[string]any{},
 		notifyItems:       []notifyItem{},
 		ingestStore:       opts.IngestStore,
+		onVideoIngested:   opts.OnVideoIngested,
 	}
 
 	if opts.TmdbClient != nil {
@@ -813,6 +818,18 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 	}
 
 	p.recordIngest(&result, meta, tmdbInfo, seasonNum, episodeNum, episodeDetail)
+
+	// 入库成功回调（STRM 生成等后处理；dry-run 与失败/跳过不触发）
+	if p.onVideoIngested != nil && result.Status == "ok" && !p.dryRun && result.TargetFolder != nil {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[pipeline] 入库后处理回调异常：%v", r)
+				}
+			}()
+			p.onVideoIngested(result)
+		}()
+	}
 
 	// 收集入库通知数据
 	if result.Status == "ok" && tmdbInfo != nil {

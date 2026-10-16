@@ -24,8 +24,10 @@ type watcherState struct {
 var (
 	u115AutoWatcher = &watcherState{stopCh: make(chan struct{})}
 	rssWatcher      = &watcherState{stopCh: make(chan struct{})}
+	strmWatcher     = &watcherState{stopCh: make(chan struct{})}
 	u115AutoOnce    sync.Once
 	rssOnce         sync.Once
+	strmOnce        sync.Once
 )
 
 // u115TaskKey 任务稳定键（info_hash → file_id → 名称+时间+大小）。
@@ -228,10 +230,48 @@ func ensureRSSSubscriptionLoop() {
 	})
 }
 
+// ensureStrmSyncLoop 启动 STRM 定时增量同步（幂等；sync_interval_seconds < 60 时不开轮询）。
+func ensureStrmSyncLoop() {
+	strmOnce.Do(func() {
+		go func() {
+			log.Printf("STRM 定时同步线程已启动")
+			for {
+				cfg := RT().GetConfig()
+				// sync_interval_seconds < 60 表示关闭定时同步，仅手动/入库触发
+				interval := cfg.Strm.SyncIntervalSeconds
+				enabled := cfg.Strm.Enabled && cfg.ActiveStorageName() == "pan115" && interval >= 60
+				if interval < 60 {
+					interval = 60 // 空转等待下限，保持响应配置变更
+				}
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							msg := fmt.Sprintf("%v", r)
+							strmWatcher.mu.Lock()
+							strmWatcher.lastPollError = &msg
+							strmWatcher.mu.Unlock()
+						}
+					}()
+					if enabled && !StrmSyncRunning() {
+						TriggerStrmSync(triggerSchedule)
+					}
+				}()
+				select {
+				case <-strmWatcher.stopCh:
+					log.Printf("STRM 定时同步线程已停止")
+					return
+				case <-time.After(time.Duration(interval) * time.Second):
+				}
+			}
+		}()
+	})
+}
+
 // StartupBackgroundWatchers 启动全部后台任务。
 func StartupBackgroundWatchers() {
 	ensureU115AutoOrganizeLoop()
 	ensureRSSSubscriptionLoop()
+	ensureStrmSyncLoop()
 }
 
 // U115AutoOrganizeStatusPayload 115 自动整理状态。

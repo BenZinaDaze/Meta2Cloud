@@ -113,6 +113,14 @@ export const deleteU115OfflineTasks = (data: { info_hashes: string[]; del_source
 export const clearU115OfflineTasks = (data: { flag: string }) =>
   api.post('/u115/offline/tasks/clear', data)
 
+// ── STRM（生成 + 302 播放） ──
+export const getStrmSyncStatus = () => api.get('/strm/sync/status')
+export const triggerStrmSync = () => api.post('/strm/sync')
+export const listStrmSyncRuns = (params?: { limit?: number; offset?: number }) =>
+  api.get('/strm/sync/runs', { params })
+export const getStrmSyncRunFiles = (runId: number | string, params?: { limit?: number }) =>
+  api.get(`/strm/sync/runs/${runId}/files`, { params })
+
 // ── 其他 ──
 export const getLogs = (params?: { limit?: number; offset?: number }) =>
   api.get('/logs', { params })

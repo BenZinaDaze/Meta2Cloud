@@ -132,6 +132,14 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("GET /api/ingest/stats", handleIngestStats)
 	m.HandleFunc("GET /api/ingest/recent", handleIngestRecent)
 
+	// strm（STRM 生成 + 302 直链播放）
+	// /strm/redirect 非 /api 前缀，播放器无需 JWT，由 url_secret 签名可选防护
+	m.HandleFunc(strmRedirectPath, handleStrmRedirect)
+	m.HandleFunc("GET /api/strm/sync/status", handleStrmSyncStatus)
+	m.HandleFunc("POST /api/strm/sync", handleStrmSyncTrigger)
+	m.HandleFunc("GET /api/strm/sync/runs", handleStrmSyncRuns)
+	m.HandleFunc("GET /api/strm/sync/runs/{runID}/files", handleStrmSyncRunFiles)
+
 	// 兜底：静态资源 / SPA
 	m.HandleFunc("/", s.handleRoot)
 }

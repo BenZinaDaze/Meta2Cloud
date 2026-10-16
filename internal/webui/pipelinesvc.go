@@ -93,6 +93,9 @@ func doRunPipeline() {
 	if is := RT().GetIngestStore(); is != nil {
 		opts.IngestStore = ingestStoreAdapter{is}
 	}
+	if cfg.Strm.Enabled {
+		opts.OnVideoIngested = HandleVideoIngested
+	}
 	pipe := pipeline.New(provider, cfg, opts)
 	summary := pipe.Run()
 

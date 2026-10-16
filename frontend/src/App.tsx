@@ -17,9 +17,10 @@ const LogsPage = lazy(() => import('@/components/pages/LogsPage'))
 const IngestHistoryPage = lazy(() => import('@/components/pages/IngestHistoryPage'))
 const U115OfflinePage = lazy(() => import('@/components/pages/U115OfflinePage'))
 const ScraperSearch = lazy(() => import('@/components/pages/ScraperSearch'))
+const StrmSyncPage = lazy(() => import('@/components/pages/StrmSyncPage'))
 const ParseTestModal = lazy(() => import('@/components/modals/ParseTestModal'))
 
-type NavKey = 'all' | 'movies' | 'tv' | 'config' | 'config-filename-rules' | 'calendar' | 'scraper-search' | 'subscriptions' | 'files' | 'ingest-history' | 'logs' | 'u115-offline'
+type NavKey = 'all' | 'movies' | 'tv' | 'config' | 'config-filename-rules' | 'calendar' | 'scraper-search' | 'subscriptions' | 'files' | 'ingest-history' | 'strm-sync' | 'logs' | 'u115-offline'
 
 function PageFallback() {
   return (
@@ -189,6 +190,8 @@ export default function App() {
               <FileManagerPage />
             ) : activeNav === 'ingest-history' ? (
               <IngestHistoryPage onToast={handleToast} />
+            ) : activeNav === 'strm-sync' ? (
+              <StrmSyncPage onToast={handleToast} />
             ) : activeNav === 'logs' ? (
               <LogsPage />
             ) : activeNav === 'u115-offline' ? (

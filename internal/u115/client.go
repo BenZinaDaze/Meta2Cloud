@@ -268,7 +268,8 @@ type requestOpts struct {
 	authRequired   bool
 	allowCode20004 bool
 	isDownload     bool
-	maxAttempts    int // 0 → 默认 3
+	maxAttempts    int    // 0 → 默认 3
+	userAgent      string // 非空时覆盖客户端默认 User-Agent（115 直链与 UA 绑定）
 }
 
 func (c *Client) request(method, baseURL, pathStr string, opts requestOpts) (map[string]any, error) {
@@ -323,7 +324,11 @@ func (c *Client) doRequest(method, target string, opts requestOpts) (payload map
 	if opts.params != nil {
 		req.URL.RawQuery = opts.params.Encode()
 	}
-	req.Header.Set("User-Agent", c.userAgent)
+	if opts.userAgent != "" {
+		req.Header.Set("User-Agent", opts.userAgent)
+	} else {
+		req.Header.Set("User-Agent", c.userAgent)
+	}
 	if opts.form != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
@@ -787,15 +792,27 @@ func (c *Client) Move(fileID, toCid string) error {
 
 // GetDownloadURL 根据 pick_code 获取真实下载地址。
 func (c *Client) GetDownloadURL(pickCode string) (string, error) {
+	return c.GetDownloadURLWithUA(pickCode, "")
+}
+
+// GetDownloadURLWithUA 根据 pick_code 获取真实下载地址，并以 userAgent 作为本次请求的
+// User-Agent。115 直链与请求时的 UA 绑定：302 播放场景必须透传播放器的 UA，
+// 否则播放器带自身 UA 访问直链会被 115 拒绝（403）。userAgent 为空时使用客户端默认 UA。
+func (c *Client) GetDownloadURLWithUA(pickCode, userAgent string) (string, error) {
 	payload, err := c.request(http.MethodPost, proAPI, "/open/ufile/downurl", requestOpts{
 		form:         url.Values{"pick_code": {pickCode}},
 		authRequired: true,
 		isDownload:   true,
+		userAgent:    userAgent,
 	})
 	if err != nil {
 		return "", err
 	}
-	// data -> {pick_code: {url: {url: ...}}}
+	return downloadURLFromPayload(payload)
+}
+
+// downloadURLFromPayload 解析 downurl 响应：data -> {pick_code: {url: {url: ...}}}。
+func downloadURLFromPayload(payload map[string]any) (string, error) {
 	if data := jMap(payload, "data"); data != nil {
 		for _, value := range data {
 			if d, ok := value.(map[string]any); ok {

@@ -15,7 +15,7 @@ export default function MobileNav({
   u115Authorized = false,
 }: MobileNavProps) {
   const isLibrary = ['all', 'movies', 'tv'].includes(active)
-  const isMore = ['subscriptions', 'ingest-history', 'logs', 'config', 'config-filename-rules'].includes(active)
+  const isMore = ['subscriptions', 'ingest-history', 'strm-sync', 'logs', 'config', 'config-filename-rules'].includes(active)
 
   const tabs = [
     { key: 'all', label: '媒体库', icon: BookOpen, isActive: isLibrary },

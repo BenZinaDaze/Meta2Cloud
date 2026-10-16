@@ -25,6 +25,7 @@ config/parser-rules.yaml
 # 115
 115-token.json
 115-device-session.json
+strm/
 
 # 运行时数据（SQLite DB、日志）—— 全部放在 config/data/
 config/data/

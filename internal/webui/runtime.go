@@ -35,6 +35,7 @@ type Runtime struct {
 	logStore   *store.LogStore
 	rss        *store.RSSStore
 	u115Auto   *store.U115AutoStore
+	strm       *store.StrmStore
 }
 
 var defaultRuntime = &Runtime{}
@@ -67,6 +68,7 @@ func InitRuntime(rootDir string) *Runtime {
 	defaultRuntime.logStore = nil
 	defaultRuntime.rss = nil
 	defaultRuntime.u115Auto = nil
+	defaultRuntime.strm = nil
 	defaultRuntime.configSig = [2]int64{}
 	return defaultRuntime
 }
@@ -332,6 +334,22 @@ func (rt *Runtime) GetU115AutoStore() *store.U115AutoStore {
 		rt.u115Auto = s
 	}
 	return rt.u115Auto
+}
+
+// GetStrmStore STRM 存储单例（独立 strm.db，不影响 library.db）。
+func (rt *Runtime) GetStrmStore() *store.StrmStore {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.strm == nil {
+		dbPath := filepath.Join(rt.RootDir, "config", "data", "strm.db")
+		s, err := store.OpenStrmStore(dbPath)
+		if err != nil {
+			log.Printf("STRM 存储初始化失败：%v", err)
+			return nil
+		}
+		rt.strm = s
+	}
+	return rt.strm
 }
 
 // SetProviderForTest 注入测试 Provider（绕过配置构造）。

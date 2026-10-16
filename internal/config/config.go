@@ -114,6 +114,22 @@ type Storage struct {
 	Primary string `yaml:"primary"`
 }
 
+// StrmMapping STRM 路径映射：网盘目录 → 本地 STRM 输出目录。
+type StrmMapping struct {
+	PanFolderID string `yaml:"pan_folder_id"`
+	LocalPath   string `yaml:"local_path"`
+}
+
+// Strm STRM 生成与 302 直链播放配置。
+type Strm struct {
+	Enabled             bool          `yaml:"enabled"`
+	URLBase             string        `yaml:"url_base"`
+	URLSecret           string        `yaml:"url_secret"`
+	SyncIntervalSeconds int           `yaml:"sync_interval_seconds"`
+	MediaExt            []string      `yaml:"media_ext"`
+	Mappings            []StrmMapping `yaml:"mappings"`
+}
+
 // Config 全局配置根。
 type Config struct {
 	Tmdb       Tmdb       `yaml:"tmdb"`
@@ -125,6 +141,7 @@ type Config struct {
 	MediaVault MediaVault `yaml:"mediavault"`
 	WebUI      WebUI      `yaml:"webui"`
 	Storage    Storage    `yaml:"storage"`
+	Strm       Strm       `yaml:"strm"`
 }
 
 // Default 返回带默认值的配置。
@@ -143,6 +160,7 @@ func Default() *Config {
 		MediaVault: MediaVault{Scheme: "http", Timeout: 10},
 		WebUI:   WebUI{Username: "admin", TokenExpireHours: 24, LogRetentionDays: 7},
 		Storage: Storage{Primary: "pan115"},
+		Strm:    Strm{MediaExt: append([]string{}, DefaultStrmMediaExt...)},
 	}
 }
 
@@ -157,6 +175,7 @@ type rawConfig struct {
 	MediaVault map[string]any `yaml:"mediavault"`
 	WebUI      map[string]any `yaml:"webui"`
 	Storage    map[string]any `yaml:"storage"`
+	Strm       map[string]any `yaml:"strm"`
 }
 
 // Load 从 YAML 文件加载配置；path 为空时按默认搜索路径查找。
@@ -202,6 +221,7 @@ func parseConfig(data []byte) (*Config, error) {
 	cfg.MediaVault = parseMediaVault(raw.MediaVault)
 	cfg.WebUI = parseWebUI(raw.WebUI)
 	cfg.Storage = parseStorage(raw.Storage)
+	cfg.Strm = parseStrm(raw.Strm)
 	return cfg, nil
 }
 
@@ -366,6 +386,43 @@ func parseWebUI(m map[string]any) WebUI {
 
 func parseStorage(m map[string]any) Storage {
 	return Storage{Primary: str(m, "primary", "pan115")}
+}
+
+// DefaultStrmMediaExt STRM 默认收集的视频扩展名（与 cloudfile.videoExtensions 对齐）。
+var DefaultStrmMediaExt = []string{
+	"mp4", "mkv", "avi", "mov", "wmv", "flv", "ts", "m2ts", "webm",
+	"rmvb", "rm", "mpg", "mpeg", "vob", "iso", "3gp",
+}
+
+func parseStrm(m map[string]any) Strm {
+	mediaExt := strList(m, "media_ext")
+	if len(mediaExt) == 0 {
+		mediaExt = append([]string{}, DefaultStrmMediaExt...)
+	}
+	mappings := []StrmMapping{}
+	if items, ok := m["mappings"].([]any); ok {
+		for _, item := range items {
+			mm, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			mapping := StrmMapping{
+				PanFolderID: str(mm, "pan_folder_id", ""),
+				LocalPath:   str(mm, "local_path", ""),
+			}
+			if mapping.PanFolderID != "" && mapping.LocalPath != "" {
+				mappings = append(mappings, mapping)
+			}
+		}
+	}
+	return Strm{
+		Enabled:             boolean(m, "enabled", false),
+		URLBase:             strings.TrimRight(strings.TrimSpace(str(m, "url_base", "")), "/"),
+		URLSecret:           strings.TrimSpace(str(m, "url_secret", "")),
+		SyncIntervalSeconds: integer(m, "sync_interval_seconds", 0),
+		MediaExt:            mediaExt,
+		Mappings:            mappings,
+	}
 }
 
 func maxInt(a, b int) int {
