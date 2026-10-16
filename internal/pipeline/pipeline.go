@@ -842,7 +842,8 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 }
 
 func (p *Pipeline) recordIngest(result *ProcessResult, meta *mediaparser.MetaBase, tmdbInfo map[string]any, seasonNum int, episodeNum *int, episodeDetail map[string]any) {
-	if p.ingestStore == nil {
+	// dry-run 未实际入库，不写历史
+	if p.ingestStore == nil || p.dryRun {
 		return
 	}
 	isTV := meta.Type == mediaparser.MediaTV

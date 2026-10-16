@@ -27,6 +27,28 @@ func appLog(category, event, level, message string, details map[string]any) {
 	}
 }
 
+// ingestStoreAdapter 将 *store.IngestStore 适配为 pipeline.IngestStore 接口。
+type ingestStoreAdapter struct{ s *store.IngestStore }
+
+func (a ingestStoreAdapter) RecordIngest(r pipeline.IngestRecord) error {
+	_, err := a.s.RecordIngest(store.IngestRecord{
+		MediaType:     r.MediaType,
+		TmdbID:        int64(r.TmdbID),
+		Title:         r.Title,
+		OriginalTitle: r.OriginalTitle,
+		Year:          r.Year,
+		Season:        r.Season,
+		Episode:       r.Episode,
+		EpisodeTitle:  r.EpisodeTitle,
+		PosterPath:    r.PosterPath,
+		DriveFolderID: r.DriveFolderID,
+		OriginalName:  r.OriginalName,
+		Status:        r.Status,
+		ErrorMessage:  r.ErrorMessage,
+	})
+	return err
+}
+
 // runID 生成短运行 ID。
 func newRunID() string {
 	pipelineMu.Lock()
@@ -62,12 +84,16 @@ func doRunPipeline() {
 		return
 	}
 
-	pipe := pipeline.New(provider, cfg, pipeline.Options{
+	opts := pipeline.Options{
 		LogFn: func(level, message string) {
 			BroadcastLog(level, message, runID)
 		},
 		TmdbCache: RT().GetTmdbCache(),
-	})
+	}
+	if is := RT().GetIngestStore(); is != nil {
+		opts.IngestStore = ingestStoreAdapter{is}
+	}
+	pipe := pipeline.New(provider, cfg, opts)
 	summary := pipe.Run()
 
 	appLog("pipeline", "pipeline_finish", "SUCCESS", "整理流程完成", map[string]any{
