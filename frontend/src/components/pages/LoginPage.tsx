@@ -166,10 +166,6 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               )}
             </Button>
           </form>
-
-          <p className="mt-6 text-center text-xs text-muted-foreground">
-            账号密码在 <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-primary/90">config/config.yaml</code> 中配置
-          </p>
         </div>
       </div>
     </div>
