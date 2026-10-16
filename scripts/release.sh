@@ -194,12 +194,24 @@ git commit -m "release: $TAG"
 git tag -a "$TAG" -m "Meta2Cloud $TAG"
 
 echo "📦 已创建提交与 tag $TAG"
-if [ "$ASSUME_YES" != "1" ]; then
-    read -r -p "🚀 推送到 origin（触发 Docker 镜像 + GitHub Release CI）？[y/N] " reply
+# 推送确认：-y 跳过询问；交互终端询问 y/N；非交互环境（如 CI/脚本调用，stdin 关闭）
+# 自动确认——read 遇 EOF 会非零退出，在 set -e 下会静默中止导致漏推送，故需显式分支
+push_confirmed=0
+if [ "$ASSUME_YES" = "1" ]; then
+    push_confirmed=1
+elif [ -t 0 ]; then
+    read -r -p "🚀 推送到 origin（触发 Docker 镜像 + GitHub Release CI）？[y/N] " reply || reply=""
     case "$reply" in
-        [yY]*) ;;
-        *) echo "已停止。稍后可手动执行: git push origin main --follow-tags"; exit 0 ;;
+        [yY]*) push_confirmed=1 ;;
+        *) ;;
     esac
+else
+    echo "ℹ️  非交互环境，自动确认推送（只演练请使用 --dry-run）"
+    push_confirmed=1
+fi
+if [ "$push_confirmed" != "1" ]; then
+    echo "已停止。稍后可手动执行: git push origin main --follow-tags"
+    exit 0
 fi
 
 git push origin main --follow-tags
