@@ -1,5 +1,5 @@
 import { Suspense, lazy, useState, useEffect, useCallback } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useSearchParams } from 'react-router'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useParams, useSearchParams } from 'react-router'
 import { setUnauthorizedHandler, getMe, getU115OauthStatus, refreshLibrary } from './api'
 import type { MediaItem } from '@/types/api'
 import { Toaster } from '@/components/ui/sonner'
@@ -121,6 +121,34 @@ export default function App() {
   )
 }
 
+// LibraryPage 路由的共享属性（AppShell 内构造）
+interface LibraryShared {
+  onRefresh: () => void
+  refreshing: boolean
+  refreshKey: number
+  onToast: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void
+  onGlobalSearch: (item: MediaItem) => void
+}
+
+// LibraryRoute 媒体库路由（/library、/movies、/tv 及其 /:tmdbId 详情直链子路径）
+function LibraryRoute({ filter, base, shared }: { filter: string; base: string; shared: LibraryShared }) {
+  const { tmdbId } = useParams()
+  const navigate = useNavigate()
+  return (
+    <LibraryPage
+      filter={filter}
+      onChangeFilter={(f) => navigate(`/${f}`)}
+      openTmdbId={tmdbId}
+      onDetailClose={tmdbId ? () => navigate(base, { replace: true }) : undefined}
+      onRefresh={shared.onRefresh}
+      refreshing={shared.refreshing}
+      refreshKey={shared.refreshKey}
+      onToast={shared.onToast}
+      onGlobalSearch={shared.onGlobalSearch}
+    />
+  )
+}
+
 // AppShell 登录后的应用骨架（路由在此层消费）
 function AppShell({ u115Authorized, onLogout }: { u115Authorized: boolean; onLogout: () => void }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
@@ -148,17 +176,14 @@ function AppShell({ u115Authorized, onLogout }: { u115Authorized: boolean; onLog
     }
   }, [])
 
-  const renderLibrary = (filter: string) => (
-    <LibraryPage
-      filter={filter}
-      onChangeFilter={(f) => navigate(`/${f}`)}
-      onRefresh={handleRefresh}
-      refreshing={refreshing}
-      refreshKey={refreshKey}
-      onToast={handleToast}
-      onGlobalSearch={(item) => navigate('/search', { state: { initialItem: item } })}
-    />
-  )
+  // 媒体库路由共享属性
+  const libraryShared: LibraryShared = {
+    onRefresh: handleRefresh,
+    refreshing,
+    refreshKey,
+    onToast: handleToast,
+    onGlobalSearch: (item) => navigate('/search', { state: { initialItem: item } }),
+  }
 
   return (
     <div className="relative h-screen overflow-hidden bg-background">
@@ -192,9 +217,11 @@ function AppShell({ u115Authorized, onLogout }: { u115Authorized: boolean; onLog
           <Suspense fallback={<PageFallback />}>
             <Routes>
               <Route path="/" element={<Navigate to="/library" replace />} />
-              <Route path="/library" element={renderLibrary('all')} />
-              <Route path="/movies" element={renderLibrary('movies')} />
-              <Route path="/tv" element={renderLibrary('tv')} />
+              <Route path="/library" element={<LibraryRoute filter="all" base="/library" shared={libraryShared} />} />
+              <Route path="/movies" element={<LibraryRoute filter="movies" base="/movies" shared={libraryShared} />} />
+              <Route path="/movies/:tmdbId" element={<LibraryRoute filter="movies" base="/movies" shared={libraryShared} />} />
+              <Route path="/tv" element={<LibraryRoute filter="tv" base="/tv" shared={libraryShared} />} />
+              <Route path="/tv/:tmdbId" element={<LibraryRoute filter="tv" base="/tv" shared={libraryShared} />} />
               <Route
                 path="/calendar"
                 element={<CalendarPage onSearch={(title) => navigate(`/search?q=${encodeURIComponent(title)}`)} />}

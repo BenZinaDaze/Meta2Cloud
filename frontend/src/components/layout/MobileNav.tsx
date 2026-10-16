@@ -12,7 +12,8 @@ export default function MobileNav({
   u115Authorized = false,
 }: MobileNavProps) {
   const { pathname } = useLocation()
-  const isLibrary = ['/library', '/movies', '/tv'].includes(pathname)
+  const libraryPaths = ['/library', '/movies', '/tv']
+  const isLibrary = libraryPaths.some((p) => pathname === p || pathname.startsWith(p + '/'))
   const isMore = ['/subscriptions', '/ingest-history', '/title-pins', '/strm-sync', '/strm-playback', '/logs', '/config', '/config/filename-rules'].includes(pathname)
 
   const tabs = [

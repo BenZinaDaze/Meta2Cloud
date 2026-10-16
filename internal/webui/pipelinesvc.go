@@ -277,6 +277,30 @@ func handleGetTVDetail(w http.ResponseWriter, r *http.Request) {
 	writeJSONError(w, http.StatusNotFound, fmt.Sprintf("未找到 tmdb_id=%d 的剧集", tmdbID))
 }
 
+func handleGetMovieDetail(w http.ResponseWriter, r *http.Request) {
+	tmdbID, err := strconvParseInt(r.PathValue("tmdbID"))
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "tmdb_id 无效")
+		return
+	}
+	if item := RT().GetLibraryStore().GetLibraryItemByTmdb("movie", tmdbID); item != nil {
+		writeJSON(w, http.StatusOK, item)
+		return
+	}
+	client := RT().GetStorageProvider()
+	if client == nil {
+		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
+		return
+	}
+	for _, movie := range ScanMovies(client, RT().GetConfig()) {
+		if movie.TmdbID == tmdbID {
+			writeJSON(w, http.StatusOK, movie)
+			return
+		}
+	}
+	writeJSONError(w, http.StatusNotFound, fmt.Sprintf("未找到 tmdb_id=%d 的电影", tmdbID))
+}
+
 func strconvParseInt(s string) (int64, error) {
 	var n int64
 	_, err := fmt.Sscanf(s, "%d", &n)

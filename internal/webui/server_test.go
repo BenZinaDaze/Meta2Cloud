@@ -1004,6 +1004,47 @@ func TestScanAggregatesDuplicateShowFolders(t *testing.T) {
 	}
 }
 
+// 电影详情直链: /api/movies/{tmdbID} 命中库条目,未知 ID 返回 404
+func TestGetMovieDetailByTmdbID(t *testing.T) {
+	rootDir := t.TempDir()
+	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
+	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
+		[]byte("webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n"), 0o644)
+	ResetJWTSecretCache()
+	InitRuntime(rootDir)
+
+	fp := newFakeWebProvider()
+	fp.addFolder("root", "0")
+	movieFolder := fp.addFolder("盗梦空间 (2010)", "root")
+	fp.addFile("盗梦空间 (2010).mkv", movieFolder.ID)
+	RT().SetProviderForTest(fp.provider())
+
+	libStore := RT().GetLibraryStore()
+	libStore.SaveIncremental([]map[string]any{
+		{"drive_folder_id": movieFolder.ID, "media_type": "movie", "tmdb_id": 27205, "title": "盗梦空间", "year": "2010"},
+	}, nil)
+
+	server := NewServer()
+	t.Cleanup(server.Close)
+	ts := httptest.NewServer(server.Handler())
+	t.Cleanup(ts.Close)
+	_, out := login(t, ts, "admin", "secret123")
+	token := out["token"].(string)
+
+	code, movie := authedGet(t, ts, token, "/api/movies/27205")
+	if code != 200 {
+		t.Fatalf("movie detail code = %d", code)
+	}
+	if movie["tmdb_id"] != float64(27205) || movie["title"] != "盗梦空间" {
+		t.Errorf("movie = %v", movie)
+	}
+
+	code, _ = authedGet(t, ts, token, "/api/movies/999999")
+	if code != 404 {
+		t.Fatalf("missing movie code = %d, want 404", code)
+	}
+}
+
 // 增量刷新: 只变 B 目录时,同 tmdb_id 的 A 也应联动重扫聚合集数
 func TestIncrementalSiblingRescan(t *testing.T) {
 	rootDir := t.TempDir()

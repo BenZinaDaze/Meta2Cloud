@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Search, RefreshCw, ChevronRight, ArrowUpDown, RefreshCw as RefreshIcon } from 'lucide-react'
-import { getLibrary } from '@/api'
+import { getLibrary, getMovieDetail, getTVShowDetail } from '@/api'
 import BackToTopButton from '@/components/BackToTopButton'
 import MediaCard from '@/components/MediaCard'
 import { StatePanel } from '@/components/StatePanel'
@@ -123,6 +123,10 @@ interface LibraryPageProps {
   refreshKey?: number
   onToast?: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void
   onGlobalSearch?: (item: MediaItem) => void
+  /** 直链打开详情：URL 中的 tmdb_id（/movies/:tmdbId、/tv/:tmdbId） */
+  openTmdbId?: string
+  /** 直链打开的详情弹窗关闭时回调（回退到列表路由） */
+  onDetailClose?: () => void
 }
 
 export default function LibraryPage({
@@ -132,6 +136,8 @@ export default function LibraryPage({
   refreshing = false,
   refreshKey = 0,
   onGlobalSearch,
+  openTmdbId,
+  onDetailClose,
 }: LibraryPageProps) {
   const [data, setData] = useState<LibraryResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -141,6 +147,22 @@ export default function LibraryPage({
   const [sortBy, setSortBy] = useState('folder_modified_time')
   const [sortOrder, setSortOrder] = useState('desc')
   const [, setTick] = useState(0)
+
+  // 直链打开详情：按 tmdb_id 异步加载（/movies/:tmdbId、/tv/:tmdbId）
+  useEffect(() => {
+    const tmdbId = Number(openTmdbId)
+    if (!Number.isFinite(tmdbId) || tmdbId <= 0) return
+    let cancelled = false
+    const request = filter === 'movies' ? getMovieDetail(tmdbId) : getTVShowDetail(tmdbId)
+    request
+      .then((res) => {
+        if (!cancelled && res.data) setSelected(res.data)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [openTmdbId, filter])
 
   useEffect(() => {
     setLoading(true)
@@ -368,7 +390,12 @@ export default function LibraryPage({
       <ScraperDetailModal
         item={selected}
         open={!!selected}
-        onOpenChange={(open) => !open && setSelected(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelected(null)
+            onDetailClose?.()
+          }
+        }}
         onRemoved={handleRemoved}
         onUpdated={handleUpdated}
         onSearchResources={(item) => {

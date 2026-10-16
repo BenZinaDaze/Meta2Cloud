@@ -148,6 +148,10 @@ export const listTitlePins = () => api.get('/title-pins')
 export const adoptTitlePin = (media_type: string, tmdb_id: number) =>
   api.post('/title-pins:adopt', { media_type, tmdb_id })
 
+// ── 媒体详情（按 tmdb_id 单查，供直链打开详情弹窗）──
+export const getMovieDetail = (tmdbID: number) => api.get(`/movies/${tmdbID}`)
+export const getTVShowDetail = (tmdbID: number) => api.get(`/tv-shows/${tmdbID}`)
+
 
 // ── Bangumi 新番 ──
 export const getBangumiCalendar = () => api.get('/bangumi/calendar')

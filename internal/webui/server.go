@@ -57,6 +57,7 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("GET /api/stats", handleGetStats)
 	m.HandleFunc("DELETE /api/library/{driveFolderID}", handleDeleteLibraryItem)
 	m.HandleFunc("GET /api/movies", handleGetMovies)
+	m.HandleFunc("GET /api/movies/{tmdbID}", handleGetMovieDetail)
 	m.HandleFunc("GET /api/tv-shows", handleGetTVShows)
 	m.HandleFunc("GET /api/tv-shows/{tmdbID}", handleGetTVDetail)
 

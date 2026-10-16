@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useNavigate } from 'react-router'
 import { Film, Tv, Search, RefreshCw, ChevronLeft, ChevronRight, AlertCircle, CheckCircle, HelpCircle, Clock } from 'lucide-react'
 import { getIngestHistory, getIngestStats } from '@/api'
 import BackToTopButton from '@/components/BackToTopButton'
@@ -35,6 +36,8 @@ function StatusBadge({ status }: { status: string }) {
 
 function IngestCard({ item }: { item: IngestRecord }) {
   const isTV = item.media_type === 'tv'
+  const navigate = useNavigate()
+  const linkable = item.tmdb_id > 0
 
   return (
     <div className="flex gap-3 overflow-hidden rounded-xl border border-border/60 bg-card/50 p-3 transition-colors duration-200 hover:border-primary/20 hover:bg-card/80 sm:gap-4 sm:p-4">
@@ -56,7 +59,17 @@ function IngestCard({ item }: { item: IngestRecord }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <h3 className="truncate font-semibold">{item.title}</h3>
+            {linkable ? (
+              <button
+                onClick={() => navigate(isTV ? `/tv/${item.tmdb_id}` : `/movies/${item.tmdb_id}`)}
+                className="block w-full truncate text-left font-semibold transition-colors hover:text-primary"
+                title="查看媒体详情"
+              >
+                {item.title}
+              </button>
+            ) : (
+              <h3 className="truncate font-semibold">{item.title}</h3>
+            )}
             {item.original_title && item.original_title !== item.title && (
               <p className="truncate text-xs text-muted-foreground">{item.original_title}</p>
             )}
