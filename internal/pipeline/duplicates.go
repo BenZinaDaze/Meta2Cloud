@@ -109,13 +109,13 @@ func (p *Pipeline) mergeDuplicateGroup(g DuplicateFolderGroup) bool {
 				pinTitle, pinYear = t, y
 			}
 			if pinTitle != "" {
-				p.log(fmt.Sprintf("      📌 以最旧目录命名钉扎：%s", pinnedFolderName(pinTitle, pinYear)), "INFO")
+				p.log(fmt.Sprintf("      📌 整理名称以最旧目录为准：%s", pinnedFolderName(pinTitle, pinYear)), "INFO")
 				break
 			}
 		}
 	}
 	if pinTitle == "" {
-		p.log(fmt.Sprintf("  ⚠ 跳过重复组 tmdb_id=%d：无法确定钉扎名（钉扎表、入库历史与组内目录均为空）", g.TmdbID), "WARNING")
+		p.log(fmt.Sprintf("  ⚠ 跳过重复组 tmdb_id=%d：无法确定整理名称（无整理名称记录、入库历史与可用目录）", g.TmdbID), "WARNING")
 		return false
 	}
 
@@ -130,7 +130,7 @@ func (p *Pipeline) mergeDuplicateGroup(g DuplicateFolderGroup) bool {
 	}
 	if target == nil {
 		// 钉扎目录不存在（可能已被手动改名），跳过等待下次整理建立
-		p.log(fmt.Sprintf("  ⚠ 跳过重复组 tmdb_id=%d：钉扎目录 %q 不在根目录下（可能已被改名）", g.TmdbID, targetName), "WARNING")
+		p.log(fmt.Sprintf("  ⚠ 跳过重复组 tmdb_id=%d：整理名称对应的目录 %q 不在根目录下（可能已被改名）", g.TmdbID, targetName), "WARNING")
 		return false
 	}
 	recycled := false

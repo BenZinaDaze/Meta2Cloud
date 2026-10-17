@@ -73,7 +73,7 @@ func (s *LibraryStore) ResolveTitlePin(mediaType string, tmdbID int64, fallbackT
 // AdoptTitlePin 手动采用新译名：覆盖既有钉扎记录。
 func (s *LibraryStore) AdoptTitlePin(mediaType string, tmdbID int64, title, year string) error {
 	if tmdbID <= 0 || title == "" {
-		return errors.New("无效的钉扎参数")
+		return errors.New("无效的整理名称参数")
 	}
 	now := utcNow()
 	_, err := s.db.Exec(`INSERT INTO media_title_pins

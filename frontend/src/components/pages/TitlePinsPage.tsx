@@ -122,7 +122,7 @@ export default function TitlePinsPage({ onToast }: TitlePinsPageProps) {
         onToast(
           'success',
           `已采用最新译名：${res.data?.title || pin.current_title}`,
-          renamed > 0 ? `已重命名 ${renamed} 个网盘目录，正在触发整理与 STRM 同步` : '已更新钉扎记录，正在触发整理与 STRM 同步',
+          renamed > 0 ? `已重命名 ${renamed} 个网盘目录，正在触发整理与 STRM 同步` : '已更新整理名称记录，正在触发整理与 STRM 同步',
         )
         await load()
       } catch (e) {
