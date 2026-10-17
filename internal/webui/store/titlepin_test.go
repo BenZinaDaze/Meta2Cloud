@@ -139,7 +139,7 @@ func TestListDuplicateFolderGroups(t *testing.T) {
 	if g.MediaType != "tv" || g.TmdbID != 500 {
 		t.Fatalf("group = %+v", g)
 	}
-	if len(g.FolderIDs) != 2 {
-		t.Fatalf("folder_ids = %v", g.FolderIDs)
+	if len(g.Folders) != 2 {
+		t.Fatalf("folders = %+v", g.Folders)
 	}
 }

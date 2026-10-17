@@ -92,11 +92,18 @@ type DuplicateFolderSource interface {
 	DuplicateFolderGroups() []DuplicateFolderGroup
 }
 
+// DuplicateFolderInfo 重复组内的单个网盘目录。
+type DuplicateFolderInfo struct {
+	ID           string
+	ModifiedTime int64
+}
+
 // DuplicateFolderGroup 同一媒体对应的多个网盘目录分组。
+// Folders 按目录修改时间升序排列（最旧的在最前）。
 type DuplicateFolderGroup struct {
 	MediaType string
 	TmdbID    int64
-	FolderIDs []string
+	Folders   []DuplicateFolderInfo
 }
 
 // LogFunc 日志回调 (level, message)。
@@ -626,16 +633,14 @@ func (p *Pipeline) mergeDuplicateGroup(g DuplicateFolderGroup) bool {
 	if p.dryRun {
 		// dry-run 只读，不落库
 		title, year, ok := p.pinStore.GetTitlePin(g.MediaType, g.TmdbID)
-		if !ok {
-			return false
+		if ok {
+			pinTitle, pinYear = title, year
 		}
-		pinTitle, pinYear = title, year
 	} else {
 		title, year, err := p.pinStore.ResolveTitlePin(g.MediaType, g.TmdbID, "", "")
-		if err != nil || title == "" {
-			return false
+		if err == nil {
+			pinTitle, pinYear = title, year
 		}
-		pinTitle, pinYear = title, year
 	}
 
 	rootID := p.cfg.ActiveMovieRootID()
@@ -653,26 +658,58 @@ func (p *Pipeline) mergeDuplicateGroup(g DuplicateFolderGroup) bool {
 		log.Printf("合并重复目录：列举根目录失败 [%s]: %v", rootID, err)
 		return false
 	}
-	targetName := pinnedFolderName(pinTitle, pinYear)
-	var target *cloudfile.CloudFile
 	byID := map[string]cloudfile.CloudFile{}
 	for _, c := range children {
 		byID[c.ID] = c
+	}
+
+	// 钉扎名仍为空（无钉扎记录、无入库历史）：取组内最旧目录的实际名称作为初始名落库
+	if pinTitle == "" {
+		for _, f := range g.Folders { // 已按修改时间升序，最旧在前
+			c, ok := byID[f.ID]
+			if !ok || c.Trashed {
+				continue
+			}
+			parsedTitle, parsedYear := splitFolderName(c.Name)
+			if parsedTitle == "" {
+				continue
+			}
+			if p.dryRun {
+				pinTitle, pinYear = parsedTitle, parsedYear
+			} else if t, y, err := p.pinStore.ResolveTitlePin(g.MediaType, g.TmdbID, parsedTitle, parsedYear); err == nil {
+				pinTitle, pinYear = t, y
+			}
+			if pinTitle != "" {
+				p.log(fmt.Sprintf("      📌 以最旧目录命名钉扎：%s", pinnedFolderName(pinTitle, pinYear)), "INFO")
+				break
+			}
+		}
+	}
+	if pinTitle == "" {
+		p.log(fmt.Sprintf("  ⚠ 跳过重复组 tmdb_id=%d：无法确定钉扎名（钉扎表、入库历史与组内目录均为空）", g.TmdbID), "WARNING")
+		return false
+	}
+
+	targetName := pinnedFolderName(pinTitle, pinYear)
+	var target *cloudfile.CloudFile
+	for _, c := range children {
 		if c.Name == targetName {
 			cp := c
 			target = &cp
+			break
 		}
 	}
 	if target == nil {
 		// 钉扎目录不存在（可能已被手动改名），跳过等待下次整理建立
+		p.log(fmt.Sprintf("  ⚠ 跳过重复组 tmdb_id=%d：钉扎目录 %q 不在根目录下（可能已被改名）", g.TmdbID, targetName), "WARNING")
 		return false
 	}
 	recycled := false
-	for _, fid := range g.FolderIDs {
-		if fid == target.ID {
+	for _, f := range g.Folders {
+		if f.ID == target.ID {
 			continue
 		}
-		candidate, exists := byID[fid]
+		candidate, exists := byID[f.ID]
 		if !exists || candidate.Trashed {
 			continue
 		}
@@ -780,6 +817,17 @@ func pinnedFolderName(title, year string) string {
 		return fmt.Sprintf("%s (%s)", title, year)
 	}
 	return title
+}
+
+var folderYearRe = regexp.MustCompile(`^(.*?)\s*\((\d{4})\)$`)
+
+// splitFolderName 把目录名拆为标题与年份（"标题 (2026)" → "标题", "2026"）。
+func splitFolderName(name string) (title, year string) {
+	name = strings.TrimSpace(name)
+	if m := folderYearRe.FindStringSubmatch(name); m != nil {
+		return strings.TrimSpace(m[1]), m[2]
+	}
+	return name, ""
 }
 
 func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitleIndex map[string][]cloudfile.CloudFile) ProcessResult {

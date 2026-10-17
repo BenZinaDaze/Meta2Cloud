@@ -536,7 +536,7 @@ func TestPipelineMergeDuplicateFolders(t *testing.T) {
 		SkipTmdb:      true,
 		TitlePinStore: newFakeTitlePinStore(map[string][2]string{"tv:501": {"旧译名", "2025"}}),
 		DuplicateFolders: &fakeDuplicateSource{groups: []DuplicateFolderGroup{{
-			MediaType: "tv", TmdbID: 501, FolderIDs: []string{oldFolder.ID, newFolder.ID},
+			MediaType: "tv", TmdbID: 501, Folders: []DuplicateFolderInfo{{ID: oldFolder.ID}, {ID: newFolder.ID}},
 		}}},
 	})
 	p.Run()
@@ -576,7 +576,7 @@ func TestPipelineMergeSkippedWhenDisabled(t *testing.T) {
 		SkipTmdb:      true,
 		TitlePinStore: newFakeTitlePinStore(map[string][2]string{"tv:501": {"旧译名", "2025"}}),
 		DuplicateFolders: &fakeDuplicateSource{groups: []DuplicateFolderGroup{{
-			MediaType: "tv", TmdbID: 501, FolderIDs: []string{oldFolder.ID, newFolder.ID},
+			MediaType: "tv", TmdbID: 501, Folders: []DuplicateFolderInfo{{ID: oldFolder.ID}, {ID: newFolder.ID}},
 		}}},
 	})
 	p.Run()
@@ -588,3 +588,39 @@ func TestPipelineMergeSkippedWhenDisabled(t *testing.T) {
 
 // 静态确认 MetaInfo 解析被 pipeline 正确使用
 var _ = mediaparser.MetaInfo
+
+func TestPipelineMergeDerivesPinFromOldestFolder(t *testing.T) {
+	provider := newFakeProvider()
+	scan := provider.AddFolder("扫描", "0")
+
+	// 无钉扎记录、无入库历史：钉扎名应取组内最旧目录的实际名称
+	oldFolder := provider.AddFolder("旧译名 (2025)", "root")
+	oldSeason := provider.AddFolder("Season 01", oldFolder.ID)
+	provider.AddFile("旧译名 - S01E01.mkv", oldSeason.ID)
+	newFolder := provider.AddFolder("新译名 (2025)", "root")
+	newSeason := provider.AddFolder("Season 01", newFolder.ID)
+	provider.AddFile("新译名 - S01E02.mkv", newSeason.ID)
+
+	cfg := newTestConfig()
+	cfg.U115.DownloadFolderID = scan.ID
+	pinStore := newFakeTitlePinStore(map[string][2]string{})
+	p := New(provider, cfg, Options{
+		SkipTmdb:      true,
+		TitlePinStore: pinStore,
+		DuplicateFolders: &fakeDuplicateSource{groups: []DuplicateFolderGroup{{
+			MediaType: "tv", TmdbID: 502,
+			Folders: []DuplicateFolderInfo{{ID: oldFolder.ID}, {ID: newFolder.ID}},
+		}}},
+	})
+	p.Run()
+
+	if f, _ := provider.FindFile("新译名 - S01E02.mkv", oldSeason.ID); f == nil {
+		t.Fatal("文件未并入最旧目录")
+	}
+	if cf, _ := provider.GetFile(newFolder.ID); !cf.Trashed {
+		t.Fatal("较新的重复目录未回收")
+	}
+	if title, year, ok := pinStore.GetTitlePin("tv", 502); !ok || title != "旧译名" || year != "2025" {
+		t.Fatalf("钉扎未按最旧目录落库: %q %q %v", title, year, ok)
+	}
+}

@@ -75,10 +75,14 @@ func (a duplicateFolderAdapter) DuplicateFolderGroups() []pipeline.DuplicateFold
 	}
 	out := make([]pipeline.DuplicateFolderGroup, 0, len(groups))
 	for _, g := range groups {
+		folders := make([]pipeline.DuplicateFolderInfo, 0, len(g.Folders))
+		for _, f := range g.Folders {
+			folders = append(folders, pipeline.DuplicateFolderInfo{ID: f.ID, ModifiedTime: f.ModifiedTime})
+		}
 		out = append(out, pipeline.DuplicateFolderGroup{
 			MediaType: g.MediaType,
 			TmdbID:    g.TmdbID,
-			FolderIDs: g.FolderIDs,
+			Folders:   folders,
 		})
 	}
 	return out

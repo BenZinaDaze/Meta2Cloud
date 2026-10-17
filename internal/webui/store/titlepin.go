@@ -21,11 +21,18 @@ type TitlePin struct {
 	UpdatedAt   string `json:"updated_at"`
 }
 
+// DuplicateFolderInfo 重复组内的单个网盘目录。
+type DuplicateFolderInfo struct {
+	ID           string
+	ModifiedTime int64 // 目录最近修改时间（越旧越可能是初始目录）
+}
+
 // DuplicateFolderGroup 同一媒体关联的多个网盘目录（历史译名差异导致）。
+// Folders 按修改时间升序排列（最旧的在最前）。
 type DuplicateFolderGroup struct {
 	MediaType string
 	TmdbID    int64
-	FolderIDs []string
+	Folders   []DuplicateFolderInfo
 }
 
 // GetTitlePin 读取钉扎记录（无记录返回 false）。
@@ -119,10 +126,25 @@ func (s *LibraryStore) ListDuplicateFolderGroups() ([]DuplicateFolderGroup, erro
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	// 先关闭 rows 释放连接（单连接池），再逐组查目录 ID
+	// 先关闭 rows 释放连接（单连接池），再逐组查目录（按修改时间升序，最旧在前）
 	rows.Close()
 	for i := range groups {
-		groups[i].FolderIDs = s.ListFolderIDsByTmdb(groups[i].MediaType, groups[i].TmdbID)
+		g := &groups[i]
+		folderRows, err := s.db.Query(`SELECT drive_folder_id, folder_modified_time
+			FROM library_media WHERE media_type = ? AND tmdb_id = ?
+			ORDER BY folder_modified_time ASC, drive_folder_id ASC`, g.MediaType, g.TmdbID)
+		if err != nil {
+			return nil, err
+		}
+		for folderRows.Next() {
+			var info DuplicateFolderInfo
+			if err := folderRows.Scan(&info.ID, &info.ModifiedTime); err != nil {
+				folderRows.Close()
+				return nil, err
+			}
+			g.Folders = append(g.Folders, info)
+		}
+		folderRows.Close()
 	}
 	return groups, nil
 }
