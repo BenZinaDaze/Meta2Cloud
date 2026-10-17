@@ -800,3 +800,34 @@ type failGetFileProvider struct {
 func (f *failGetFileProvider) GetFile(string) (cloudfile.CloudFile, error) {
 	return cloudfile.CloudFile{}, fmt.Errorf("不应发起 GetFile 反查")
 }
+
+// 路径型映射：映射值为网盘根起算的相对路径，与链条节点名字路径前缀匹配
+func TestLocateMappingByPathChain(t *testing.T) {
+	fp := newFakeWebProvider()
+	media := fp.addFolder("Media", "0")
+	tvDir := fp.addFolder("剧集", media.ID)
+	showDir := fp.addFolder("三体 (2023)", tvDir.ID)
+	seasonDir := fp.addFolder("Season 01", showDir.ID)
+
+	cfg := testStrmConfig()
+	cfg.Strm.Mappings = []config.StrmMapping{{PanFolderID: "Media/剧集", LocalPath: "/mnt/tv"}}
+	chain := []cloudfile.CloudFile{
+		{ID: media.ID, Name: "Media", FileType: cloudfile.TypeFolder},
+		{ID: tvDir.ID, Name: "剧集", FileType: cloudfile.TypeFolder},
+		{ID: showDir.ID, Name: "三体 (2023)", FileType: cloudfile.TypeFolder},
+		{ID: seasonDir.ID, Name: "Season 01", FileType: cloudfile.TypeFolder},
+	}
+
+	// 链上「Media/剧集」节点命中映射路径，相对路径取其后的名字
+	m, rel, ok := locateMapping(&failGetFileProvider{fakeWebProvider: fp}, cfg, seasonDir, chain)
+	if !ok || m.LocalPath != "/mnt/tv" || rel != "三体 (2023)/Season 01" {
+		t.Fatalf("路径型映射匹配错误：%+v %q %v", m, rel, ok)
+	}
+
+	// 映射指向更深的剧名目录
+	cfg.Strm.Mappings = []config.StrmMapping{{PanFolderID: "Media/剧集/三体 (2023)", LocalPath: "/mnt/santi"}}
+	m, rel, ok = locateMapping(&failGetFileProvider{fakeWebProvider: fp}, cfg, seasonDir, chain)
+	if !ok || m.LocalPath != "/mnt/santi" || rel != "Season 01" {
+		t.Fatalf("深路径映射匹配错误：%+v %q %v", m, rel, ok)
+	}
+}

@@ -211,6 +211,12 @@ func syncMapping(provider cloudfile.Provider, st *store.StrmStore, cfg *config.C
 	localRoot := filepath.Clean(mapping.LocalPath)
 	seen := map[string]bool{}
 
+	// 配置值为网盘根起算的相对路径（如 "Media/剧集"，兼容旧 ID），使用处解析为目录 ID
+	panID, ok := cloudfile.ResolveFolderRefOrPath(provider, mapping.PanFolderID)
+	if !ok {
+		return 0, 0, 0, 0, fmt.Errorf("网盘目录 %q 不存在", mapping.PanFolderID)
+	}
+
 	var walk func(folderID, relPath string, depth int) error
 	walk = func(folderID, relPath string, depth int) error {
 		if depth > strmWalkMaxDepth {
@@ -269,7 +275,7 @@ func syncMapping(provider cloudfile.Provider, st *store.StrmStore, cfg *config.C
 		}
 		return nil
 	}
-	if err := walk(mapping.PanFolderID, "", 0); err != nil {
+	if err := walk(panID, "", 0); err != nil {
 		return created, updated, removed, skipped, err
 	}
 
@@ -571,11 +577,31 @@ func HandleVideoIngested(result pipeline.ProcessResult) error {
 // locateMapping 从目标文件夹沿 ParentID 向上回溯，找到包含它的映射与相对目录路径。
 func locateMapping(provider cloudfile.Provider, cfg *config.Config, target cloudfile.CloudFile, targetChain []cloudfile.CloudFile) (config.StrmMapping, string, bool) {
 	mappingByRoot := map[string]config.StrmMapping{}
+	mappingByPath := map[string]config.StrmMapping{}
 	for _, m := range cfg.Strm.Mappings {
 		mappingByRoot[m.PanFolderID] = m
+		if key := cloudfile.NormalizeFolderPath(m.PanFolderID); key != "" {
+			mappingByPath[key] = m
+		}
 	}
-	// 1) 管线传链优先：目标目录的完整链条整理时已在手（媒体库根/一级/二级/剧名/Season），
-	//    直接本地匹配映射根并拼接相对路径，零网络调用
+	// 0) 路径型映射优先：映射值为网盘根起算的相对路径，与链条节点的名字路径前缀匹配
+	chainPath := ""
+	for i := range targetChain {
+		seg := cloudfile.NormalizeFolderPath(targetChain[i].Name)
+		if chainPath == "" {
+			chainPath = seg
+		} else {
+			chainPath += "/" + seg
+		}
+		if m, ok := mappingByPath[chainPath]; ok {
+			parts := make([]string, 0, len(targetChain)-i-1)
+			for _, node := range targetChain[i+1:] {
+				parts = append(parts, node.Name)
+			}
+			return m, strings.Join(parts, "/"), true
+		}
+	}
+	// 1) ID 型映射：管线传链（媒体库根/一级/二级/剧名/Season），本地匹配映射根，零网络调用
 	chainIdx := -1
 	for i := range targetChain {
 		if _, ok := mappingByRoot[targetChain[i].ID]; ok {

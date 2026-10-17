@@ -122,3 +122,26 @@ func TestResolveFolderRef(t *testing.T) {
 		t.Fatal("空值不应命中")
 	}
 }
+
+func TestResolveFolderPath(t *testing.T) {
+	fp := newLookupFake()
+	fp.add("Media", "w1", "0", true)
+	fp.add("剧集", "w2", "w1", true)
+	fp.add("电影", "w3", "w1", true)
+
+	if id, ok := ResolveFolderPath(fp, "Media/剧集"); !ok || id != "w2" {
+		t.Fatalf("两级路径解析 = %q,%v want w2,true", id, ok)
+	}
+	if id, ok := ResolveFolderPath(fp, "/Media/"); !ok || id != "w1" {
+		t.Fatalf("斜杠容错解析 = %q,%v want w1,true", id, ok)
+	}
+	if _, ok := ResolveFolderPath(fp, "Media/不存在"); ok {
+		t.Fatal("末级不存在不应命中")
+	}
+	if _, ok := ResolveFolderPath(fp, ""); ok {
+		t.Fatal("空路径不应命中")
+	}
+	if NormalizeFolderPath("/Media//剧集/") != "Media/剧集" {
+		t.Fatal("路径规范化错误")
+	}
+}

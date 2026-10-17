@@ -1409,20 +1409,19 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                 <div>
                   <div className="mb-2 flex items-baseline gap-2">
                     <label className="text-[13px] font-medium">路径映射</label>
-                    <span className="text-[11px] text-muted-foreground/80">网盘媒体库目录 ID → 本地 STRM 输出目录，目录结构镜像网盘</span>
+                    <span className="text-[11px] text-muted-foreground/80">网盘媒体库目录 → 本地 STRM 输出目录，目录结构镜像网盘</span>
                   </div>
                   <div className="space-y-2">
                     {(((cfg?.strm as Record<string, unknown>)?.mappings as Array<Record<string, unknown>>) || []).map((m, i) => (
                       <div key={i} className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                        <Input
+                        <FolderSelectInput
                           value={(m.pan_folder_id as string) ?? ''}
-                          onChange={(e) => {
+                          onChange={(v) => {
                             const list = [...(((cfg?.strm as Record<string, unknown>)?.mappings as Array<Record<string, unknown>>) || [])]
-                            list[i] = { ...list[i], pan_folder_id: e.target.value }
+                            list[i] = { ...list[i], pan_folder_id: v }
                             set('strm', 'mappings', list)
                           }}
-                          placeholder="网盘目录 ID（如媒体库根目录）"
-                          className="font-mono text-[13px]"
+                          placeholder="选择网盘目录"
                         />
                         <Input
                           value={(m.local_path as string) ?? ''}

@@ -7,7 +7,7 @@ import (
 	"meta2cloud/internal/cloudfile"
 )
 
-// resolveFolderID 将配置中的目录值（目录名，兼容旧 ID）解析为网盘目录 ID。
+// resolveFolderID 将配置中的目录值（网盘根起算的相对路径，兼容旧名字/ID）解析为网盘目录 ID。
 // 解析失败时原样返回（兼容直接填 ID 的旧配置）。
 func resolveFolderID(value string) string {
 	value = strings.TrimSpace(value)
@@ -15,7 +15,7 @@ func resolveFolderID(value string) string {
 		return ""
 	}
 	if p := RT().GetStorageProvider(); p != nil {
-		if id, ok := cloudfile.ResolveFolderRef(p, value); ok {
+		if id, ok := cloudfile.ResolveFolderRefOrPath(p, value); ok {
 			return id
 		}
 	}

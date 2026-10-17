@@ -21,9 +21,9 @@ interface Crumb {
 const ROOT_CRUMB: Crumb = { id: '0', name: '根目录' }
 
 interface FolderSelectInputProps {
-  /** 存储值：目录名（网盘根目录下的直接子目录） */
+  /** 存储值：网盘根目录起算的相对路径（如 Media 或 Media/剧集），后端按名解析 */
   value?: string
-  onChange: (name: string) => void
+  onChange: (value: string) => void
   placeholder?: string
 }
 
@@ -60,10 +60,11 @@ export default function FolderSelectInput({ value, onChange, placeholder }: Fold
   const parent = crumbs.length >= 2 ? crumbs[crumbs.length - 2] : null
 
   const choose = () => {
-    // 保存目录名而非 ID：后端按名解析，改名/重建无需重新配置
-    const name = crumbs.length ? crumbs[crumbs.length - 1].name : ''
-    if (!name) return
-    onChange(name)
+    // 根目录不可选（根下目录才有意义）；保存相对路径而非 ID：后端按名解析，改名/重建无需重新配置
+    if (crumbs.length <= 1) return
+    const selected = crumbs.slice(1).map((c) => c.name).join('/')
+    if (!selected) return
+    onChange(selected)
     setOpen(false)
   }
 
@@ -85,7 +86,7 @@ export default function FolderSelectInput({ value, onChange, placeholder }: Fold
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>选择目录</DialogTitle>
-            <DialogDescription>浏览 115 网盘，选中目录后以目录名保存</DialogDescription>
+            <DialogDescription>浏览 115 网盘，选中目录后以相对路径保存</DialogDescription>
           </DialogHeader>
 
           <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
@@ -134,7 +135,7 @@ export default function FolderSelectInput({ value, onChange, placeholder }: Fold
             >
               返回上级
             </Button>
-            <Button size="sm" onClick={choose}>
+            <Button size="sm" onClick={choose} disabled={crumbs.length <= 1}>
               选择当前目录
             </Button>
           </DialogFooter>
