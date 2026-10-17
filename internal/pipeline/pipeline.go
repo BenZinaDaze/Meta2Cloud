@@ -111,6 +111,10 @@ type Pipeline struct {
 	pinStore TitlePinStore
 	// 重复目录分组来源（可选）
 	dupSource DuplicateFolderSource
+	// 媒体分类配置（可选；nil = 未启用分类布局）
+	categories *config.CategoriesConfig
+	// 分类目录缓存：父ID/目录名 → 目录ID
+	categoryDirCache map[string]string
 	// 入库成功回调（可选；dry-run 不触发，用于 STRM 生成等后处理，返回 error 表示失败/不适用）
 	onVideoIngested func(ProcessResult) error
 }
@@ -131,6 +135,8 @@ type Options struct {
 	TitlePinStore TitlePinStore
 	// DuplicateFolders 重复目录分组来源（可为 nil）
 	DuplicateFolders DuplicateFolderSource
+	// Categories 媒体分类配置（可为 nil = 未启用分类布局）
+	Categories *config.CategoriesConfig
 	// OnVideoIngested 单文件整理成功（入库）后回调，dry-run 不触发（可为 nil）；
 	// 返回 nil 表示 STRM 等后处理成功
 	OnVideoIngested func(ProcessResult) error
@@ -165,10 +171,12 @@ func New(provider cloudfile.Provider, cfg *config.Config, opts Options) *Pipelin
 		showFolderCache:   map[string]string{},
 		seasonPosterCache: map[string]string{},
 		seasonDetailCache: map[string]map[string]any{},
+		categoryDirCache:  map[string]string{},
 		notifyItems:       []notifyItem{},
 		ingestStore:       opts.IngestStore,
 		pinStore:          opts.TitlePinStore,
 		dupSource:         opts.DuplicateFolders,
+		categories:        opts.Categories,
 		onVideoIngested:   opts.OnVideoIngested,
 	}
 
@@ -594,11 +602,27 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 		}
 	}
 
-	// Step 6: 创建目标文件夹
+	// Step 6: 创建目标文件夹（分类启用时先解析分类目录链：媒体库根/一级/二级）
 	var targetFolder *cloudfile.CloudFile
-	topFolderID := ""
+	var topFolderID string
+	baseID := ""
+	if p.categories != nil && tmdbInfo != nil {
+		level1, level2 := p.categories.Resolve(isTV, tmdbGenreIDs(tmdbInfo), jsonx.Str(tmdbInfo, "original_language"))
+		if !p.dryRun {
+			if bid, err := p.ensureCategoryChain(level1, level2); err == nil {
+				baseID = bid
+			} else {
+				log.Printf("分类目录创建失败，回退默认根目录：%v", err)
+			}
+		}
+		p.log(fmt.Sprintf("      分类：%s/%s", level1, level2), "INFO")
+	}
 	if !p.dryRun {
-		targetFolder = p.organizer.EnsureFolderForMeta(meta, video.Name)
+		if baseID != "" {
+			targetFolder = p.organizer.EnsureFolderUnder(baseID, meta, video.Name)
+		} else {
+			targetFolder = p.organizer.EnsureFolderForMeta(meta, video.Name)
+		}
 		if targetFolder == nil {
 			result.Status = "failed"
 			result.Reason = "文件夹创建失败"

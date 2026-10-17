@@ -72,34 +72,23 @@ func (p *Pipeline) mergeDuplicateGroup(g DuplicateFolderGroup) bool {
 		}
 	}
 
-	rootID := p.cfg.ActiveMovieRootID()
-	if g.MediaType == "tv" {
-		rootID = p.cfg.ActiveTvRootID()
+	// 组内目录按 ID 逐个定位（分类布局下媒体目录不在根目录直下，无法按名列举）
+	var located []cloudfile.CloudFile
+	for _, f := range g.Folders {
+		cf, err := p.provider.GetFile(f.ID)
+		if err != nil || cf.Trashed {
+			continue
+		}
+		located = append(located, cf)
 	}
-	if rootID == "" {
-		rootID = p.cfg.ActiveRootFolderID()
-	}
-	if rootID == "" {
+	if len(located) == 0 {
 		return false
-	}
-	children, err := p.provider.ListFiles(rootID, 500)
-	if err != nil {
-		log.Printf("合并重复目录：列举根目录失败 [%s]: %v", rootID, err)
-		return false
-	}
-	byID := map[string]cloudfile.CloudFile{}
-	for _, c := range children {
-		byID[c.ID] = c
 	}
 
-	// 钉扎名仍为空（无钉扎记录、无入库历史）：取组内最旧目录的实际名称作为初始名落库
+	// 整理名称仍为空（无钉扎记录、无入库历史）：取组内最旧目录的实际名称作为初始名落库
 	if pinTitle == "" {
-		for _, f := range g.Folders { // 已按修改时间升序，最旧在前
-			c, ok := byID[f.ID]
-			if !ok || c.Trashed {
-				continue
-			}
-			parsedTitle, parsedYear := splitFolderName(c.Name)
+		for _, cf := range located { // located 保持 g.Folders 顺序（最旧在前）
+			parsedTitle, parsedYear := splitFolderName(cf.Name)
 			if parsedTitle == "" {
 				continue
 			}
@@ -121,25 +110,23 @@ func (p *Pipeline) mergeDuplicateGroup(g DuplicateFolderGroup) bool {
 
 	targetName := pinnedFolderName(pinTitle, pinYear)
 	var target *cloudfile.CloudFile
-	for _, c := range children {
-		if c.Name == targetName {
-			cp := c
+	var candidates []cloudfile.CloudFile
+	for _, cf := range located {
+		if target == nil && cf.Name == targetName {
+			cp := cf
 			target = &cp
-			break
+			continue
 		}
+		candidates = append(candidates, cf)
 	}
 	if target == nil {
 		// 钉扎目录不存在（可能已被手动改名），跳过等待下次整理建立
-		p.log(fmt.Sprintf("  ⚠ 跳过重复组 tmdb_id=%d：整理名称对应的目录 %q 不在根目录下（可能已被改名）", g.TmdbID, targetName), "WARNING")
+		p.log(fmt.Sprintf("  ⚠ 跳过重复组 tmdb_id=%d：整理名称对应的目录 %q 不在网盘上（可能已被改名）", g.TmdbID, targetName), "WARNING")
 		return false
 	}
 	recycled := false
-	for _, f := range g.Folders {
-		if f.ID == target.ID {
-			continue
-		}
-		candidate, exists := byID[f.ID]
-		if !exists || candidate.Trashed {
+	for _, candidate := range candidates {
+		if candidate.Trashed {
 			continue
 		}
 		if p.mergeFolderInto(candidate, *target) {

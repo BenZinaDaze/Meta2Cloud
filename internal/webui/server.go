@@ -81,6 +81,8 @@ func (s *Server) registerRoutes() {
 	// mediavault / tmdb season
 	m.HandleFunc("POST /api/mediavault/test", handleMediavaultTest)
 	m.HandleFunc("POST /api/telegram/test", handleTelegramTest)
+	m.HandleFunc("GET /api/categories", handleGetCategories)
+	m.HandleFunc("PUT /api/categories", handleSaveCategories)
 	m.HandleFunc("GET /api/tmdb/tv/{tmdbID}/season/{season}", handleTmdbSeasonDetail)
 
 	// file manager

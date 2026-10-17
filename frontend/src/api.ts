@@ -174,3 +174,8 @@ export const deleteFile = (fileId: string) =>
 
 export const batchAction = (data: { action: 'delete' | 'move'; file_ids: string[]; parent_id?: string }) =>
   api.post('/files/batch', data)
+
+// ── 媒体分类 ──
+export const getCategories = () => api.get('/categories')
+export const saveCategories = (data: { enabled: boolean; config: import('@/types/api').CategoriesConfig }) =>
+  api.put('/categories', data)

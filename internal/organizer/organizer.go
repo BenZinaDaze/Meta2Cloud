@@ -123,19 +123,46 @@ func (o *MediaOrganizer) buildPath(meta *mediaparser.MetaBase) string {
 	return top
 }
 
+// EnsureFolderUnder 在指定基准目录下按需创建目录链（电影一层；剧集含 Season），返回叶子目录。
+// 供分类布局使用：baseID 为分类目录链（媒体库根/一级/二级）解析出的基准目录。
+func (o *MediaOrganizer) EnsureFolderUnder(baseID string, meta *mediaparser.MetaBase, label string) *cloudfile.CloudFile {
+	if baseID == "" {
+		return nil
+	}
+	folder, err := o.ensureFoldersUnder(baseID, meta, label)
+	if err != nil {
+		log.Printf("[organizer] 创建文件夹失败 %q: %v", label, err)
+		return nil
+	}
+	return folder
+}
+
 // ensureFolders 在云存储中幂等创建目录链，返回叶子文件夹。
 func (o *MediaOrganizer) ensureFolders(meta *mediaparser.MetaBase, label string) (*cloudfile.CloudFile, error) {
 	if meta == nil || meta.Name() == "" {
 		return nil, fmt.Errorf("解析失败，跳过：%q", label)
 	}
 
-	isTV := meta.Type == mediaparser.MediaTV
-
 	// 选择基准目录
 	baseID := o.movieRootID
+	if meta.Type == mediaparser.MediaTV {
+		baseID = o.tvRootID
+	}
+	return o.ensureFoldersUnder(baseID, meta, label)
+}
+
+// ensureFoldersUnder 在指定基准目录下幂等创建目录链，返回叶子文件夹。
+func (o *MediaOrganizer) ensureFoldersUnder(baseID string, meta *mediaparser.MetaBase, label string) (*cloudfile.CloudFile, error) {
+	if meta == nil || meta.Name() == "" {
+		return nil, fmt.Errorf("解析失败，跳过：%q", label)
+	}
+	if baseID == "" {
+		return nil, fmt.Errorf("基准目录未设置")
+	}
+
+	isTV := meta.Type == mediaparser.MediaTV
 	kind := "Movie"
 	if isTV {
-		baseID = o.tvRootID
 		kind = "TV"
 	}
 

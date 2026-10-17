@@ -136,6 +136,7 @@ func doRunPipeline() {
 		opts.TitlePinStore = titlePinAdapter{ls}
 		opts.DuplicateFolders = duplicateFolderAdapter{ls}
 	}
+	opts.Categories = RT().GetCategories()
 	if cfg.Strm.Enabled {
 		opts.OnVideoIngested = HandleVideoIngested
 	}

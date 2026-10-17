@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"meta2cloud/internal/cloudfile"
+	"meta2cloud/internal/config"
 	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/scraper"
 	"meta2cloud/internal/u115"
@@ -1119,5 +1120,41 @@ func TestIncrementalSiblingRescan(t *testing.T) {
 	shows, _ = lib["tv_shows"].([]any)
 	if len(shows) != 1 || shows[0].(map[string]any)["in_library_episodes"] != float64(12) {
 		t.Fatalf("增量联动卡片: %+v", shows)
+	}
+}
+
+// 分类启用时,扫描应把一级/二级分类目录当透传层,正确识别其中的媒体
+func TestScanCategoryPassthrough(t *testing.T) {
+	rootDir := t.TempDir()
+	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
+	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
+		[]byte("webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n"), 0o644)
+	ResetJWTSecretCache()
+	InitRuntime(rootDir)
+
+	fp := newFakeWebProvider()
+	fp.addFolder("root", "0")
+	ji := fp.addFolder("剧集", "root")
+	anime := fp.addFolder("动漫", ji.ID)
+	show := fp.addFolder("学生会也有洞！ (2026)", anime.ID)
+	season := fp.addFolder("Season 01", show.ID)
+	fp.addFile("学生会也有洞！ - S01E01.mkv", season.ID)
+	fp.addFolder("电影", "root")
+	RT().SetProviderForTest(fp.provider())
+
+	RT().SetCategories(&config.CategoriesConfig{
+		Dirs: config.CategoryDirs{TV: "剧集", Movie: "电影", Other: "其他"},
+		TV: []config.CategoryRule{
+			{Name: "动漫", GenreIDs: []int{16}, Languages: []string{"ja"}},
+			{Name: "普通电视剧"},
+		},
+	})
+
+	shows := ScanTVShows(fp.provider(), RT().GetConfig(), false)
+	if len(shows) != 1 {
+		t.Fatalf("shows = %d, want 1（分类目录应透传）", len(shows))
+	}
+	if !strings.Contains(shows[0].Title, "学生会也有洞") {
+		t.Errorf("title = %q", shows[0].Title)
 	}
 }

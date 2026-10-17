@@ -56,6 +56,7 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { SkeletonPanel } from '@/components/StatePanel'
 import PageHeader from '@/components/shared/PageHeader'
+import CategoriesCard from '@/components/config/CategoriesCard'
 import { cn } from '@/lib/utils'
 
 const PAGE_VARIANTS = {
@@ -1305,7 +1306,8 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
             </Card>
           </TabsContent>
 
-          <TabsContent value="pipeline" className="mt-0">
+          <TabsContent value="pipeline" className="mt-0 space-y-5">
+            <CategoriesCard />
             <Card className="border-border/70 bg-card/40">
               <CardHeader>
                 <CardTitle className="text-base">扫描与入库策略</CardTitle>
@@ -1393,7 +1395,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                       max={86400}
                     />
                   </Field>
-                  <Field label="服务地址 (url_base)" description="写入 .strm 的地址，支持 IP:端口或域名（含反代/HTTPS）" fullWidth>
+                  <Field label="服务地址 (url_base)" description="写入 .strm 的地址，支持 IP:端口或域名（含反代/HTTPS）；省略 http:// 时自动按 http 处理" fullWidth>
                     <TextInput
                       value={(cfg?.strm as Record<string, unknown>)?.url_base as string | undefined}
                       onChange={(v) => set('strm', 'url_base', v)}

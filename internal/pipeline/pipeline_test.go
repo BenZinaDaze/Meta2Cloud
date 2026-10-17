@@ -212,13 +212,14 @@ func newTmdbServer(t *testing.T) *httptest.Server {
 		case strings.HasPrefix(r.URL.Path, "/tv/"):
 			json.NewEncoder(w).Encode(map[string]any{
 				"id": 1396.0, "name": "绝命毒师", "original_name": "Breaking Bad",
+					"original_language": "ja",
 				"first_air_date": "2008-01-20", "overview": "化学老师",
 				"poster_path": "/bb.jpg", "backdrop_path": "/bbd.jpg",
 				"credits":            map[string]any{"crew": []any{}, "cast": []any{}},
 				"alternative_titles": map[string]any{"results": []any{}},
 				"translations":       map[string]any{"translations": []any{}},
 				"external_ids":       map[string]any{"tvdb_id": 81189.0},
-				"genres":             []any{},
+				"genres":             []any{map[string]any{"id": 16.0, "name": "动画"}},
 			})
 		case strings.HasPrefix(r.URL.Path, "/movie/"):
 			json.NewEncoder(w).Encode(map[string]any{
@@ -229,7 +230,7 @@ func newTmdbServer(t *testing.T) *httptest.Server {
 				"alternative_titles": map[string]any{"titles": []any{}},
 				"translations":       map[string]any{"translations": []any{}},
 				"external_ids":       map[string]any{"imdb_id": "tt1375666"},
-				"genres":             []any{},
+				"genres":             []any{map[string]any{"id": 16.0, "name": "动画"}},
 			})
 		default:
 			w.WriteHeader(404)
@@ -688,5 +689,56 @@ func TestHashtagOf(t *testing.T) {
 		if got := hashtagOf(in); got != want {
 			t.Errorf("hashtagOf(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestPipelineCategoryLayout(t *testing.T) {
+	server := newTmdbServer(t)
+	defer server.Close()
+
+	provider := newFakeProvider()
+	scan := provider.AddFolder("扫描", "0")
+	provider.AddFile("Breaking.Bad.S01E03.1080p.BluRay.HEVC-TTG.mkv", scan.ID)
+
+	cfg := newTestConfig()
+	cfg.U115.DownloadFolderID = scan.ID
+	tmdbClient := tmdb.NewClient("key", "zh-CN", "", 5, nil)
+	tmdbClient.SetTestBaseURL(server.URL)
+
+	// 分类启用：剧集根/动漫（动画流派命中）
+	p := New(provider, cfg, Options{
+		TmdbClient: tmdbClient,
+		SkipImages: true,
+		Categories: &config.CategoriesConfig{
+			Dirs: config.CategoryDirs{TV: "剧集", Movie: "电影", Other: "其他"},
+			TV: []config.CategoryRule{
+				{Name: "动漫", GenreIDs: []int{16}, Languages: []string{"ja"}},
+				{Name: "普通电视剧"},
+			},
+		},
+	})
+	summary := p.Run()
+	if summary.OKCount != 1 {
+		t.Fatalf("summary = %+v", summary)
+	}
+
+	ji, _ := provider.FindFile("剧集", "root")
+	if ji == nil {
+		t.Fatal("一级目录「剧集」未创建")
+	}
+	anime, _ := provider.FindFile("动漫", ji.ID)
+	if anime == nil {
+		t.Fatal("二级目录「动漫」未创建")
+	}
+	top, _ := provider.FindFile("绝命毒师 (2008)", anime.ID)
+	if top == nil {
+		t.Fatal("标题目录未在分类目录下创建")
+	}
+	season, _ := provider.FindFile("Season 01", top.ID)
+	if season == nil {
+		t.Fatal("Season 目录未创建")
+	}
+	if f, _ := provider.FindFile("绝命毒师 - S01E03.mkv", season.ID); f == nil {
+		t.Fatal("文件未移入分类目录")
 	}
 }

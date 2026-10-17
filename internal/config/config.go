@@ -415,6 +415,19 @@ var DefaultStrmMediaExt = []string{
 // NFO/图片不下载：媒体服务器对 strm 用文件名+刮削即可，海报图片可由刮削器自行拉取。
 var DefaultStrmSidecarExt = []string{"srt", "ass", "ssa"}
 
+// normalizeStrmURLBase 归一化 STRM 外部访问地址：去掉首尾空白与末尾斜杠；
+// 省略协议时默认补 http://（容器互访场景常见写法，如 "meta2cloud:38765"）。
+func normalizeStrmURLBase(u string) string {
+	u = strings.TrimRight(strings.TrimSpace(u), "/")
+	if u == "" {
+		return ""
+	}
+	if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+		u = "http://" + u
+	}
+	return u
+}
+
 func parseStrm(m map[string]any) Strm {
 	mediaExt := strList(m, "media_ext")
 	if len(mediaExt) == 0 {
@@ -442,7 +455,7 @@ func parseStrm(m map[string]any) Strm {
 	}
 	return Strm{
 		Enabled:             boolean(m, "enabled", false),
-		URLBase:             strings.TrimRight(strings.TrimSpace(str(m, "url_base", "")), "/"),
+		URLBase:             normalizeStrmURLBase(str(m, "url_base", "")),
 		URLSecret:           strings.TrimSpace(str(m, "url_secret", "")),
 		SyncIntervalSeconds: integer(m, "sync_interval_seconds", 0),
 		MediaExt:            mediaExt,

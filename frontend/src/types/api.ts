@@ -214,3 +214,27 @@ export interface TitlePin {
 export interface TitlePinsResponse {
   items: TitlePin[]
 }
+
+// 媒体分类规则
+export interface CategoryRule {
+  name: string
+  genre_ids?: number[]
+  languages?: string[]
+}
+
+export interface CategoryDirs {
+  tv: string
+  movie: string
+  other: string
+}
+
+export interface CategoriesConfig {
+  dirs: CategoryDirs
+  tv: CategoryRule[]
+  movie: CategoryRule[]
+}
+
+export interface CategoriesResponse {
+  enabled: boolean
+  config: CategoriesConfig
+}

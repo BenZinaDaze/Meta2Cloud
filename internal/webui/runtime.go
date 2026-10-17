@@ -21,12 +21,14 @@ import (
 type Runtime struct {
 	RootDir string
 
-	mu         sync.Mutex
-	cfg        *config.Config
-	configPath string
-	rulesPath  string
-	configSig  [2]int64 // (config mtime, rules mtime)
-	library    *store.LibraryStore
+	mu          sync.Mutex
+	cfg         *config.Config
+	configPath  string
+	rulesPath   string
+	configSig   [2]int64 // (config mtime, rules mtime)
+	categories  *config.CategoriesConfig
+	categoriesM int64    // categories.yaml mtime
+	library     *store.LibraryStore
 	tmdbCache  *store.TmdbCache
 	provider   cloudfile.Provider
 	u115Client *u115.Client
@@ -69,6 +71,8 @@ func InitRuntime(rootDir string) *Runtime {
 	defaultRuntime.rss = nil
 	defaultRuntime.u115Auto = nil
 	defaultRuntime.strm = nil
+	defaultRuntime.categories = nil
+	defaultRuntime.categoriesM = 0
 	defaultRuntime.configSig = [2]int64{}
 	return defaultRuntime
 }
@@ -113,6 +117,53 @@ func (rt *Runtime) GetConfig() *config.Config {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	return rt.getConfigLocked()
+}
+
+func (rt *Runtime) categoriesPath() string {
+	return filepath.Join(filepath.Dir(rt.configPath), config.CategoriesFilename)
+}
+
+// GetCategories 分类配置单例（categories.yaml 变更自动重载；文件不存在返回 nil = 未启用）。
+func (rt *Runtime) GetCategories() *config.CategoriesConfig {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if m := fileMtime(rt.categoriesPath()); m != rt.categoriesM {
+		rt.categories = nil
+		rt.categoriesM = m
+	}
+	if rt.categories == nil {
+		if c, err := config.LoadCategories(rt.categoriesPath()); err == nil && c != nil {
+			rt.categories = c
+		} else if err != nil && !os.IsNotExist(err) {
+			log.Printf("分类配置加载失败（按未启用处理）：%v", err)
+		}
+	}
+	return rt.categories
+}
+
+// SetCategories 保存分类配置并刷新单例（启用分类）。
+func (rt *Runtime) SetCategories(c *config.CategoriesConfig) error {
+	if err := config.SaveCategories(rt.categoriesPath(), c); err != nil {
+		return err
+	}
+	rt.mu.Lock()
+	rt.categories = c
+	rt.categoriesM = fileMtime(rt.categoriesPath())
+	rt.mu.Unlock()
+	return nil
+}
+
+// ClearCategories 删除分类配置文件（停用分类布局，回到电影根/剧集根）。
+func (rt *Runtime) ClearCategories() error {
+	path := rt.categoriesPath()
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	rt.mu.Lock()
+	rt.categories = nil
+	rt.categoriesM = 0
+	rt.mu.Unlock()
+	return nil
 }
 
 // getLibraryStoreLocked 媒体实体库单例（需已持锁）。

@@ -76,7 +76,15 @@ func (f *fakeWebProvider) replacePickCode(fileID, pickCode string, size int64) {
 // initStrmTestRuntime 初始化隔离的运行时并写入带 url_secret 的配置。
 func initStrmTestRuntime(t *testing.T, urlSecret string) {
 	t.Helper()
-	root := t.TempDir()
+	// 不用 t.TempDir：全局 RT 单例的监听线程可能在清理窗口内惰性重建
+	// config/data，与 RemoveAll 竞态会误判测试失败；此处清理尽力而为。
+	root, err := os.MkdirTemp("", "meta2cloud-strm-test")
+	if err != nil {
+		t.Fatalf("创建临时目录失败：%v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(root)
+	})
 	if err := os.MkdirAll(filepath.Join(root, "config"), 0o755); err != nil {
 		t.Fatalf("创建配置目录失败：%v", err)
 	}
