@@ -2,6 +2,7 @@
 package webui
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -70,6 +71,54 @@ func handleMediavaultTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "payload": payload, "endpoint": endpoint})
+}
+
+// handleTelegramTest 发送一条 Telegram 测试通知（表单值优先，缺省回退已保存配置）。
+func handleTelegramTest(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		BotToken string `json:"bot_token"`
+		ChatID   string `json:"chat_id"`
+	}
+	_ = jsonDecodeBody(r, &body)
+	cfg := RT().GetConfig().Telegram
+	botToken := strings.TrimSpace(body.BotToken)
+	if botToken == "" {
+		botToken = cfg.BotToken
+	}
+	chatID := strings.TrimSpace(body.ChatID)
+	if chatID == "" {
+		chatID = cfg.ChatID
+	}
+	if botToken == "" || chatID == "" {
+		writeJSONError(w, http.StatusBadRequest, "Bot Token 与 Chat ID 均不能为空")
+		return
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"chat_id":    chatID,
+		"text":       "✅ <b>Meta2Cloud</b>\nTelegram 通知配置正常，入库完成后将推送到此会话。",
+		"parse_mode": "HTML",
+	})
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Post(fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken), "application/json", bytes.NewReader(payload))
+	if err != nil {
+		writeJSONError(w, http.StatusBadGateway, "无法连接 Telegram API："+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	var result struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		writeJSONError(w, http.StatusBadGateway, "Telegram API 返回了无效响应")
+		return
+	}
+	if !result.OK {
+		writeJSONError(w, http.StatusBadGateway, "Telegram API 拒绝："+result.Description)
+		return
+	}
+	appLog("telegram", "test_notify", "SUCCESS", "Telegram 测试通知已发送", nil)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // handleTmdbSeasonDetail TMDB 某季详情（含每集）。

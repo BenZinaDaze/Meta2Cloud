@@ -29,6 +29,7 @@ import {
   getParserRulesConfig,
   saveParserRulesConfig,
   testMediaVault,
+  testTelegram,
   getU115OauthStatus,
   createU115OauthSession,
   testU115Connection,
@@ -79,12 +80,12 @@ const CONFIG_TABS = [
   { key: 'auth', label: '认证', icon: Shield },
   { key: 'tmdb', label: 'TMDB', icon: Database },
   { key: 'u115', label: '115', icon: HardDrive },
+  { key: 'pipeline', label: '整理策略', icon: FolderSync },
+  { key: 'strm', label: 'STRM', icon: FileVideo },
   { key: 'rss', label: 'RSS', icon: Rss },
   { key: 'telegram', label: '通知', icon: Bell },
   { key: 'mediavault', label: 'MediaVault', icon: RadioTower },
-  { key: 'pipeline', label: '策略', icon: FolderSync },
   { key: 'subtitle', label: '字幕', icon: Captions },
-  { key: 'strm', label: 'STRM', icon: FileVideo },
 ]
 
 function normalizeConfig(data: Record<string, unknown>): Record<string, unknown> {
@@ -402,6 +403,8 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
   const [fullRefreshMessage, setFullRefreshMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [mediavaultTestBusy, setMediavaultTestBusy] = useState(false)
   const [mediavaultMessage, setMediavaultMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [telegramTestBusy, setTelegramTestBusy] = useState(false)
+  const [telegramMessage, setTelegramMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const loadU115OauthStatus = useCallback(async () => {
     try {
@@ -637,6 +640,23 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
       })
     } finally {
       setFullRefreshing(false)
+    }
+  }
+
+  async function handleTelegramTest() {
+    const telegram = (cfg?.telegram as Record<string, unknown>) || {}
+    setTelegramTestBusy(true)
+    setTelegramMessage(null)
+    try {
+      await testTelegram({
+        bot_token: (telegram.bot_token as string) || '',
+        chat_id: (telegram.chat_id as string) || '',
+      })
+      setTelegramMessage({ type: 'success', text: '测试通知已发送，请在 Telegram 查看' })
+    } catch (e) {
+      setTelegramMessage({ type: 'error', text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '测试通知发送失败' })
+    } finally {
+      setTelegramTestBusy(false)
     }
   }
 
@@ -1181,6 +1201,21 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                     />
                   </Field>
                 </FieldGroup>
+                <div className="mt-4 flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleTelegramTest}
+                    disabled={telegramTestBusy || !((cfg?.telegram as Record<string, unknown>)?.bot_token) || !((cfg?.telegram as Record<string, unknown>)?.chat_id)}
+                  >
+                    {telegramTestBusy ? '测试中…' : '发送测试通知'}
+                  </Button>
+                  {telegramMessage && (
+                    <span className={cn('text-xs', telegramMessage.type === 'success' ? 'text-success' : 'text-destructive')}>
+                      {telegramMessage.text}
+                    </span>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

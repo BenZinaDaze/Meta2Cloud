@@ -89,6 +89,8 @@ export const saveParserRulesConfig = (data: Record<string, unknown>) =>
   api.put('/config/parser-rules', { data })
 export const testMediaVault = (data: Record<string, unknown>) =>
   api.post('/mediavault/test', data)
+export const testTelegram = (data: { bot_token?: string; chat_id?: string }) =>
+  api.post('/telegram/test', data)
 export const testParse = (filename: string, skipTmdb: boolean = false) =>
   api.post('/parser/test', { filename }, { params: { skip_tmdb: skipTmdb } })
 
