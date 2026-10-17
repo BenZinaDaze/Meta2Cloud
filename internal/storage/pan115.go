@@ -246,39 +246,23 @@ func (p *Pan115Provider) RenameFile(fileID string, newName string) (cloudfile.Cl
 	return cloudfile.CloudFile{ID: fileID, Name: newName, FileType: cloudfile.TypeFile}, nil
 }
 
-// MoveFile 移动文件到另一个文件夹，newName 非空时同时重命名。
+// MoveFile 移动文件或文件夹（newName 非空时同时改名）。
+// 返回本地构造的最小元数据（ID/新名字/新父目录）：
+// 115 无按 ID 直查接口，不再列目录回查确认；pick_code 为文件恒定标识，
+// 移动/改名不变，调用方需要完整元数据时沿用移动前的值即可。
 func (p *Pan115Provider) MoveFile(fileID string, newFolderID string, newName string) (cloudfile.CloudFile, error) {
 	client := p.client()
 	if err := client.Move(fileID, normalizeFolderID(newFolderID)); err != nil {
 		return cloudfile.CloudFile{}, err
 	}
+	name := ""
 	if newName != "" {
 		if err := client.Rename(fileID, newName); err != nil {
 			return cloudfile.CloudFile{}, err
 		}
-		if moved, err := p.FindFile(newName, newFolderID); err == nil && moved != nil {
-			return *moved, nil
-		}
+		name = newName
 	}
-	if items, err := p.ListFiles(newFolderID, 1000); err == nil {
-		for _, item := range items {
-			if item.ID == fileID {
-				return item, nil
-			}
-		}
-	}
-	name := newName
-	if name == "" {
-		name = fileID
-	}
-	cid := normalizeFolderID(newFolderID)
-	return cloudfile.CloudFile{
-		ID:       fileID,
-		Name:     name,
-		FileType: cloudfile.TypeFile,
-		ParentID: cid,
-		Parents:  []string{cid},
-	}, nil
+	return cloudfile.CloudFile{ID: fileID, Name: name, ParentID: newFolderID, Parents: []string{newFolderID}}, nil
 }
 
 // ── 上传 ────────────────────────────────────────────────────

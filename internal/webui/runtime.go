@@ -249,10 +249,12 @@ func (rt *Runtime) GetStorageProvider() cloudfile.Provider {
 				return rt.getU115ClientLocked()
 			})
 			p.LookupRoots = func() []string {
+				// 配置值为目录名（兼容旧 ID），查询时按名解析为目录 ID；
+				// 延迟到 GetFile 时执行，此时 Provider 已初始化完毕，无递归初始化问题
 				c := RT().GetConfig()
 				return []string{
-					c.ActiveRootFolderID(), c.ActiveScanFolderID(),
-					c.U115.RootFolderID, c.U115.DownloadFolderID,
+					resolveFolderID(c.ActiveRootFolderID()), resolveFolderID(c.ActiveScanFolderID()),
+					resolveFolderID(c.U115.RootFolderID), resolveFolderID(c.U115.DownloadFolderID),
 				}
 			}
 			rt.provider = p

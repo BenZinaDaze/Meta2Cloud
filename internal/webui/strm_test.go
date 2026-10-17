@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -663,7 +664,8 @@ func TestLocateMappingParentChain(t *testing.T) {
 	cfg := testStrmConfig()
 	cfg.Strm.Mappings = []config.StrmMapping{{PanFolderID: tvRoot.ID, LocalPath: "/mnt/tv"}}
 
-	mapping, relPath, ok := locateMapping(fp, cfg, seasonDir)
+	// 无链条：走网络回退逐级向上查询
+	mapping, relPath, ok := locateMapping(fp, cfg, seasonDir, nil)
 	if !ok {
 		t.Fatalf("应能定位映射")
 	}
@@ -674,14 +676,32 @@ func TestLocateMappingParentChain(t *testing.T) {
 		t.Fatalf("相对路径错误：%q", relPath)
 	}
 
+	// 管线传链：本地匹配映射根并拼接相对路径，全程零网络调用。
+	// 用一个 GetFile 必失败的 Provider 证明链条命中时不发任何反查请求
+	mapping, relPath, ok = locateMapping(&failGetFileProvider{fakeWebProvider: fp}, cfg, seasonDir,
+		[]cloudfile.CloudFile{
+			{ID: tvRoot.ID, Name: "电视剧", FileType: cloudfile.TypeFolder},
+			{ID: showDir.ID, Name: "三体 (2023)", FileType: cloudfile.TypeFolder},
+			{ID: seasonDir.ID, Name: "Season 01", FileType: cloudfile.TypeFolder},
+		})
+	if !ok {
+		t.Fatalf("传链模式应能定位映射")
+	}
+	if mapping.LocalPath != "/mnt/tv" {
+		t.Fatalf("传链映射错误：%+v", mapping)
+	}
+	if relPath != "三体 (2023)/Season 01" {
+		t.Fatalf("传链相对路径错误：%q", relPath)
+	}
+
 	// 目标文件夹本身就是映射根
-	if m, rel, ok := locateMapping(fp, cfg, tvRoot); !ok || m.LocalPath != "/mnt/tv" || rel != "" {
+	if m, rel, ok := locateMapping(fp, cfg, tvRoot, nil); !ok || m.LocalPath != "/mnt/tv" || rel != "" {
 		t.Fatalf("映射根本身应命中且相对路径为空：%+v %q %v", m, rel, ok)
 	}
 
 	// 不在映射内的目录
 	other := fp.addFolder("其他", "0")
-	if _, _, ok := locateMapping(fp, cfg, other); ok {
+	if _, _, ok := locateMapping(fp, cfg, other, nil); ok {
 		t.Fatalf("映射外的目录不应命中")
 	}
 }
@@ -770,4 +790,13 @@ func TestSweepOrphanStrmFiles(t *testing.T) {
 	if _, err := os.Stat(oldRoot); !os.IsNotExist(err) {
 		t.Fatal("旧位置空目录应被清理")
 	}
+}
+
+// failGetFileProvider GetFile 恒失败的假网盘（验证传链模式下不发任何反查请求）。
+type failGetFileProvider struct {
+	*fakeWebProvider
+}
+
+func (f *failGetFileProvider) GetFile(string) (cloudfile.CloudFile, error) {
+	return cloudfile.CloudFile{}, fmt.Errorf("不应发起 GetFile 反查")
 }

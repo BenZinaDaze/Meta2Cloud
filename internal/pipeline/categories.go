@@ -24,21 +24,31 @@ func tmdbGenreIDs(info map[string]any) []int {
 	return ids
 }
 
-// ensureCategoryChain 创建并解析分类目录链（媒体库根/一级/二级），返回二级目录 ID。
+// ensureCategoryChain 创建并解析分类目录链（媒体库根/一级/二级）。
+// 返回链条节点（含 ID 与名字，供 STRM 钩子免网络计算相对路径）与二级目录 ID。
 // 配置值为媒体库根目录的“名字”（兼容旧 ID），在此解析为目录 ID。
-func (p *Pipeline) ensureCategoryChain(level1, level2 string) (string, error) {
-	rootID, ok := cloudfile.ResolveFolderRef(p.provider, p.cfg.ActiveRootFolderID())
+func (p *Pipeline) ensureCategoryChain(level1, level2 string) ([]cloudfile.CloudFile, string, error) {
+	rootName := p.cfg.ActiveRootFolderID()
+	rootID, ok := cloudfile.ResolveFolderRef(p.provider, rootName)
 	if !ok {
-		return "", fmt.Errorf("媒体库根目录 %q 在网盘根目录下不存在", p.cfg.ActiveRootFolderID())
+		return nil, "", fmt.Errorf("媒体库根目录 %q 在网盘根目录下不存在", rootName)
 	}
+	nodes := []cloudfile.CloudFile{{ID: rootID, Name: rootName, FileType: cloudfile.TypeFolder}}
 	l1ID, err := p.categoryDir(rootID, level1)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
-	if level2 == "" || level2 == level1 {
-		return l1ID, nil
+	nodes = append(nodes, cloudfile.CloudFile{ID: l1ID, Name: level1, FileType: cloudfile.TypeFolder})
+	leafID := l1ID
+	if level2 != "" && level2 != level1 {
+		l2ID, err := p.categoryDir(l1ID, level2)
+		if err != nil {
+			return nil, "", err
+		}
+		nodes = append(nodes, cloudfile.CloudFile{ID: l2ID, Name: level2, FileType: cloudfile.TypeFolder})
+		leafID = l2ID
 	}
-	return p.categoryDir(l1ID, level2)
+	return nodes, leafID, nil
 }
 
 // categoryDir 按名取父目录下的分类目录（幂等创建，带 per-run 缓存）。

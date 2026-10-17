@@ -188,7 +188,10 @@ func runStrmSync(trigger string) {
 			break // 单个映射失败即停，避免误删另一映射的失效文件
 		}
 	}
-	stats.Removed += sweepOrphanStrmFiles(st, cfg.Strm.Mappings, runID)
+	// 保守原则：任一映射遍历失败时跳过孤儿对账等删除类操作，宁可不删不误删
+	if syncErr == "" {
+		stats.Removed += sweepOrphanStrmFiles(st, cfg.Strm.Mappings, runID)
+	}
 	st.FinishSyncRun(runID, stats.Created, stats.Updated, stats.Removed, stats.Skipped, syncErr)
 	log.Printf("[strm] 同步完成（%s）：新增 %d 更新 %d 删除 %d 跳过 %d",
 		trigger, stats.Created, stats.Updated, stats.Removed, stats.Skipped)
@@ -505,7 +508,7 @@ func HandleVideoIngested(result pipeline.ProcessResult) error {
 		return fmt.Errorf("存储不可用")
 	}
 
-	mapping, relPath, ok := locateMapping(provider, cfg, *result.TargetFolder)
+	mapping, relPath, ok := locateMapping(provider, cfg, *result.TargetFolder, result.TargetChain)
 	if !ok {
 		return fmt.Errorf("目标目录不在任何 STRM 映射下")
 	}
@@ -566,11 +569,29 @@ func HandleVideoIngested(result pipeline.ProcessResult) error {
 }
 
 // locateMapping 从目标文件夹沿 ParentID 向上回溯，找到包含它的映射与相对目录路径。
-func locateMapping(provider cloudfile.Provider, cfg *config.Config, target cloudfile.CloudFile) (config.StrmMapping, string, bool) {
+func locateMapping(provider cloudfile.Provider, cfg *config.Config, target cloudfile.CloudFile, targetChain []cloudfile.CloudFile) (config.StrmMapping, string, bool) {
 	mappingByRoot := map[string]config.StrmMapping{}
 	for _, m := range cfg.Strm.Mappings {
 		mappingByRoot[m.PanFolderID] = m
 	}
+	// 1) 管线传链优先：目标目录的完整链条整理时已在手（媒体库根/一级/二级/剧名/Season），
+	//    直接本地匹配映射根并拼接相对路径，零网络调用
+	chainIdx := -1
+	for i := range targetChain {
+		if _, ok := mappingByRoot[targetChain[i].ID]; ok {
+			chainIdx = i
+			break
+		}
+	}
+	if chainIdx >= 0 {
+		m := mappingByRoot[targetChain[chainIdx].ID]
+		parts := make([]string, 0, len(targetChain)-chainIdx-1)
+		for _, node := range targetChain[chainIdx+1:] {
+			parts = append(parts, node.Name)
+		}
+		return m, strings.Join(parts, "/"), true
+	}
+	// 2) 回退：链条不可用（映射根在链条之外等特殊情况）时逐级向上查询网盘
 	// 目录名链（自顶向下）：映射根之下、目标文件夹之上
 	var chain []string
 	cur := target

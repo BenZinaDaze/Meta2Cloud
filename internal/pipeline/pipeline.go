@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"meta2cloud/internal/cloudfile"
 	"meta2cloud/internal/config"
@@ -25,8 +26,11 @@ type ProcessResult struct {
 	Status       string // "ok" | "skipped" | "failed"
 	Reason       string
 	TargetFolder *cloudfile.CloudFile
-	NfoUploaded  bool
-	Moved        bool
+	// TargetChain 自媒体库根到目标目录的节点链（含 ID 与实际目录名）。
+	// 整理时链条本来就在手，STRM 单文件钩子用它本地计算相对路径，免网络反查。
+	TargetChain []cloudfile.CloudFile
+	NfoUploaded bool
+	Moved       bool
 }
 
 // PipelineSummary 汇总。
@@ -381,29 +385,57 @@ func (p *Pipeline) cleanupEmptyFolders(folderID, folderName string, isRoot bool)
 	if p.dryRun {
 		return false
 	}
-	items, err := p.provider.ListFiles(folderID, 100)
-	if err != nil {
-		log.Printf("获取文件夹内容失败 [%s]: %v", folderID, err)
-		return false
-	}
-	isEmpty := true
-	for _, item := range items {
-		if item.IsFolder() {
-			if !p.cleanupEmptyFolders(item.ID, item.Name, false) {
-				isEmpty = false
-			}
-		} else {
-			isEmpty = false
-		}
-	}
-	if isEmpty && !isRoot {
-		if _, err := p.provider.TrashFile(folderID); err != nil {
-			log.Printf("清理空文件夹失败 [%s]: %v", folderName, err)
+	// 第一阶段：纯遍历，在内存中收集可删目录（判定不做任何删除，不受网盘删除异步生效影响）
+	var deletable []struct{ id, name string }
+	var walk func(id, name string, isRoot bool) bool
+	walk = func(id, name string, isRoot bool) bool {
+		items, err := p.provider.ListFiles(id, 100)
+		if err != nil {
+			log.Printf("获取文件夹内容失败 [%s]: %v", name, err)
 			return false
 		}
-		p.log(fmt.Sprintf("      🗑️  清理空文件夹：%s", folderName), "INFO")
+		isEmpty := true
+		for _, item := range items {
+			if item.IsFolder() {
+				if !walk(item.ID, item.Name, false) {
+					isEmpty = false
+				}
+			} else {
+				isEmpty = false
+			}
+		}
+		if isEmpty && !isRoot {
+			deletable = append(deletable, struct{ id, name string }{id, name})
+			return true
+		}
+		return false
 	}
-	return isEmpty
+	walk(folderID, folderName, isRoot)
+
+	// 第二阶段：自底向上删除（收集顺序即子先父后）；网盘删除异步生效，
+	// 父目录可能因子目录刚删除被短暂拒绝，带退避重试
+	for _, f := range deletable {
+		if err := p.trashFolderWithRetry(f.id); err != nil {
+			log.Printf("清理空文件夹失败 [%s]: %v", f.name, err)
+			continue
+		}
+		p.log(fmt.Sprintf("      🗑️  清理空文件夹：%s", f.name), "INFO")
+	}
+	return len(deletable) > 0
+}
+
+// trashFolderWithRetry 删除目录：失败时按 1s/2s 退避重试两次，避开网盘删除的异步生效窗口。
+func (p *Pipeline) trashFolderWithRetry(id string) error {
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(1<<uint(attempt-1)) * time.Second)
+		}
+		if _, err = p.provider.TrashFile(id); err == nil {
+			return nil
+		}
+	}
+	return err
 }
 
 // ── 单文件处理 ──────────────────────────────────────────────
@@ -617,6 +649,7 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 
 	// Step 6: 创建目标文件夹（分类启用时先解析分类目录链：媒体库根/一级/二级）
 	var targetFolder *cloudfile.CloudFile
+	var targetChain []cloudfile.CloudFile
 	var topFolderID string
 	baseID := ""
 	if p.categories != nil {
@@ -628,8 +661,9 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 			level1 = p.categories.Dirs.Other
 		}
 		if !p.dryRun {
-			if bid, err := p.ensureCategoryChain(level1, level2); err == nil {
+			if nodes, bid, err := p.ensureCategoryChain(level1, level2); err == nil {
 				baseID = bid
+				targetChain = nodes
 			} else {
 				log.Printf("分类目录创建失败，回退默认根目录：%v", err)
 			}
@@ -641,10 +675,11 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 		}
 	}
 	if !p.dryRun {
+		var orgChain []cloudfile.CloudFile
 		if baseID != "" {
-			targetFolder = p.organizer.EnsureFolderUnder(baseID, meta, video.Name)
+			orgChain, targetFolder = p.organizer.EnsureFolderWithChainUnder(baseID, meta, video.Name)
 		} else {
-			targetFolder = p.organizer.EnsureFolderForMeta(meta, video.Name)
+			orgChain, targetFolder = p.organizer.EnsureFolderWithChainForMeta(meta, video.Name)
 		}
 		if targetFolder == nil {
 			result.Status = "failed"
@@ -652,7 +687,9 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 			p.log("      ❌  "+result.Reason, "ERROR")
 			return result
 		}
+		targetChain = append(targetChain, orgChain...)
 		result.TargetFolder = targetFolder
+		result.TargetChain = targetChain
 		if isTV && tmdbInfo != nil {
 			tmdbIDKey := tmdbIDOf(tmdbInfo)
 			if cached, ok := p.showFolderCache[tmdbIDKey]; ok && tmdbIDKey != "" {
@@ -818,9 +855,20 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 		}
 		result.Moved = true
 		result.Status = "ok"
-		if cleanName != "" && cleanName != video.Name {
+		// 本地更新 result.File（新名字 + 新父目录）供 STRM 钩子使用；
+		// video 保持原始元数据——后续字幕匹配依赖原始发布名；pick_code 移动/改名不变
+		if renamed := cleanName != "" && cleanName != video.Name; renamed {
+			updated := video
+			updated.Name = cleanName
+			updated.ParentID = targetFolder.ID
+			updated.Parents = []string{targetFolder.ID}
+			result.File = updated
 			p.log(fmt.Sprintf("      移动+改名：%s  ✓", cleanName), "SUCCESS")
 		} else {
+			updated := video
+			updated.ParentID = targetFolder.ID
+			updated.Parents = []string{targetFolder.ID}
+			result.File = updated
 			p.log("      移动：✓", "SUCCESS")
 		}
 	} else if result.Status == "ok" {

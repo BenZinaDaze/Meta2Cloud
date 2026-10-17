@@ -766,3 +766,63 @@ func TestTitleSimilar(t *testing.T) {
 		t.Error("标点空白差异应判为相似")
 	}
 }
+
+// 空目录链清理：只含空子目录的父目录应一并删除；删除被网盘异步延迟拒绝时重试生效
+func TestCleanupEmptyFolderChain(t *testing.T) {
+	provider := newFakeProvider()
+	task := provider.AddFolder("从后面来的神威先生 (2026)", "scan")
+	season := provider.AddFolder("Season 01", task.ID)
+
+	cfg := newTestConfig()
+	p := New(provider, cfg, Options{})
+
+	if ok := p.cleanupEmptyFolders("scan", "scan", true); !ok {
+		t.Fatal("应收集到可删目录")
+	}
+	for _, id := range []string{season.ID, task.ID} {
+		cf, err := provider.GetFile(id)
+		if err != nil || !cf.Trashed {
+			t.Fatalf("目录 %s 应被删除（含父目录递归）", id)
+		}
+	}
+}
+
+// flakyTrashProvider 前 N 次 TrashFile 失败，模拟网盘删除异步生效导致的短暂拒绝
+type flakyTrashProvider struct {
+	*fakeProvider
+	mu        sync.Mutex
+	failLeft  int
+	trashCalls int
+}
+
+func (f *flakyTrashProvider) TrashFile(fileID string) (cloudfile.CloudFile, error) {
+	f.mu.Lock()
+	f.trashCalls++
+	if f.failLeft > 0 {
+		f.failLeft--
+		f.mu.Unlock()
+		return cloudfile.CloudFile{}, fmt.Errorf("115 删除异步生效中")
+	}
+	f.mu.Unlock()
+	return f.fakeProvider.TrashFile(fileID)
+}
+
+func TestCleanupEmptyFolderRetriesOnTrashFailure(t *testing.T) {
+	inner := newFakeProvider()
+	task := inner.AddFolder("任务目录", "scan")
+	season := inner.AddFolder("Season 01", task.ID)
+	provider := &flakyTrashProvider{fakeProvider: inner, failLeft: 2} // 前两次拒绝（1s/2s 重试后第三次成功）
+
+	cfg := newTestConfig()
+	p := New(provider, cfg, Options{})
+	p.cleanupEmptyFolders("scan", "scan", true)
+
+	cf, err := provider.GetFile(task.ID)
+	if err != nil || !cf.Trashed {
+		t.Fatalf("重试后父目录应被删除: %+v %v", cf, err)
+	}
+	if provider.trashCalls < 3 {
+		t.Fatalf("应发生至少 3 次删除调用，实际 %d", provider.trashCalls)
+	}
+	_ = season
+}

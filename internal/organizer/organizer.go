@@ -122,12 +122,36 @@ func (o *MediaOrganizer) EnsureFolderUnder(baseID string, meta *mediaparser.Meta
 	if baseID == "" {
 		return nil
 	}
-	folder, err := o.ensureFoldersUnder(baseID, meta, label)
+	folder, _, err := o.ensureFoldersUnder(baseID, meta, label)
 	if err != nil {
 		log.Printf("[organizer] 创建文件夹失败 %q: %v", label, err)
 		return nil
 	}
 	return folder
+}
+
+// EnsureFolderWithChainUnder 幂等创建目录链，返回「叶子目录 + 自基准之下到叶子的链条」。
+// 链条节点（剧名/Season）含 ID 与实际目录名，供 STRM 钩子免网络计算相对路径。
+func (o *MediaOrganizer) EnsureFolderWithChainUnder(baseID string, meta *mediaparser.MetaBase, label string) ([]cloudfile.CloudFile, *cloudfile.CloudFile) {
+	if baseID == "" {
+		return nil, nil
+	}
+	folder, chain, err := o.ensureFoldersUnder(baseID, meta, label)
+	if err != nil {
+		log.Printf("[organizer] 创建文件夹失败 %q: %v", label, err)
+		return nil, nil
+	}
+	return chain, folder
+}
+
+// EnsureFolderWithChainForMeta 同 EnsureFolderForMeta，附带自根之下到叶子的链条。
+func (o *MediaOrganizer) EnsureFolderWithChainForMeta(meta *mediaparser.MetaBase, label string) ([]cloudfile.CloudFile, *cloudfile.CloudFile) {
+	folder, chain, err := o.ensureFoldersUnder(o.rootID, meta, label)
+	if err != nil {
+		log.Printf("[organizer] 创建文件夹失败 %q: %v", label, err)
+		return nil, nil
+	}
+	return chain, folder
 }
 
 // ensureFolders 在云存储中幂等创建目录链，返回叶子文件夹。
@@ -137,16 +161,18 @@ func (o *MediaOrganizer) ensureFolders(meta *mediaparser.MetaBase, label string)
 	}
 
 	// 基准目录：媒体库根（分类布局下由管线传入分类目录链）
-	return o.ensureFoldersUnder(o.rootID, meta, label)
+	folder, _, err := o.ensureFoldersUnder(o.rootID, meta, label)
+	return folder, err
 }
 
-// ensureFoldersUnder 在指定基准目录下幂等创建目录链，返回叶子文件夹。
-func (o *MediaOrganizer) ensureFoldersUnder(baseID string, meta *mediaparser.MetaBase, label string) (*cloudfile.CloudFile, error) {
+// ensureFoldersUnder 在指定基准目录下幂等创建目录链。
+// 返回叶子文件夹与「自基准之下到叶子」的链条（剧名/Season，含 ID 与实际目录名）。
+func (o *MediaOrganizer) ensureFoldersUnder(baseID string, meta *mediaparser.MetaBase, label string) (*cloudfile.CloudFile, []cloudfile.CloudFile, error) {
 	if meta == nil || meta.Name() == "" {
-		return nil, fmt.Errorf("解析失败，跳过：%q", label)
+		return nil, nil, fmt.Errorf("解析失败，跳过：%q", label)
 	}
 	if baseID == "" {
-		return nil, fmt.Errorf("基准目录未设置")
+		return nil, nil, fmt.Errorf("基准目录未设置")
 	}
 
 	isTV := meta.Type == mediaparser.MediaTV
@@ -173,23 +199,25 @@ func (o *MediaOrganizer) ensureFoldersUnder(baseID string, meta *mediaparser.Met
 
 	if o.dryRun {
 		log.Printf("dryRun=true，跳过云存储操作")
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	// 第一层：片名/剧名 (年份)
 	topFolder, err := cloudfile.GetOrCreateFolder(o.provider, topName, baseID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	chain := []cloudfile.CloudFile{{ID: topFolder.ID, Name: topFolder.Name, FileType: cloudfile.TypeFolder}}
 	if !isTV {
-		return &topFolder, nil
+		return &topFolder, chain, nil
 	}
 
 	// 第二层（仅剧集）：Season NN（两位零填充）
 	seasonName := fmt.Sprintf("Season %02d", seasonInt)
 	seasonFolder, err := cloudfile.GetOrCreateFolder(o.provider, seasonName, topFolder.ID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return &seasonFolder, nil
+	chain = append(chain, cloudfile.CloudFile{ID: seasonFolder.ID, Name: seasonFolder.Name, FileType: cloudfile.TypeFolder})
+	return &seasonFolder, chain, nil
 }
