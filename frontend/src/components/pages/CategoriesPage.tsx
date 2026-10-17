@@ -1,12 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Plus, ArrowUp, ArrowDown, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { Plus, ArrowUp, ArrowDown, Trash2, Folder, ChevronDown, ChevronRight } from 'lucide-react'
 import { getCategories, saveCategories } from '@/api'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import PageHeader from '@/components/shared/PageHeader'
 import type { CategoryDirs, CategoryRule, CategoriesConfig } from '@/types/api'
 
@@ -51,16 +50,21 @@ interface CategoriesPageProps {
 
 export default function CategoriesPage({ onToast }: CategoriesPageProps) {
   const notify = useCallback(
-    (type: 'success' | 'error' | 'warning', title: string, message?: string) => {
-      const fn = onToast ?? ((title: string, message?: string) => toast[type](title, { description: message }))
-      fn(type, title, message)
+    (type: 'success' | 'error' | 'warning', title: string, text?: string) => {
+      const fn = onToast ?? ((t: 'success' | 'error' | 'warning', x: string, d?: string) => toast[t](x, { description: d }))
+      fn(type, title, text)
     },
     [onToast],
   )
+
   const [config, setConfig] = useState<CategoriesConfig>(DEFAULT_CONFIG)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [customGenre, setCustomGenre] = useState('')
+  const [collapsed, setCollapsed] = useState<{ tv: boolean; movie: boolean }>({ tv: false, movie: false })
+
+  const toggleCollapsed = (kind: 'tv' | 'movie') =>
+    setCollapsed((c) => ({ ...c, [kind]: !c[kind] }))
 
   const load = useCallback(async () => {
     try {
@@ -69,7 +73,7 @@ export default function CategoriesPage({ onToast }: CategoriesPageProps) {
     } catch {
       notify('error', '分类配置加载失败')
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -107,16 +111,14 @@ export default function CategoriesPage({ onToast }: CategoriesPageProps) {
     })
 
   const toggleGenre = (kind: 'tv' | 'movie', idx: number, id: number) => {
-    const rule = config[kind][idx]
-    const ids = rule.genre_ids ?? []
+    const ids = config[kind][idx].genre_ids ?? []
     updateRule(kind, idx, {
       genre_ids: ids.includes(id) ? ids.filter((v) => v !== id) : [...ids, id],
     })
   }
 
   const toggleLang = (kind: 'tv' | 'movie', idx: number, v: string) => {
-    const rule = config[kind][idx]
-    const langs = rule.languages ?? []
+    const langs = config[kind][idx].languages ?? []
     updateRule(kind, idx, {
       languages: langs.includes(v) ? langs.filter((x) => x !== v) : [...langs, v],
     })
@@ -146,122 +148,169 @@ export default function CategoriesPage({ onToast }: CategoriesPageProps) {
     }
   }, [config, notify])
 
-  const renderRules = (kind: 'tv' | 'movie', kindLabel: string) => (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-[13px] font-medium">{kindLabel}分类规则</span>
-        <Button variant="outline" size="sm" className="h-7 gap-1 rounded-full px-3" onClick={() => addRule(kind)}>
-          <Plus className="size-3.5" />
-          添加规则
-        </Button>
+  // 单条二级规则卡片
+  const renderRuleItem = (kind: 'tv' | 'movie', idx: number, rule: CategoryRule, isLast: boolean) => (
+    <div className="rounded-xl border border-border/60 bg-card/60 p-4">
+      <div className="flex items-center gap-2">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-bold text-muted-foreground">
+          {idx + 1}
+        </span>
+        <Input
+          value={rule.name}
+          onChange={(e) => updateRule(kind, idx, { name: e.target.value })}
+          placeholder="子分类目录名"
+          className="h-9 flex-1"
+        />
+        <div className="flex shrink-0 gap-0.5">
+          <Button variant="ghost" size="icon-sm" disabled={idx === 0} onClick={() => moveRule(kind, idx, -1)} title="上移（优先级更高）">
+            <ArrowUp className="size-4" />
+          </Button>
+          <Button variant="ghost" size="icon-sm" disabled={isLast} onClick={() => moveRule(kind, idx, 1)} title="下移">
+            <ArrowDown className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            disabled={isLast}
+            onClick={() => removeRule(kind, idx)}
+            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            title={isLast ? '兜底目录不可删除' : '删除'}
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
       </div>
-      {config[kind].map((rule, idx) => {
-        const isLast = idx === config[kind].length - 1
-        return (
-          <div key={idx} className="space-y-2 rounded-xl border border-border/60 p-3">
-            <div className="flex items-center gap-2">
-              <Input
-                value={rule.name}
-                onChange={(e) => updateRule(kind, idx, { name: e.target.value })}
-                placeholder="目录名"
-                className="h-8"
-              />
-              {isLast && (
-                <Badge variant="outline" className="shrink-0 border-primary/40 text-[10px] text-primary">
-                  兜底
-                </Badge>
+
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        <span className="w-10 shrink-0 text-xs text-muted-foreground">流派</span>
+        {GENRE_OPTIONS.map((g) => {
+          const active = (rule.genre_ids ?? []).includes(g.id)
+          return (
+            <button
+              key={g.id}
+              onClick={() => toggleGenre(kind, idx, g.id)}
+              className={cn(
+                'rounded-full border px-2.5 py-1 text-xs transition-colors',
+                active
+                  ? 'border-primary/50 bg-primary/15 text-primary'
+                  : 'border-border/60 text-muted-foreground hover:border-foreground/30 hover:text-foreground',
               )}
-              <div className="ml-auto flex shrink-0 gap-0.5">
-                <Button variant="ghost" size="icon-sm" disabled={idx === 0} onClick={() => moveRule(kind, idx, -1)} title="上移（优先级更高）">
-                  <ArrowUp className="size-3.5" />
-                </Button>
-                <Button variant="ghost" size="icon-sm" disabled={isLast} onClick={() => moveRule(kind, idx, 1)} title="下移">
-                  <ArrowDown className="size-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  disabled={isLast}
-                  onClick={() => removeRule(kind, idx)}
-                  className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                  title={isLast ? '兜底规则不可删除' : '删除'}
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="mr-1 text-[11px] text-muted-foreground">流派</span>
-              {GENRE_OPTIONS.map((g) => {
-                const active = (rule.genre_ids ?? []).includes(g.id)
-                return (
-                  <button
-                    key={g.id}
-                    onClick={() => toggleGenre(kind, idx, g.id)}
-                    className={cn(
-                      'rounded-full border px-2 py-0.5 text-[11px] transition-colors',
-                      active
-                        ? 'border-primary/50 bg-primary/15 text-primary'
-                        : 'border-border/60 text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    {g.label}
-                  </button>
-                )
-              })}
-              {(rule.genre_ids ?? [])
-                .filter((id) => !GENRE_OPTIONS.some((g) => g.id === id))
-                .map((id) => (
-                  <button
-                    key={id}
-                    onClick={() => toggleGenre(kind, idx, id)}
-                    className="rounded-full border border-primary/50 bg-primary/15 px-2 py-0.5 text-[11px] text-primary"
-                    title="点击移除自定义流派 ID"
-                  >
-                    ID {id}
-                  </button>
-                ))}
-              <Input
-                value={customGenre}
-                onChange={(e) => setCustomGenre(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addCustomGenre(kind, idx)}
-                placeholder="自定义ID"
-                className="h-6 w-20 text-[11px]"
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="mr-1 text-[11px] text-muted-foreground">语言</span>
-              {LANG_OPTIONS.map((l) => {
-                const active = (rule.languages ?? []).includes(l.v)
-                return (
-                  <button
-                    key={l.v}
-                    onClick={() => toggleLang(kind, idx, l.v)}
-                    className={cn(
-                      'rounded-full border px-2 py-0.5 text-[11px] transition-colors',
-                      active
-                        ? 'border-primary/50 bg-primary/15 text-primary'
-                        : 'border-border/60 text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    {l.label}
-                  </button>
-                )
-              })}
-              <span className="text-[10px] text-muted-foreground">（都不选 = 不限语言）</span>
-            </div>
-          </div>
-        )
-      })}
+            >
+              {g.label}
+            </button>
+          )
+        })}
+        {(rule.genre_ids ?? [])
+          .filter((id) => !GENRE_OPTIONS.some((g) => g.id === id))
+          .map((id) => (
+            <button
+              key={id}
+              onClick={() => toggleGenre(kind, idx, id)}
+              className="rounded-full border border-primary/50 bg-primary/15 px-2.5 py-1 text-xs text-primary"
+              title="点击移除自定义流派 ID"
+            >
+              ID {id}
+            </button>
+          ))}
+        <Input
+          value={customGenre}
+          onChange={(e) => setCustomGenre(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && addCustomGenre(kind, idx)}
+          placeholder="自定义ID"
+          className="h-7 w-24 text-xs"
+        />
+      </div>
+
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+        <span className="w-10 shrink-0 text-xs text-muted-foreground">语言</span>
+        {LANG_OPTIONS.map((l) => {
+          const active = (rule.languages ?? []).includes(l.v)
+          return (
+            <button
+              key={l.v}
+              onClick={() => toggleLang(kind, idx, l.v)}
+              className={cn(
+                'rounded-full border px-2.5 py-1 text-xs transition-colors',
+                active
+                  ? 'border-primary/50 bg-primary/15 text-primary'
+                  : 'border-border/60 text-muted-foreground hover:border-foreground/30 hover:text-foreground',
+              )}
+            >
+              {l.label}
+            </button>
+          )
+        })}
+        <span className="text-[11px] text-muted-foreground/70">都不选 = 不限语言</span>
+      </div>
     </div>
   )
+
+  // 一级分类卡片：标题目录 + 嵌套的二级分类规则
+  const renderGroup = (kind: 'tv' | 'movie', kindLabel: string) => {
+    const list = config[kind]
+    const isLast = (idx: number) => idx === list.length - 1
+    const isCollapsed = collapsed[kind]
+    return (
+      <Card className="border-border/70 bg-card/40">
+        <div className="flex flex-wrap items-center gap-3 px-5 py-4">
+          <button
+            onClick={() => toggleCollapsed(kind)}
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+            title={isCollapsed ? '展开' : '收起'}
+          >
+            {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
+          </button>
+          <Folder className="size-5 shrink-0 text-primary" />
+          <Input
+            value={config.dirs[kind]}
+            onChange={(e) => updateDirs({ [kind]: e.target.value })}
+            className="h-9 w-44 font-medium"
+            title="一级目录名（挂在媒体库根下）"
+          />
+          <span className="hidden text-xs text-muted-foreground sm:inline">一级目录 · 挂在媒体库根下</span>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <span className="hidden text-[11px] text-muted-foreground md:inline">{list.length} 个子分类</span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 shrink-0 gap-1.5 rounded-full px-3.5"
+              onClick={() => addRule(kind)}
+            >
+              <Plus className="size-3.5" />
+              添加子分类
+            </Button>
+          </div>
+        </div>
+        {!isCollapsed && (
+          <div className="border-t border-border/60 p-5">
+            <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="h-3 w-0.5 rounded-full bg-border" />
+              二级分类 · 从上到下逐条判定，首条命中即归入；全部未命中落兜底目录
+            </div>
+            <div className="ml-1 space-y-3 border-l-2 border-border/40 pl-4">
+              {list.map((rule, idx) => (
+                <div key={idx}>
+                  {renderRuleItem(kind, idx, rule, isLast(idx))}
+                  {isLast(idx) && (
+                    <p className="ml-2 mt-2 text-[11px] text-muted-foreground/80">
+                      所有规则都未命中的{kindLabel}将进入此目录。
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Card>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         kicker="Categories"
         title="分类配置"
-        description="按 TMDB 流派把媒体归入 剧集/电影 下的分类目录；未命中的落兜底目录，TMDB 未识别的落「其他」。保存后目录结构自动创建。"
+        description="按 TMDB 流派把媒体归入 剧集/电影 下的分类子目录；TMDB 未识别的落「其他」一级目录。"
         actions={
           <div className="flex items-center gap-3">
             {message && (
@@ -269,39 +318,37 @@ export default function CategoriesPage({ onToast }: CategoriesPageProps) {
                 {message.text}
               </span>
             )}
-            <Button size="sm" onClick={handleSave} disabled={saving}>
+            <Button size="sm" onClick={handleSave} disabled={saving} className="h-10 gap-1.5 rounded-full px-5">
               {saving ? '保存中…' : '保存分类'}
             </Button>
           </div>
         }
       />
 
+      {renderGroup('tv', '剧集')}
+      {renderGroup('movie', '电影')}
+
       <Card className="border-border/70 bg-card/40">
-        <CardContent className="space-y-5">
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="w-40">
-              <div className="mb-1.5 text-[13px] font-medium">剧集目录名</div>
-              <Input value={config.dirs.tv} onChange={(e) => updateDirs({ tv: e.target.value })} className="h-8" />
-            </div>
-            <div className="w-40">
-              <div className="mb-1.5 text-[13px] font-medium">电影目录名</div>
-              <Input value={config.dirs.movie} onChange={(e) => updateDirs({ movie: e.target.value })} className="h-8" />
-            </div>
-            <div className="w-40">
-              <div className="mb-1.5 text-[13px] font-medium">其他目录名（无元数据兜底）</div>
-              <Input value={config.dirs.other} onChange={(e) => updateDirs({ other: e.target.value })} className="h-8" />
+        <div className="flex flex-wrap items-center gap-3 px-5 py-4">
+          <Folder className="size-5 shrink-0 text-warning" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-3">
+              <Input
+                value={config.dirs.other}
+                onChange={(e) => updateDirs({ other: e.target.value })}
+                className="h-9 w-44 font-medium"
+                title="一级目录名"
+              />
+              <span className="text-xs text-muted-foreground">一级目录 · TMDB 未识别的媒体落此（无二级分类，按解析出的标题建目录）</span>
             </div>
           </div>
-
-          {renderRules('tv', '剧集')}
-          {renderRules('movie', '电影')}
-
-          <p className="text-xs text-muted-foreground">
-            规则按从上到下的顺序匹配，首条命中即归入该目录；最后一条为兜底目录（不可删除/下移）。
-            保存后目录结构自动创建，下次整理生效，媒体服务器需刷新/重建库。
-          </p>
-        </CardContent>
+        </div>
       </Card>
+
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        说明：目录名即网盘上的实际目录，保存在媒体库根下自动创建；二级分类按「流派（任一命中）+
+        语言（任一命中，不选为不限）」判定，首条命中即归入。媒体服务器需刷新/重建库。
+      </p>
     </div>
   )
 }

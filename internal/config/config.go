@@ -3,7 +3,9 @@
 package config
 
 import (
+	"crypto/rand"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -422,6 +424,72 @@ func normalizeStrmURLBase(u string) string {
 		u = "http://" + u
 	}
 	return u
+}
+
+// EnsureDefaultFiles 首次启动友好：缺失的配置文件写出默认内容（已存在的不覆盖）。
+// 覆盖三件套：config.yaml / parser-rules.yaml / categories.yaml。
+func EnsureDefaultFiles(configPath, rulesPath, categoriesPath string) error {
+	if dir := filepath.Dir(configPath); dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		def := Default()
+		// 首次生成：自动设置随机初始密码（打印在启动日志），避免 WebUI 空密码锁死
+		def.WebUI.Password = randomPassword(10)
+		data, err := yaml.Marshal(def)
+		if err != nil {
+			return err
+		}
+		header := "# Meta2Cloud 主配置（首次启动自动生成；完整可配置项参考 config.example.yaml）\n" +
+			"# 初始 WebUI 密码见启动日志中的「初始密码」，登录后请在配置页修改\n"
+		if err := os.WriteFile(configPath, append([]byte(header), data...), 0o644); err != nil {
+			return err
+		}
+		log.Printf("已生成默认配置 %s，WebUI 初始密码：%s（用户名 %s，登录后请修改）", configPath, def.WebUI.Password, def.WebUI.Username)
+	}
+	if _, err := os.Stat(rulesPath); os.IsNotExist(err) {
+		data, err := yaml.Marshal(Default().Parser)
+		if err != nil {
+			return err
+		}
+		header := "# 解析规则（首次启动自动生成；custom_words / custom_release_groups 可自行补充）\n"
+		if err := os.WriteFile(rulesPath, append([]byte(header), data...), 0o644); err != nil {
+			return err
+		}
+	}
+	if _, err := os.Stat(categoriesPath); os.IsNotExist(err) {
+		return SaveCategories(categoriesPath, DefaultCategories())
+	}
+	return nil
+}
+
+// randomPassword 生成易读随机密码（去除易混字符 0/O/1/l/I）。
+func randomPassword(n int) string {
+	const charset = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789"
+	b := make([]byte, n)
+	for i := range b {
+		idx, _ := cryptoRandInt(len(charset))
+		b[i] = charset[idx]
+	}
+	return string(b)
+}
+
+func cryptoRandInt(max int) (int, error) {
+	if max <= 0 {
+		return 0, fmt.Errorf("max 必须为正数")
+	}
+	var buf [1]byte
+	for {
+		if _, err := rand.Read(buf[:]); err != nil {
+			return 0, err
+		}
+		v := int(buf[0])
+		if v < 256-(256%max) {
+			return v % max, nil
+		}
+	}
 }
 
 func parseStrm(m map[string]any) Strm {

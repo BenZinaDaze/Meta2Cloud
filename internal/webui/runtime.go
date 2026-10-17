@@ -60,6 +60,14 @@ func InitRuntime(rootDir string) *Runtime {
 	defaultRuntime.RootDir = rootDir
 	defaultRuntime.configPath = filepath.Join(rootDir, "config", "config.yaml")
 	defaultRuntime.rulesPath = filepath.Join(rootDir, "config", "parser-rules.yaml")
+	// 首次启动友好：缺失的配置文件自动生成默认内容（已存在的不覆盖）
+	if err := config.EnsureDefaultFiles(
+		defaultRuntime.configPath,
+		defaultRuntime.rulesPath,
+		filepath.Join(rootDir, "config", config.CategoriesFilename),
+	); err != nil {
+		log.Printf("默认配置文件生成失败：%v", err)
+	}
 	defaultRuntime.cfg = nil
 	defaultRuntime.provider = nil
 	defaultRuntime.u115Client = nil
