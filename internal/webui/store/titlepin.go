@@ -86,6 +86,16 @@ func (s *LibraryStore) AdoptTitlePin(mediaType string, tmdbID int64, title, year
 	return err
 }
 
+// DeleteTitlePin 删除钉扎记录（解除固定名称）。返回记录是否存在。
+// 删除后下次整理将重新确定名称：最早入库记录 → TMDB 匹配结果。
+func (s *LibraryStore) DeleteTitlePin(mediaType string, tmdbID int64) (bool, error) {
+	if _, ok := s.GetTitlePin(mediaType, tmdbID); !ok {
+		return false, nil
+	}
+	_, err := s.db.Exec(`DELETE FROM media_title_pins WHERE media_type = ? AND tmdb_id = ?`, mediaType, tmdbID)
+	return err == nil, err
+}
+
 // ListTitlePins 全量列出钉扎记录（按媒体类型、标题排序）。
 func (s *LibraryStore) ListTitlePins() ([]TitlePin, error) {
 	rows, err := s.db.Query(`SELECT media_type, tmdb_id, pinned_title, pinned_year, source, created_at, updated_at

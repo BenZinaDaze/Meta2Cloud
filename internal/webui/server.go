@@ -98,6 +98,7 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("POST /api/library:reidentify", handleReidentifyItem)
 	m.HandleFunc("GET /api/title-pins", handleListTitlePins)
 	m.HandleFunc("POST /api/title-pins:adopt", handleAdoptTitlePin)
+	m.HandleFunc("POST /api/title-pins:delete", handleDeleteTitlePin)
 	m.HandleFunc("GET /api/cache", handleCacheStats)
 	m.HandleFunc("POST /api/cache:evict", handleCacheEvict)
 	m.HandleFunc("GET /api/health", handleHealth)

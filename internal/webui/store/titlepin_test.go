@@ -114,6 +114,33 @@ func TestAdoptTitlePin(t *testing.T) {
 	}
 }
 
+func TestDeleteTitlePin(t *testing.T) {
+	ls, _ := newTitlePinTestStore(t)
+
+	if _, _, err := ls.ResolveTitlePin("movie", 700, "误匹配名", "2020"); err != nil {
+		t.Fatal(err)
+	}
+
+	// 不存在的记录 → exists=false
+	exists, err := ls.DeleteTitlePin("movie", 999)
+	if err != nil || exists {
+		t.Fatalf("不存在记录应返回 false, %v, %v", exists, err)
+	}
+
+	// 删除后记录消失，Resolve 会重新落库
+	exists, err = ls.DeleteTitlePin("movie", 700)
+	if err != nil || !exists {
+		t.Fatalf("存在记录应返回 true, %v, %v", exists, err)
+	}
+	if _, ok := ls.GetTitlePin("movie", 700); ok {
+		t.Fatal("删除后不应再有记录")
+	}
+	title, _, err := ls.ResolveTitlePin("movie", 700, "重新确定的名", "2020")
+	if err != nil || title != "重新确定的名" {
+		t.Fatalf("删除后应重新落库, got %q, %v", title, err)
+	}
+}
+
 func TestListDuplicateFolderGroups(t *testing.T) {
 	ls, _ := newTitlePinTestStore(t)
 

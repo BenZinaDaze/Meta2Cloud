@@ -1,10 +1,20 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Search, RefreshCw, Film, Tv, ArrowRightLeft, Loader2, Tag } from 'lucide-react'
-import { listTitlePins, adoptTitlePin } from '@/api'
+import { Search, RefreshCw, Film, Tv, ArrowRightLeft, Loader2, Tag, Trash2, ExternalLink } from 'lucide-react'
+import { listTitlePins, adoptTitlePin, deleteTitlePin } from '@/api'
 import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import PageHeader from '@/components/shared/PageHeader'
 import { relativeTime } from '@/lib/time'
 import type { TitlePin } from '@/types/api'
@@ -23,10 +33,12 @@ function PinCard({
   pin,
   adopting,
   onAdopt,
+  onDelete,
 }: {
   pin: TitlePin
   adopting: boolean
   onAdopt: () => void
+  onDelete: () => void
 }) {
   const isTV = pin.media_type === 'tv'
   return (
@@ -51,7 +63,16 @@ function PinCard({
           </div>
 
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono">tmdb {pin.tmdb_id}</span>
+            <a
+              href={`https://www.themoviedb.org/${isTV ? 'tv' : 'movie'}/${pin.tmdb_id}?language=zh-CN`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 font-mono transition-colors hover:bg-accent hover:text-foreground"
+              title="在 TMDB 打开"
+            >
+              tmdb {pin.tmdb_id}
+              <ExternalLink className="size-3 opacity-60" />
+            </a>
             <span className="text-border">·</span>
             <span>{sourceLabels[pin.source] || pin.source}</span>
             <span className="text-border">·</span>
@@ -72,18 +93,29 @@ function PinCard({
           )}
         </div>
 
-        {pin.drifted && (
+        <div className="flex shrink-0 items-center gap-2">
+          {pin.drifted && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 border-warning/40 text-warning hover:bg-warning/10 hover:text-warning"
+              disabled={adopting}
+              onClick={onAdopt}
+            >
+              {adopting ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowRightLeft className="size-3.5" />}
+              采用最新译名
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
-            className="shrink-0 gap-1.5 border-warning/40 text-warning hover:bg-warning/10 hover:text-warning"
-            disabled={adopting}
-            onClick={onAdopt}
+            className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={onDelete}
           >
-            {adopting ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowRightLeft className="size-3.5" />}
-            采用最新译名
+            <Trash2 className="size-3.5" />
+            删除
           </Button>
-        )}
+        </div>
       </div>
     </div>
   )
@@ -95,6 +127,8 @@ export default function TitlePinsPage({ onToast }: TitlePinsPageProps) {
   const [error, setError] = useState('')
   const [keyword, setKeyword] = useState('')
   const [adoptingKey, setAdoptingKey] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<TitlePin | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -135,6 +169,23 @@ export default function TitlePinsPage({ onToast }: TitlePinsPageProps) {
     [onToast, load],
   )
 
+  const handleDelete = useCallback(async () => {
+    if (!deleteTarget) return
+    const pin = deleteTarget
+    setDeleting(true)
+    try {
+      await deleteTitlePin(pin.media_type, pin.tmdb_id)
+      onToast('success', `已删除整理名称：${pin.pinned_title}`, '网盘目录不受影响；下次整理将重新确定名称')
+      await load()
+    } catch (e) {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      onToast('error', '删除失败', msg || (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setDeleting(false)
+      setDeleteTarget(null)
+    }
+  }, [deleteTarget, onToast, load])
+
   const kw = keyword.trim().toLowerCase()
   const filtered = kw
     ? pins.filter(
@@ -152,7 +203,7 @@ export default function TitlePinsPage({ onToast }: TitlePinsPageProps) {
       <PageHeader
         kicker="Naming Pins"
         title="整理名称"
-        description="每个媒体整理时使用的固定目录名。TMDB 译名变更后仍沿用首次整理名，避免产生重复目录；如需改用最新译名可一键切换。"
+        description="每个媒体整理时使用的固定目录名。TMDB 译名变更后仍沿用首次整理名，避免产生重复目录；如需改用最新译名可一键切换，识别有误可删除记录重新整理。"
         actions={
           <div className="flex items-center gap-2">
             <div className="relative w-full min-w-0 sm:w-56">
@@ -204,10 +255,35 @@ export default function TitlePinsPage({ onToast }: TitlePinsPageProps) {
               pin={pin}
               adopting={adoptingKey === `${pin.media_type}:${pin.tmdb_id}`}
               onAdopt={() => handleAdopt(pin)}
+              onDelete={() => setDeleteTarget(pin)}
             />
           ))}
         </div>
       )}
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除这条整理名称？</AlertDialogTitle>
+            <AlertDialogDescription>
+              将删除「{deleteTarget?.pinned_title}」的固定名称记录，网盘目录与媒体文件不受影响。
+              下次整理会重新确定名称（优先取最早入库记录，其次 TMDB 匹配结果）；
+              若此前是识别错了媒体，重新整理前建议确认文件命名可被正确识别。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              disabled={deleting}
+              onClick={handleDelete}
+            >
+              {deleting ? <Loader2 className="mr-1 size-4 animate-spin" /> : null}
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -140,6 +140,42 @@ func handleAdoptTitlePin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleDeleteTitlePin 解除整理名称固定（POST /api/title-pins:delete）。
+// 仅删除固定名称记录，网盘目录不受影响；下次整理将重新确定名称
+// （最早入库记录 → TMDB 匹配结果）。
+func handleDeleteTitlePin(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		MediaType string `json:"media_type"`
+		TmdbID    int64  `json:"tmdb_id"`
+	}
+	if err := jsonDecodeBody(r, &body); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "请求体格式错误")
+		return
+	}
+	if body.TmdbID <= 0 || (body.MediaType != "movie" && body.MediaType != "tv") {
+		writeJSONError(w, http.StatusBadRequest, "media_type 或 tmdb_id 无效")
+		return
+	}
+	ls := RT().GetLibraryStore()
+	if ls == nil {
+		writeJSONError(w, http.StatusInternalServerError, "媒体库存储不可用")
+		return
+	}
+	exists, err := ls.DeleteTitlePin(body.MediaType, body.TmdbID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !exists {
+		writeJSONError(w, http.StatusNotFound, "整理名称记录不存在")
+		return
+	}
+	appLog("library", "title_pin_delete", "SUCCESS",
+		fmt.Sprintf("已解除整理名称固定：media_type=%s tmdb_id=%d", body.MediaType, body.TmdbID),
+		map[string]any{"media_type": body.MediaType, "tmdb_id": body.TmdbID})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 // fetchCurrentTmdbTitle 实时获取 TMDB 当前译名与年份（缓存兜底）。
 func fetchCurrentTmdbTitle(mediaType string, tmdbID int64) (string, string, error) {
 	if client := RT().GetTmdbClient(); client != nil {
