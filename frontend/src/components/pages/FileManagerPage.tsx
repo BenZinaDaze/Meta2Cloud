@@ -14,6 +14,7 @@ import {
   CheckSquare,
   Square,
   X,
+  Copy,
 } from 'lucide-react'
 import { listFiles, createFolder, updateFile, deleteFile, batchAction } from '@/api'
 import BackToTopButton from '@/components/BackToTopButton'
@@ -45,6 +46,32 @@ import { formatBytes } from '@/lib/format'
 import { formatDateTime } from '@/lib/time'
 import type { CloudFile, ListFilesResponse } from '@/types/api'
 import { toast } from 'sonner'
+
+// 复制到剪贴板：Clipboard API 仅在安全上下文（HTTPS/localhost）可用，
+// 通过局域网 IP 以 HTTP 访问时降级为临时 textarea + execCommand
+async function copyToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return
+    } catch {
+      // 权限被拒时继续走兜底
+    }
+  }
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'
+  ta.style.opacity = '0'
+  document.body.appendChild(ta)
+  ta.select()
+  try {
+    if (!document.execCommand('copy')) {
+      throw new Error('execCommand copy failed')
+    }
+  } finally {
+    document.body.removeChild(ta)
+  }
+}
 
 function getFileIcon(file: CloudFile) {
   if (file.file_type === 'folder') {
@@ -384,7 +411,7 @@ export default function FileManagerPage() {
               大小 {sortBy === 'size' && (sortOrder === 'asc' ? '↑' : '↓')}
             </button>
             <button
-              className="w-40 text-right transition-colors hover:text-foreground"
+              className="w-40 text-center transition-colors hover:text-foreground"
               onClick={() => handleSortToggle('modified_time')}
             >
               修改时间 {sortBy === 'modified_time' && (sortOrder === 'asc' ? '↑' : '↓')}
@@ -431,10 +458,27 @@ export default function FileManagerPage() {
                     <div className="w-24 select-none text-right text-sm tabular-nums text-muted-foreground">
                       {formatBytes(file.size)}
                     </div>
-                    <div className="w-40 select-none text-right text-sm tabular-nums text-muted-foreground">
+                    <div className="w-40 select-none text-center text-sm tabular-nums text-muted-foreground">
                       {formatDateTime(file.modified_time)}
                     </div>
                     <div className="flex w-32 justify-end gap-1">
+                      {file.file_type === 'folder' && (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={async () => {
+                            try {
+                              await copyToClipboard(file.id)
+                              toast.success('已复制文件夹 ID', { description: file.id })
+                            } catch {
+                              toast.error('复制失败', { description: '浏览器拒绝了剪贴板访问' })
+                            }
+                          }}
+                          title="复制文件夹 ID"
+                        >
+                          <Copy className="size-4" />
+                        </Button>
+                      )}
                       {file.is_video && (
                         <Button
                           variant="ghost"
