@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -569,6 +571,272 @@ func (s *LibraryStore) LastScanned() (string, bool) {
 	return s.getState(scanAtKey)
 }
 
+// ── 快照分页查询 ────────────────────────────────────────────
+
+// SnapshotQuery 媒体库快照分页查询。
+type SnapshotQuery struct {
+	MediaType string // "" 全部 / movie / tv
+	SortBy    string // updated_at | year | title | folder_modified_time
+	SortOrder string
+	Keyword   string // 标题/原始标题/年份模糊匹配
+	Page      int    // 从 1 开始
+	PageSize  int
+}
+
+// SnapshotPage 分页快照：单页去重条目与去重后总数。
+type SnapshotPage struct {
+	ScannedAt   string
+	Movies      []map[string]any
+	TvShows     []map[string]any
+	TotalMovies int
+	TotalTV     int
+}
+
+// libraryDedupKey 同一媒体多目录合并键：tmdb>0 按实体，否则按目录。
+const libraryDedupKey = `CASE WHEN tmdb_id > 0 THEN 't' || tmdb_id ELSE 'f' || drive_folder_id END`
+
+func snapshotSortColumn(sortBy string) string {
+	switch sortBy {
+	case "updated_at", "year", "title", "folder_modified_time":
+		return sortBy
+	}
+	return "updated_at"
+}
+
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
+}
+
+// snapshotWhere 构造快照过滤条件；mediaType 非空时覆盖查询中的类型过滤。
+func snapshotWhere(q SnapshotQuery, mediaType string) (string, []any) {
+	w := "in_library = 1"
+	args := []any{}
+	mt := q.MediaType
+	if mediaType != "" {
+		mt = mediaType
+	}
+	if mt == "movie" || mt == "tv" {
+		w += " AND media_type = ?"
+		args = append(args, mt)
+	}
+	if kw := strings.TrimSpace(q.Keyword); kw != "" {
+		like := "%" + escapeLike(kw) + "%"
+		w += " AND (title LIKE ? ESCAPE '\\' OR original_title LIKE ? ESCAPE '\\' OR CAST(year AS TEXT) LIKE ? ESCAPE '\\')"
+		args = append(args, like, like, like)
+	}
+	return w, args
+}
+
+// GetSnapshotPage 分页读取媒体库快照。同 tmdb 多目录的合并语义与 GetSnapshot 一致
+// （代表条目取最近更新，集数/时间戳各目录取最大值），仅对去重后的结果分页。
+func (s *LibraryStore) GetSnapshotPage(q SnapshotQuery) *SnapshotPage {
+	scannedAt, ok := s.getState(scanAtKey)
+	if !ok {
+		return nil
+	}
+	page := q.Page
+	if page < 1 {
+		page = 1
+	}
+	size := q.PageSize
+	if size < 1 {
+		size = 60
+	}
+	if size > 200 {
+		size = 200
+	}
+	offset := (page - 1) * size
+
+	sortColumn := snapshotSortColumn(q.SortBy)
+	order := "ASC"
+	if strings.EqualFold(q.SortOrder, "desc") {
+		order = "DESC"
+	}
+	titleOrder := "title COLLATE NOCASE ASC"
+	if sortColumn == "title" {
+		titleOrder = "title COLLATE NOCASE " + order
+	}
+
+	// 去重后总数（两类各自统计：统计卡始终展示全量总数，不受当前页类型过滤影响）
+	totalCount := func(mt string) int {
+		w, a := snapshotWhere(q, mt)
+		var n int
+		_ = s.db.QueryRow(`SELECT COUNT(*) FROM (SELECT 1 FROM library_media WHERE `+w+` GROUP BY `+libraryDedupKey+`)`, a...).Scan(&n)
+		return n
+	}
+
+	// 单页键：窗口函数取每个合并键最新一行，再按排序取当页
+	w, a := snapshotWhere(q, "")
+	keysQuery := `SELECT media_type, tmdb_id, drive_folder_id FROM (
+		SELECT media_type, tmdb_id, drive_folder_id, title, year, updated_at, folder_modified_time,
+			ROW_NUMBER() OVER (PARTITION BY ` + libraryDedupKey + ` ORDER BY updated_at DESC, drive_folder_id DESC) AS rn
+		FROM library_media WHERE ` + w + `
+	) WHERE rn = 1 ORDER BY media_type ASC, ` + sortColumn + ` ` + order + `, ` + titleOrder + ` LIMIT ? OFFSET ?`
+	keyArgs := append(append([]any{}, a...), size, offset)
+	keyRows, err := s.db.Query(keysQuery, keyArgs...)
+	if err != nil {
+		return &SnapshotPage{ScannedAt: scannedAt, Movies: []map[string]any{}, TvShows: []map[string]any{}}
+	}
+	type pageKey struct {
+		mediaType string
+		tmdbID    int64
+		folderID  string
+	}
+	keys := []pageKey{}
+	for keyRows.Next() {
+		var k pageKey
+		if err := keyRows.Scan(&k.mediaType, &k.tmdbID, &k.folderID); err != nil {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	keyRows.Close()
+
+	// 取当页键对应的全部行（含同 tmdb 的重复目录），组内合并
+	tmdbIDs := map[string][]any{} // media_type → ids
+	folderIDs := []any{}
+	for _, k := range keys {
+		if k.tmdbID > 0 {
+			tmdbIDs[k.mediaType] = append(tmdbIDs[k.mediaType], k.tmdbID)
+		} else {
+			folderIDs = append(folderIDs, k.folderID)
+		}
+	}
+	loadRows := func(query string, args []any) *sql.Rows {
+		rows, err := s.db.Query(query, args...)
+		if err != nil {
+			return nil
+		}
+		return rows
+	}
+	pageRows := map[string][]map[string]any{} // dedupKey → 组内载荷（ hydrated ）
+	handleRow := func(mediaType, rawJSON, updatedAt string, folderModified int64) {
+		payload := decodeJSONObject(rawJSON)
+		payload = s.hydrateLibraryPayload(payload)
+		payload["updated_at"] = updatedAt
+		payload["folder_modified_time"] = folderModified
+		tmdbID := int64(jsonx.Int(payload, "tmdb_id", 0))
+		key := "f" + jsonx.Str(payload, "drive_folder_id")
+		if tmdbID > 0 {
+			key = "t" + strconv.FormatInt(tmdbID, 10)
+		}
+		pageRows[key] = append(pageRows[key], payload)
+	}
+	for mt, ids := range tmdbIDs {
+		if len(ids) == 0 {
+			continue
+		}
+		ph := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+		args2 := append([]any{mt}, ids...)
+		rows := loadRows(`SELECT media_type, raw_json, updated_at, folder_modified_time
+			FROM library_media WHERE in_library = 1 AND media_type = ? AND tmdb_id IN (`+ph+`)`, args2)
+		if rows == nil {
+			continue
+		}
+		for rows.Next() {
+			var mt2, rawJSON, updatedAt string
+			var folderModified int64
+			if rows.Scan(&mt2, &rawJSON, &updatedAt, &folderModified) == nil {
+				handleRow(mt2, rawJSON, updatedAt, folderModified)
+			}
+		}
+		rows.Close()
+	}
+	if len(folderIDs) > 0 {
+		ph := strings.TrimSuffix(strings.Repeat("?,", len(folderIDs)), ",")
+		rows := loadRows(`SELECT media_type, raw_json, updated_at, folder_modified_time
+			FROM library_media WHERE in_library = 1 AND drive_folder_id IN (`+ph+`)`, folderIDs)
+		if rows != nil {
+			for rows.Next() {
+				var mt2, rawJSON, updatedAt string
+				var folderModified int64
+				if rows.Scan(&mt2, &rawJSON, &updatedAt, &folderModified) == nil {
+					handleRow(mt2, rawJSON, updatedAt, folderModified)
+				}
+			}
+			rows.Close()
+		}
+	}
+
+	// 组装：代表条目 = 组内最新更新（页键即按最新选出），重复目录并入（集数/时间戳取最大）
+	pickLatest := func(rows []map[string]any) map[string]any {
+		latest := rows[0]
+		for _, r := range rows[1:] {
+			if s, _ := r["updated_at"].(string); s > strOfAny(latest["updated_at"]) {
+				latest = r
+			}
+		}
+		return latest
+	}
+	snap := &SnapshotPage{ScannedAt: scannedAt, Movies: []map[string]any{}, TvShows: []map[string]any{}}
+	for _, k := range keys {
+		key := "f" + k.folderID
+		if k.tmdbID > 0 {
+			key = "t" + strconv.FormatInt(k.tmdbID, 10)
+		}
+		rowsFor := pageRows[key]
+		if len(rowsFor) == 0 {
+			continue
+		}
+		rep := pickLatest(rowsFor)
+		target := &snap.TvShows
+		if k.mediaType == "movie" {
+			target = &snap.Movies
+		}
+		*target = append(*target, rep)
+		if k.tmdbID > 0 {
+			repKey := strOfAny(rep["drive_folder_id"])
+			for _, dup := range rowsFor {
+				if strOfAny(dup["drive_folder_id"]) == repKey {
+					continue
+				}
+				mergeDedupedEntry(*target, k.tmdbID, dup)
+			}
+		}
+	}
+
+	// 当页内存排序（与 SQL 排序键一致；页内数据量小，排序成本低）
+	inMemorySort := func(items []map[string]any) {
+		sort.SliceStable(items, func(i, j int) bool {
+			a, b := items[i], items[j]
+			less := false
+			switch sortColumn {
+			case "title":
+				less = strings.ToLower(strOfAny(a["title"])) < strings.ToLower(strOfAny(b["title"]))
+			case "year":
+				less = strOfAny(a["year"]) < strOfAny(b["year"])
+			case "folder_modified_time":
+				less = jsonx.Int(a, "folder_modified_time", 0) < jsonx.Int(b, "folder_modified_time", 0)
+			default:
+				less = strOfAny(a["updated_at"]) < strOfAny(b["updated_at"])
+			}
+			if order == "DESC" {
+				return !less && aValNotEqual(a, b, sortColumn)
+			}
+			return less
+		})
+	}
+	inMemorySort(snap.Movies)
+	inMemorySort(snap.TvShows)
+
+	snap.TotalMovies = totalCount("movie")
+	snap.TotalTV = totalCount("tv")
+	return snap
+}
+
+// aValNotEqual 判断排序键是否不等（DESC 时排除相等元素被翻转）。
+func aValNotEqual(a, b map[string]any, sortColumn string) bool {
+	switch sortColumn {
+	case "title":
+		return strings.ToLower(strOfAny(a["title"])) != strings.ToLower(strOfAny(b["title"]))
+	case "year":
+		return strOfAny(a["year"]) != strOfAny(b["year"])
+	case "folder_modified_time":
+		return jsonx.Int(a, "folder_modified_time", 0) != jsonx.Int(b, "folder_modified_time", 0)
+	}
+	return strOfAny(a["updated_at"]) != strOfAny(b["updated_at"])
+}
+
 // GetAllFolderModifiedTimes 全部条目的文件夹修改时间。
 func (s *LibraryStore) GetAllFolderModifiedTimes() map[string]int64 {
 	rows, err := s.db.Query("SELECT drive_folder_id, folder_modified_time FROM library_media")
@@ -1057,6 +1325,73 @@ func (s *LibraryStore) GetStats() map[string]any {
 		"total_episodes_on_tmdb":    totalEpsTmdb,
 		"completion_rate":           rate,
 	}
+}
+
+// GetTmdbEntriesByKeys 批量读取 TMDB 实体缓存，key 形如 "tv:123"。
+// 按主键 (media_type, tmdb_id) 行值 IN 分块查询，替代逐条查询（消 N+1）。
+func (s *LibraryStore) GetTmdbEntriesByKeys(keys []string) map[string]*TmdbMediaRow {
+	out := map[string]*TmdbMediaRow{}
+	const chunk = 300
+	for start := 0; start < len(keys); start += chunk {
+		end := start + chunk
+		if end > len(keys) {
+			end = len(keys)
+		}
+		placeholders := strings.TrimSuffix(strings.Repeat("(?,?),", end-start), ",")
+		args := []any{}
+		for _, key := range keys[start:end] {
+			mt, id, ok := strings.Cut(key, ":")
+			if !ok {
+				continue
+			}
+			args = append(args, mt, id)
+		}
+		if len(args) == 0 {
+			continue
+		}
+		rows, err := s.db.Query(`SELECT media_type, tmdb_id, language, title, original_title, original_language,
+			overview, poster_path, backdrop_path, release_date, first_air_date, status, vote_average, vote_count,
+			raw_json, season_details_json, episode_details_json, last_synced_at, expires_at
+			FROM tmdb_media WHERE (media_type, tmdb_id) IN (`+placeholders+`)`, args...)
+		if err != nil {
+			continue
+		}
+		for rows.Next() {
+			var r TmdbMediaRow
+			var rawJSON, seasonJSON, episodeJSON string
+			if err := rows.Scan(&r.MediaType, &r.TmdbID, &r.Language, &r.Title, &r.OriginalTitle, &r.OriginalLanguage,
+				&r.Overview, &r.PosterPath, &r.BackdropPath, &r.ReleaseDate, &r.FirstAirDate, &r.Status,
+				&r.VoteAverage, &r.VoteCount, &rawJSON, &seasonJSON, &episodeJSON, &r.LastSyncedAt, &r.ExpiresAt); err != nil {
+				continue
+			}
+			r.RawJSON = decodeJSONObject(rawJSON)
+			r.SeasonDetailsJSON = decodeJSONObject(seasonJSON)
+			r.EpisodeDetails = decodeJSONObject(episodeJSON)
+			out[r.MediaType+":"+strconv.FormatInt(r.TmdbID, 10)] = &r
+		}
+		rows.Close()
+	}
+	return out
+}
+
+// ListFolderIDsGroupedByTmdb 全库在库条目的目录 ID 按 "media_type:tmdb_id" 分组（单条扫描）。
+func (s *LibraryStore) ListFolderIDsGroupedByTmdb() map[string][]string {
+	rows, err := s.db.Query(`SELECT media_type, tmdb_id, drive_folder_id
+		FROM library_media WHERE tmdb_id > 0 AND in_library = 1`)
+	if err != nil {
+		return map[string][]string{}
+	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var mt, folderID string
+		var tmdbID int64
+		if err := rows.Scan(&mt, &tmdbID, &folderID); err == nil {
+			key := mt + ":" + strconv.FormatInt(tmdbID, 10)
+			out[key] = append(out[key], folderID)
+		}
+	}
+	return out
 }
 
 // ListFolderIDsByTmdb 返回关联到同一 (mediaType, tmdbID) 的全部目录 ID。

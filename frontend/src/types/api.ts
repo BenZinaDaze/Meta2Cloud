@@ -60,6 +60,8 @@ export interface LibraryResponse {
   total_tv: number
   scanned_at?: string
   hint?: string
+  page?: number
+  page_size?: number
 }
 
 // 订阅命中记录

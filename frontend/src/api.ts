@@ -31,8 +31,14 @@ export const login = (username: string, password: string) =>
 export const getMe = () => api.get('/auth/me')
 
 // ── 媒体库 ──
-export const getLibrary = (sort_by?: string, sort_order?: string) =>
-  api.get('/library', { params: { sort_by, sort_order } })
+export const getLibrary = (params?: {
+  media_type?: string
+  keyword?: string
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+}) => api.get('/library', { params })
 export const refreshLibrary = (full: boolean = false) => api.post('/library:refresh', null, { params: { full } })
 export const refreshMediaItem = (
   tmdb_id: number,

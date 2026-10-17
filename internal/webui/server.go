@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"meta2cloud/internal/webui/store"
@@ -278,13 +279,22 @@ func handleGetLibrary(w http.ResponseWriter, r *http.Request) {
 	if sortOrder == "" {
 		sortOrder = "desc"
 	}
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
 	libStore := RT().GetLibraryStore()
 	if libStore == nil {
 		writeJSONError(w, http.StatusInternalServerError, "媒体库存储不可用")
 		return
 	}
-	snapshot := libStore.GetSnapshot(sortBy, sortOrder)
-	if snapshot == nil {
+	snap := libStore.GetSnapshotPage(store.SnapshotQuery{
+		MediaType: r.URL.Query().Get("media_type"),
+		SortBy:    sortBy,
+		SortOrder: sortOrder,
+		Keyword:   r.URL.Query().Get("keyword"),
+		Page:      page,
+		PageSize:  pageSize,
+	})
+	if snap == nil {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"movies": []any{}, "tv_shows": []any{},
 			"total_movies": 0, "total_tv": 0, "scanned_at": nil,
@@ -292,21 +302,15 @@ func handleGetLibrary(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	writeJSON(w, http.StatusOK, snapshotResponse(snapshot, ""))
-}
-
-func snapshotResponse(snapshot *store.Snapshot, hint string) map[string]any {
-	resp := map[string]any{
-		"movies":       snapshot.Movies,
-		"tv_shows":     snapshot.TvShows,
-		"total_movies": snapshot.TotalMovies,
-		"total_tv":     snapshot.TotalTV,
-		"scanned_at":   snapshot.ScannedAt,
-	}
-	if hint != "" {
-		resp["hint"] = hint
-	}
-	return resp
+	writeJSON(w, http.StatusOK, map[string]any{
+		"movies":       snap.Movies,
+		"tv_shows":     snap.TvShows,
+		"total_movies": snap.TotalMovies,
+		"total_tv":     snap.TotalTV,
+		"scanned_at":   snap.ScannedAt,
+		"page":         page,
+		"page_size":    pageSize,
+	})
 }
 
 func handleGetStats(w http.ResponseWriter, _ *http.Request) {

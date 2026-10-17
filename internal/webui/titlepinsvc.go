@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 
 	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/mediaparser"
@@ -36,8 +37,17 @@ func handleListTitlePins(w http.ResponseWriter, _ *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// 批量取 TMDB 当前译名与网盘目录（单条扫描），替代逐条查询
+	keys := make([]string, 0, len(pins))
+	for _, pin := range pins {
+		keys = append(keys, pin.MediaType+":"+strconv.FormatInt(pin.TmdbID, 10))
+	}
+	tmdbEntries := ls.GetTmdbEntriesByKeys(keys)
+	folderGroups := ls.ListFolderIDsGroupedByTmdb()
+
 	items := make([]titlePinItem, 0, len(pins))
 	for _, pin := range pins {
+		key := pin.MediaType + ":" + strconv.FormatInt(pin.TmdbID, 10)
 		item := titlePinItem{
 			MediaType:   pin.MediaType,
 			TmdbID:      pin.TmdbID,
@@ -46,9 +56,9 @@ func handleListTitlePins(w http.ResponseWriter, _ *http.Request) {
 			Source:      pin.Source,
 			CreatedAt:   pin.CreatedAt,
 			UpdatedAt:   pin.UpdatedAt,
-			FolderIDs:   ls.ListFolderIDsByTmdb(pin.MediaType, pin.TmdbID),
+			FolderIDs:   folderGroups[key],
 		}
-		if entry := ls.GetTmdbEntry(pin.MediaType, pin.TmdbID); entry != nil {
+		if entry := tmdbEntries[key]; entry != nil {
 			item.CurrentTitle = entry.Title
 			date := entry.FirstAirDate
 			if pin.MediaType == "movie" {

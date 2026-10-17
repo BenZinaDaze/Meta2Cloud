@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Search, RefreshCw, ChevronRight, ArrowUpDown, RefreshCw as RefreshIcon } from 'lucide-react'
+import { Search, RefreshCw, ChevronRight, ChevronLeft, ArrowUpDown, RefreshCw as RefreshIcon } from 'lucide-react'
 import { getLibrary, getMovieDetail, getTVShowDetail } from '@/api'
 import BackToTopButton from '@/components/BackToTopButton'
 import MediaCard from '@/components/MediaCard'
@@ -143,10 +143,14 @@ export default function LibraryPage({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<MediaItem | null>(null)
+  const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [sortBy, setSortBy] = useState('folder_modified_time')
   const [sortOrder, setSortOrder] = useState('desc')
   const [, setTick] = useState(0)
+
+  const PAGE_SIZE = 60
 
   // 直链打开详情：按 tmdb_id 异步加载（/movies/:tmdbId、/tv/:tmdbId）
   useEffect(() => {
@@ -164,13 +168,34 @@ export default function LibraryPage({
     }
   }, [openTmdbId, filter])
 
+  // 搜索防抖：输入停顿 300ms 后才触发服务端检索
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setSearch(searchInput.trim())
+      setPage(1)
+    }, 300)
+    return () => clearTimeout(id)
+  }, [searchInput])
+
+  // 类型/排序变化时回到第一页
+  useEffect(() => {
+    setPage(1)
+  }, [filter, sortBy, sortOrder])
+
   useEffect(() => {
     setLoading(true)
-    getLibrary(sortBy, sortOrder)
+    getLibrary({
+      media_type: filter === 'all' ? undefined : filter,
+      keyword: search || undefined,
+      page,
+      page_size: PAGE_SIZE,
+      sort_by: sortBy,
+      sort_order: sortOrder,
+    })
       .then((res) => setData(res.data))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [refreshKey, sortBy, sortOrder])
+  }, [refreshKey, sortBy, sortOrder, filter, search, page])
 
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 60_000)
@@ -182,22 +207,51 @@ export default function LibraryPage({
     return { movies: data.total_movies, tv: data.total_tv }
   }, [data])
 
-  const filteredItems = useMemo(() => {
-    if (!data || !search.trim()) return null
-    const q = search.trim().toLowerCase()
-    return [...data.movies, ...data.tv_shows].filter(
-      (i) =>
-        i.title.toLowerCase().includes(q) ||
-        (i.original_title || '').toLowerCase().includes(q)
-    )
-  }, [data, search])
+  // 搜索结果（服务端检索）：all 视图合并两类，其余只看当前类型
+  const searchResults = useMemo(() => {
+    if (!data || !search) return null
+    return filter === 'all' ? [...data.movies, ...data.tv_shows] : filter === 'movies' ? data.movies : data.tv_shows
+  }, [data, search, filter])
 
+  const searchTotal = data ? data.total_movies + data.total_tv : 0
+  const searchTotalPages = Math.max(1, Math.ceil(searchTotal / PAGE_SIZE))
+
+  // 当前类型页（movies/tv 标签页；all 视图走 SectionRow 横滑，不需要页脚）
   const singleList = useMemo(() => {
     if (!data) return []
-    if (filter === 'movies') return [...data.movies, ...data.tv_shows].filter((m) => m.media_type === 'movie')
-    if (filter === 'tv') return [...data.movies, ...data.tv_shows].filter((t) => t.media_type === 'tv')
+    if (filter === 'movies') return data.movies
+    if (filter === 'tv') return data.tv_shows
     return []
   }, [data, filter])
+
+  const singleTotal = filter === 'movies' ? data?.total_movies ?? 0 : data?.total_tv ?? 0
+  const singleTotalPages = Math.max(1, Math.ceil(singleTotal / PAGE_SIZE))
+
+  const pagination = (totalPages: number) => (
+    <div className="flex items-center justify-center gap-3 text-xs text-muted-foreground">
+      <Button
+        variant="outline"
+        size="icon-sm"
+        className="rounded-full"
+        disabled={page <= 1}
+        onClick={() => setPage((p) => Math.max(1, p - 1))}
+      >
+        <ChevronLeft className="size-4" />
+      </Button>
+      <span className="tabular-nums">
+        {page} / {totalPages}
+      </span>
+      <Button
+        variant="outline"
+        size="icon-sm"
+        className="rounded-full"
+        disabled={page >= totalPages}
+        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+      >
+        <ChevronRight className="size-4" />
+      </Button>
+    </div>
+  )
 
   const pageTitle = { all: '全部媒体', movies: '电影', tv: '电视剧' }[filter] || '全部媒体'
 
@@ -213,20 +267,21 @@ export default function LibraryPage({
     </Button>
   )
 
-  function handleRemoved(item: MediaItem) {
-    setData((current) => {
-      if (!current) return current
-      const movies = current.movies.filter((entry) => entry.drive_folder_id !== item.drive_folder_id)
-      const tvShows = current.tv_shows.filter((entry) => entry.drive_folder_id !== item.drive_folder_id)
-      return {
-        ...current,
-        movies,
-        tv_shows: tvShows,
-        total_movies: movies.length,
-        total_tv: tvShows.length,
-      }
-    })
+  function handleRemoved() {
+    // 分页模式下直接重取当前页（总数由服务端统计）
     setSelected(null)
+    setLoading(true)
+    getLibrary({
+      media_type: filter === 'all' ? undefined : filter,
+      keyword: search || undefined,
+      page,
+      page_size: PAGE_SIZE,
+      sort_by: sortBy,
+      sort_order: sortOrder,
+    })
+      .then((res) => setData(res.data))
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }
 
   function handleUpdated(item: MediaItem) {
@@ -279,8 +334,8 @@ export default function LibraryPage({
               <Input
                 type="text"
                 placeholder="搜索标题..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 className="h-10 w-full rounded-full pl-10 pr-4 sm:w-72"
               />
             </div>
@@ -330,10 +385,11 @@ export default function LibraryPage({
       )}
 
       {!loading && !error && search.trim() && (
-        filteredItems && filteredItems.length > 0 ? (
+        searchResults && searchResults.length > 0 ? (
           <>
-            <p className="mb-3 text-sm text-muted-foreground">找到 {filteredItems.length} 个结果</p>
-            <MediaGrid items={filteredItems} onSelect={setSelected} />
+            <p className="mb-3 text-sm text-muted-foreground">找到 {searchTotal} 个结果</p>
+            <MediaGrid items={searchResults} onSelect={setSelected} />
+            {searchTotalPages > 1 && pagination(searchTotalPages)}
           </>
         ) : (
           <StatePanel
@@ -356,7 +412,7 @@ export default function LibraryPage({
             {data.movies.length > 0 && (
               <SectionRow
                 title="电影"
-                count={data.movies.length}
+                count={data.total_movies}
                 items={data.movies}
                 onSelect={setSelected}
                 onViewAll={() => onChangeFilter?.('movies')}
@@ -365,7 +421,7 @@ export default function LibraryPage({
             {data.tv_shows.length > 0 && (
               <SectionRow
                 title="电视剧"
-                count={data.tv_shows.length}
+                count={data.total_tv}
                 items={data.tv_shows}
                 onSelect={setSelected}
                 onViewAll={() => onChangeFilter?.('tv')}
@@ -377,7 +433,10 @@ export default function LibraryPage({
 
       {!loading && !error && !search.trim() && filter !== 'all' && (
         singleList.length > 0 ? (
-          <MediaGrid items={singleList} onSelect={setSelected} />
+          <>
+            <MediaGrid items={singleList} onSelect={setSelected} />
+            {singleTotalPages > 1 && pagination(singleTotalPages)}
+          </>
         ) : (
           <StatePanel
             icon="📭"

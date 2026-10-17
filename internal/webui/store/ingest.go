@@ -320,17 +320,3 @@ func (s *IngestStore) Stats(days int) map[string]any {
 		"failed": failed.Int64, "no_tmdb": noTmdb.Int64,
 	}
 }
-
-// Cleanup 清理 N 天前的记录，返回删除行数。
-func (s *IngestStore) Cleanup(retentionDays int) int64 {
-	if retentionDays <= 0 {
-		retentionDays = 30
-	}
-	cutoff := time.Now().UTC().AddDate(0, 0, -retentionDays).Format("2006-01-02T15:04:05")
-	res, err := s.db.Exec("DELETE FROM ingest_history WHERE ingested_at < ?", cutoff)
-	if err != nil {
-		return 0
-	}
-	n, _ := res.RowsAffected()
-	return n
-}
