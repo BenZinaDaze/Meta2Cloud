@@ -188,6 +188,7 @@ func runStrmSync(trigger string) {
 			break // 单个映射失败即停，避免误删另一映射的失效文件
 		}
 	}
+	stats.Removed += sweepOrphanStrmFiles(st, cfg.Strm.Mappings, runID)
 	st.FinishSyncRun(runID, stats.Created, stats.Updated, stats.Removed, stats.Skipped, syncErr)
 	log.Printf("[strm] 同步完成（%s）：新增 %d 更新 %d 删除 %d 跳过 %d",
 		trigger, stats.Created, stats.Updated, stats.Removed, stats.Skipped)
@@ -304,6 +305,60 @@ func pruneEmptyDirs(root string) {
 		if err := os.Remove(dir); err == nil {
 			log.Printf("[strm] 清理本地空目录：%s", dir)
 		}
+	}
+}
+
+// sweepOrphanStrmFiles 全局孤儿对账：不属于任何映射本地根的记录
+// （历史映射位置变更后的残留）删除本地文件与记录，返回清理数量。
+// 每次同步末尾执行，映射换位置后下一次同步即自动清干净。
+func sweepOrphanStrmFiles(st *store.StrmStore, mappings []config.StrmMapping, runID int64) int {
+	roots := make([]string, 0, len(mappings))
+	for _, m := range mappings {
+		if root := filepath.Clean(m.LocalPath); root != "" && root != "." {
+			roots = append(roots, root)
+		}
+	}
+	// 无有效受管根（配置异常/未就绪）时不动任何记录，避免全表误判为孤儿
+	if len(roots) == 0 {
+		return 0
+	}
+	removed := 0
+	for _, rec := range st.ListAllStrmFiles() {
+		if isUnderAnyLocalRoot(rec.LocalPath, roots) {
+			continue
+		}
+		if err := os.Remove(rec.LocalPath); err != nil && !os.IsNotExist(err) {
+			st.InsertSyncFileDetail(runID, rec.FileName, rec.PanPath, rec.LocalPath, "removed", false, err.Error())
+			continue
+		}
+		pruneEmptyDirParents(filepath.Dir(rec.LocalPath), roots)
+		st.DeleteStrmFile(rec.ID)
+		st.InsertSyncFileDetail(runID, rec.FileName, rec.PanPath, rec.LocalPath, "removed", true, "")
+		log.Printf("[strm] 清理映射外残留：%s", rec.LocalPath)
+		removed++
+	}
+	return removed
+}
+
+// isUnderAnyLocalRoot 判断本地路径是否位于任一受管根之下（按路径段前缀比较）。
+func isUnderAnyLocalRoot(localPath string, roots []string) bool {
+	for _, root := range roots {
+		if localPath == root || strings.HasPrefix(localPath, root+string(os.PathSeparator)) {
+			return true
+		}
+	}
+	return false
+}
+
+// pruneEmptyDirParents 孤儿文件删除后自下而上清理空目录：
+// 非空、抵达受管根或文件系统顶层即停（os.Remove 仅对空目录生效，天然安全）。
+func pruneEmptyDirParents(bottom string, roots []string) {
+	dir := filepath.Clean(bottom)
+	for dir != "." && dir != string(os.PathSeparator) && len(dir) > 1 && !isUnderAnyLocalRoot(dir, roots) {
+		if err := os.Remove(dir); err != nil {
+			return
+		}
+		dir = filepath.Dir(dir)
 	}
 }
 

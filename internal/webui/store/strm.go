@@ -162,6 +162,22 @@ func (s *StrmStore) CountStrmFiles() int {
 	return n
 }
 
+// ListAllStrmFiles 全量列出 STRM 记录（孤儿对账用）。
+func (s *StrmStore) ListAllStrmFiles() []StrmFile {
+	rows, err := s.db.Query(strmFileSelect)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := []StrmFile{}
+	for rows.Next() {
+		if f := scanStrmFile(rows); f != nil {
+			out = append(out, *f)
+		}
+	}
+	return out
+}
+
 // UpsertStrmFile 按 local_path 幂等写入映射。
 // 返回动作："created"（新增）/ "updated"（内容变化重写）/ "skipped"（无变化）。
 func (s *StrmStore) UpsertStrmFile(f StrmFile) string {

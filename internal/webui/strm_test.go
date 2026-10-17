@@ -716,3 +716,58 @@ func TestStrmStoreRuns(t *testing.T) {
 		t.Fatalf("最近完成 run 异常")
 	}
 }
+
+// 映射本地位置变更后，旧位置的记录与文件应由全局孤儿对账清理
+func TestSweepOrphanStrmFiles(t *testing.T) {
+	tmp := t.TempDir()
+	st, err := store.OpenStrmStore(filepath.Join(tmp, "strm.db"))
+	if err != nil {
+		t.Fatalf("打开 strm.db 失败：%v", err)
+	}
+	defer st.Close()
+
+	fp := newFakeWebProvider()
+	movieRoot := fp.addFolder("电影", "0")
+	titleDir := fp.addFolder("流浪地球 2 (2023)", movieRoot.ID)
+	fp.addVideoWithPickCode("流浪地球 2.mkv", titleDir.ID, "abc123def456ghi78", 1<<30)
+	cfg := testStrmConfig()
+
+	oldRoot := filepath.Join(tmp, "old")
+	newRoot := filepath.Join(tmp, "new")
+	mapping := config.StrmMapping{PanFolderID: movieRoot.ID, LocalPath: oldRoot}
+	newMapping := config.StrmMapping{PanFolderID: movieRoot.ID, LocalPath: newRoot}
+
+	// 旧位置同步 → 生成 1 条记录与 1 个文件
+	if _, _, _, _, err := syncMapping(fp, st, cfg, mapping, 0); err != nil {
+		t.Fatalf("旧位置同步失败：%v", err)
+	}
+	if st.CountStrmFiles() != 1 {
+		t.Fatalf("应有 1 条记录，got %d", st.CountStrmFiles())
+	}
+	oldFile := filepath.Join(oldRoot, "流浪地球 2 (2023)", "流浪地球 2.strm")
+	if _, err := os.Stat(oldFile); err != nil {
+		t.Fatalf("旧位置文件未生成：%v", err)
+	}
+
+	// 换位置同步：新位置生成；孤儿对账清掉旧位置记录与文件
+	runID := st.StartSyncRun("test")
+	if _, _, _, _, err := syncMapping(fp, st, cfg, newMapping, runID); err != nil {
+		t.Fatalf("新位置同步失败：%v", err)
+	}
+	if orphans := sweepOrphanStrmFiles(st, []config.StrmMapping{newMapping}, runID); orphans != 1 {
+		t.Fatalf("应清理 1 条孤儿，got %d", orphans)
+	}
+	if st.CountStrmFiles() != 1 {
+		t.Fatalf("对账后应只剩新位置 1 条，got %d", st.CountStrmFiles())
+	}
+	if _, err := os.Stat(oldFile); !os.IsNotExist(err) {
+		t.Fatal("旧位置文件应被删除")
+	}
+	if _, err := os.Stat(filepath.Join(newRoot, "流浪地球 2 (2023)", "流浪地球 2.strm")); err != nil {
+		t.Fatalf("新位置文件应保留：%v", err)
+	}
+	// 旧位置空目录链应被清理
+	if _, err := os.Stat(oldRoot); !os.IsNotExist(err) {
+		t.Fatal("旧位置空目录应被清理")
+	}
+}
