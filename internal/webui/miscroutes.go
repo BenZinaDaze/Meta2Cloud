@@ -1,8 +1,7 @@
-// miscroutes.go —— MediaVault 测试 + TMDB 季详情 + WebSocket 日志流。
+// miscroutes.go —— MediaVault/Telegram 测试 + TMDB 季详情 + WebSocket 日志流。
 package webui
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +9,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"meta2cloud/internal/config"
+	"meta2cloud/internal/pipeline"
 )
 
 // handleMediavaultTest 测试 MediaVault 连接。
@@ -93,28 +95,9 @@ func handleTelegramTest(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "Bot Token 与 Chat ID 均不能为空")
 		return
 	}
-	payload, _ := json.Marshal(map[string]any{
-		"chat_id":    chatID,
-		"text":       "✅ <b>Meta2Cloud</b>\nTelegram 通知配置正常，入库完成后将推送到此会话。",
-		"parse_mode": "HTML",
-	})
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Post(fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken), "application/json", bytes.NewReader(payload))
-	if err != nil {
-		writeJSONError(w, http.StatusBadGateway, "无法连接 Telegram API："+err.Error())
-		return
-	}
-	defer resp.Body.Close()
-	var result struct {
-		OK          bool   `json:"ok"`
-		Description string `json:"description"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		writeJSONError(w, http.StatusBadGateway, "Telegram API 返回了无效响应")
-		return
-	}
-	if !result.OK {
-		writeJSONError(w, http.StatusBadGateway, "Telegram API 拒绝："+result.Description)
+	tg := config.Telegram{BotToken: botToken, ChatID: chatID}
+	if err := pipeline.SendTelegramMessage(tg, "✅ <b>Meta2Cloud</b>\nTelegram 通知配置正常，入库完成后将推送到此会话。"); err != nil {
+		writeJSONError(w, http.StatusBadGateway, "测试通知发送失败："+err.Error())
 		return
 	}
 	appLog("telegram", "test_notify", "SUCCESS", "Telegram 测试通知已发送", nil)

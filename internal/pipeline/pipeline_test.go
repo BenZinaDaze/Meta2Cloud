@@ -641,8 +641,8 @@ func TestBuildNotifyCaption(t *testing.T) {
 		StrmOK: true,
 	}
 	items := []notifyItem{
-		func() notifyItem { it := base; it.Episode = &ep1; return it }(),
-		func() notifyItem { it := base; it.Episode = &ep2; return it }(),
+		func() notifyItem { it := base; it.Episode = &ep1; it.EpTitle = "第一话"; return it }(),
+		func() notifyItem { it := base; it.Episode = &ep2; it.EpTitle = "第二话"; return it }(),
 	}
 	caption := p.buildNotifyCaption(base, items)
 
@@ -652,6 +652,7 @@ func TestBuildNotifyCaption(t *testing.T) {
 		"⭐ 7.7 · 日番 · 日本",
 		"📦 入库 2 个文件 · STRM 已生成",
 		"#学生会也有洞 #动画 #喜剧",
+		"<blockquote expandable>• S01E01  第一话\n• S01E02  第二话</blockquote>",
 		"<blockquote expandable>高一水之江梅有着极其高超的文学造诣。</blockquote>",
 	} {
 		if !strings.Contains(caption, want) {
@@ -673,5 +674,19 @@ func TestSeasonSegmentsSparseEpisodes(t *testing.T) {
 	}
 	if segs[0].Total != 12 {
 		t.Fatalf("Total = %d", segs[0].Total)
+	}
+}
+
+func TestHashtagOf(t *testing.T) {
+	cases := map[string]string{
+		"学生会也有洞！":                 "学生会也有洞",
+		"Re:Zero − Starting Life":  "ReZeroStartingLife",
+		"咒术回战 2nd Season":          "咒术回战2ndSeason",
+		"《某科学》〈超〉电磁炮【剧场版】":        "某科学超电磁炮剧场版",
+	}
+	for in, want := range cases {
+		if got := hashtagOf(in); got != want {
+			t.Errorf("hashtagOf(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

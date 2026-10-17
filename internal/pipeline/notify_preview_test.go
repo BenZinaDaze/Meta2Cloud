@@ -36,10 +36,21 @@ func TestNotifyPreviewManual(t *testing.T) {
 		StrmOK:       true,
 	}
 	items := []notifyItem{
-		func() notifyItem { it := base; it.Episode = &e1; return it }(),
-		func() notifyItem { it := base; it.Episode = &e2; return it }(),
+		func() notifyItem { it := base; it.Episode = &e1; it.EpTitle = "《臭小鬼也是有洞的吧…》《会长被梅同学给领走了》"; return it }(),
+		func() notifyItem { it := base; it.Episode = &e2; it.EpTitle = "《救世主绽》《七大不可思议和夜晚的工作》《驹绫现身！！》"; return it }(),
 	}
 	caption := p.buildNotifyCaption(base, items)
-	t.Logf("caption:\n%s", caption)
+	t.Logf("caption（STRM 已生成）:\n%s", caption)
 	p.sendTgPhoto(cfg.Telegram.BotToken, cfg.Telegram.ChatID, base.BackdropPath, caption)
+
+	// 变体：整理成功但 STRM 未生成
+	notStrm := base
+	notStrm.StrmOK = false
+	items2 := []notifyItem{
+		func() notifyItem { it := notStrm; it.Episode = &e1; it.EpTitle = "《臭小鬼也是有洞的吧…》《会长被梅同学给领走了》"; return it }(),
+		func() notifyItem { it := notStrm; it.Episode = &e2; it.EpTitle = "《救世主绽》《七大不可思议和夜晚的工作》《驹绫现身！！》"; return it }(),
+	}
+	caption2 := p.buildNotifyCaption(notStrm, items2)
+	t.Logf("caption（STRM 未生成）:\n%s", caption2)
+	p.sendTgPhoto(cfg.Telegram.BotToken, cfg.Telegram.ChatID, base.BackdropPath, caption2)
 }

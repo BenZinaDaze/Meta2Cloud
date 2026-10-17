@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"unicode"
 	"time"
 
+	"meta2cloud/internal/config"
 	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/tmdb"
 )
@@ -219,12 +221,12 @@ func seasonSegments(items []notifyItem) []notifySeasonSeg {
 	return segs
 }
 
-// hashtagOf 去掉空白与 HTML 特殊字符，生成 Telegram 话题标签。
+// hashtagOf 生成 Telegram 话题标签：去掉空白与全部标点/符号（含全角），
+// 仅保留文字与数字，避免标签被标点截断。
 func hashtagOf(s string) string {
 	var b strings.Builder
 	for _, r := range s {
-		switch r {
-		case ' ', '\t', '\n', '　', '#', '<', '>', '&':
+		if unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r) {
 			continue
 		}
 		b.WriteRune(r)
@@ -308,6 +310,39 @@ func (p *Pipeline) buildNotifyCaption(first notifyItem, items []notifyItem) stri
 		b.WriteString(strings.Join(tags, " ") + "\n")
 	}
 
+	// 分集子标题（可折叠引用，按季/集排序，无标题的集不列）
+	if first.IsTV {
+		sorted := make([]notifyItem, len(items))
+		copy(sorted, items)
+		sort.SliceStable(sorted, func(i, j int) bool {
+			if sorted[i].Season != sorted[j].Season {
+				return sorted[i].Season < sorted[j].Season
+			}
+			ei, ej := 0, 0
+			if sorted[i].Episode != nil {
+				ei = *sorted[i].Episode
+			}
+			if sorted[j].Episode != nil {
+				ej = *sorted[j].Episode
+			}
+			return ei < ej
+		})
+		var epLines []string
+		for _, it := range sorted {
+			if it.EpTitle == "" {
+				continue
+			}
+			label := fmt.Sprintf("S%02d", it.Season)
+			if it.Episode != nil {
+				label += fmt.Sprintf("E%02d", *it.Episode)
+			}
+			epLines = append(epLines, fmt.Sprintf("• %s  %s", label, html.EscapeString(it.EpTitle)))
+		}
+		if len(epLines) > 0 {
+			b.WriteString("<blockquote expandable>" + strings.Join(epLines, "\n") + "</blockquote>\n")
+		}
+	}
+
 	if first.Overview != "" {
 		ov := strings.TrimSpace(first.Overview)
 		b.WriteString("<blockquote expandable>" + html.EscapeString(ov) + "</blockquote>")
@@ -315,12 +350,42 @@ func (p *Pipeline) buildNotifyCaption(first notifyItem, items []notifyItem) stri
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// postTgMethod 调用一个 Telegram Bot API 方法，返回是否成功（失败记日志）。
-func (p *Pipeline) postTgMethod(token, method string, payload map[string]any, timeoutSecs int) bool {
-	resp, err := postJSON(fmt.Sprintf("https://api.telegram.org/bot%s/%s", token, method), payload, timeoutSecs)
+// ── 对外发送能力（供任意模块复用） ──────────────────────────
+
+// SendTelegramMessage 用配置的 Bot 发送一条 HTML 文本通知。
+// 与整理流程解耦，供 STRM 同步、订阅、定时任务等任意模块复用。
+func SendTelegramMessage(tg config.Telegram, text string) error {
+	if tg.BotToken == "" || tg.ChatID == "" {
+		return fmt.Errorf("Telegram Bot Token 或 Chat ID 未配置")
+	}
+	return postTelegram(tg, "sendMessage", map[string]any{
+		"chat_id":    tg.ChatID,
+		"text":       text,
+		"parse_mode": "HTML",
+	}, 10)
+}
+
+// SendTelegramPhoto 用配置的 Bot 发送一条带图片的 HTML 通知。
+// imageURL 为完整图片地址（如 TMDB 横版背景图），拉取失败时返回错误。
+func SendTelegramPhoto(tg config.Telegram, imageURL, caption string) error {
+	if tg.BotToken == "" || tg.ChatID == "" {
+		return fmt.Errorf("Telegram Bot Token 或 Chat ID 未配置")
+	}
+	return postTelegram(tg, "sendPhoto", map[string]any{
+		"chat_id":    tg.ChatID,
+		"photo":      imageURL,
+		"caption":    caption,
+		"parse_mode": "HTML",
+	}, 15)
+}
+
+// postTelegram 调用一个 Telegram Bot API 方法（失败时记日志并返回错误）。
+func postTelegram(tg config.Telegram, method string, payload map[string]any, timeoutSecs int) error {
+	resp, err := postJSON(fmt.Sprintf("https://api.telegram.org/bot%s/%s", tg.BotToken, method), payload, timeoutSecs)
 	if err != nil {
-		log.Printf("Telegram %s 请求异常：%v", method, err)
-		return false
+		err = fmt.Errorf("请求异常：%w", err)
+		log.Printf("Telegram %s %v", method, err)
+		return err
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
@@ -329,10 +394,11 @@ func (p *Pipeline) postTgMethod(token, method string, payload map[string]any, ti
 		Description string `json:"description"`
 	}
 	if json.Unmarshal(body, &result) == nil && !result.OK {
+		err = fmt.Errorf("%s", strings.TrimSpace(string(body)))
 		log.Printf("Telegram %s 发送失败：%s", method, string(body))
-		return false
+		return err
 	}
-	return true
+	return nil
 }
 
 // sendTgPhoto 发送带海报/背景图的通知；图片发送失败时降级为纯文本，通知不丢。
@@ -342,23 +408,17 @@ func (p *Pipeline) sendTgPhoto(token, chatID, posterPath, caption string) {
 			log.Printf("Telegram 通知异常：%v", r)
 		}
 	}()
+	tg := config.Telegram{BotToken: token, ChatID: chatID}
 	if posterPath != "" {
-		ok := p.postTgMethod(token, "sendPhoto", map[string]any{
-			"chat_id":    chatID,
-			"photo":      tmdb.ImageURL(posterPath, "w780", p.cfg.TmdbImageBaseURL()),
-			"caption":    caption,
-			"parse_mode": "HTML",
-		}, 15)
-		if ok {
+		imageURL := tmdb.ImageURL(posterPath, "w780", p.cfg.TmdbImageBaseURL())
+		if err := SendTelegramPhoto(tg, imageURL, caption); err == nil {
 			return
 		}
 		log.Printf("图片通知发送失败，降级为纯文本通知")
 	}
-	p.postTgMethod(token, "sendMessage", map[string]any{
-		"chat_id":    chatID,
-		"text":       caption,
-		"parse_mode": "HTML",
-	}, 10)
+	if err := SendTelegramMessage(tg, caption); err != nil {
+		log.Printf("纯文本通知发送失败：%v", err)
+	}
 }
 
 func postJSON(url string, payload any, timeoutSecs int) (*http.Response, error) {
