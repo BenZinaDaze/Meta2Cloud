@@ -233,8 +233,3 @@ export interface CategoriesConfig {
   tv: CategoryRule[]
   movie: CategoryRule[]
 }
-
-export interface CategoriesResponse {
-  enabled: boolean
-  config: CategoriesConfig
-}

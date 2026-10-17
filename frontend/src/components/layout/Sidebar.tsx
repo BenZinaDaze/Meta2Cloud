@@ -366,6 +366,14 @@ export default function Sidebar({
             onClick={closeMobile}
             indent
           />
+          <NavItem
+            icon={<Tag className="size-4" />}
+            label="分类配置"
+            to="/config/categories"
+            active={pathname === '/config/categories'}
+            onClick={closeMobile}
+            indent
+          />
         </NavCollapse>
       </nav>
 

@@ -56,7 +56,6 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { SkeletonPanel } from '@/components/StatePanel'
 import PageHeader from '@/components/shared/PageHeader'
-import CategoriesCard from '@/components/config/CategoriesCard'
 import { cn } from '@/lib/utils'
 
 const PAGE_VARIANTS = {
@@ -1290,8 +1289,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
             </Card>
           </TabsContent>
 
-          <TabsContent value="pipeline" className="mt-0 space-y-5">
-            <CategoriesCard />
+          <TabsContent value="pipeline" className="mt-0">
             <Card className="border-border/70 bg-card/40">
               <CardHeader>
                 <CardTitle className="text-base">扫描与入库策略</CardTitle>

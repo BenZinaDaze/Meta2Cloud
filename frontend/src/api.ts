@@ -177,5 +177,5 @@ export const batchAction = (data: { action: 'delete' | 'move'; file_ids: string[
 
 // ── 媒体分类 ──
 export const getCategories = () => api.get('/categories')
-export const saveCategories = (data: { enabled: boolean; config: import('@/types/api').CategoriesConfig }) =>
-  api.put('/categories', data)
+export const saveCategories = (config: import('@/types/api').CategoriesConfig) =>
+  api.put('/categories', config)

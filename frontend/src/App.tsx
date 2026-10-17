@@ -21,6 +21,7 @@ const ScraperSearch = lazy(() => import('@/components/pages/ScraperSearch'))
 const StrmSyncPage = lazy(() => import('@/components/pages/StrmSyncPage'))
 const StrmPlaybackPage = lazy(() => import('@/components/pages/StrmPlaybackPage'))
 const TitlePinsPage = lazy(() => import('@/components/pages/TitlePinsPage'))
+const CategoriesPage = lazy(() => import('@/components/pages/CategoriesPage'))
 const ParseTestModal = lazy(() => import('@/components/modals/ParseTestModal'))
 
 function PageFallback() {
@@ -250,6 +251,7 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
               />
               <Route path="/config" element={<ConfigPage page="general" />} />
               <Route path="/config/filename-rules" element={<ConfigPage page="filenameRules" />} />
+              <Route path="/config/categories" element={<CategoriesPage />} />
               <Route path="*" element={<Navigate to="/library" replace />} />
             </Routes>
           </Suspense>

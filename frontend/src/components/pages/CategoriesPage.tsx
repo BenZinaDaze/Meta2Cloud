@@ -6,14 +6,8 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Switch } from '@/components/ui/switch'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
+import PageHeader from '@/components/shared/PageHeader'
 import type { CategoryDirs, CategoryRule, CategoriesConfig } from '@/types/api'
 
 const GENRE_OPTIONS = [
@@ -51,11 +45,11 @@ const DEFAULT_CONFIG: CategoriesConfig = {
   ],
 }
 
-interface CategoriesCardProps {
+interface CategoriesPageProps {
   onToast?: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void
 }
 
-export default function CategoriesCard({ onToast }: CategoriesCardProps) {
+export default function CategoriesPage({ onToast }: CategoriesPageProps) {
   const notify = useCallback(
     (type: 'success' | 'error' | 'warning', title: string, message?: string) => {
       const fn = onToast ?? ((title: string, message?: string) => toast[type](title, { description: message }))
@@ -63,16 +57,15 @@ export default function CategoriesCard({ onToast }: CategoriesCardProps) {
     },
     [onToast],
   )
-  const [enabled, setEnabled] = useState(false)
   const [config, setConfig] = useState<CategoriesConfig>(DEFAULT_CONFIG)
   const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [customGenre, setCustomGenre] = useState('')
 
   const load = useCallback(async () => {
     try {
       const res = await getCategories()
-      setEnabled(!!res.data?.enabled)
-      if (res.data?.config) setConfig(res.data.config)
+      if (res.data) setConfig(res.data)
     } catch {
       notify('error', '分类配置加载失败')
     }
@@ -139,22 +132,19 @@ export default function CategoriesCard({ onToast }: CategoriesCardProps) {
 
   const handleSave = useCallback(async () => {
     setSaving(true)
+    setMessage(null)
     try {
-      await saveCategories({ enabled, config })
-      notify(
-        'success',
-        enabled ? '分类配置已保存并启用' : '分类已停用',
-        enabled
-          ? '之后的整理将按分类目录归档；媒体服务器需重建/刷新库'
-          : '整理将回到电影根/剧集根布局',
-      )
+      await saveCategories(config)
+      setMessage({ type: 'success', text: '已保存，目录结构已创建；下次整理生效' })
+      notify('success', '分类配置已保存', '目录结构已创建，下次整理生效')
     } catch (e) {
-      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      notify('error', '分类配置保存失败', msg || (e instanceof Error ? e.message : String(e)))
+      const text = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '分类配置保存失败'
+      setMessage({ type: 'error', text })
+      notify('error', '分类配置保存失败', text)
     } finally {
       setSaving(false)
     }
-  }, [enabled, config, notify])
+  }, [config, notify])
 
   const renderRules = (kind: 'tv' | 'movie', kindLabel: string) => (
     <div className="space-y-2">
@@ -267,19 +257,26 @@ export default function CategoriesCard({ onToast }: CategoriesCardProps) {
   )
 
   return (
-    <Card className="border-border/70 bg-card/40">
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-base">媒体分类</CardTitle>
-            <CardDescription>
-              按 TMDB 流派把媒体归入 剧集/电影 下的分类目录；未命中的落兜底目录。停用后回到电影根/剧集根布局。
-            </CardDescription>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        kicker="Categories"
+        title="分类配置"
+        description="按 TMDB 流派把媒体归入 剧集/电影 下的分类目录；未命中的落兜底目录，TMDB 未识别的落「其他」。保存后目录结构自动创建。"
+        actions={
+          <div className="flex items-center gap-3">
+            {message && (
+              <span className={cn('text-xs', message.type === 'success' ? 'text-success' : 'text-destructive')}>
+                {message.text}
+              </span>
+            )}
+            <Button size="sm" onClick={handleSave} disabled={saving}>
+              {saving ? '保存中…' : '保存分类'}
+            </Button>
           </div>
-          <Switch checked={enabled} onCheckedChange={setEnabled} />
-        </div>
-      </CardHeader>
-      {enabled && (
+        }
+      />
+
+      <Card className="border-border/70 bg-card/40">
         <CardContent className="space-y-5">
           <div className="flex flex-wrap items-end gap-4">
             <div className="w-40">
@@ -301,16 +298,10 @@ export default function CategoriesCard({ onToast }: CategoriesCardProps) {
 
           <p className="text-xs text-muted-foreground">
             规则按从上到下的顺序匹配，首条命中即归入该目录；最后一条为兜底目录（不可删除/下移）。
-            保存后目录结构在下次整理时生效并自动创建，媒体服务器需刷新/重建库。
+            保存后目录结构自动创建，下次整理生效，媒体服务器需刷新/重建库。
           </p>
-
-          <div className="flex items-center gap-3">
-            <Button size="sm" onClick={handleSave} disabled={saving}>
-              {saving ? '保存中…' : '保存分类'}
-            </Button>
-          </div>
         </CardContent>
-      )}
-    </Card>
+      </Card>
+    </div>
   )
 }
