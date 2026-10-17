@@ -742,3 +742,22 @@ func TestPipelineCategoryLayout(t *testing.T) {
 		t.Fatal("文件未移入分类目录")
 	}
 }
+
+func TestTitleSimilar(t *testing.T) {
+	// 同一媒体的不同译名 → 相似
+	if !titleSimilar("令和的斑小姐 (2026)", "令和妖神斑小姐 (2026)") {
+		t.Error("不同译名应判为相似")
+	}
+	// 完全不同的标题 → 不相似
+	if titleSimilar("从后面来的神威先生 (2026)", "弱弱老师 (2026)") {
+		t.Error("不同媒体不应判为相似")
+	}
+	// 包含关系 → 相似
+	if !titleSimilar("斑小姐 (2026)", "令和的斑小姐 (2026)") {
+		t.Error("包含关系应判为相似")
+	}
+	// 标点/空白差异 → 相似
+	if !titleSimilar("学生会也有洞！(2026)", "学生会也有洞  2026") {
+		t.Error("标点空白差异应判为相似")
+	}
+}

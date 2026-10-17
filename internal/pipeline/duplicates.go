@@ -6,6 +6,7 @@ import (
 	"log"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"meta2cloud/internal/cloudfile"
 )
@@ -129,11 +130,69 @@ func (p *Pipeline) mergeDuplicateGroup(g DuplicateFolderGroup) bool {
 		if candidate.Trashed {
 			continue
 		}
+		// 同剧校验：候选与目标目录名差异过大时疑似 TMDB 误识别，
+		// 合并会把不同媒体的文件搬在一起，必须跳过并提示人工检查
+		if !titleSimilar(candidate.Name, target.Name) {
+			p.log(fmt.Sprintf("  ⚠ 跳过合并 %q → %q：目录名差异过大，疑似不同媒体（请检查该目录的 TMDB 识别是否正确）",
+				candidate.Name, target.Name), "WARNING")
+			continue
+		}
 		if p.mergeFolderInto(candidate, *target) {
 			recycled = true
 		}
 	}
 	return recycled
+}
+
+// titleSimilar 判断两个目录名（可含年份）归一化后是否足够相似——
+// 同一媒体的不同译名通常高度相似（令和的斑小姐 ≈ 令和妖神斑小姐），
+// 完全不同的标题（神威先生 vs 弱弱老师）相似度为 0，视为不同媒体。
+func titleSimilar(a, b string) bool {
+	na, nb := normalizeTitleForCompare(a), normalizeTitleForCompare(b)
+	if na == "" || nb == "" {
+		return false
+	}
+	if na == nb || strings.Contains(na, nb) || strings.Contains(nb, na) {
+		return true
+	}
+	return bigramDice(na, nb) >= 0.35
+}
+
+// normalizeTitleForCompare 去年份、空白与标点，仅保留文字数字（小写）。
+func normalizeTitleForCompare(name string) string {
+	title, _ := splitFolderName(name)
+	var b strings.Builder
+	for _, r := range title {
+		if unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r) {
+			continue
+		}
+		b.WriteRune(unicode.ToLower(r))
+	}
+	return b.String()
+}
+
+// bigramDice 字符二元组 Dice 系数（0~1，1 为完全相同）。
+func bigramDice(a, b string) float64 {
+	ra, rb := []rune(a), []rune(b)
+	if len(ra) < 2 || len(rb) < 2 {
+		if na, nb := string(ra), string(rb); na == nb {
+			return 1
+		}
+		return 0
+	}
+	grams := map[string]int{}
+	for i := 0; i+2 <= len(ra); i++ {
+		grams[string(ra[i:i+2])]++
+	}
+	common := 0
+	for i := 0; i+2 <= len(rb); i++ {
+		g := string(rb[i : i+2])
+		if grams[g] > 0 {
+			common++
+			grams[g]--
+		}
+	}
+	return 2 * float64(common) / float64(len(ra)-1+len(rb)-1)
 }
 
 // mergeFolderInto 把 candidate 目录内容搬入 target（镜像子目录结构，同名文件跳过）。
