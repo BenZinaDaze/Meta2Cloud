@@ -1,5 +1,17 @@
+import { useState } from 'react'
 import { Zap, Search, Menu } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { triggerPipeline } from '@/api'
 import { toast } from 'sonner'
 import Logo from '@/components/layout/Logo'
@@ -12,6 +24,7 @@ interface TopbarProps {
 }
 
 export default function Topbar({ onOpenParseTest, onToggleSidebar, u115Authorized = false }: TopbarProps) {
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const handleTriggerPipeline = async () => {
     try {
       await triggerPipeline()
@@ -47,14 +60,27 @@ export default function Topbar({ onOpenParseTest, onToggleSidebar, u115Authorize
 
         <div className="flex items-center gap-2">
           {u115Authorized && (
-            <Button
-              onClick={handleTriggerPipeline}
-              size="sm"
-              className="gap-1.5 rounded-full px-3.5"
-            >
-              <Zap className="size-3.5" />
-              <span className="hidden sm:inline">一键整理</span>
-            </Button>
+            <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" className="gap-1.5 rounded-full px-3.5">
+                  <Zap className="size-3.5" />
+                  <span className="hidden sm:inline">一键整理</span>
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>确认开始整理？</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    将扫描云下载目录中的视频与字幕，识别后移动到媒体库分类目录；
+                    完成后自动生成 STRM 并推送通知。进行中的整理无法中止。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>取消</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleTriggerPipeline}>开始整理</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           )}
 
           <Button

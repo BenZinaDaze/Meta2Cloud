@@ -434,6 +434,12 @@ func validateMainConfigPayload(payload map[string]any) string {
 			return msg
 		}
 	}
+	// 目录防呆：下载目录与媒体库根目录相同会导致一键整理扫描媒体库自身（配置值为目录名）
+	dlID := strings.TrimSpace(jsonx.Str(u115Sec, "download_folder_id"))
+	rootID := strings.TrimSpace(jsonx.Str(u115Sec, "root_folder_id"))
+	if dlID != "" && dlID == rootID {
+		return "云下载目录不能与媒体库根目录相同（整理会误扫描媒体库）"
+	}
 	return ""
 }
 
