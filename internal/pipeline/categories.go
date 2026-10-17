@@ -25,10 +25,11 @@ func tmdbGenreIDs(info map[string]any) []int {
 }
 
 // ensureCategoryChain 创建并解析分类目录链（媒体库根/一级/二级），返回二级目录 ID。
+// 配置值为媒体库根目录的“名字”（兼容旧 ID），在此解析为目录 ID。
 func (p *Pipeline) ensureCategoryChain(level1, level2 string) (string, error) {
-	rootID := p.cfg.ActiveRootFolderID()
-	if rootID == "" {
-		return "", fmt.Errorf("媒体库根目录未设置")
+	rootID, ok := cloudfile.ResolveFolderRef(p.provider, p.cfg.ActiveRootFolderID())
+	if !ok {
+		return "", fmt.Errorf("媒体库根目录 %q 在网盘根目录下不存在", p.cfg.ActiveRootFolderID())
 	}
 	l1ID, err := p.categoryDir(rootID, level1)
 	if err != nil {

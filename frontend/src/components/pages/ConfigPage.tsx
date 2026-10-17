@@ -56,6 +56,7 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { SkeletonPanel } from '@/components/StatePanel'
 import PageHeader from '@/components/shared/PageHeader'
+import FolderSelectInput from '@/components/config/FolderSelectInput'
 import { cn } from '@/lib/utils'
 
 const PAGE_VARIANTS = {
@@ -1044,28 +1045,26 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                       mono
                     />
                   </Field>
+                  <Field label="云下载目录" description="离线保存位置（点击选择）">
+                    <FolderSelectInput
+                      value={(cfg?.u115 as Record<string, unknown>)?.download_folder_id as string | undefined}
+                      onChange={(v: string) => set('u115', 'download_folder_id', v)}
+                      placeholder="选择云下载目录"
+                    />
+                  </Field>
+                  <Field label="媒体库根目录" description="分类目录挂在此目录下（点击选择）">
+                    <FolderSelectInput
+                      value={(cfg?.u115 as Record<string, unknown>)?.root_folder_id as string | undefined}
+                      onChange={(v: string) => set('u115', 'root_folder_id', v)}
+                      placeholder="选择媒体库根目录"
+                    />
+                  </Field>
                   <Field label="共享请求 QPS" description="整理/播放/下载全项目共用，调低更防风控">
                     <NumberInput
                       value={(cfg?.u115 as Record<string, unknown>)?.qps as number | undefined}
                       onChange={(v) => set('u115', 'qps', v)}
                       min={1}
                       max={10}
-                    />
-                  </Field>
-                  <Field label="媒体库根目录 ID">
-                    <TextInput
-                      value={(cfg?.u115 as Record<string, unknown>)?.root_folder_id as string | undefined}
-                      onChange={(v) => set('u115', 'root_folder_id', v)}
-                      placeholder="115 目录 ID"
-                      mono
-                    />
-                  </Field>
-                  <Field label="云下载目录 ID" description="离线保存位置">
-                    <TextInput
-                      value={(cfg?.u115 as Record<string, unknown>)?.download_folder_id as string | undefined}
-                      onChange={(v) => set('u115', 'download_folder_id', v)}
-                      placeholder="115 云下载目录 ID"
-                      mono
                     />
                   </Field>
                 </FieldGroup>

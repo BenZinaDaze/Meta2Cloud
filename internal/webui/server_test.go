@@ -186,8 +186,9 @@ func newScanServer(t *testing.T) (*httptest.Server, string) {
 
 	// 构造假网盘（分类布局）：媒体库根/电影/电影 (2010)；媒体库根/剧集/剧 (2008)/Season 01/S01E01
 	fp := newFakeWebProvider()
-	movieCat := fp.addFolder("电影", "root")
-	tvCat := fp.addFolder("剧集", "root")
+	root := fp.addFolder("root", "0") // 配置 root_folder_id 存目录名，扫描时按名解析出真实 ID
+	movieCat := fp.addFolder("电影", root.ID)
+	tvCat := fp.addFolder("剧集", root.ID)
 	movie := fp.addFolder("电影 (2010)", movieCat.ID)
 	_ = movie
 	show := fp.addFolder("剧 (2008)", tvCat.ID)
@@ -955,7 +956,8 @@ func TestScanAggregatesDuplicateShowFolders(t *testing.T) {
 	InitRuntime(rootDir)
 
 	fp := newFakeWebProvider()
-	tvCat := fp.addFolder("剧集", "root")
+	root := fp.addFolder("root", "0") // 配置 root_folder_id 存目录名，扫描时按名解析出真实 ID
+	tvCat := fp.addFolder("剧集", root.ID)
 	// 目录 A: 官方译名, 12 集
 	showA := fp.addFolder("令和的斑小姐 (2026)", tvCat.ID)
 	seasonA := fp.addFolder("Season 01", showA.ID)
@@ -1015,8 +1017,8 @@ func TestGetMovieDetailByTmdbID(t *testing.T) {
 	InitRuntime(rootDir)
 
 	fp := newFakeWebProvider()
-	fp.addFolder("root", "0")
-	movieFolder := fp.addFolder("盗梦空间 (2010)", "root")
+	root := fp.addFolder("root", "0")
+	movieFolder := fp.addFolder("盗梦空间 (2010)", root.ID)
 	fp.addFile("盗梦空间 (2010).mkv", movieFolder.ID)
 	RT().SetProviderForTest(fp.provider())
 
@@ -1056,7 +1058,8 @@ func TestIncrementalSiblingRescan(t *testing.T) {
 	InitRuntime(rootDir)
 
 	fp := newFakeWebProvider()
-	tvCat := fp.addFolder("剧集", "root")
+	root := fp.addFolder("root", "0") // 配置 root_folder_id 存目录名，扫描时按名解析出真实 ID
+	tvCat := fp.addFolder("剧集", root.ID)
 	showA := fp.addFolder("令和的斑小姐 (2026)", tvCat.ID)
 	seasonA := fp.addFolder("Season 01", showA.ID)
 	for ep := 1; ep <= 12; ep++ {
@@ -1133,13 +1136,13 @@ func TestScanCategoryPassthrough(t *testing.T) {
 	InitRuntime(rootDir)
 
 	fp := newFakeWebProvider()
-	fp.addFolder("root", "0")
-	ji := fp.addFolder("剧集", "root")
+	root := fp.addFolder("root", "0")
+	ji := fp.addFolder("剧集", root.ID)
 	anime := fp.addFolder("动漫", ji.ID)
 	show := fp.addFolder("学生会也有洞！ (2026)", anime.ID)
 	season := fp.addFolder("Season 01", show.ID)
 	fp.addFile("学生会也有洞！ - S01E01.mkv", season.ID)
-	fp.addFolder("电影", "root")
+	fp.addFolder("电影", root.ID)
 	RT().SetProviderForTest(fp.provider())
 
 	RT().SetCategories(&config.CategoriesConfig{

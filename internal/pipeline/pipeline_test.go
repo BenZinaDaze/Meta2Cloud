@@ -25,10 +25,15 @@ type fakeProvider struct {
 }
 
 func newFakeProvider() *fakeProvider {
-	return &fakeProvider{
+	f := &fakeProvider{
 		children: map[string][]cloudfile.CloudFile{},
 		byID:     map[string]cloudfile.CloudFile{},
 	}
+	// 预置媒体库根目录（ID 与名字同为 "root"）：newTestConfig 以 "root" 引用，
+	// 按名解析（FindFolderByName/GetFile 回退）与 FindFile(parent="root") 断言都依赖它
+	f.put(cloudfile.CloudFile{ID: "root", Name: "root", FileType: cloudfile.TypeFolder,
+		ParentID: "0", Parents: []string{"0"}})
+	return f
 }
 
 func (f *fakeProvider) id() string {

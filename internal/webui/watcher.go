@@ -80,6 +80,8 @@ func pollU115AutoOrganizeOnce() {
 	if offline == nil {
 		return
 	}
+	// 配置值为云下载目录名，按名解析为目录 ID（兼容旧 ID 值）后再与任务的 WpPathID 比较
+	dlFolderID := resolveFolderID(cfg.U115.DownloadFolderID)
 	taskPage, err := offline.GetTaskList(1)
 	if err != nil {
 		recordU115PollError(err)
@@ -94,7 +96,7 @@ func pollU115AutoOrganizeOnce() {
 	var completed []u115.OfflineTask
 
 	for _, task := range taskPage.Tasks {
-		if task.WpPathID != nil && *task.WpPathID != "" && *task.WpPathID != cfg.U115.DownloadFolderID {
+		if task.WpPathID != nil && *task.WpPathID != "" && *task.WpPathID != dlFolderID {
 			continue
 		}
 		state := autoStore.UpsertObservation(

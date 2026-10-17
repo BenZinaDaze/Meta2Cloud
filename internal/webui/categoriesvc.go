@@ -4,6 +4,7 @@ package webui
 import (
 	"log"
 	"net/http"
+	"strings"
 
 	"meta2cloud/internal/cloudfile"
 	"meta2cloud/internal/config"
@@ -30,32 +31,43 @@ func handleSaveCategories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 预创建分类目录树（幂等），保存后立即可在文件管理/网盘看到结构
+	// 配置值为媒体库根目录名：先按名解析，根目录尚不存在则直接在网盘根下创建
 	provider := RT().GetStorageProvider()
-	rootID := RT().GetConfig().ActiveRootFolderID()
-	if provider != nil && rootID != "" {
-		ensure := func(parentID, name string) string {
-			dir, err := cloudfile.GetOrCreateFolder(provider, name, parentID)
-			if err != nil {
-				log.Printf("预创建分类目录失败 %q: %v", name, err)
-				return ""
+	rootName := strings.TrimSpace(RT().GetConfig().ActiveRootFolderID())
+	if provider != nil && rootName != "" {
+		rootID, rootOK := cloudfile.FindFolderByName(provider, rootName)
+		if !rootOK {
+			if dir, err := cloudfile.GetOrCreateFolder(provider, rootName, "0"); err == nil {
+				rootID = dir.ID
+			} else {
+				log.Printf("预创建媒体库根目录失败 %q: %v", rootName, err)
 			}
-			return dir.ID
 		}
-		for _, pair := range []struct {
-			level1 string
-			rules  []config.CategoryRule
-		}{
-			{cats.Dirs.TV, cats.TV},
-			{cats.Dirs.Movie, cats.Movie},
-		} {
-			l1 := ensure(rootID, pair.level1)
-			for _, rule := range pair.rules {
-				if l1 != "" && rule.Name != "" && rule.Name != pair.level1 {
-					ensure(l1, rule.Name)
+		if rootID != "" {
+			ensure := func(parentID, name string) string {
+				dir, err := cloudfile.GetOrCreateFolder(provider, name, parentID)
+				if err != nil {
+					log.Printf("预创建分类目录失败 %q: %v", name, err)
+					return ""
+				}
+				return dir.ID
+			}
+			for _, pair := range []struct {
+				level1 string
+				rules  []config.CategoryRule
+			}{
+				{cats.Dirs.TV, cats.TV},
+				{cats.Dirs.Movie, cats.Movie},
+			} {
+				l1 := ensure(rootID, pair.level1)
+				for _, rule := range pair.rules {
+					if l1 != "" && rule.Name != "" && rule.Name != pair.level1 {
+						ensure(l1, rule.Name)
+					}
 				}
 			}
+			ensure(rootID, cats.Dirs.Other)
 		}
-		ensure(rootID, cats.Dirs.Other)
 	}
 	appLog("library", "categories_save", "SUCCESS", "媒体分类配置已保存", map[string]any{
 		"tv":    len(cats.TV),

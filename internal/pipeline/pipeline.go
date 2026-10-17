@@ -265,14 +265,29 @@ func (p *Pipeline) getSeasonDetailCached(tmdbID string, seasonNum int) map[strin
 
 // Run 执行完整整理流程。
 func (p *Pipeline) Run() PipelineSummary {
-	scanFolder := p.cfg.ActiveScanFolderID()
-	if scanFolder == "" {
-		p.log("❌  配置错误：当前存储后端的扫描目录未设置", "ERROR")
+	// 扫描目录：配置值为目录名（兼容旧 ID），在使用处解析为目录 ID
+	if p.cfg.ActiveScanFolderID() == "" {
+		p.log("❌  配置错误：当前存储后端的下载目录未设置", "ERROR")
+		return PipelineSummary{}
+	}
+	scanFolder, ok := cloudfile.ResolveFolderRef(p.provider, p.cfg.ActiveScanFolderID())
+	if !ok {
+		p.log(fmt.Sprintf("❌  配置错误：下载目录 %q 在网盘根目录下不存在（请检查分类配置与 115 目录）",
+			p.cfg.ActiveScanFolderID()), "ERROR")
 		return PipelineSummary{}
 	}
 	if p.cfg.ActiveRootFolderID() == "" {
 		p.log("❌  配置错误：当前存储后端的媒体库根目录未设置", "ERROR")
 		return PipelineSummary{}
+	}
+	// 无分类兜底模式：organizer 根目录（配置值为名字，兼容旧 ID）在此解析；分类模式下不使用 organizer 根
+	if p.categories == nil {
+		rootID, ok := cloudfile.ResolveFolderRef(p.provider, p.cfg.ActiveRootFolderID())
+		if !ok {
+			p.log(fmt.Sprintf("❌  配置错误：媒体库根目录 %q 在网盘根目录下不存在", p.cfg.ActiveRootFolderID()), "ERROR")
+			return PipelineSummary{}
+		}
+		p.organizer.SetRootID(rootID)
 	}
 
 	p.log(strings.Repeat("=", 68))

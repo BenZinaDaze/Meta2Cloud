@@ -36,6 +36,9 @@ func New(provider cloudfile.Provider, rootFolderID string, dryRun bool) *MediaOr
 	}
 }
 
+// SetRootID 更新媒体库根目录 ID（配置以名字存储时，运行前解析后回填）。
+func (o *MediaOrganizer) SetRootID(id string) { o.rootID = id }
+
 // ── 公共接口 ────────────────────────────────────────────────
 
 // FolderPathFor 根据文件名（或目录名）计算目标文件夹路径字符串，不操作网盘。

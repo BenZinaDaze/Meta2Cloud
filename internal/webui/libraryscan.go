@@ -380,15 +380,15 @@ func scanSingleMovieFolder(_ cloudfile.Provider, folder cloudfile.CloudFile, cfg
 	}
 }
 
-// ScanMovies 全量扫描电影。
-// categoryScanRoot 分类启用时的扫描根（媒体库根/一级目录）；未启用返回空串。
+// categoryScanRoot 分类布局下的扫描根：先按名解析媒体库根目录，再在其下定位一级分类目录。
+// 任一环节未找到返回空串（上层按空串跳过该类型扫描）。
 func categoryScanRoot(client cloudfile.Provider, isTV bool) string {
 	cats := RT().GetCategories()
 	if cats == nil {
 		return ""
 	}
-	rootID := RT().GetConfig().ActiveRootFolderID()
-	if rootID == "" {
+	rootID, ok := cloudfile.FindFolderByName(client, RT().GetConfig().ActiveRootFolderID())
+	if !ok {
 		return ""
 	}
 	name := cats.Dirs.TV
