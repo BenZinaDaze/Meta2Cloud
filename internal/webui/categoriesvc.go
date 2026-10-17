@@ -2,8 +2,10 @@
 package webui
 
 import (
+	"log"
 	"net/http"
 
+	"meta2cloud/internal/cloudfile"
 	"meta2cloud/internal/config"
 )
 
@@ -53,6 +55,36 @@ func handleSaveCategories(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if enabled {
+		// 预创建分类目录树（幂等），保存后立即可在文件管理/网盘看到结构
+		provider := RT().GetStorageProvider()
+		rootID := RT().GetConfig().ActiveRootFolderID()
+		if provider != nil && rootID != "" {
+			ensure := func(parentID, name string) string {
+				dir, err := cloudfile.GetOrCreateFolder(provider, name, parentID)
+				if err != nil {
+					log.Printf("预创建分类目录失败 %q: %v", name, err)
+					return ""
+				}
+				return dir.ID
+			}
+			for _, pair := range []struct {
+				level1 string
+				rules  []config.CategoryRule
+			}{
+				{cats.Dirs.TV, cats.TV},
+				{cats.Dirs.Movie, cats.Movie},
+			} {
+				l1 := ensure(rootID, pair.level1)
+				for _, r := range pair.rules {
+					if l1 != "" && r.Name != "" && r.Name != pair.level1 {
+						ensure(l1, r.Name)
+					}
+				}
+			}
+			ensure(rootID, cats.Dirs.Other)
+		}
 	}
 	if enabled {
 		appLog("library", "categories_save", "SUCCESS", "媒体分类配置已启用", nil)
