@@ -32,7 +32,10 @@ func NewServer() *Server {
 }
 
 // Close 释放后台任务。
-func (s *Server) Close() { close(s.stop) }
+func (s *Server) Close() {
+	close(s.stop)
+	StopBackgroundWatchers()
+}
 
 // loadStaticFiles 加载 frontend/dist（存在时）。
 func loadStaticFiles() http.Handler {

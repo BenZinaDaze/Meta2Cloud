@@ -274,6 +274,22 @@ func StartupBackgroundWatchers() {
 	ensureStrmSyncLoop()
 }
 
+// StopBackgroundWatchers 停止全部后台监听线程（幂等）。
+// 供 Server.Close 与测试清理调用，避免线程在临时目录清理后仍惰性重建
+// config/data（测试偶发 TempDir 清理竞态的根因）。
+// 注意：停止后当前进程内不会重启（ensure*Loop 的 sync.Once 已消费）；
+// 生产环境进程生命周期即线程生命周期，不受影响。
+func StopBackgroundWatchers() {
+	for _, w := range []*watcherState{u115AutoWatcher, rssWatcher, strmWatcher} {
+		w.mu.Lock()
+		if !w.stopped {
+			w.stopped = true
+			close(w.stopCh)
+		}
+		w.mu.Unlock()
+	}
+}
+
 // U115AutoOrganizeStatusPayload 115 自动整理状态。
 func U115AutoOrganizeStatusPayload() map[string]any {
 	cfg := RT().GetConfig()
