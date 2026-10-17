@@ -11,7 +11,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import type { CloudFile, PathBreadcrumbItem } from '@/types/api'
+import type { CloudFile } from '@/types/api'
+
+interface Crumb {
+  id: string
+  name: string
+}
+
+const ROOT_CRUMB: Crumb = { id: '0', name: '根目录' }
 
 interface FolderSelectInputProps {
   /** 存储值：目录名（网盘根目录下的直接子目录） */
@@ -24,14 +31,21 @@ export default function FolderSelectInput({ value, onChange, placeholder }: Fold
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [items, setItems] = useState<CloudFile[]>([])
-  const [crumbs, setCrumbs] = useState<PathBreadcrumbItem[]>([])
+  // 面包屑在前端自维护：进入子目录时名字就在列表里，栈式追加/截断，
+  // 不依赖后端 path（其目录名需额外传参且层级有限），也不产生额外 API 调用
+  const [crumbs, setCrumbs] = useState<Crumb[]>([ROOT_CRUMB])
 
-  const browse = useCallback(async (folderId?: string) => {
+  const browse = useCallback(async (folderId?: string, folderName?: string) => {
     setLoading(true)
     try {
       const res = await listFiles(folderId ? { folder_id: folderId } : undefined)
       setItems(((res.data?.items || []) as CloudFile[]).filter((f) => f.file_type === 'folder'))
-      setCrumbs(res.data?.path || [])
+      setCrumbs((prev) => {
+        if (!folderId) return [ROOT_CRUMB]
+        const idx = prev.findIndex((c) => c.id === folderId)
+        if (idx >= 0) return prev.slice(0, idx + 1) // 点面包屑回跳：截断
+        return [...prev, { id: folderId, name: folderName || folderId }]
+      })
     } finally {
       setLoading(false)
     }
@@ -39,10 +53,11 @@ export default function FolderSelectInput({ value, onChange, placeholder }: Fold
 
   const openDialog = () => {
     setOpen(true)
-    browse(crumbs.length ? crumbs[crumbs.length - 1].id : undefined)
+    const last = crumbs[crumbs.length - 1]
+    browse(last.id === ROOT_CRUMB.id ? undefined : last.id, last.name)
   }
 
-  const parent = crumbs.length >= 2 ? crumbs[crumbs.length - 2].id : ''
+  const parent = crumbs.length >= 2 ? crumbs[crumbs.length - 2] : null
 
   const choose = () => {
     // 保存目录名而非 ID：后端按名解析，改名/重建无需重新配置
@@ -51,7 +66,6 @@ export default function FolderSelectInput({ value, onChange, placeholder }: Fold
     onChange(name)
     setOpen(false)
   }
-
 
   return (
     <>
@@ -75,22 +89,17 @@ export default function FolderSelectInput({ value, onChange, placeholder }: Fold
           </DialogHeader>
 
           <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-            <button onClick={() => browse()} className="hover:text-foreground">
-              根目录
-            </button>
-            {crumbs
-              .filter((c, i) => i === 0 || c.name !== crumbs[i - 1].name)
-              .map((c, i, arr) => (
-                <span key={c.id} className="flex items-center gap-1">
-                  {i > 0 && <ChevronRight className="size-3" />}
-                  <button
-                    onClick={() => browse(c.id)}
-                    className={i === arr.length - 1 ? 'text-foreground' : 'hover:text-foreground'}
-                  >
-                    {c.name || c.id}
-                  </button>
-                </span>
-              ))}
+            {crumbs.map((c, i) => (
+              <span key={c.id} className="flex items-center gap-1">
+                {i > 0 && <ChevronRight className="size-3" />}
+                <button
+                  onClick={() => browse(c.id === ROOT_CRUMB.id ? undefined : c.id, c.name)}
+                  className={i === crumbs.length - 1 ? 'text-foreground' : 'hover:text-foreground'}
+                >
+                  {c.name}
+                </button>
+              </span>
+            ))}
           </div>
 
           <div className="max-h-72 min-h-32 overflow-y-auto rounded-lg border border-border/60">
@@ -105,7 +114,7 @@ export default function FolderSelectInput({ value, onChange, placeholder }: Fold
               items.map((f) => (
                 <button
                   key={f.id}
-                  onClick={() => browse(f.id)}
+                  onClick={() => browse(f.id, f.name)}
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50"
                 >
                   <Folder className="size-4 shrink-0 text-warning" />
@@ -120,8 +129,8 @@ export default function FolderSelectInput({ value, onChange, placeholder }: Fold
             <Button
               variant="outline"
               size="sm"
-              onClick={() => browse(parent)}
-              disabled={crumbs.length === 0}
+              onClick={() => parent && browse(parent.id === ROOT_CRUMB.id ? undefined : parent.id, parent.name)}
+              disabled={!parent}
             >
               返回上级
             </Button>
