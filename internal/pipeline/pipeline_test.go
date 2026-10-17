@@ -629,7 +629,7 @@ func TestBuildNotifyCaption(t *testing.T) {
 	cfg := newTestConfig()
 	provider := newFakeProvider()
 	p := New(provider, cfg, Options{
-		SkipTmdb: true,
+		SkipTmdb:        true,
 		OnVideoIngested: func(ProcessResult) error { return nil },
 	})
 	ep1, ep2 := 1, 2

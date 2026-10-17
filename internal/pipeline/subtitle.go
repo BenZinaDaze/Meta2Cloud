@@ -5,6 +5,7 @@ package pipeline
 
 import (
 	"fmt"
+	"log"
 	"regexp"
 	"sort"
 	"strings"
@@ -274,4 +275,90 @@ func (m *SubtitleMatcher) BuildTargetName(videoName, subtitleExt string, languag
 		}
 	}
 	return videoStem + subtitleExt
+}
+
+// ── 视频字幕随视频移动（自 pipeline.go 归位） ────────────────
+
+// ── 字幕移动 ────────────────────────────────────────────────
+
+func (p *Pipeline) moveSubtitlesForVideo(video cloudfile.CloudFile, cleanVideoName string, targetFolder *cloudfile.CloudFile, subtitleIndex map[string][]cloudfile.CloudFile) {
+	videoParent := video.ParentID
+	if videoParent == "" && len(video.Parents) > 0 {
+		videoParent = video.Parents[0]
+	}
+	candidates := subtitleIndex[videoParent]
+	if len(candidates) == 0 {
+		return
+	}
+
+	matcher := &SubtitleMatcher{}
+	matches := matcher.FindSubtitlesForVideo(video, candidates)
+	if len(matches) == 0 {
+		return
+	}
+
+	processedIDs := map[string]bool{}
+	for i := range matches {
+		match := &matches[i]
+		targetSubtitleName := matcher.BuildTargetName(cleanVideoName, match.SubtitleFile.Extension(), match.LanguageTags)
+
+		if p.dryRun || targetFolder == nil {
+			p.log(fmt.Sprintf("      字幕：%s  [dry-run，不移动]", targetSubtitleName), "INFO")
+			continue
+		}
+
+		// 字幕是否已在目标位置
+		if match.SubtitleFile.ParentID == targetFolder.ID && match.SubtitleFile.Name == targetSubtitleName {
+			processedIDs[match.SubtitleFile.ID] = true
+			langStr := strings.Join(match.LanguageTags, ".")
+			if langStr == "" {
+				langStr = "default"
+			}
+			p.log(fmt.Sprintf("      字幕：%s (%s) [已就位]", targetSubtitleName, langStr), "INFO")
+			continue
+		}
+
+		// 目标位置已存在同名字幕
+		existingSub, err := p.provider.FindFile(targetSubtitleName, targetFolder.ID)
+		if err == nil && existingSub != nil {
+			if existingSub.ID == match.SubtitleFile.ID {
+				continue
+			}
+			if p.replaceExistingVideo {
+				if _, err := p.provider.TrashFile(existingSub.ID); err != nil {
+					log.Printf("移除已存在字幕失败 [%s]: %v", targetSubtitleName, err)
+					continue
+				}
+				p.log(fmt.Sprintf("      字幕：移除已存在的 %s", targetSubtitleName), "INFO")
+			} else {
+				log.Printf("目标位置已存在字幕 %s，跳过", targetSubtitleName)
+				continue
+			}
+		}
+
+		if _, err := p.provider.MoveFile(match.SubtitleFile.ID, targetFolder.ID, targetSubtitleName); err != nil {
+			log.Printf("移动字幕失败 [%s]: %v", match.SubtitleFile.Name, err)
+			continue
+		}
+		processedIDs[match.SubtitleFile.ID] = true
+
+		langStr := strings.Join(match.LanguageTags, ".")
+		if langStr == "" {
+			langStr = "default"
+		}
+		p.log(fmt.Sprintf("      字幕：%s (%s) ✓", targetSubtitleName, langStr), "SUCCESS")
+	}
+
+	// 从索引中移除已处理的字幕，避免重复匹配
+	if len(processedIDs) > 0 {
+		if list, ok := subtitleIndex[videoParent]; ok {
+			var remaining []cloudfile.CloudFile
+			for _, sub := range list {
+				if !processedIDs[sub.ID] {
+					remaining = append(remaining, sub)
+				}
+			}
+			subtitleIndex[videoParent] = remaining
+		}
+	}
 }
