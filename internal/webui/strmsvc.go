@@ -431,27 +431,28 @@ func writeSidecarFile(localPath string, data []byte) error {
 
 // HandleVideoIngested 整理流水线入库成功后的回调（单文件实时生成 STRM）。
 // 通过 TargetFolder 向上回溯父目录链定位映射根，计算相对路径。
-func HandleVideoIngested(result pipeline.ProcessResult) {
+// 返回 nil 表示 STRM 已生成；返回 error 表示生成失败或目标不在任何映射目录下。
+func HandleVideoIngested(result pipeline.ProcessResult) error {
 	if result.Status != "ok" || result.TargetFolder == nil {
-		return
+		return fmt.Errorf("整理结果无效")
 	}
 	pickCode := pickCodeOf(result.File)
 	if pickCode == "" {
-		return
+		return fmt.Errorf("缺少 pick_code")
 	}
 	cfg := RT().GetConfig()
 	if !cfg.Strm.Enabled || cfg.Strm.URLBase == "" {
-		return
+		return fmt.Errorf("STRM 未启用")
 	}
 	st := RT().GetStrmStore()
 	provider := RT().GetStorageProvider()
 	if st == nil || provider == nil {
-		return
+		return fmt.Errorf("存储不可用")
 	}
 
 	mapping, relPath, ok := locateMapping(provider, cfg, *result.TargetFolder)
 	if !ok {
-		return // 文件不在任何映射目录下
+		return fmt.Errorf("目标目录不在任何 STRM 映射下")
 	}
 	localRoot := filepath.Clean(mapping.LocalPath)
 
@@ -506,6 +507,7 @@ func HandleVideoIngested(result pipeline.ProcessResult) {
 	}
 	strmSvc.hookLastAt = time.Now()
 	scheduleIngestFlush()
+	return nil
 }
 
 // locateMapping 从目标文件夹沿 ParentID 向上回溯，找到包含它的映射与相对目录路径。

@@ -624,3 +624,54 @@ func TestPipelineMergeDerivesPinFromOldestFolder(t *testing.T) {
 		t.Fatalf("钉扎未按最旧目录落库: %q %q %v", title, year, ok)
 	}
 }
+
+func TestBuildNotifyCaption(t *testing.T) {
+	cfg := newTestConfig()
+	provider := newFakeProvider()
+	p := New(provider, cfg, Options{
+		SkipTmdb: true,
+		OnVideoIngested: func(ProcessResult) error { return nil },
+	})
+	ep1, ep2 := 1, 2
+	base := notifyItem{
+		Title: "学生会也有洞", Year: "2026", IsTV: true,
+		Season: 1, Rating: 7.7, Country: "日番 · 日本",
+		Genres:      []string{"动画", "喜剧"},
+		SeasonTotal: 12, Overview: "高一水之江梅有着极其高超的文学造诣。",
+		StrmOK: true,
+	}
+	items := []notifyItem{
+		func() notifyItem { it := base; it.Episode = &ep1; return it }(),
+		func() notifyItem { it := base; it.Episode = &ep2; return it }(),
+	}
+	caption := p.buildNotifyCaption(base, items)
+
+	for _, want := range []string{
+		"✅ 入库完成 · 学生会也有洞 (2026)  S01E01-E02",
+		"📺 S01E01-E02 · 本季共 12 集",
+		"⭐ 7.7 · 日番 · 日本",
+		"📦 入库 2 个文件 · STRM 已生成",
+		"#学生会也有洞 #动画 #喜剧",
+		"<blockquote expandable>高一水之江梅有着极其高超的文学造诣。</blockquote>",
+	} {
+		if !strings.Contains(caption, want) {
+			t.Errorf("caption 缺少 %q:\n%s", want, caption)
+		}
+	}
+}
+
+func TestSeasonSegmentsSparseEpisodes(t *testing.T) {
+	e1, e3, e5 := 1, 3, 5
+	items := []notifyItem{
+		{Season: 1, Episode: &e1, SeasonTotal: 12},
+		{Season: 1, Episode: &e3, SeasonTotal: 12},
+		{Season: 1, Episode: &e5, SeasonTotal: 12},
+	}
+	segs := seasonSegments(items)
+	if len(segs) != 1 || segs[0].Range != "S01E01、E03、E05" {
+		t.Fatalf("segs = %+v", segs)
+	}
+	if segs[0].Total != 12 {
+		t.Fatalf("Total = %d", segs[0].Total)
+	}
+}
