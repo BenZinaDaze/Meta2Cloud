@@ -58,6 +58,7 @@ export default function ParseTestModal({
   const [error, setError] = useState('')
   const [result, setResult] = useState<{
     name?: string
+    category?: { level1?: string; level2?: string }
     type_label?: string
     year?: string
     season?: number
@@ -224,6 +225,12 @@ export default function ParseTestModal({
                     ['字幕组', result.release_group || '-'],
                     ['TMDB ID', result.tmdbid ?? '-'],
                     ['豆瓣 ID', result.doubanid || '-'],
+                    ...(result.category
+                      ? [
+                          ['一级分类', result.category.level1 || '-'],
+                          ['二级分类', result.category.level2 || '-'],
+                        ]
+                      : []),
                     ['应用规则', result.apply_words?.join(', ') || '-'],
                   ].map(([label, value]) => (
                     <InfoCard key={label} label={label as string} value={value as string} />

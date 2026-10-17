@@ -297,6 +297,22 @@ func parserTestPayload(filename string, skipTmdb bool) (map[string]any, string, 
 			if y := jsonx.Str(tmdbPayload, "year"); y != "" && meta.Year == "" {
 				payload["year"] = y
 			}
+			// 分类解析（分类布局启用时，与整理管线同一套规则）
+			if cats := RT().GetCategories(); cats != nil {
+				isTV := meta.Type == mediaparser.MediaTV
+				var genreIDs []int
+				if genres, ok := found["genres"].([]any); ok {
+					for _, g := range genres {
+						if gm, ok := g.(map[string]any); ok {
+							if id := jsonx.Int(gm, "id", 0); id != 0 {
+								genreIDs = append(genreIDs, int(id))
+							}
+						}
+					}
+				}
+				level1, level2 := cats.Resolve(isTV, genreIDs, jsonx.Str(found, "original_language"))
+				payload["category"] = map[string]any{"level1": level1, "level2": level2}
+			}
 		}
 	}
 	payload["tmdb"] = tmdbPayload

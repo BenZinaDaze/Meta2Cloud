@@ -179,18 +179,18 @@ func newScanServer(t *testing.T) (*httptest.Server, string) {
 	t.Helper()
 	rootDir := t.TempDir()
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
-	cfgYAML := "webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n  movie_root_id: \"movies\"\n  tv_root_id: \"tv\"\n"
+	cfgYAML := "webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n"
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
 	ResetJWTSecretCache()
 	InitRuntime(rootDir)
 
-	// 构造假网盘：movies/电影 (2010)，tv/剧 (2008)/Season 01/S01E01
+	// 构造假网盘（分类布局）：媒体库根/电影/电影 (2010)；媒体库根/剧集/剧 (2008)/Season 01/S01E01
 	fp := newFakeWebProvider()
-	fp.addFolder("movies", "0")
-	fp.addFolder("tv", "0")
-	movie := fp.addFolder("电影 (2010)", "movies")
+	movieCat := fp.addFolder("电影", "root")
+	tvCat := fp.addFolder("剧集", "root")
+	movie := fp.addFolder("电影 (2010)", movieCat.ID)
 	_ = movie
-	show := fp.addFolder("剧 (2008)", "tv")
+	show := fp.addFolder("剧 (2008)", tvCat.ID)
 	season := fp.addFolder("Season 01", show.ID)
 	fp.addFile("剧 - S01E01.mkv", season.ID)
 
@@ -950,20 +950,20 @@ func TestScanAggregatesDuplicateShowFolders(t *testing.T) {
 	rootDir := t.TempDir()
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
-		[]byte("webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n  tv_root_id: \"tv\"\n"), 0o644)
+		[]byte("webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n"), 0o644)
 	ResetJWTSecretCache()
 	InitRuntime(rootDir)
 
 	fp := newFakeWebProvider()
-	fp.addFolder("tv", "0")
+	tvCat := fp.addFolder("剧集", "root")
 	// 目录 A: 官方译名, 12 集
-	showA := fp.addFolder("令和的斑小姐 (2026)", "tv")
+	showA := fp.addFolder("令和的斑小姐 (2026)", tvCat.ID)
 	seasonA := fp.addFolder("Season 01", showA.ID)
 	for ep := 1; ep <= 12; ep++ {
 		fp.addFile(fmt.Sprintf("令和的斑小姐 - S01E%02d.mkv", ep), seasonA.ID)
 	}
 	// 目录 B: 民间译名, 仅 1 集(E06)
-	showB := fp.addFolder("令和妖神斑小姐 (2026)", "tv")
+	showB := fp.addFolder("令和妖神斑小姐 (2026)", tvCat.ID)
 	seasonB := fp.addFolder("Season 01", showB.ID)
 	fp.addFile("令和妖神斑小姐 - S01E06.mkv", seasonB.ID)
 	RT().SetProviderForTest(fp.provider())
@@ -1051,13 +1051,13 @@ func TestIncrementalSiblingRescan(t *testing.T) {
 	rootDir := t.TempDir()
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
-		[]byte("webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n  tv_root_id: \"tv\"\n"), 0o644)
+		[]byte("webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n"), 0o644)
 	ResetJWTSecretCache()
 	InitRuntime(rootDir)
 
 	fp := newFakeWebProvider()
-	fp.addFolder("tv", "0") // 占位；扫描走 tv_root_id="tv"，show 目录挂在字符串 "tv" 下
-	showA := fp.addFolder("令和的斑小姐 (2026)", "tv")
+	tvCat := fp.addFolder("剧集", "root")
+	showA := fp.addFolder("令和的斑小姐 (2026)", tvCat.ID)
 	seasonA := fp.addFolder("Season 01", showA.ID)
 	for ep := 1; ep <= 12; ep++ {
 		if ep == 6 {
@@ -1065,7 +1065,7 @@ func TestIncrementalSiblingRescan(t *testing.T) {
 		}
 		fp.addFile(fmt.Sprintf("令和的斑小姐 - S01E%02d.mkv", ep), seasonA.ID)
 	}
-	showB := fp.addFolder("令和妖神斑小姐 (2026)", "tv")
+	showB := fp.addFolder("令和妖神斑小姐 (2026)", tvCat.ID)
 	seasonB := fp.addFolder("Season 01", showB.ID)
 	fp.addFile("令和妖神斑小姐 - S01E06.mkv", seasonB.ID)
 	// 剧集增量时间按 Season 叶子目录计算，初始 mtime 一致

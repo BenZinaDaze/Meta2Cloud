@@ -159,8 +159,6 @@ func New(provider cloudfile.Provider, cfg *config.Config, opts Options) *Pipelin
 		organizer: organizer.New(
 			provider,
 			cfg.ActiveRootFolderID(),
-			cfg.ActiveMovieRootID(),
-			cfg.ActiveTvRootID(),
 			dryRun,
 		),
 		tmdbWriteCache:    opts.TmdbCache,
@@ -606,8 +604,14 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 	var targetFolder *cloudfile.CloudFile
 	var topFolderID string
 	baseID := ""
-	if p.categories != nil && tmdbInfo != nil {
-		level1, level2 := p.categories.Resolve(isTV, tmdbGenreIDs(tmdbInfo), jsonx.Str(tmdbInfo, "original_language"))
+	if p.categories != nil {
+		level1, level2 := "", ""
+		if tmdbInfo != nil {
+			level1, level2 = p.categories.Resolve(isTV, tmdbGenreIDs(tmdbInfo), jsonx.Str(tmdbInfo, "original_language"))
+		} else {
+			// 无 TMDB 元数据：落"其他"一级目录（无法判定二级）
+			level1 = p.categories.Dirs.Other
+		}
 		if !p.dryRun {
 			if bid, err := p.ensureCategoryChain(level1, level2); err == nil {
 				baseID = bid
@@ -615,7 +619,11 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 				log.Printf("分类目录创建失败，回退默认根目录：%v", err)
 			}
 		}
-		p.log(fmt.Sprintf("      分类：%s/%s", level1, level2), "INFO")
+		if level2 != "" {
+			p.log(fmt.Sprintf("      分类：%s/%s", level1, level2), "INFO")
+		} else {
+			p.log(fmt.Sprintf("      分类：%s", level1), "INFO")
+		}
 	}
 	if !p.dryRun {
 		if baseID != "" {

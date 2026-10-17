@@ -454,9 +454,6 @@ func expandCategoryFolders(client cloudfile.Provider, folders []cloudfile.CloudF
 func ScanMovies(client cloudfile.Provider, cfg *config.Config) []MediaItem {
 	movieRoot := categoryScanRoot(client, false)
 	if movieRoot == "" {
-		movieRoot = cfg.ActiveMovieRootID()
-	}
-	if movieRoot == "" {
 		return []MediaItem{}
 	}
 	folders, err := client.ListFiles(movieRoot, 500)
@@ -585,9 +582,6 @@ func scanSingleTVFolder(client cloudfile.Provider, cfg *config.Config, showFolde
 func ScanTVShows(client cloudfile.Provider, cfg *config.Config, useCache bool) []MediaItem {
 	tvRoot := categoryScanRoot(client, true)
 	if tvRoot == "" {
-		tvRoot = cfg.ActiveTvRootID()
-	}
-	if tvRoot == "" {
 		return []MediaItem{}
 	}
 	folders, err := client.ListFiles(tvRoot, 500)
@@ -611,9 +605,6 @@ func ScanTVShows(client cloudfile.Provider, cfg *config.Config, useCache bool) [
 // ScanMoviesIncremental 增量扫描电影（mtime 未变则跳过）。
 func ScanMoviesIncremental(client cloudfile.Provider, cfg *config.Config, storedMtimes map[string]int64) ([]MediaItem, map[string]int64) {
 	movieRoot := categoryScanRoot(client, false)
-	if movieRoot == "" {
-		movieRoot = cfg.ActiveMovieRootID()
-	}
 	if movieRoot == "" {
 		return []MediaItem{}, map[string]int64{}
 	}
@@ -644,9 +635,6 @@ func ScanMoviesIncremental(client cloudfile.Provider, cfg *config.Config, stored
 // ScanTVShowsIncremental 增量扫描剧集。
 func ScanTVShowsIncremental(client cloudfile.Provider, cfg *config.Config, storedMtimes map[string]int64) ([]MediaItem, map[string]int64) {
 	tvRoot := categoryScanRoot(client, true)
-	if tvRoot == "" {
-		tvRoot = cfg.ActiveTvRootID()
-	}
 	if tvRoot == "" {
 		return []MediaItem{}, map[string]int64{}
 	}

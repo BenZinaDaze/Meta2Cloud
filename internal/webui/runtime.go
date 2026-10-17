@@ -123,7 +123,8 @@ func (rt *Runtime) categoriesPath() string {
 	return filepath.Join(filepath.Dir(rt.configPath), config.CategoriesFilename)
 }
 
-// GetCategories 分类配置单例（categories.yaml 变更自动重载；文件不存在返回 nil = 未启用）。
+// GetCategories 分类配置单例（categories.yaml 变更自动重载；
+// 文件不存在时使用默认分类——分类布局始终启用）。
 func (rt *Runtime) GetCategories() *config.CategoriesConfig {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
@@ -132,16 +133,19 @@ func (rt *Runtime) GetCategories() *config.CategoriesConfig {
 		rt.categoriesM = m
 	}
 	if rt.categories == nil {
-		if c, err := config.LoadCategories(rt.categoriesPath()); err == nil && c != nil {
+		if c, err := config.LoadCategories(rt.categoriesPath()); err == nil {
 			rt.categories = c
-		} else if err != nil && !os.IsNotExist(err) {
-			log.Printf("分类配置加载失败（按未启用处理）：%v", err)
+		} else {
+			if !os.IsNotExist(err) {
+				log.Printf("分类配置加载失败（使用默认分类）：%v", err)
+			}
+			rt.categories = config.DefaultCategories()
 		}
 	}
 	return rt.categories
 }
 
-// SetCategories 保存分类配置并刷新单例（启用分类）。
+// SetCategories 保存分类配置并刷新单例。
 func (rt *Runtime) SetCategories(c *config.CategoriesConfig) error {
 	if err := config.SaveCategories(rt.categoriesPath(), c); err != nil {
 		return err
@@ -149,19 +153,6 @@ func (rt *Runtime) SetCategories(c *config.CategoriesConfig) error {
 	rt.mu.Lock()
 	rt.categories = c
 	rt.categoriesM = fileMtime(rt.categoriesPath())
-	rt.mu.Unlock()
-	return nil
-}
-
-// ClearCategories 删除分类配置文件（停用分类布局，回到电影根/剧集根）。
-func (rt *Runtime) ClearCategories() error {
-	path := rt.categoriesPath()
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	rt.mu.Lock()
-	rt.categories = nil
-	rt.categoriesM = 0
 	rt.mu.Unlock()
 	return nil
 }
@@ -252,9 +243,8 @@ func (rt *Runtime) GetStorageProvider() cloudfile.Provider {
 			p.LookupRoots = func() []string {
 				c := RT().GetConfig()
 				return []string{
-					c.ActiveRootFolderID(), c.ActiveMovieRootID(),
-					c.ActiveTvRootID(), c.ActiveScanFolderID(),
-					c.U115.RootFolderID, c.U115.MovieRootID, c.U115.TvRootID, c.U115.DownloadFolderID,
+					c.ActiveRootFolderID(), c.ActiveScanFolderID(),
+					c.U115.RootFolderID, c.U115.DownloadFolderID,
 				}
 			}
 			rt.provider = p

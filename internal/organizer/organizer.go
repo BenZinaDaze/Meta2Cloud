@@ -22,27 +22,17 @@ import (
 // provider 为任意网盘 Provider；movieRootID / tvRootID 为空时使用 rootFolderID；
 // dryRun 为 true 时只计算路径，不实际创建文件夹。
 type MediaOrganizer struct {
-	provider    cloudfile.Provider
-	rootID      string
-	movieRootID string
-	tvRootID    string
-	dryRun      bool
+	provider cloudfile.Provider
+	rootID   string
+	dryRun   bool
 }
 
-// New 构造整理器。
-func New(provider cloudfile.Provider, rootFolderID, movieRootID, tvRootID string, dryRun bool) *MediaOrganizer {
-	if movieRootID == "" {
-		movieRootID = rootFolderID
-	}
-	if tvRootID == "" {
-		tvRootID = rootFolderID
-	}
+// New 构造整理器（rootFolderID 为媒体库根目录，分类布局下的所有目录链挂在其下）。
+func New(provider cloudfile.Provider, rootFolderID string, dryRun bool) *MediaOrganizer {
 	return &MediaOrganizer{
-		provider:    provider,
-		rootID:      rootFolderID,
-		movieRootID: movieRootID,
-		tvRootID:    tvRootID,
-		dryRun:      dryRun,
+		provider: provider,
+		rootID:   rootFolderID,
+		dryRun:   dryRun,
 	}
 }
 
@@ -143,12 +133,8 @@ func (o *MediaOrganizer) ensureFolders(meta *mediaparser.MetaBase, label string)
 		return nil, fmt.Errorf("解析失败，跳过：%q", label)
 	}
 
-	// 选择基准目录
-	baseID := o.movieRootID
-	if meta.Type == mediaparser.MediaTV {
-		baseID = o.tvRootID
-	}
-	return o.ensureFoldersUnder(baseID, meta, label)
+	// 基准目录：媒体库根（分类布局下由管线传入分类目录链）
+	return o.ensureFoldersUnder(o.rootID, meta, label)
 }
 
 // ensureFoldersUnder 在指定基准目录下幂等创建目录链，返回叶子文件夹。

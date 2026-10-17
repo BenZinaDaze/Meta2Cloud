@@ -1069,22 +1069,6 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                       mono
                     />
                   </Field>
-                  <Field label="电影归档目录" description="留空同根目录">
-                    <TextInput
-                      value={(cfg?.u115 as Record<string, unknown>)?.movie_root_id as string | undefined}
-                      onChange={(v) => set('u115', 'movie_root_id', v)}
-                      placeholder="留空同根目录"
-                      mono
-                    />
-                  </Field>
-                  <Field label="剧集归档目录" description="留空同根目录">
-                    <TextInput
-                      value={(cfg?.u115 as Record<string, unknown>)?.tv_root_id as string | undefined}
-                      onChange={(v) => set('u115', 'tv_root_id', v)}
-                      placeholder="留空同根目录"
-                      mono
-                    />
-                  </Field>
                 </FieldGroup>
 
                 <Separator className="opacity-60" />

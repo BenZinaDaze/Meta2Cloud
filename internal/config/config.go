@@ -60,8 +60,6 @@ type U115 struct {
 	Cookie                    string `yaml:"cookie"`
 	DownloadFolderID          string `yaml:"download_folder_id"`
 	RootFolderID              string `yaml:"root_folder_id"`
-	MovieRootID               string `yaml:"movie_root_id"`
-	TvRootID                  string `yaml:"tv_root_id"`
 	AutoOrganizeEnabled       bool   `yaml:"auto_organize_enabled"`
 	AutoOrganizePollSeconds   int    `yaml:"auto_organize_poll_seconds"`
 	AutoOrganizeStableSeconds int    `yaml:"auto_organize_stable_seconds"`
@@ -347,8 +345,6 @@ func parseU115(m map[string]any) U115 {
 		Cookie:                    str(m, "cookie", ""),
 		DownloadFolderID:          str(m, "download_folder_id", ""),
 		RootFolderID:              str(m, "root_folder_id", ""),
-		MovieRootID:               str(m, "movie_root_id", ""),
-		TvRootID:                  str(m, "tv_root_id", ""),
 		AutoOrganizeEnabled:       boolean(m, "auto_organize_enabled", false),
 		AutoOrganizePollSeconds:   maxInt(integer(m, "auto_organize_poll_seconds", 45), 10),
 		AutoOrganizeStableSeconds: maxInt(integer(m, "auto_organize_stable_seconds", 30), 0),
@@ -513,21 +509,5 @@ func (c *Config) ActiveScanFolderID() string {
 
 // ActiveRootFolderID 返回当前存储后端的媒体库根目录 ID。
 func (c *Config) ActiveRootFolderID() string {
-	return c.U115.RootFolderID
-}
-
-// ActiveMovieRootID 返回电影根目录 ID，未单独配置时回退到媒体库根目录。
-func (c *Config) ActiveMovieRootID() string {
-	if c.U115.MovieRootID != "" {
-		return c.U115.MovieRootID
-	}
-	return c.U115.RootFolderID
-}
-
-// ActiveTvRootID 返回剧集根目录 ID，未单独配置时回退到媒体库根目录。
-func (c *Config) ActiveTvRootID() string {
-	if c.U115.TvRootID != "" {
-		return c.U115.TvRootID
-	}
 	return c.U115.RootFolderID
 }
