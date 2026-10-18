@@ -275,3 +275,21 @@ func TestMediaParentIDPersistence(t *testing.T) {
 		t.Fatalf("空父信息载荷不应清掉已有 parent_id: %+v", refs)
 	}
 }
+
+func TestTitlesMatchContainmentGuard(t *testing.T) {
+	// 衍生条目长后缀：不得因包含关系绑到正篇的库记录
+	if TitlesMatch("空之境界 未来福音 extra chorus", []string{"空之境界 未来福音"}) {
+		t.Fatal("长后缀衍生条目不应匹配正篇")
+	}
+	// 数字缀（年份/序号）仍匹配
+	if !TitlesMatch("学生会也有洞 2026", []string{"学生会也有洞！"}) {
+		t.Fatal("数字缀应匹配")
+	}
+	if !TitlesMatch("斗罗大陆", []string{"斗罗大陆2"}) {
+		t.Fatal("序号后缀应匹配")
+	}
+	// 短缀词仍匹配
+	if !TitlesMatch("斑小姐", []string{"令和的斑小姐"}) {
+		t.Fatal("短缀词应匹配")
+	}
+}

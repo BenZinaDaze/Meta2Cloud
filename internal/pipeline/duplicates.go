@@ -152,10 +152,44 @@ func titleSimilar(a, b string) bool {
 	if na == "" || nb == "" {
 		return false
 	}
-	if na == nb || strings.Contains(na, nb) || strings.Contains(nb, na) {
+	if na == nb {
 		return true
 	}
+	// 包含关系仅在多出部分足够短时视为相似（缩略译名/缀词，如「令和的」「剧场版」）；
+	// 长后缀是衍生条目特征（"未来福音" vs "未来福音 extra chorus"），
+	// 视为不同媒体——二元组相似度对衍生标题必然虚高（共享正篇全部字符），
+	// 不可作为合并依据
+	if strings.Contains(na, nb) || strings.Contains(nb, na) {
+		return containmentExtraSimilar(na, nb)
+	}
 	return bigramDice(na, nb) >= 0.35
+}
+
+// containmentExtraSimilar 包含关系下，多出部分为空、纯数字（年份/序号）或
+// ≤3 字缀词时视为相似；长缀是衍生条目特征，不相似。
+func containmentExtraSimilar(a, b string) bool {
+	long, short := a, b
+	if len([]rune(long)) < len([]rune(short)) {
+		long, short = short, long
+	}
+	extra := strings.Replace(long, short, "", 1)
+	if extra == "" {
+		return true
+	}
+	rs := []rune(extra)
+	if len(rs) <= 4 {
+		allDigit := true
+		for _, r := range rs {
+			if r < '0' || r > '9' {
+				allDigit = false
+				break
+			}
+		}
+		if allDigit {
+			return true
+		}
+	}
+	return len(rs) <= 3
 }
 
 // normalizeTitleForCompare 去年份、空白与标点，仅保留文字数字（小写）。

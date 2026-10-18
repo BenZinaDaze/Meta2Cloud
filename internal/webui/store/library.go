@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	_ "modernc.org/sqlite"
 
@@ -220,7 +221,7 @@ func lookupTitleVariants(title string) map[string]bool {
 	return variants
 }
 
-// TitlesMatch 标题模糊匹配（变体交集或 ≥4 字符的包含关系）。
+// TitlesMatch 标题模糊匹配（变体交集，或包含关系且多出部分无足轻重）。
 func TitlesMatch(query string, candidates []string) bool {
 	queryVariants := lookupTitleVariants(query)
 	if len(queryVariants) == 0 {
@@ -246,11 +247,43 @@ func TitlesMatch(query string, candidates []string) bool {
 				continue
 			}
 			if strings.Contains(c, q) || strings.Contains(q, c) {
-				return true
+				// 某个变体对多出部分过长时继续尝试其他变体（normalize 保留空格、
+				// compact 去除，数字缀可能只在 compact 变体上成立）
+				if containmentExtraOK(q, c) {
+					return true
+				}
 			}
 		}
 	}
 	return false
+}
+
+// containmentExtraOK 包含关系下，多出部分为空、纯数字（年份/序号）或 ≤3 字缀词
+// 时视为同一标题；长缀是衍生条目特征（"未来福音" vs "未来福音 extra chorus"），
+// 不视为同一标题——否则续作/特别篇会误绑到正篇的库记录。
+func containmentExtraOK(a, b string) bool {
+	long, short := a, b
+	if utf8.RuneCountInString(long) < utf8.RuneCountInString(short) {
+		long, short = short, long
+	}
+	extra := strings.Replace(long, short, "", 1)
+	if extra == "" {
+		return true
+	}
+	rs := []rune(extra)
+	if len(rs) <= 4 {
+		allDigit := true
+		for _, r := range rs {
+			if r < '0' || r > '9' {
+				allDigit = false
+				break
+			}
+		}
+		if allDigit {
+			return true
+		}
+	}
+	return len(rs) <= 3
 }
 
 // ── app_state ───────────────────────────────────────────────

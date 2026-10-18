@@ -15,6 +15,7 @@ import (
 	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/mediaparser"
 	"meta2cloud/internal/tmdb"
+	"meta2cloud/internal/webui/store"
 )
 
 // ── 前端数据模型（对应 schemas/library.py，JSON 键保持一致） ──
@@ -262,6 +263,29 @@ func tmdbDetailPath(mediaType string, tmdbID int64) string {
 	return "/movie/" + strconv.FormatInt(tmdbID, 10)
 }
 
+// storedTitleCandidates 库条目里可参与标题比对的候选名（标题/原名/别名）。
+func storedTitleCandidates(item map[string]any) []string {
+	cands := []string{}
+	for _, key := range []string{"title", "original_title"} {
+		if s := jsonx.Str(item, key); s != "" {
+			cands = append(cands, s)
+		}
+	}
+	for _, name := range jsonx.MapSlice(item, "names") {
+		if s := jsonx.Str(name, "name"); s != "" {
+			cands = append(cands, s)
+		}
+	}
+	if names, ok := item["names"].([]any); ok {
+		for _, name := range names {
+			if s, ok := name.(string); ok && s != "" {
+				cands = append(cands, s)
+			}
+		}
+	}
+	return cands
+}
+
 // resolveTmdbInfo 库缓存优先，其次 API。
 func resolveTmdbInfo(mediaType string, tmdbID int64) map[string]any {
 	if tmdbID <= 0 {
@@ -308,7 +332,13 @@ func resolveMediaIdentity(mediaType, driveFolderID, folderName string, cfg *conf
 	libStore := RT().GetLibraryStore()
 	if existing := libStore.GetLibraryItemByFolderID(driveFolderID); existing != nil {
 		if tmdbID := jsonx.Int(existing, "tmdb_id", 0); tmdbID > 0 {
-			return tmdbID, resolveTmdbInfo(mediaType, tmdbID)
+			// 沿用存量识别前先校验目录名：目录名与已识别标题差异过大
+			// （衍生条目曾被误绑到正篇，如「未来福音 extra chorus」绑到「未来福音」）
+			// 时丢弃旧 ID 重新识别，否则错误 ID 随库存记录永久延续且无从纠正
+			if store.TitlesMatch(folderName, storedTitleCandidates(existing)) {
+				return tmdbID, resolveTmdbInfo(mediaType, tmdbID)
+			}
+			log.Printf("目录 %q 与已识别标题 %q 不一致，重新识别", folderName, jsonx.Str(existing, "title"))
 		}
 	}
 	title, year := extractTitleYear(folderName)
