@@ -261,7 +261,7 @@ func (s *StrmStore) FinishSyncRun(runID int64, created, updated, removed, skippe
 func (s *StrmStore) failStaleRunningRuns() {
 	res, err := s.db.Exec(`UPDATE strm_sync_runs
 		SET finished_at = ?, error = '进程重启中断，同步未完成'
-		WHERE finished_at IS NULL`)
+		WHERE finished_at IS NULL`, strmNow())
 	if err != nil {
 		return
 	}
