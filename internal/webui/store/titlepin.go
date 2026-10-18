@@ -183,3 +183,45 @@ func (s *LibraryStore) earliestIngestTitle(mediaType string, tmdbID int64) (stri
 	}
 	return title, year, true
 }
+
+// MediaIdentity library_media 的标题身份（观看同步反查用，只读）。
+type MediaIdentity struct {
+	MediaType string
+	TmdbID    int64
+	Title     string
+	Year      string
+}
+
+// ListMediaIdentities 全量列出库内媒体的 (类型, tmdb_id, 标题, 年份)，tmdb_id > 0。
+// 供观看同步构建 TitleIndex（只读，不写入 library.db）。不过滤 in_library：
+// Plex 里存在的文件可能尚未被媒体库扫描覆盖，宁多勿缺。
+func (s *LibraryStore) ListMediaIdentities() ([]MediaIdentity, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT media_type, tmdb_id, title, year
+		FROM library_media WHERE tmdb_id > 0
+		ORDER BY media_type, tmdb_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []MediaIdentity{}
+	for rows.Next() {
+		var m MediaIdentity
+		if err := rows.Scan(&m.MediaType, &m.TmdbID, &m.Title, &m.Year); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// GetMediaTitle 按媒体键查库内标题（library_media 点查；观看同步明细展示用，只读）。
+func (s *LibraryStore) GetMediaTitle(mediaType string, tmdbID int64) string {
+	if tmdbID <= 0 {
+		return ""
+	}
+	var title string
+	_ = s.db.QueryRow(`SELECT title FROM library_media
+		WHERE media_type = ? AND tmdb_id = ? AND title != ''
+		ORDER BY in_library DESC, updated_at DESC LIMIT 1`, mediaType, tmdbID).Scan(&title)
+	return title
+}

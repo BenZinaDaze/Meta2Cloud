@@ -142,3 +142,45 @@ mediavault:
 
   # 请求超时（秒）
   timeout: 10
+
+# ─────────────────────────────────────────────────────────
+# 观看同步：Trakt ↔ Plex 双向同步（可选）
+# ─────────────────────────────────────────────────────────
+# WebUI「配置 → 观看同步」页可完成全部配对与选项设置。
+# 说明：
+#   - Trakt 已看记录 → Plex 标记已看；Plex 已看/正在看（≥80% 进度）→ 记录到 Trakt
+#   - 首次同步会合并两侧已看记录（并集），之后按增量双向同步；
+#     同一媒体两侧状态冲突时以 Trakt 为准（Trakt 记录更全更权威）
+#   - 身份以 TMDB ID 为锚：优先使用 Plex 条目的 tmdb:// GUID，
+#     否则按 Meta2Cloud 组织目录名（Title (Year)）反查
+trakt:
+  # 是否启用定时同步
+  enabled: false
+
+  # Trakt 应用凭证（https://trakt.tv/oauth/applications 创建应用后获取）
+  # 创建建议：类型任选，Redirect URI 填 http://localhost（授权走设备码流程，不发生回调）
+  # Trakt 为 PKCE 模式，无需 Client Secret
+  client_id: ""
+
+  # 授权 token 持久化路径（设备码配对成功后自动写入，90 天自动续期）
+  token_json: "config/trakt-token.json"
+
+  # 双向全量同步间隔（秒）；<60 视为关闭定时同步，仅手动触发
+  sync_interval_seconds: 900
+
+  # 「正在看」会话轮询间隔（秒）；播放进度 ≥80% 时记录到 Trakt
+  session_poll_seconds: 45
+
+  # 同步方向开关：Trakt → Plex / Plex → Trakt
+  sync_to_plex: true
+  sync_to_trakt: true
+
+plex:
+  # Plex Media Server 地址（Meta2Cloud 所在机器需能直连）
+  base_url: ""
+
+  # 授权凭证持久化路径（PIN 授权成功后自动写入；含 client_identifier 配对态）
+  token_json: "config/plex-auth.json"
+
+  # 请求超时（秒）
+  timeout: 10

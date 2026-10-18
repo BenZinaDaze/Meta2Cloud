@@ -141,6 +141,25 @@ type Strm struct {
 	Mappings            []StrmMapping `yaml:"mappings"`
 }
 
+// Trakt Trakt 观看同步配置（token 持久化在 TokenJSON 文件，设备码配对获取）。
+type Trakt struct {
+	Enabled             bool   `yaml:"enabled"`
+	ClientID            string `yaml:"client_id"`
+	TokenJSON           string `yaml:"token_json"`
+	SyncIntervalSeconds int    `yaml:"sync_interval_seconds"`
+	SessionPollSeconds  int    `yaml:"session_poll_seconds"`
+	SyncToPlex          bool   `yaml:"sync_to_plex"`
+	SyncToTrakt         bool   `yaml:"sync_to_trakt"`
+}
+
+// Plex Plex Media Server 连接配置（authToken 与 client_identifier 等配对态
+// 持久化在 TokenJSON 文件，不进 YAML）。
+type Plex struct {
+	BaseURL   string `yaml:"base_url"`
+	TokenJSON string `yaml:"token_json"`
+	Timeout   int    `yaml:"timeout"`
+}
+
 // Config 全局配置根。
 type Config struct {
 	Tmdb       Tmdb       `yaml:"tmdb"`
@@ -153,6 +172,8 @@ type Config struct {
 	WebUI      WebUI      `yaml:"webui"`
 	Storage    Storage    `yaml:"storage"`
 	Strm       Strm       `yaml:"strm"`
+	Trakt      Trakt      `yaml:"trakt"`
+	Plex       Plex       `yaml:"plex"`
 }
 
 // Default 返回带默认值的配置。
@@ -177,6 +198,17 @@ func Default() *Config {
 			FetchSidecar: true,
 			SidecarExt:   append([]string{}, DefaultStrmSidecarExt...),
 		},
+		Trakt: Trakt{
+			TokenJSON:           "config/trakt-token.json",
+			SyncIntervalSeconds: 900,
+			SessionPollSeconds:  45,
+			SyncToPlex:          true,
+			SyncToTrakt:         true,
+		},
+		Plex: Plex{
+			TokenJSON: "config/plex-auth.json",
+			Timeout:   10,
+		},
 	}
 }
 
@@ -192,6 +224,8 @@ type rawConfig struct {
 	WebUI      map[string]any `yaml:"webui"`
 	Storage    map[string]any `yaml:"storage"`
 	Strm       map[string]any `yaml:"strm"`
+	Trakt      map[string]any `yaml:"trakt"`
+	Plex       map[string]any `yaml:"plex"`
 }
 
 // Load 从 YAML 文件加载配置；path 为空时按默认搜索路径查找。
@@ -238,6 +272,8 @@ func parseConfig(data []byte) (*Config, error) {
 	cfg.WebUI = parseWebUI(raw.WebUI)
 	cfg.Storage = parseStorage(raw.Storage)
 	cfg.Strm = parseStrm(raw.Strm)
+	cfg.Trakt = parseTrakt(raw.Trakt)
+	cfg.Plex = parsePlex(raw.Plex)
 	return cfg, nil
 }
 
@@ -536,6 +572,30 @@ func maxInt(a, b int) int {
 	return b
 }
 
+// parseTrakt Trakt 同步段解析（方向开关默认开；间隔有下限）。
+// 注：Trakt 已改为 PKCE 模式、不再签发 Client Secret，故无此配置项；
+// 旧配置文件里残留的 client_secret 键会被静默忽略。
+func parseTrakt(m map[string]any) Trakt {
+	return Trakt{
+		Enabled:             boolean(m, "enabled", false),
+		ClientID:            strings.TrimSpace(str(m, "client_id", "")),
+		TokenJSON:           str(m, "token_json", "config/trakt-token.json"),
+		SyncIntervalSeconds: maxInt(integer(m, "sync_interval_seconds", 900), 60),
+		SessionPollSeconds:  maxInt(integer(m, "session_poll_seconds", 45), 15),
+		SyncToPlex:          boolean(m, "sync_to_plex", true),
+		SyncToTrakt:         boolean(m, "sync_to_trakt", true),
+	}
+}
+
+// parsePlex Plex 连接段解析。
+func parsePlex(m map[string]any) Plex {
+	return Plex{
+		BaseURL:   normalizeStrmURLBase(str(m, "base_url", "")),
+		TokenJSON: str(m, "token_json", "config/plex-auth.json"),
+		Timeout:   maxInt(integer(m, "timeout", 10), 1),
+	}
+}
+
 // ── 便利方法 ────────────────────────────────────────────────
 
 // TmdbProxy TMDB 代理（空串返回 nil 语义由调用方处理）。
@@ -561,6 +621,12 @@ func (c *Config) MediaVaultBaseURL() string {
 
 // IsTmdbReady 是否具备 TMDB 查询条件（有 api_key）。
 func (c *Config) IsTmdbReady() bool { return c.Tmdb.APIKey != "" }
+
+// IsTraktReady 是否具备 Trakt 设备码配对条件（Trakt 为 PKCE 模式，仅需 Client ID）。
+func (c *Config) IsTraktReady() bool { return c.Trakt.ClientID != "" }
+
+// IsPlexReady 是否具备 Plex 连接条件（服务器地址已填写）。
+func (c *Config) IsPlexReady() bool { return c.Plex.BaseURL != "" }
 
 // ActiveStorageName 返回当前启用的存储后端名称。
 func (c *Config) ActiveStorageName() string {

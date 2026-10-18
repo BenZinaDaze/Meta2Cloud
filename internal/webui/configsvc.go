@@ -403,6 +403,8 @@ func validateMainConfigPayload(payload map[string]any) string {
 	rssSec := getSection("rss")
 	telegramSec := getSection("telegram")
 	mediavaultSec := getSection("mediavault")
+	traktSec := getSection("trakt")
+	plexSec := getSection("plex")
 
 	for _, check := range []struct {
 		section map[string]any
@@ -420,6 +422,9 @@ func validateMainConfigPayload(payload map[string]any) string {
 		{rssSec, "poll_seconds", "RSS 订阅轮询间隔", 10, 3600},
 		{telegramSec, "debounce_seconds", "Telegram 防抖延时", 0, 600},
 		{mediavaultSec, "timeout", "MediaVault 请求超时", 1, 120},
+		{traktSec, "sync_interval_seconds", "观看同步间隔", 60, 604800},
+		{traktSec, "session_poll_seconds", "正在看轮询间隔", 15, 600},
+		{plexSec, "timeout", "Plex 请求超时", 1, 120},
 	} {
 		if msg := validateIntField(check.section, check.key, check.label, check.min, check.max); msg != "" {
 			return msg
@@ -462,6 +467,8 @@ func invalidateRuntimeCache() {
 	rt.provider = nil
 	rt.u115Client = nil
 	rt.tmdbClient = nil
+	rt.traktClient = nil
+	rt.plexClient = nil
 	rt.configSig = [2]int64{0, 0}
 }
 

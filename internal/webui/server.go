@@ -140,6 +140,19 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("POST /api/u115/offline/tasks/delete", handleU115OfflineDeleteTasks)
 	m.HandleFunc("POST /api/u115/offline/tasks/clear", handleU115OfflineClearTasks)
 
+	// trakt（观看同步：Trakt 设备码 + Plex PIN 配对 + 双向引擎）
+	m.HandleFunc("GET /api/trakt/oauth/status", handleTraktOauthStatus)
+	m.HandleFunc("POST /api/trakt/oauth/device", handleTraktOauthDevice)
+	m.HandleFunc("GET /api/trakt/oauth/poll", handleTraktOauthPoll)
+	m.HandleFunc("POST /api/trakt/oauth/disconnect", handleTraktOauthDisconnect)
+	m.HandleFunc("POST /api/plex/pin", handlePlexPin)
+	m.HandleFunc("GET /api/plex/pin/poll", handlePlexPinPoll)
+	m.HandleFunc("POST /api/plex/test", handlePlexTest)
+	m.HandleFunc("GET /api/trakt/sync/status", handleTraktSyncStatus)
+	m.HandleFunc("POST /api/trakt/sync", handleTraktSyncTrigger)
+	m.HandleFunc("GET /api/trakt/sync/runs", handleTraktSyncRuns)
+	m.HandleFunc("GET /api/trakt/sync/runs/{runID}/items", handleTraktSyncRunItems)
+
 	// logs / ingest
 	m.HandleFunc("GET /api/logs", handleGetLogs)
 	m.HandleFunc("GET /api/logs/live", handleLogsLiveWS)
@@ -173,6 +186,8 @@ func ListenAndServe(addr string, s *Server) error {
 	// 预开 STRM 存储：把上次进程遗留的「进行中」同步记录收尾为失败，
 	// 惰性初始化会让该清理推迟到首次访问 STRM 接口才发生
 	_ = RT().GetStrmStore()
+	// 观看同步存储同理（traktsync.db 的遗留进行中 run 收尾）
+	_ = RT().GetTraktSyncStore()
 	return http.ListenAndServe(addr, s.Handler())
 }
 

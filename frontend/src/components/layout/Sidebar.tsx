@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router'
 import {
+  ArrowLeftRight,
   BookOpen,
   Search,
   Rss,
@@ -333,6 +334,13 @@ export default function Sidebar({
           label="播放记录"
           to="/strm-playback"
           active={pathname === '/strm-playback'}
+          onClick={closeMobile}
+        />
+        <NavItem
+          icon={<ArrowLeftRight className="size-4" />}
+          label="Trakt 同步"
+          to="/watched-sync"
+          active={pathname === '/watched-sync'}
           onClick={closeMobile}
         />
         <NavItem

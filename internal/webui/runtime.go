@@ -11,8 +11,10 @@ import (
 
 	"meta2cloud/internal/cloudfile"
 	"meta2cloud/internal/config"
+	"meta2cloud/internal/plexserver"
 	"meta2cloud/internal/storage"
 	"meta2cloud/internal/tmdb"
+	"meta2cloud/internal/trakt"
 	"meta2cloud/internal/u115"
 	"meta2cloud/internal/webui/store"
 )
@@ -38,6 +40,9 @@ type Runtime struct {
 	rss        *store.RSSStore
 	u115Auto   *store.U115AutoStore
 	strm       *store.StrmStore
+	traktClient *trakt.Client
+	plexClient  *plexserver.Client
+	traktSync   *store.TraktSyncStore
 }
 
 var defaultRuntime = &Runtime{}
@@ -79,6 +84,9 @@ func InitRuntime(rootDir string) *Runtime {
 	defaultRuntime.rss = nil
 	defaultRuntime.u115Auto = nil
 	defaultRuntime.strm = nil
+	defaultRuntime.traktClient = nil
+	defaultRuntime.plexClient = nil
+	defaultRuntime.traktSync = nil
 	defaultRuntime.categories = nil
 	defaultRuntime.categoriesM = 0
 	defaultRuntime.configSig = [2]int64{}
@@ -101,6 +109,8 @@ func (rt *Runtime) invalidateIfChanged() {
 		rt.provider = nil
 		rt.u115Client = nil
 		rt.tmdbClient = nil
+		rt.traktClient = nil
+		rt.plexClient = nil
 		rt.configSig = sig
 	}
 }
@@ -427,6 +437,81 @@ func (rt *Runtime) GetStrmStore() *store.StrmStore {
 		rt.strm = s
 	}
 	return rt.strm
+}
+
+// getTraktClientLocked Trakt 客户端单例（需已持锁；token 持久化在 config/trakt-token.json）。
+func (rt *Runtime) getTraktClientLocked() *trakt.Client {
+	rt.invalidateIfChanged()
+	if rt.traktClient == nil {
+		cfg := rt.getConfigLocked()
+		if !cfg.IsTraktReady() {
+			return nil
+		}
+		tokenPath := cfg.Trakt.TokenJSON
+		if !filepath.IsAbs(tokenPath) {
+			tokenPath = filepath.Join(rt.RootDir, tokenPath)
+		}
+		client, err := trakt.NewClientFromTokenFile(cfg.Trakt.ClientID, tokenPath)
+		if err != nil {
+			log.Printf("Trakt 客户端初始化失败：%v", err)
+			return nil
+		}
+		rt.traktClient = client
+	}
+	return rt.traktClient
+}
+
+// GetTraktClient Trakt 客户端单例（配置变更时重建）。
+func (rt *Runtime) GetTraktClient() *trakt.Client {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return rt.getTraktClientLocked()
+}
+
+// getPlexClientLocked Plex 客户端单例（需已持锁）。
+// token 与 client_identifier 持久化在 config/plex-auth.json（配对态）。
+func (rt *Runtime) getPlexClientLocked() *plexserver.Client {
+	rt.invalidateIfChanged()
+	if rt.plexClient == nil {
+		cfg := rt.getConfigLocked()
+		if !cfg.IsPlexReady() {
+			return nil
+		}
+		auth := ensurePlexAuthLocked(rt)
+		if auth == nil {
+			return nil
+		}
+		timeout := cfg.Plex.Timeout
+		if timeout <= 0 {
+			timeout = 10
+		}
+		rt.plexClient = plexserver.NewClient(cfg.Plex.BaseURL, auth.AuthToken, auth.ClientIdentifier,
+			plexserver.WithTimeout(timeout))
+	}
+	return rt.plexClient
+}
+
+// GetPlexClient Plex 客户端单例。
+func (rt *Runtime) GetPlexClient() *plexserver.Client {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return rt.getPlexClientLocked()
+}
+
+// GetTraktSyncStore 观看同步影子存储单例（独立 traktsync.db）。
+func (rt *Runtime) GetTraktSyncStore() *store.TraktSyncStore {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.traktSync == nil {
+		dbPath := filepath.Join(rt.RootDir, "config", "data", "traktsync.db")
+		s, err := store.OpenTraktSyncStore(dbPath)
+		if err != nil {
+			log.Printf("观看同步存储初始化失败：%v", err)
+			return nil
+		}
+		rt.traktSync = s
+	}
+	return rt.traktSync
 }
 
 // SetProviderForTest 注入测试 Provider（绕过配置构造）。

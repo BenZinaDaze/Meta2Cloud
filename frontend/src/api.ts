@@ -134,6 +134,25 @@ export const getStrmSyncRunFiles = (runId: number | string, params?: { limit?: n
 export const getStrmPlaybackHistory = (params?: { limit?: number; offset?: number }) =>
   api.get('/strm/playback/history', { params })
 
+// ── 观看同步（Trakt ↔ Plex） ──
+export const getTraktOauthStatus = (config?: { signal?: AbortSignal }) =>
+  api.get('/trakt/oauth/status', config)
+export const createTraktDeviceCode = () => api.post('/trakt/oauth/device')
+export const pollTraktOauth = (config?: { signal?: AbortSignal }) =>
+  api.get('/trakt/oauth/poll', { params: { ts: Date.now() }, ...config })
+export const disconnectTrakt = () => api.post('/trakt/oauth/disconnect')
+export const createPlexPin = () => api.post('/plex/pin')
+export const pollPlexPin = (config?: { signal?: AbortSignal }) =>
+  api.get('/plex/pin/poll', { params: { ts: Date.now() }, ...config })
+export const testPlexConnection = () => api.post('/plex/test')
+export const getWatchedSyncStatus = (config?: { signal?: AbortSignal }) =>
+  api.get('/trakt/sync/status', config)
+export const triggerWatchedSync = () => api.post('/trakt/sync')
+export const listWatchedSyncRuns = (params?: { limit?: number; offset?: number }) =>
+  api.get('/trakt/sync/runs', { params })
+export const getWatchedSyncRunItems = (runId: number | string, params?: { limit?: number }) =>
+  api.get(`/trakt/sync/runs/${runId}/items`, { params })
+
 // ── 其他 ──
 export const getLogs = (params?: { limit?: number; offset?: number }) =>
   api.get('/logs', { params })

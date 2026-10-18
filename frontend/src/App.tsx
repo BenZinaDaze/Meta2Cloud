@@ -20,6 +20,7 @@ const U115OfflinePage = lazy(() => import('@/components/pages/U115OfflinePage'))
 const ScraperSearch = lazy(() => import('@/components/pages/ScraperSearch'))
 const StrmSyncPage = lazy(() => import('@/components/pages/StrmSyncPage'))
 const StrmPlaybackPage = lazy(() => import('@/components/pages/StrmPlaybackPage'))
+const WatchedSyncPage = lazy(() => import('@/components/pages/WatchedSyncPage'))
 const TitlePinsPage = lazy(() => import('@/components/pages/TitlePinsPage'))
 const CategoriesPage = lazy(() => import('@/components/pages/CategoriesPage'))
 const ParseTestModal = lazy(() => import('@/components/modals/ParseTestModal'))
@@ -243,6 +244,7 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
               <Route path="/ingest-history" element={<IngestHistoryPage onToast={handleToast} />} />
               <Route path="/title-pins" element={<TitlePinsPage onToast={handleToast} />} />
               <Route path="/strm-sync" element={<StrmSyncPage onToast={handleToast} />} />
+              <Route path="/watched-sync" element={<WatchedSyncPage onToast={handleToast} />} />
               <Route path="/strm-playback" element={<StrmPlaybackPage onToast={handleToast} />} />
               <Route path="/logs" element={<LogsPage />} />
               <Route

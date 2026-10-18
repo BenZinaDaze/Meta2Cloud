@@ -22,6 +22,8 @@ import {
   RadioTower,
   AlertTriangle,
   Dices,
+  Activity,
+  ExternalLink,
 } from 'lucide-react'
 import {
   getMainConfig,
@@ -37,6 +39,15 @@ import {
   fetchU115QrCode,
   pollU115OauthStatus,
   refreshLibrary,
+  getTraktOauthStatus,
+  createTraktDeviceCode,
+  pollTraktOauth,
+  disconnectTrakt,
+  createPlexPin,
+  pollPlexPin,
+  testPlexConnection,
+  getWatchedSyncStatus,
+  triggerWatchedSync,
 } from '@/api'
 import CustomWordsHelp from '@/components/config/CustomWordsHelp'
 import { Button } from '@/components/ui/button'
@@ -81,6 +92,7 @@ const CONFIG_TABS = [
   { key: 'auth', label: '认证', icon: Shield },
   { key: 'tmdb', label: 'TMDB', icon: Database },
   { key: 'u115', label: '115', icon: HardDrive },
+  { key: 'watched', label: '观看同步', icon: Activity },
   { key: 'pipeline', label: '整理策略', icon: FolderSync },
   { key: 'strm', label: 'STRM', icon: FileVideo },
   { key: 'rss', label: 'RSS', icon: Rss },
@@ -99,6 +111,8 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   const mediavault = { ...(next.mediavault as Record<string, unknown> || {}) }
   const pipeline = { ...(next.pipeline as Record<string, unknown> || {}) }
   const strm = { ...(next.strm as Record<string, unknown> || {}) }
+  const trakt = { ...(next.trakt as Record<string, unknown> || {}) }
+  const plex = { ...(next.plex as Record<string, unknown> || {}) }
 
   if (webui.token_expire_hours === undefined || webui.token_expire_hours === null || webui.token_expire_hours === '') {
     webui.token_expire_hours = 24
@@ -154,10 +168,30 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   if (!Array.isArray(strm.sidecar_ext) || strm.sidecar_ext.length === 0) {
     strm.sidecar_ext = ['srt', 'ass', 'ssa']
   }
+  if (trakt.enabled === undefined || trakt.enabled === null) {
+    trakt.enabled = false
+  }
+  if (trakt.sync_interval_seconds === undefined || trakt.sync_interval_seconds === null || trakt.sync_interval_seconds === '') {
+    trakt.sync_interval_seconds = 900
+  }
+  if (trakt.session_poll_seconds === undefined || trakt.session_poll_seconds === null || trakt.session_poll_seconds === '') {
+    trakt.session_poll_seconds = 45
+  }
+  if (trakt.sync_to_plex === undefined || trakt.sync_to_plex === null) {
+    trakt.sync_to_plex = true
+  }
+  if (trakt.sync_to_trakt === undefined || trakt.sync_to_trakt === null) {
+    trakt.sync_to_trakt = true
+  }
+  if (plex.timeout === undefined || plex.timeout === null || plex.timeout === '') {
+    plex.timeout = 10
+  }
 
   next.webui = webui
   next.tmdb = tmdb
   next.u115 = u115
+  next.trakt = trakt
+  next.plex = plex
   next.rss = rss
   next.telegram = telegram
   next.mediavault = mediavault
@@ -406,6 +440,20 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
   const [mediavaultMessage, setMediavaultMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [telegramTestBusy, setTelegramTestBusy] = useState(false)
   const [telegramMessage, setTelegramMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  // ── 观看同步（Trakt ↔ Plex）──
+  const [traktOauth, setTraktOauth] = useState<Record<string, unknown> | null>(null)
+  const [traktPairing, setTraktPairing] = useState<{ user_code: string; verification_url: string } | null>(null)
+  const [traktPolling, setTraktPolling] = useState(false)
+  const [traktMessage, setTraktMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [traktPairBusy, setTraktPairBusy] = useState(false)
+  const [plexPairing, setPlexPairing] = useState<{ code: string; auth_url: string } | null>(null)
+  const [plexPolling, setPlexPolling] = useState(false)
+  const [plexMessage, setPlexMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [plexPairBusy, setPlexPairBusy] = useState(false)
+  const [plexTestBusy, setPlexTestBusy] = useState(false)
+  const [syncStatus, setSyncStatus] = useState<Record<string, unknown> | null>(null)
+  const [syncTriggerBusy, setSyncTriggerBusy] = useState(false)
+  const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const loadU115OauthStatus = useCallback(async () => {
     try {
@@ -522,6 +570,238 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
       }
     }
   }, [u115Polling, u115QrUrl, loadU115OauthStatus])
+
+  // ── 观看同步：状态（历史明细在「Trakt 同步」页查看）──────
+  const loadWatchedSyncStatus = useCallback(async () => {
+    try {
+      const res = await getWatchedSyncStatus()
+      setSyncStatus(res.data)
+    } catch {
+      /* 状态加载失败不阻塞配置页 */
+    }
+  }, [])
+
+  const loadTraktOauthStatus = useCallback(async () => {
+    try {
+      const res = await getTraktOauthStatus()
+      setTraktOauth(res.data)
+    } catch {
+      setTraktOauth(null)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (page === 'filenameRules') return
+    loadTraktOauthStatus()
+    loadWatchedSyncStatus()
+  }, [loadTraktOauthStatus, loadWatchedSyncStatus, page])
+
+  // 同步进行中自适应轮询（running ? 3s : 30s）
+  const syncRunning = Boolean(syncStatus?.running)
+  useEffect(() => {
+    if (page === 'filenameRules') return
+    let stopped = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const tick = async () => {
+      try {
+        const res = await getWatchedSyncStatus()
+        if (stopped) return
+        setSyncStatus(res.data)
+        if (res.data?.running) {
+          timer = setTimeout(tick, 3000)
+        } else {
+          timer = setTimeout(tick, 30000)
+          loadWatchedSyncStatus()
+        }
+      } catch {
+        if (!stopped) timer = setTimeout(tick, 30000)
+      }
+    }
+    timer = setTimeout(tick, syncRunning ? 3000 : 30000)
+    return () => {
+      stopped = true
+      if (timer) clearTimeout(timer)
+    }
+  }, [syncRunning, loadWatchedSyncStatus, page])
+
+  // Trakt 设备码轮询（前端驱动，与 115 扫码同模式）
+  useEffect(() => {
+    if (!traktPolling) return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const startedAt = Date.now()
+    const maxPollingMs = 5 * 60 * 1000
+    const pollIntervalMs = 2000
+
+    const finishPolling = () => setTraktPolling(false)
+
+    const pollOnce = async () => {
+      try {
+        const res = await pollTraktOauth()
+        if (cancelled) return
+        const data = res?.data || {}
+        if (data.confirmed) {
+          setTraktMessage({ type: 'success', text: data.user ? `Trakt 授权成功（用户 ${data.user}）` : 'Trakt 授权成功' })
+          setTraktPairing(null)
+          finishPolling()
+          loadTraktOauthStatus()
+          loadWatchedSyncStatus()
+          return
+        }
+        if (data.expired) {
+          setTraktMessage({ type: 'error', text: data.message || '设备码已过期，请重新发起配对' })
+          setTraktPairing(null)
+          finishPolling()
+          return
+        }
+        if (Date.now() - startedAt >= maxPollingMs) {
+          setTraktMessage({ type: 'error', text: 'Trakt 配对等待超时，请重新发起。' })
+          setTraktPairing(null)
+          finishPolling()
+          return
+        }
+        timer = setTimeout(pollOnce, pollIntervalMs)
+      } catch (e) {
+        if (cancelled) return
+        if ((e as { code?: string })?.code === 'ERR_CANCELED') return
+        const status = (e as { response?: { status?: number } })?.response?.status
+        if (status === 404) {
+          // 会话不存在（已消费或未发起）→ 停止
+          setTraktPairing(null)
+          finishPolling()
+          return
+        }
+        timer = setTimeout(pollOnce, pollIntervalMs)
+      }
+    }
+    timer = setTimeout(pollOnce, pollIntervalMs)
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+  }, [traktPolling, loadTraktOauthStatus, loadWatchedSyncStatus])
+
+  // Plex PIN 轮询
+  useEffect(() => {
+    if (!plexPolling) return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const startedAt = Date.now()
+    const maxPollingMs = 5 * 60 * 1000
+    const pollIntervalMs = 2500
+
+    const pollOnce = async () => {
+      try {
+        const res = await pollPlexPin()
+        if (cancelled) return
+        const data = res?.data || {}
+        if (data.confirmed) {
+          if (data.reachable === false) {
+            setPlexMessage({ type: 'error', text: 'Plex 授权完成，但服务器不可达，请检查 plex.base_url 与网络。' })
+          } else {
+            setPlexMessage({ type: 'success', text: data.message || 'Plex 授权成功' })
+          }
+          setPlexPairing(null)
+          setPlexPolling(false)
+          loadWatchedSyncStatus()
+          return
+        }
+        if (Date.now() - startedAt >= maxPollingMs) {
+          setPlexMessage({ type: 'error', text: 'Plex 配对等待超时，请重新发起。' })
+          setPlexPairing(null)
+          setPlexPolling(false)
+          return
+        }
+        timer = setTimeout(pollOnce, pollIntervalMs)
+      } catch (e) {
+        if (cancelled) return
+        if ((e as { code?: string })?.code === 'ERR_CANCELED') return
+        const status = (e as { response?: { status?: number } })?.response?.status
+        if (status === 404) {
+          setPlexPairing(null)
+          setPlexPolling(false)
+          return
+        }
+        timer = setTimeout(pollOnce, pollIntervalMs)
+      }
+    }
+    timer = setTimeout(pollOnce, pollIntervalMs)
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+  }, [plexPolling, loadWatchedSyncStatus])
+
+  async function handleTraktPair() {
+    setTraktPairBusy(true)
+    setTraktMessage(null)
+    try {
+      const res = await createTraktDeviceCode()
+      const data = res.data || {}
+      setTraktPairing({ user_code: data.user_code, verification_url: data.verification_url })
+      setTraktPolling(true)
+    } catch (e) {
+      setTraktMessage({ type: 'error', text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || (e as Error).message || '创建设备码失败' })
+    } finally {
+      setTraktPairBusy(false)
+    }
+  }
+
+  async function handleTraktDisconnect() {
+    try {
+      await disconnectTrakt()
+      setTraktMessage({ type: 'success', text: '已断开 Trakt 授权' })
+      setTraktPairing(null)
+      setTraktPolling(false)
+      loadTraktOauthStatus()
+      loadWatchedSyncStatus()
+    } catch (e) {
+      setTraktMessage({ type: 'error', text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '断开失败' })
+    }
+  }
+
+  async function handlePlexPair() {
+    setPlexPairBusy(true)
+    setPlexMessage(null)
+    try {
+      const res = await createPlexPin()
+      const data = res.data || {}
+      setPlexPairing({ code: data.code, auth_url: data.auth_url })
+      setPlexPolling(true)
+    } catch (e) {
+      setPlexMessage({ type: 'error', text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || (e as Error).message || '创建 PIN 失败' })
+    } finally {
+      setPlexPairBusy(false)
+    }
+  }
+
+  async function handlePlexTest() {
+    setPlexTestBusy(true)
+    setPlexMessage(null)
+    try {
+      const res = await testPlexConnection()
+      setPlexMessage({ type: 'success', text: `连接成功（服务器 ${res.data?.server_name || ''} v${res.data?.server_version || ''}）` })
+    } catch (e) {
+      setPlexMessage({ type: 'error', text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '连接失败' })
+    } finally {
+      setPlexTestBusy(false)
+    }
+  }
+
+  async function handleWatchedSyncTrigger() {
+    setSyncTriggerBusy(true)
+    setSyncMessage(null)
+    try {
+      const res = await triggerWatchedSync()
+      setSyncMessage({ type: 'success', text: res.data?.message || '观看同步已触发' })
+      loadWatchedSyncStatus()
+    } catch (e) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setSyncMessage({ type: 'error', text: detail || '触发失败' })
+    } finally {
+      setSyncTriggerBusy(false)
+    }
+  }
 
   const isDirty = JSON.stringify(cfg) !== JSON.stringify(original)
   const pageMeta = PAGE_VARIANTS[page as keyof typeof PAGE_VARIANTS] || PAGE_VARIANTS.general
@@ -1124,6 +1404,221 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                     placeholder="用于分享转存等功能"
                     mono
                   />
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="watched" className="mt-0">
+            <Card className="border-border/70 bg-card/40">
+              <CardHeader>
+                <CardTitle className="text-base">观看同步（Trakt ↔ Plex）</CardTitle>
+                <CardDescription>
+                  每轮均为双向同步：两侧各自把对方缺少的已看记录补齐；同一媒体状态冲突时以 Trakt
+                  为准（Trakt 记录更全）。运行历史与逐条明细见侧边栏「Trakt 同步」页。
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* 总览状态 */}
+                <div>
+                  <div className="mb-3 flex flex-wrap items-center gap-3">
+                    <Badge variant={(cfg?.trakt as Record<string, unknown>)?.enabled ? 'success' : 'secondary'}>
+                      定时同步{(cfg?.trakt as Record<string, unknown>)?.enabled ? '已开启' : '未开启'}
+                    </Badge>
+                    <Badge variant={traktOauth?.authorized ? 'success' : 'secondary'}>
+                      Trakt {traktOauth?.authorized ? '已授权' : '未授权'}
+                    </Badge>
+                    <Badge variant={syncStatus?.plex_connected ? 'success' : 'secondary'}>
+                      Plex {syncStatus?.plex_connected ? (syncStatus?.plex_reachable ? '已连接' : '已授权（服务器不可达）') : '未连接'}
+                    </Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleWatchedSyncTrigger}
+                      disabled={syncTriggerBusy || !traktOauth?.authorized || !syncStatus?.plex_connected}
+                    >
+                      {syncStatus?.running ? '同步中…' : '立即同步'}
+                    </Button>
+                  </div>
+                  <NoticeMessage message={syncMessage} />
+                  {syncStatus?.last_run != null && (
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      上次同步：{String((syncStatus.last_run as Record<string, unknown>).started_at || '')}
+                      {' · '}→Trakt {String((syncStatus.last_run as Record<string, unknown>).to_trakt ?? 0)}
+                      {' · '}→Plex {String((syncStatus.last_run as Record<string, unknown>).to_plex ?? 0)}
+                      {(syncStatus.last_run as Record<string, unknown>).error
+                        ? ` · 错误：${String((syncStatus.last_run as Record<string, unknown>).error)}`
+                        : ''}
+                    </div>
+                  )}
+                </div>
+
+                <Separator className="opacity-60" />
+
+                {/* Trakt 配对 */}
+                <div>
+                  <div className="mb-3 flex flex-wrap items-center gap-3">
+                    <span className="text-[13px] font-medium">Trakt 授权</span>
+                    <Badge variant={traktOauth?.token_expired ? 'warning' : traktOauth?.authorized ? 'success' : 'secondary'}>
+                      {traktOauth?.token_expired ? 'Token 已过期' : traktOauth?.authorized ? '已授权' : '未授权'}
+                    </Badge>
+                    {Boolean(traktOauth?.authorized) && (
+                      <Button variant="outline" size="sm" onClick={handleTraktDisconnect}>
+                        断开
+                      </Button>
+                    )}
+                  </div>
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    先在 trakt.tv/oauth/applications 创建应用（类型任选，Redirect URI 填 http://localhost），
+                    把 Client ID 填入下方并保存，再点击「设备码配对」。授权后 token 有效期 90 天，会自动续期。
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleTraktPair}
+                      disabled={traktPairBusy || !(cfg?.trakt as Record<string, unknown>)?.client_id}
+                    >
+                      {traktPairBusy ? '处理中…' : traktPolling ? '等待确认…' : '设备码配对'}
+                    </Button>
+                    {traktPairing && (
+                      <a
+                        href={traktPairing.verification_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        打开 {traktPairing.verification_url.replace(/^https?:\/\//, '')}
+                        <ExternalLink className="size-3" />
+                      </a>
+                    )}
+                  </div>
+                  {traktPairing && (
+                    <div className="mt-3 inline-flex flex-col gap-1 animate-stagger-in rounded-xl border border-border/70 bg-muted/40 p-3">
+                      <div className="text-xs text-muted-foreground">在 Trakt 页面输入以下代码：</div>
+                      <div className="font-mono text-2xl font-semibold tracking-[0.3em]">{traktPairing.user_code}</div>
+                    </div>
+                  )}
+                  <NoticeMessage message={traktMessage} />
+                </div>
+
+                <Separator className="opacity-60" />
+
+                <FieldGroup>
+                  <Field label="Client ID" description="trakt.tv/oauth/applications 创建（Trakt 为 PKCE 模式，无需 Client Secret）">
+                    <TextInput
+                      value={(cfg?.trakt as Record<string, unknown>)?.client_id as string | undefined}
+                      onChange={(v) => set('trakt', 'client_id', v)}
+                      placeholder="your-trakt-client-id"
+                      mono
+                    />
+                  </Field>
+                </FieldGroup>
+
+                <Separator className="opacity-60" />
+
+                {/* Plex 配对 */}
+                <div>
+                  <div className="mb-3 flex flex-wrap items-center gap-3">
+                    <span className="text-[13px] font-medium">Plex 连接</span>
+                    <Badge variant={syncStatus?.plex_connected ? 'success' : 'secondary'}>
+                      {syncStatus?.plex_connected ? '已授权' : '未授权'}
+                    </Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handlePlexPair}
+                      disabled={plexPairBusy || !(cfg?.plex as Record<string, unknown>)?.base_url}
+                    >
+                      {plexPairBusy ? '处理中…' : plexPolling ? '等待授权…' : 'PIN 授权'}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handlePlexTest} disabled={plexTestBusy || !syncStatus?.plex_connected}>
+                      {plexTestBusy ? '测试中…' : '测试连接'}
+                    </Button>
+                  </div>
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    填写 Plex 服务器地址（如 http://192.168.1.10:32400）并保存后，点击「PIN 授权」，
+                    在弹出的 Plex 授权页登录并确认。授权凭证保存在本地 plex-auth.json。
+                  </p>
+                  {plexPairing && (
+                    <div className="mb-3 inline-flex flex-col gap-1 animate-stagger-in rounded-xl border border-border/70 bg-muted/40 p-3">
+                      <div className="text-xs text-muted-foreground">1. 在 Plex 授权页确认（无需输入代码，页面会自动关联）</div>
+                      <a
+                        href={plexPairing.auth_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        打开 Plex 授权页 <ExternalLink className="size-3" />
+                      </a>
+                      <div className="text-xs text-muted-foreground">备用代码：{plexPairing.code}</div>
+                    </div>
+                  )}
+                  <NoticeMessage message={plexMessage} />
+                </div>
+
+                <Separator className="opacity-60" />
+
+                <FieldGroup>
+                  <Field label="Plex 服务器地址" description="Meta2Cloud 需能直连该地址">
+                    <TextInput
+                      value={(cfg?.plex as Record<string, unknown>)?.base_url as string | undefined}
+                      onChange={(v) => set('plex', 'base_url', v)}
+                      placeholder="http://192.168.1.10:32400"
+                      mono
+                    />
+                  </Field>
+                  <Field label="Plex 请求超时" description="秒">
+                    <NumberInput
+                      value={(cfg?.plex as Record<string, unknown>)?.timeout as number | undefined ?? 10}
+                      onChange={(v) => set('plex', 'timeout', v)}
+                      min={1}
+                      max={120}
+                    />
+                  </Field>
+                </FieldGroup>
+
+                <Separator className="opacity-60" />
+
+                {/* 同步选项 */}
+                <div>
+                  <div className="mb-3 text-[13px] font-medium">同步选项</div>
+                  <FieldGroup>
+                    <Field label="启用定时同步">
+                      <Toggle
+                        value={(cfg?.trakt as Record<string, unknown>)?.enabled as boolean | undefined}
+                        onChange={(v) => set('trakt', 'enabled', v)}
+                      />
+                    </Field>
+                    <Field label="同步方向 → Plex" description="Trakt 已看标记到 Plex">
+                      <Toggle
+                        value={(cfg?.trakt as Record<string, unknown>)?.sync_to_plex as boolean | undefined}
+                        onChange={(v) => set('trakt', 'sync_to_plex', v)}
+                      />
+                    </Field>
+                    <Field label="同步方向 → Trakt" description="Plex 已看/正在看记录到 Trakt">
+                      <Toggle
+                        value={(cfg?.trakt as Record<string, unknown>)?.sync_to_trakt as boolean | undefined}
+                        onChange={(v) => set('trakt', 'sync_to_trakt', v)}
+                      />
+                    </Field>
+                    <Field label="同步间隔" description="秒（<60 视为关闭定时同步）">
+                      <NumberInput
+                        value={(cfg?.trakt as Record<string, unknown>)?.sync_interval_seconds as number | undefined ?? 900}
+                        onChange={(v) => set('trakt', 'sync_interval_seconds', v)}
+                        min={60}
+                        max={604800}
+                      />
+                    </Field>
+                    <Field label="正在看轮询间隔" description="秒；播放进度 ≥80% 记录到 Trakt">
+                      <NumberInput
+                        value={(cfg?.trakt as Record<string, unknown>)?.session_poll_seconds as number | undefined ?? 45}
+                        onChange={(v) => set('trakt', 'session_poll_seconds', v)}
+                        min={15}
+                        max={600}
+                      />
+                    </Field>
+                  </FieldGroup>
                 </div>
               </CardContent>
             </Card>

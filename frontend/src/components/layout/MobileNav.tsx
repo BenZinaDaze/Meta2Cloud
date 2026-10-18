@@ -14,7 +14,7 @@ export default function MobileNav({
   const { pathname } = useLocation()
   const libraryPaths = ['/library', '/movies', '/tv']
   const isLibrary = libraryPaths.some((p) => pathname === p || pathname.startsWith(p + '/'))
-  const isMore = ['/subscriptions', '/ingest-history', '/title-pins', '/strm-sync', '/strm-playback', '/logs', '/config', '/config/filename-rules'].includes(pathname)
+  const isMore = ['/subscriptions', '/ingest-history', '/title-pins', '/strm-sync', '/strm-playback', '/watched-sync', '/logs', '/config', '/config/filename-rules'].includes(pathname)
 
   const tabs = [
     { to: '/library', label: '媒体库', icon: BookOpen, isActive: isLibrary },
