@@ -145,3 +145,20 @@ func TestResolveFolderPath(t *testing.T) {
 		t.Fatal("路径规范化错误")
 	}
 }
+
+// getFilePanicFake GetFile 一经调用即 panic：固化 ResolveFolderPath 纯 ListFiles 的契约
+// （存储 Provider 的根目录回调依赖此性质，避免 GetFile → 根目录解析 → GetFile 成环）。
+type getFilePanicFake struct{ *lookupFake }
+
+func (f *getFilePanicFake) GetFile(string) (CloudFile, error) {
+	panic("ResolveFolderPath 不应调用 GetFile")
+}
+
+func TestResolveFolderPathNeverGetFile(t *testing.T) {
+	fp := &getFilePanicFake{lookupFake: newLookupFake()}
+	fp.add("Media", "w1", "0", true)
+	fp.add("剧集", "w2", "w1", true)
+	if id, ok := ResolveFolderPath(fp, "Media/剧集"); !ok || id != "w2" {
+		t.Fatalf("路径解析 = %q,%v want w2,true", id, ok)
+	}
+}
