@@ -81,9 +81,20 @@ func FileFromListItem(raw map[string]any) File {
 		Size:         jIntPtr(raw, "fs"),
 		ModifiedTime: jIntPtr(raw, "upt"),
 		PickCode:     jStringPtr(raw, "pc"),
+		ParentID:     firstStringPtr(raw, "parent_id", "pid"),
 		Ico:          jStringPtr(raw, "ico"),
 		Raw:          raw,
 	}
+}
+
+// firstStringPtr 依次取首个非空字符串字段。
+func firstStringPtr(raw map[string]any, keys ...string) *string {
+	for _, k := range keys {
+		if v := jStringPtr(raw, k); v != nil && *v != "" {
+			return v
+		}
+	}
+	return nil
 }
 
 // FileFromPathInfo 从 /open/folder/get_info 返回构造。
