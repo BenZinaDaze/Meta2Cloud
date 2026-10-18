@@ -251,3 +251,27 @@ func TestBatchTmdbEntriesAndFolderGroups(t *testing.T) {
 		t.Fatalf("movie:101 应有 1 个目录: %v", groups)
 	}
 }
+
+func TestMediaParentIDPersistence(t *testing.T) {
+	s := newTestStore(t)
+	// 带 drive_parent_id 的载荷：写入后可经 ListClassifiableItems 读回
+	s.SaveIncremental([]map[string]any{
+		{"drive_folder_id": "f1", "drive_parent_id": "cat-anime", "media_type": "tv", "tmdb_id": 1, "title": "A"},
+	}, nil)
+	refs := s.ListClassifiableItems()
+	if len(refs) != 1 || refs[0].ParentID != "cat-anime" {
+		t.Fatalf("parent_id 应为 cat-anime: %+v", refs)
+	}
+	// 移动后更新
+	s.UpdateMediaParentID("f1", "cat-normal")
+	if refs = s.ListClassifiableItems(); refs[0].ParentID != "cat-normal" {
+		t.Fatalf("更新后 parent_id 应为 cat-normal: %+v", refs)
+	}
+	// 不带父信息的载荷（如旧数据回放）不应清掉已有值
+	s.SaveIncremental([]map[string]any{
+		{"drive_folder_id": "f1", "media_type": "tv", "tmdb_id": 1, "title": "A"},
+	}, nil)
+	if refs = s.ListClassifiableItems(); refs[0].ParentID != "cat-normal" {
+		t.Fatalf("空父信息载荷不应清掉已有 parent_id: %+v", refs)
+	}
+}

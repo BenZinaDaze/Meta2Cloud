@@ -8,8 +8,8 @@ import (
 	"meta2cloud/internal/jsonx"
 )
 
-// tmdbGenreIDs 提取 TMDB 详情的流派 ID 列表（16 = 动画，与语言设置无关）。
-func tmdbGenreIDs(info map[string]any) []int {
+// TmdbGenreIDs 提取 TMDB 详情的流派 ID 列表（16 = 动画，与语言设置无关）。
+func TmdbGenreIDs(info map[string]any) []int {
 	genres, _ := info["genres"].([]any)
 	ids := make([]int, 0, len(genres))
 	for _, g := range genres {

@@ -2,6 +2,8 @@
 package webui
 
 import (
+	"bytes"
+	"encoding/json"
 	"log"
 	"net/http"
 	"strings"
@@ -26,10 +28,13 @@ func handleSaveCategories(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	oldCats := RT().GetCategories()
 	if err := RT().SetCategories(&cats); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// 规则变化检测：供前端提示「是否将存量媒体按新规则重新归位」
+	rulesChanged := categoriesChanged(oldCats, &cats)
 	// 预创建分类目录树（幂等），保存后立即可在文件管理/网盘看到结构
 	// 配置值为媒体库根目录名：先按名解析，根目录尚不存在则直接在网盘根下创建
 	provider := RT().GetStorageProvider()
@@ -73,5 +78,18 @@ func handleSaveCategories(w http.ResponseWriter, r *http.Request) {
 		"tv":    len(cats.TV),
 		"movie": len(cats.Movie),
 	})
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "rules_changed": rulesChanged})
+}
+
+// categoriesChanged 判断分类规则是否变化（JSON 序列化对比，规避 nil/空切片差异）。
+func categoriesChanged(a, b *config.CategoriesConfig) bool {
+	if a == nil || b == nil {
+		return a != b
+	}
+	ab, err1 := json.Marshal(a)
+	bb, err2 := json.Marshal(b)
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	return !bytes.Equal(ab, bb)
 }

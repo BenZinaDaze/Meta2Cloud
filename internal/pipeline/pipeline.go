@@ -655,7 +655,7 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 	if p.categories != nil {
 		level1, level2 := "", ""
 		if tmdbInfo != nil {
-			level1, level2 = p.categories.Resolve(isTV, tmdbGenreIDs(tmdbInfo), jsonx.Str(tmdbInfo, "original_language"))
+			level1, level2 = p.categories.Resolve(isTV, TmdbGenreIDs(tmdbInfo), jsonx.Str(tmdbInfo, "original_language"))
 		} else {
 			// 无 TMDB 元数据：落"其他"一级目录（无法判定二级）
 			level1 = p.categories.Dirs.Other

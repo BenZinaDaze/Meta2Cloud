@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Check, LoaderCircle, PencilLine, RefreshCw, Search } from 'lucide-react'
-import { reidentifyMediaItem, tmdbGetDetail, tmdbSearchMulti } from '@/api'
+import { getMediaClassification, reidentifyMediaItem, tmdbGetDetail, tmdbSearchMulti } from '@/api'
 import {
   Dialog,
   DialogContent,
@@ -79,6 +79,8 @@ export default function ReidentifyModal({
   const [searching, setSearching] = useState(false)
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [clsInfo, setClsInfo] = useState<{ current: string; expected: string } | null>(null)
+  const [clsLoading, setClsLoading] = useState(false)
 
   useEffect(() => {
     if (!open || !item) return
@@ -93,6 +95,29 @@ export default function ReidentifyModal({
     setLoadingPreview(false)
     setSubmitting(false)
   }, [item, open])
+
+  // 分类核对：当前实际分类（115 实时）vs 应属分类（TMDB 最新流派 + 规则）
+  useEffect(() => {
+    setClsInfo(null)
+    if (!open || !item?.drive_folder_id) return
+    let cancelled = false
+    setClsLoading(true)
+    getMediaClassification(item.drive_folder_id)
+      .then((res) => {
+        if (!cancelled && res.data?.available) {
+          setClsInfo({ current: res.data.current || '', expected: res.data.expected || '' })
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setClsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, item])
+
+  const categoryMismatch = !!clsInfo && clsInfo.current !== clsInfo.expected
 
   const currentTmdbId = useMemo(() => {
     if (mode === 'id') {
@@ -164,12 +189,20 @@ export default function ReidentifyModal({
         onUpdated?.(updatedItem)
       }
       if (payload.partial) {
-        toast.warning('识别已修正，但有部分步骤失败', {
-          description: [...(payload.errors || []), ...(payload.rename_errors || [])].join('；') || '请查看日志后重试。',
+        toast.warning('修正完成，但有部分步骤失败', {
+          description: [
+            ...(payload.errors || []),
+            ...(payload.rename_errors || []),
+            ...(payload.reclassify_errors || []),
+          ].join('；') || '请查看日志后重试。',
         })
       } else {
-        toast.success('识别已修正', {
-          description: payload.renamed ? `目录已同步为 ${payload.folder_name || '新标题'}` : `已切换到 TMDB ${currentTmdbId}`,
+        const actions: string[] = []
+        if (currentTmdbId !== item.tmdb_id) actions.push(`已切换到 TMDB ${currentTmdbId}`)
+        if (payload.renamed) actions.push(`目录已重命名为 ${payload.folder_name || '新标题'}`)
+        if (payload.reclassified) actions.push(`已归入 ${payload.category || '正确分类'}`)
+        toast.success('修正完成', {
+          description: actions.length > 0 ? actions.join('；') : 'TMDB 识别与分类均已正确，未做改动',
         })
       }
       onOpenChange(false)
@@ -185,7 +218,8 @@ export default function ReidentifyModal({
     }
   }
 
-  const canSubmit = !!item?.drive_folder_id && !!currentTmdbId && currentTmdbId !== item?.tmdb_id && !loadingPreview
+  // TMDB 与当前一致时也允许提交：分类放错位置的修正不走换绑，只按需重命名与归位
+  const canSubmit = !!item?.drive_folder_id && !!currentTmdbId && !loadingPreview
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -193,7 +227,7 @@ export default function ReidentifyModal({
         <DialogHeader>
           <DialogTitle>修正识别</DialogTitle>
           <DialogDescription>
-            为当前媒体重新绑定正确的 TMDB 条目，并重写 NFO、封面与本地库记录。
+            重新绑定 TMDB 条目并重写 NFO、封面与本地库记录；目录名与分类归位会按需一并修正（TMDB 可与当前一致）。
           </DialogDescription>
         </DialogHeader>
 
@@ -299,6 +333,11 @@ export default function ReidentifyModal({
               />
               同步重命名媒体目录
             </label>
+            {currentTmdbId === item?.tmdb_id && (
+              <p className="text-xs text-muted-foreground">
+                TMDB 与当前绑定一致，确认后将仅核对目录名与分类归位（放错位置时自动移动）。
+              </p>
+            )}
           </div>
 
           <div className="space-y-4 rounded-xl border border-border/70 bg-card/40 p-4">
@@ -310,6 +349,30 @@ export default function ReidentifyModal({
                   {item?.year && <Badge variant="secondary">{item.year}</Badge>}
                   <Badge variant="secondary">TMDB {item?.tmdb_id || '未绑定'}</Badge>
                 </div>
+              </div>
+              <div className="mt-3 space-y-1 border-t border-border/60 pt-3 text-xs">
+                {clsLoading ? (
+                  <div className="flex items-center gap-1.5 text-muted-foreground">
+                    <LoaderCircle className="size-3 animate-spin" />
+                    分类核对中...
+                  </div>
+                ) : clsInfo ? (
+                  <>
+                    <div className="text-muted-foreground">
+                      当前分类：
+                      <span className={categoryMismatch ? 'font-medium text-warning' : 'text-foreground'}>
+                        {clsInfo.current || '未分类'}
+                      </span>
+                    </div>
+                    <div className="text-muted-foreground">
+                      应属分类：
+                      <span className="text-foreground">{clsInfo.expected || '未命中规则'}</span>
+                    </div>
+                    {categoryMismatch && (
+                      <div className="text-warning">分类不一致，确认修正后将自动移动到应属分类</div>
+                    )}
+                  </>
+                ) : null}
               </div>
             </div>
 

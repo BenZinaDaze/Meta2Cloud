@@ -97,9 +97,13 @@ func (s *Server) registerRoutes() {
 	// media actions / tmdb / scraper / bangumi
 	m.HandleFunc("POST /api/library:refresh-item", handleRefreshItem)
 	m.HandleFunc("POST /api/library:reidentify", handleReidentifyItem)
+	m.HandleFunc("GET /api/library:classification", handleMediaClassification)
 	m.HandleFunc("GET /api/title-pins", handleListTitlePins)
 	m.HandleFunc("POST /api/title-pins:adopt", handleAdoptTitlePin)
 	m.HandleFunc("POST /api/title-pins:delete", handleDeleteTitlePin)
+	m.HandleFunc("POST /api/categories:reclassify-dry", handleCategoriesReclassifyDry)
+	m.HandleFunc("POST /api/categories:reclassify", handleCategoriesReclassify)
+	m.HandleFunc("GET /api/categories:reclassify-status", handleCategoriesReclassifyStatus)
 	m.HandleFunc("GET /api/cache", handleCacheStats)
 	m.HandleFunc("POST /api/cache:evict", handleCacheEvict)
 	m.HandleFunc("GET /api/health", handleHealth)
@@ -166,6 +170,9 @@ func (s *Server) Handler() http.Handler {
 
 // ListenAndServe 在 addr 上启动 HTTP 服务。
 func ListenAndServe(addr string, s *Server) error {
+	// 预开 STRM 存储：把上次进程遗留的「进行中」同步记录收尾为失败，
+	// 惰性初始化会让该清理推迟到首次访问 STRM 接口才发生
+	_ = RT().GetStrmStore()
 	return http.ListenAndServe(addr, s.Handler())
 }
 

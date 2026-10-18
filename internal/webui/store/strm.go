@@ -4,6 +4,7 @@ package store
 
 import (
 	"database/sql"
+	"log"
 	"os"
 	"time"
 )
@@ -123,7 +124,9 @@ func OpenStrmStore(dbPath string) (*StrmStore, error) {
 		db.Close()
 		return nil, err
 	}
-	return &StrmStore{db: db}, nil
+	s := &StrmStore{db: db}
+	s.failStaleRunningRuns()
+	return s, nil
 }
 
 // Close 关闭。
@@ -251,6 +254,20 @@ func (s *StrmStore) FinishSyncRun(runID int64, created, updated, removed, skippe
 	_, _ = s.db.Exec(`UPDATE strm_sync_runs
 		SET finished_at = ?, created = ?, updated = ?, removed = ?, skipped = ?, error = ?
 		WHERE id = ?`, strmNow(), created, updated, removed, skipped, errArg, runID)
+}
+
+// failStaleRunningRuns 把上次进程遗留的「进行中」同步记录收尾为失败。
+// 进程崩溃/被杀时无人调用 FinishSyncRun，这些行会永远停留在进行中；存储打开即清理。
+func (s *StrmStore) failStaleRunningRuns() {
+	res, err := s.db.Exec(`UPDATE strm_sync_runs
+		SET finished_at = ?, error = '进程重启中断，同步未完成'
+		WHERE finished_at IS NULL`)
+	if err != nil {
+		return
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		log.Printf("已收尾 %d 条遗留的进行中同步记录", n)
+	}
 }
 
 // InsertSyncFileDetail 写一条文件级明细（忽略失败，明细不阻塞同步）。

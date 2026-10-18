@@ -19,6 +19,7 @@ import (
 	"meta2cloud/internal/config"
 	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/scraper"
+	"meta2cloud/internal/tmdb"
 	"meta2cloud/internal/u115"
 
 	"gopkg.in/yaml.v3"
@@ -1159,5 +1160,297 @@ func TestScanCategoryPassthrough(t *testing.T) {
 	}
 	if !strings.Contains(shows[0].Title, "学生会也有洞") {
 		t.Errorf("title = %q", shows[0].Title)
+	}
+}
+
+// 修正识别后媒体目录应按新 TMDB 流派重新归类（移动到新一级/二级分类目录下）
+func TestReidentifyReclassifiesFolder(t *testing.T) {
+	rootDir := t.TempDir()
+	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
+	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
+		[]byte("webui:\n  username: admin\n  password: secret123\ntmdb:\n  api_key: k\nu115:\n  root_folder_id: \"root\"\n"), 0o644)
+	ResetJWTSecretCache()
+	InitRuntime(rootDir)
+
+	// TMDB mock：新识别的媒体带动画流派（16）与日语
+	tmdbServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/season/") {
+			json.NewEncoder(w).Encode(map[string]any{"name": "Season 1", "episodes": []any{}})
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/tv/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"id": 325052, "name": "从后面来的神威先生", "original_name": "kami-senpai",
+				"original_language": "ja", "first_air_date": "2026-04-01",
+				"overview": "test", "poster_path": "/p.jpg", "backdrop_path": "/b.jpg",
+				"number_of_episodes": 12, "status": "Returning Series",
+				"genres":             []any{map[string]any{"id": 16, "name": "动画"}},
+				"credits":            map[string]any{"crew": []any{}, "cast": []any{}},
+				"external_ids":       map[string]any{},
+				"content_ratings":    map[string]any{"results": []any{}},
+			})
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer tmdbServer.Close()
+	tmdbClient := tmdb.NewClient("k", "zh-CN", "", 5, nil)
+	tmdbClient.SetTestBaseURL(tmdbServer.URL)
+	RT().SetTmdbClientForTest(tmdbClient)
+
+	fp := newFakeWebProvider()
+	root := fp.addFolder("root", "0")
+	tvDir := fp.addFolder("剧集", root.ID)
+	wrongCat := fp.addFolder("普通电视剧", tvDir.ID)
+	rightCat := fp.addFolder("动漫", tvDir.ID)
+	show := fp.addFolder("误识别的剧 (2026)", wrongCat.ID)
+	season := fp.addFolder("Season 01", show.ID)
+	fp.addFile("误识别的剧 - S01E01.mkv", season.ID)
+	RT().SetProviderForTest(fp.provider())
+
+	RT().SetCategories(&config.CategoriesConfig{
+		Dirs: config.CategoryDirs{TV: "剧集", Movie: "电影", Other: "其他"},
+		TV: []config.CategoryRule{
+			{Name: "动漫", GenreIDs: []int{16}, Languages: []string{"ja"}},
+			{Name: "普通电视剧"},
+		},
+	})
+
+	server := NewServer()
+	t.Cleanup(server.Close)
+	ts := httptest.NewServer(server.Handler())
+	t.Cleanup(ts.Close)
+	_, out := login(t, ts, "admin", "secret123")
+	token := out["token"].(string)
+
+	code, resp := authedRequest(t, ts, token, "POST", "/api/library:reidentify", map[string]any{
+		"drive_folder_id": show.ID, "media_type": "tv", "tmdb_id": 325052,
+		"title": "从后面来的神威先生", "rename_folder": true,
+	})
+	if code != 200 {
+		t.Fatalf("reidentify code = %d: %v", code, resp)
+	}
+	if resp["ok"] != true || resp["reclassified"] != true {
+		t.Fatalf("reidentify 结果异常: %v", resp)
+	}
+	if resp["category"] != "剧集/动漫" {
+		t.Fatalf("分类错误: %v", resp["category"])
+	}
+	moved, err := fp.GetFile(show.ID)
+	if err != nil || moved.ParentID != rightCat.ID {
+		t.Fatalf("目录应移动到 动漫 分类下: parent=%v err=%v", moved.ParentID, err)
+	}
+	reloaded, _ := fp.GetFile(rightCat.ID)
+	children, _ := fp.ListFiles(reloaded.ID, 100)
+	found := false
+	for _, c := range children {
+		if c.ID == show.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("动漫 分类下应包含移动后的目录")
+	}
+}
+
+// 全库重新归类：干跑统计 + 后台执行 + 错放目录移动到正确分类
+func TestCategoriesReclassifyFlow(t *testing.T) {
+	rootDir := t.TempDir()
+	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
+	strmLocal := filepath.Join(t.TempDir(), "media")
+	cfgYAML := "webui:\n  username: admin\n  password: secret123\ntmdb:\n  api_key: k\nu115:\n  root_folder_id: \"root\"\nstrm:\n  enabled: true\n  url_base: \"http://127.0.0.1:38765\"\n  mappings:\n    - pan_folder_id: \"root\"\n      local_path: \"" + strmLocal + "\"\n"
+	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
+	ResetJWTSecretCache()
+	InitRuntime(rootDir)
+
+	fp := newFakeWebProvider()
+	root := fp.addFolder("root", "0")
+	tvDir := fp.addFolder("剧集", root.ID)
+	anime := fp.addFolder("动漫", tvDir.ID)
+	normal := fp.addFolder("普通电视剧", tvDir.ID)
+	wrongShow := fp.addFolder("错放的动漫 (2026)", normal.ID) // 属于动漫却放在普通电视剧
+	rightShow := fp.addFolder("普通剧 (2025)", normal.ID)
+	RT().SetProviderForTest(fp.provider())
+
+	RT().SetCategories(&config.CategoriesConfig{
+		Dirs: config.CategoryDirs{TV: "剧集", Movie: "电影", Other: "其他"},
+		TV: []config.CategoryRule{
+			{Name: "动漫", GenreIDs: []int{16}, Languages: []string{"ja"}},
+			{Name: "普通电视剧"},
+		},
+	})
+
+	ls := RT().GetLibraryStore()
+	_ = RT().GetStrmStore() // 预开 STRM 存储：归位完成触发的异步同步复用句柄，避免清理阶段懒建目录
+
+	// TMDB mock：执行阶段会绕缓存拉最新详情重判分类，返回与上方缓存一致的判定
+	tmdbServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/tv/325052"):
+			json.NewEncoder(w).Encode(map[string]any{
+				"id": 325052, "name": "错放的动漫", "original_language": "ja",
+				"genres":             []any{map[string]any{"id": 16, "name": "动画"}},
+				"credits":            map[string]any{"crew": []any{}, "cast": []any{}},
+				"external_ids":       map[string]any{},
+				"content_ratings":    map[string]any{"results": []any{}},
+			})
+		case strings.HasPrefix(r.URL.Path, "/tv/999"):
+			json.NewEncoder(w).Encode(map[string]any{
+				"id": 999, "name": "普通剧", "original_language": "ja",
+				"genres":             []any{map[string]any{"id": 18, "name": "剧情"}},
+				"credits":            map[string]any{"crew": []any{}, "cast": []any{}},
+				"external_ids":       map[string]any{},
+				"content_ratings":    map[string]any{"results": []any{}},
+			})
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	defer tmdbServer.Close()
+	tmdbClient := tmdb.NewClient("k", "zh-CN", "", 5, nil)
+	tmdbClient.SetTestBaseURL(tmdbServer.URL)
+	RT().SetTmdbClientForTest(tmdbClient)
+
+	ls.SaveIncremental([]map[string]any{
+		{"drive_folder_id": wrongShow.ID, "media_type": "tv", "tmdb_id": 325052, "title": "错放的动漫", "year": "2026"},
+		{"drive_folder_id": rightShow.ID, "media_type": "tv", "tmdb_id": 999, "title": "普通剧", "year": "2025"},
+	}, nil)
+	expires := float64(time.Now().Unix()) + 3600
+	_ = ls.UpsertTmdbDetail("tv", 325052, "zh-CN", map[string]any{
+		"name": "错放的动漫", "original_language": "ja",
+		"genres": []any{map[string]any{"id": 16, "name": "动画"}},
+	}, expires)
+	_ = ls.UpsertTmdbDetail("tv", 999, "zh-CN", map[string]any{
+		"name": "普通剧", "original_language": "ja",
+		"genres": []any{map[string]any{"id": 18, "name": "剧情"}},
+	}, expires)
+
+	server := NewServer()
+	t.Cleanup(server.Close)
+	ts := httptest.NewServer(server.Handler())
+	t.Cleanup(ts.Close)
+	_, out := login(t, ts, "admin", "secret123")
+	token := out["token"].(string)
+
+	// 干跑：目标分布统计
+	code, dry := authedRequest(t, ts, token, "POST", "/api/categories:reclassify-dry", nil)
+	if code != 200 {
+		t.Fatalf("dry code = %d: %v", code, dry)
+	}
+	if dry["total"] != float64(2) {
+		t.Fatalf("dry total = %v", dry["total"])
+	}
+	targets, _ := dry["targets"].(map[string]any)
+	if targets["剧集/动漫"] != float64(1) || targets["剧集/普通电视剧"] != float64(1) {
+		t.Fatalf("dry targets 错误: %v", targets)
+	}
+
+	// 执行
+	code, exec := authedRequest(t, ts, token, "POST", "/api/categories:reclassify", nil)
+	if code != 200 || exec["started"] != true {
+		t.Fatalf("执行启动失败: %d %v", code, exec)
+	}
+
+	// 轮询至完成（后台执行，最多 5 秒）
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		_, st := authedGet(t, ts, token, "/api/categories:reclassify-status")
+		if st["running"] != true {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("归位任务超时未完成")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// 错放目录应已移动到 动漫；正确目录保持不动
+	moved, err := fp.GetFile(wrongShow.ID)
+	if err != nil || moved.ParentID != anime.ID {
+		t.Fatalf("错放目录应移入 动漫: parent=%v err=%v", moved.ParentID, err)
+	}
+	stay, err := fp.GetFile(rightShow.ID)
+	if err != nil || stay.ParentID != normal.ID {
+		t.Fatalf("正确目录不应被移动: parent=%v err=%v", stay.ParentID, err)
+	}
+
+	// 等待归位触发的 STRM 同步结束，避免清理阶段与异步建库竞态
+	deadline2 := time.Now().Add(5 * time.Second)
+	for {
+		if run := RT().GetStrmStore().GetLastFinishedSyncRun(); run != nil && run.Trigger == "reclassify" {
+			break
+		}
+		if time.Now().After(deadline2) {
+			t.Fatal("归位触发的 STRM 同步未完成")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func TestMediaClassificationEndpoint(t *testing.T) {
+	rootDir := t.TempDir()
+	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
+	cfgYAML := "webui:\n  username: admin\n  password: secret123\ntmdb:\n  api_key: k\nu115:\n  root_folder_id: \"root\"\n"
+	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
+	ResetJWTSecretCache()
+	InitRuntime(rootDir)
+
+	// TMDB mock：执行/核对均绕缓存拉最新详情，返回动画流派
+	tmdbServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/tv/325052") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"id": 325052, "name": "错放的动漫", "original_language": "ja",
+				"genres":             []any{map[string]any{"id": 16, "name": "动画"}},
+				"credits":            map[string]any{"crew": []any{}, "cast": []any{}},
+				"external_ids":       map[string]any{},
+				"content_ratings":    map[string]any{"results": []any{}},
+			})
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer tmdbServer.Close()
+	tmdbClient := tmdb.NewClient("k", "zh-CN", "", 5, nil)
+	tmdbClient.SetTestBaseURL(tmdbServer.URL)
+	RT().SetTmdbClientForTest(tmdbClient)
+
+	fp := newFakeWebProvider()
+	root := fp.addFolder("root", "0")
+	tvDir := fp.addFolder("剧集", root.ID)
+	normal := fp.addFolder("普通电视剧", tvDir.ID)
+	wrongShow := fp.addFolder("错放的动漫 (2026)", normal.ID)
+	RT().SetProviderForTest(fp.provider())
+	RT().SetCategories(&config.CategoriesConfig{
+		Dirs: config.CategoryDirs{TV: "剧集", Movie: "电影", Other: "其他"},
+		TV: []config.CategoryRule{
+			{Name: "动漫", GenreIDs: []int{16}, Languages: []string{"ja"}},
+			{Name: "普通电视剧"},
+		},
+	})
+	ls := RT().GetLibraryStore()
+	ls.SaveIncremental([]map[string]any{
+		{"drive_folder_id": wrongShow.ID, "drive_parent_id": normal.ID, "media_type": "tv", "tmdb_id": 325052, "title": "错放的动漫"},
+	}, nil)
+
+	server := NewServer()
+	t.Cleanup(server.Close)
+	ts := httptest.NewServer(server.Handler())
+	t.Cleanup(ts.Close)
+	_, out := login(t, ts, "admin", "secret123")
+	token := out["token"].(string)
+
+	code, data := authedGet(t, ts, token, "/api/library:classification?folder_id="+wrongShow.ID)
+	if code != 200 {
+		t.Fatalf("classification code = %d: %v", code, data)
+	}
+	if data["available"] != true {
+		t.Fatalf("available 应为 true: %v", data)
+	}
+	// 当前实际位置在 普通电视剧 下；应属分类按 TMDB 最新流派（16/ja）为 动漫
+	if data["current"] != "剧集/普通电视剧" {
+		t.Fatalf("current = %v, want 剧集/普通电视剧", data["current"])
+	}
+	if data["expected"] != "剧集/动漫" {
+		t.Fatalf("expected = %v, want 剧集/动漫", data["expected"])
 	}
 }

@@ -55,6 +55,9 @@ export const reidentifyMediaItem = (
   year?: string,
   rename_folder: boolean = true
 ) => api.post('/library:reidentify', { tmdb_id, media_type, drive_folder_id, title, year, rename_folder })
+// 单媒体分类核对：当前分类（库中位置记录 → 分类树标签）与按 TMDB 最新流派/规则应属分类
+export const getMediaClassification = (driveFolderId: string) =>
+  api.get('/library:classification', { params: { folder_id: driveFolderId } })
 export const removeLibraryItem = (driveFolderId: string) =>
   api.delete(`/library/${driveFolderId}`)
 
@@ -187,3 +190,7 @@ export const batchAction = (data: { action: 'delete' | 'move'; file_ids: string[
 export const getCategories = () => api.get('/categories')
 export const saveCategories = (config: import('@/types/api').CategoriesConfig) =>
   api.put('/categories', config)
+// 全库重新归类：干跑统计 / 启动后台归位 / 进度查询
+export const reclassifyDry = () => api.post('/categories:reclassify-dry')
+export const reclassifyStart = () => api.post('/categories:reclassify')
+export const reclassifyStatus = () => api.get('/categories:reclassify-status')

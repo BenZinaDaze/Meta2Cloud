@@ -109,6 +109,22 @@ func (c *Client) GetByID(mtype mediaparser.MediaType, tmdbid int) map[string]any
 	}
 }
 
+// GetByIDFresh 强制请求 TMDB 最新详情（绕过缓存读取，结果回写缓存）。
+// 用于分类重判定等需要权威数据的场景：TMDB 流派可能变化，缓存值最多滞后一个 TTL。
+func (c *Client) GetByIDFresh(mtype mediaparser.MediaType, tmdbid int) map[string]any {
+	switch mtype {
+	case mediaparser.MediaMovie:
+		return c.movieDetail(tmdbid, false)
+	case mediaparser.MediaTV:
+		return c.tvDetail(tmdbid, false)
+	default:
+		if info := c.movieDetail(tmdbid, false); info != nil {
+			return info
+		}
+		return c.tvDetail(tmdbid, false)
+	}
+}
+
 // GetSeasonDetail 获取某季的完整信息（含所有集）。
 func (c *Client) GetSeasonDetail(tmdbid, season int) map[string]any {
 	return c.get(fmt.Sprintf("/tv/%d/season/%d", tmdbid, season), nil, true)
@@ -326,17 +342,26 @@ func checkAppendFields(data map[string]any, fields string) bool {
 }
 
 func (c *Client) getMovieDetail(tmdbid int) map[string]any {
+	return c.movieDetail(tmdbid, true)
+}
+
+// movieDetail useCache=false 时绕过缓存读取并回写缓存（供需要最新数据的场景）。
+func (c *Client) movieDetail(tmdbid int, useCache bool) map[string]any {
 	extra := map[string]string{"append_to_response": appendFields}
-	data := c.get(fmt.Sprintf("/movie/%d", tmdbid), extra, true)
+	path := fmt.Sprintf("/movie/%d", tmdbid)
+	data := c.get(path, extra, useCache)
 	if data == nil {
 		return nil
 	}
 	// 缓存数据可能不完整，缺少任意 append 字段时强制重新请求
 	if !checkAppendFields(data, appendFields) {
-		data = c.get(fmt.Sprintf("/movie/%d", tmdbid), extra, false)
+		data = c.get(path, extra, false)
 		if data == nil {
 			return nil
 		}
+	}
+	if c.cache != nil && !useCache {
+		c.cache.Set(buildCachePath(path, extra), data, c.language)
 	}
 	data["media_type"] = mediaparser.MediaMovie.String()
 	data["tmdb_id"] = data["id"]
@@ -347,16 +372,25 @@ func (c *Client) getMovieDetail(tmdbid int) map[string]any {
 }
 
 func (c *Client) getTVDetail(tmdbid int) map[string]any {
+	return c.tvDetail(tmdbid, true)
+}
+
+// tvDetail useCache=false 时绕过缓存读取并回写缓存（供需要最新数据的场景）。
+func (c *Client) tvDetail(tmdbid int, useCache bool) map[string]any {
 	extra := map[string]string{"append_to_response": appendFields}
-	data := c.get(fmt.Sprintf("/tv/%d", tmdbid), extra, true)
+	path := fmt.Sprintf("/tv/%d", tmdbid)
+	data := c.get(path, extra, useCache)
 	if data == nil {
 		return nil
 	}
 	if !checkAppendFields(data, appendFields) {
-		data = c.get(fmt.Sprintf("/tv/%d", tmdbid), extra, false)
+		data = c.get(path, extra, false)
 		if data == nil {
 			return nil
 		}
+	}
+	if c.cache != nil && !useCache {
+		c.cache.Set(buildCachePath(path, extra), data, c.language)
 	}
 	data["media_type"] = mediaparser.MediaTV.String()
 	data["tmdb_id"] = data["id"]

@@ -53,6 +53,7 @@ type MediaItem struct {
 	InLibraryEpisodes  *int           `json:"in_library_episodes,omitempty"`
 	Status             *string        `json:"status,omitempty"`
 	DriveFolderID      *string        `json:"drive_folder_id,omitempty"`
+	ParentFolderID     *string        `json:"drive_parent_id,omitempty"`
 	UpdatedAt          *string        `json:"updated_at,omitempty"`
 	FolderModifiedTime *int64         `json:"folder_modified_time,omitempty"`
 }
@@ -366,9 +367,10 @@ func scanSingleMovieFolder(_ cloudfile.Provider, folder cloudfile.CloudFile, cfg
 			TmdbID: tmdbID, Title: title, OriginalTitle: jsonx.Str(tmdbInfo, "original_title"),
 			Year: year, MediaType: "movie",
 			PosterURL: strPtrOrNil(poster), BackdropURL: strPtrOrNil(backdrop),
-			Overview:      jsonx.Str(tmdbInfo, "overview"),
-			Rating:        roundTo1(jsonx.Float(tmdbInfo, "vote_average", 0)),
-			DriveFolderID: &fid, FolderModifiedTime: &m,
+			Overview:       jsonx.Str(tmdbInfo, "overview"),
+			Rating:         roundTo1(jsonx.Float(tmdbInfo, "vote_average", 0)),
+			DriveFolderID:  &fid, FolderModifiedTime: &m,
+			ParentFolderID: strPtrOrNil(folder.ParentID),
 		}
 	}
 	title, year := extractTitleYear(folder.Name)
@@ -377,6 +379,7 @@ func scanSingleMovieFolder(_ cloudfile.Provider, folder cloudfile.CloudFile, cfg
 	return &MediaItem{
 		TmdbID: 0, Title: title, Year: year, MediaType: "movie",
 		DriveFolderID: &fid, FolderModifiedTime: &m,
+		ParentFolderID: strPtrOrNil(folder.ParentID),
 	}
 }
 
@@ -575,6 +578,7 @@ func scanSingleTVFolder(client cloudfile.Provider, cfg *config.Config, showFolde
 		PosterURL: poster, BackdropURL: backdrop, Overview: overview, Rating: rating,
 		Seasons: seasonsStatus, TotalEpisodes: &te, InLibraryEpisodes: &ie,
 		Status: strPtrOrNil(status), DriveFolderID: &fid, FolderModifiedTime: &m,
+		ParentFolderID: strPtrOrNil(showFolder.ParentID),
 	}
 }
 
@@ -710,6 +714,9 @@ func mediaItemToPayload(m MediaItem) map[string]any {
 	}
 	if m.DriveFolderID != nil {
 		payload["drive_folder_id"] = *m.DriveFolderID
+	}
+	if m.ParentFolderID != nil {
+		payload["drive_parent_id"] = *m.ParentFolderID
 	}
 	if m.TotalEpisodes != nil {
 		payload["total_episodes"] = *m.TotalEpisodes

@@ -100,6 +100,7 @@ All stores use `modernc.org/sqlite` (pure Go, no CGO) with WAL mode and `SetMaxO
 
 ## Important Notes
 
+- **115 API QPS 限制为 3**：手动测试 115 接口时必须串行且间隔 ≥1s，密集调用会触发 429 并进入约 3600s 冷却；新增批量网盘操作须走全项目统一的 QPS 节拍
 - Frontend uses React 19 with TypeScript
 - Tailwind CSS v4 syntax (uses `@tailwindcss/vite`, not `tailwind.config.js`)
 - Backend runs on port 38765

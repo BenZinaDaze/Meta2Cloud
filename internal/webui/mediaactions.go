@@ -378,6 +378,43 @@ func renameLibraryFolder(client cloudfile.Provider, driveFolderID, mediaType str
 	return map[string]any{"renamed": renamedName != currentName, "folder_name": renamedName}, nil
 }
 
+// reclassifyLibraryFolder 修正识别后按新 TMDB 信息重新归类：
+// 解析分类目录链（媒体库根/一级/二级），目录不在新分类下时移动过去（目录 ID 不变）。
+// 分类判定取 TMDB 最新详情（与修正识别弹窗展示的应属分类同标准）。
+func reclassifyLibraryFolder(provider cloudfile.Provider, driveFolderID, mediaType string, tmdbID int64) (map[string]any, error) {
+	categories := RT().GetCategories()
+	rootRef := strings.TrimSpace(RT().GetConfig().ActiveRootFolderID())
+	if categories == nil || rootRef == "" {
+		return map[string]any{"moved": false}, nil
+	}
+	info, err := fetchTmdbInfoForClassification(tmdbID, mediaType)
+	if err != nil {
+		return nil, err
+	}
+	rootID, ok := cloudfile.ResolveFolderRefOrPath(provider, rootRef)
+	if !ok {
+		return nil, fmt.Errorf("媒体库根目录 %q 不存在", rootRef)
+	}
+	targetParent, category, err := classifyTargetParent(provider, categories, rootID, mediaType == "tv", info)
+	if err != nil {
+		return nil, err
+	}
+	current, err := provider.GetFile(driveFolderID)
+	if err != nil {
+		return nil, err
+	}
+	if current.ParentID == targetParent {
+		return map[string]any{"moved": false, "category": category}, nil
+	}
+	if _, err := provider.MoveFile(driveFolderID, targetParent, ""); err != nil {
+		return nil, err
+	}
+	if ls := RT().GetLibraryStore(); ls != nil {
+		ls.UpdateMediaParentID(driveFolderID, targetParent)
+	}
+	return map[string]any{"moved": true, "category": category}, nil
+}
+
 // ── HTTP 处理器 ─────────────────────────────────────────────
 
 type refreshItemBody struct {
@@ -458,8 +495,31 @@ func handleReidentifyItem(w http.ResponseWriter, r *http.Request) {
 	if renameError != "" {
 		result["rename_errors"] = []string{renameError}
 	}
+	// 重新归类：按新 TMDB 流派解析分类目录链，目录不在新分类下时移动过去
+	reclassified := false
+	category := ""
+	reclassifyError := ""
+	if body.TmdbID > 0 {
+		if r, err := reclassifyLibraryFolder(RT().GetStorageProvider(), body.DriveFolderID, body.MediaType, body.TmdbID); err != nil {
+			reclassifyError = err.Error()
+		} else {
+			reclassified, _ = r["moved"].(bool)
+			category, _ = r["category"].(string)
+		}
+	}
+	result["reclassified"] = reclassified
+	if category != "" {
+		result["category"] = category
+	}
+	if reclassifyError != "" {
+		result["reclassify_errors"] = []string{reclassifyError}
+	}
+	// 目录被移动或重命名都会改变本地 STRM 树的镜像路径，触发全量同步立即跟进
+	if reclassified || renamed {
+		TriggerStrmSync("reidentify")
+	}
 	errs, _ := result["errors"].([]string)
-	partial := len(errs) > 0 || renameError != ""
+	partial := len(errs) > 0 || renameError != "" || reclassifyError != ""
 	result["partial"] = partial
 	result["ok"] = !partial
 	writeJSON(w, http.StatusOK, result)

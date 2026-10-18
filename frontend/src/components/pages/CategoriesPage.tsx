@@ -1,11 +1,21 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Plus, ArrowUp, ArrowDown, Trash2, Folder, ChevronDown, ChevronRight } from 'lucide-react'
-import { getCategories, saveCategories } from '@/api'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Plus, ArrowUp, ArrowDown, Trash2, Folder, ChevronDown, ChevronRight, FolderSync, Loader2 } from 'lucide-react'
+import { getCategories, saveCategories, reclassifyDry, reclassifyStart, reclassifyStatus } from '@/api'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import PageHeader from '@/components/shared/PageHeader'
 import type { CategoryDirs, CategoryRule, CategoriesConfig } from '@/types/api'
 
@@ -62,6 +72,96 @@ export default function CategoriesPage({ onToast }: CategoriesPageProps) {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [customGenre, setCustomGenre] = useState('')
   const [collapsed, setCollapsed] = useState<{ tv: boolean; movie: boolean }>({ tv: false, movie: false })
+  // 全库重新归类：干跑统计 → 二次确认 → 后台执行 → 轮询进度
+  const [reclassifyOpen, setReclassifyOpen] = useState(false)
+  const [dryLoading, setDryLoading] = useState(false)
+  const [dryData, setDryData] = useState<{
+    total: number
+    uncached: number
+    targets: Record<string, number>
+  } | null>(null)
+  const [executing, setExecuting] = useState(false)
+  const [progress, setProgress] = useState<{ running: boolean; moved: number; failed: number; total: number } | null>(null)
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const stopPolling = () => {
+    if (pollTimer.current) {
+      clearInterval(pollTimer.current)
+      pollTimer.current = null
+    }
+  }
+
+  // 后台归位进度轮询：running 变为 false 时报完成并停止
+  const startPolling = useCallback(() => {
+    stopPolling()
+    pollTimer.current = setInterval(async () => {
+      try {
+        const res = await reclassifyStatus()
+        const st: {
+          running: boolean
+          moved: number
+          failed: number
+          total: number
+          moves?: string[]
+          errors?: string[]
+        } = res.data
+        setProgress(st)
+        if (st && !st.running) {
+          stopPolling()
+          if (st.failed > 0) {
+            const errs = (st.errors || []).slice(0, 3).join('\n')
+            notify('warning', `重新归类完成：移动 ${st.moved} 项，失败 ${st.failed} 项`, errs || undefined)
+          } else {
+            const moves = st.moves || []
+            const detail =
+              moves.length > 0
+                ? moves.slice(0, 3).join('\n') + (moves.length > 3 ? `\n等 ${st.moved} 项` : '')
+                : `已移动 ${st.moved} 项`
+            notify('success', '全库重新归类完成', detail)
+          }
+        }
+      } catch {
+        /* 静默重试 */
+      }
+    }, 3000)
+  }, [notify])
+
+  useEffect(() => stopPolling, [])
+
+  const openReclassify = useCallback(async () => {
+    setDryLoading(true)
+    try {
+      const res = await reclassifyDry()
+      setDryData(res.data)
+      setReclassifyOpen(true)
+    } catch (e) {
+      const text = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '获取归类统计失败'
+      notify('error', '全库重新归类', text)
+    } finally {
+      setDryLoading(false)
+    }
+  }, [notify])
+
+  const handleReclassifyExecute = useCallback(async () => {
+    setExecuting(true)
+    try {
+      await reclassifyStart()
+      setReclassifyOpen(false)
+      notify('success', '已开始全库重新归类', '仅移动位置不正确的目录，完成后将自动同步 STRM')
+      setProgress({ running: true, moved: 0, failed: 0, total: dryData?.total ?? 0 })
+      startPolling()
+    } catch (e) {
+      const resp = e as { response?: { data?: { state?: { running: boolean } }; status?: number } }
+      if (resp?.response?.status === 409) {
+        notify('warning', '已有归位任务进行中', '等待当前任务完成后再试')
+      } else {
+        const text = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '启动失败'
+        notify('error', '全库重新归类', text)
+      }
+    } finally {
+      setExecuting(false)
+    }
+  }, [dryData, notify, startPolling])
 
   const toggleCollapsed = (kind: 'tv' | 'movie') =>
     setCollapsed((c) => ({ ...c, [kind]: !c[kind] }))
@@ -136,9 +236,13 @@ export default function CategoriesPage({ onToast }: CategoriesPageProps) {
     setSaving(true)
     setMessage(null)
     try {
-      await saveCategories(config)
+      const res = await saveCategories(config)
       setMessage({ type: 'success', text: '已保存，目录结构已创建；下次整理生效' })
-      notify('success', '分类配置已保存', '目录结构已创建，下次整理生效')
+      const rulesChanged = res.data?.rules_changed === true
+      notify('success', '分类配置已保存', rulesChanged ? '分类规则已变化，可对存量媒体重新归位' : '目录结构已创建，下次整理生效')
+      if (rulesChanged) {
+        void openReclassify()
+      }
     } catch (e) {
       const text = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '分类配置保存失败'
       setMessage({ type: 'error', text })
@@ -146,7 +250,7 @@ export default function CategoriesPage({ onToast }: CategoriesPageProps) {
     } finally {
       setSaving(false)
     }
-  }, [config, notify])
+  }, [config, notify, openReclassify])
 
   // 单条二级规则卡片
   const renderRuleItem = (kind: 'tv' | 'movie', idx: number, rule: CategoryRule, isLast: boolean) => (
@@ -318,6 +422,17 @@ export default function CategoriesPage({ onToast }: CategoriesPageProps) {
                 {message.text}
               </span>
             )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={openReclassify}
+              disabled={dryLoading || progress?.running}
+              title="按当前规则把存量媒体移动到正确的分类目录"
+              className="h-10 gap-1.5 rounded-full px-4"
+            >
+              {dryLoading ? <Loader2 className="size-4 animate-spin" /> : <FolderSync className="size-4" />}
+              全库重新归类
+            </Button>
             <Button size="sm" onClick={handleSave} disabled={saving} className="h-10 gap-1.5 rounded-full px-5">
               {saving ? '保存中…' : '保存分类'}
             </Button>
@@ -349,6 +464,46 @@ export default function CategoriesPage({ onToast }: CategoriesPageProps) {
         说明：目录名即网盘上的实际目录，保存在媒体库根下自动创建；二级分类按「流派（任一命中）+
         语言（任一命中，不选为不限）」判定，首条命中即归入。媒体服务器需刷新/重建库。
       </p>
+
+      <AlertDialog open={reclassifyOpen} onOpenChange={setReclassifyOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>全库重新归类</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  按当前规则，共 <span className="font-semibold text-foreground">{dryData?.total ?? 0}</span>{' '}
+                  项在库媒体将归入以下分类（仅移动位置不正确的目录，文件与命名不动）：
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(dryData?.targets ?? {}).map(([cat, count]) => (
+                    <span key={cat} className="rounded-md bg-muted px-2 py-0.5 text-xs text-foreground">
+                      {cat} · {count}
+                    </span>
+                  ))}
+                </div>
+                {(dryData?.uncached ?? 0) > 0 && (
+                  <p className="text-warning">
+                    其中 {dryData?.uncached} 项暂无 TMDB 缓存，上方分布按兜底规则预览；
+                    执行时会拉取 TMDB 最新分类，无需先刷新缓存。
+                  </p>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              disabled={executing}
+              onClick={handleReclassifyExecute}
+            >
+              {executing ? <Loader2 className="mr-1 size-4 animate-spin" /> : null}
+              开始归位
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

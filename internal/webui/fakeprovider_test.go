@@ -101,11 +101,44 @@ func (f *fakeWebProvider) FindFile(name, folderID string) (*cloudfile.CloudFile,
 }
 
 func (f *fakeWebProvider) RenameFile(fileID, newName string) (cloudfile.CloudFile, error) {
-	return f.GetFile(fileID)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	cf, ok := f.byID[fileID]
+	if !ok {
+		return cloudfile.CloudFile{}, fmt.Errorf("未找到：%s", fileID)
+	}
+	cf.Name = newName
+	f.byID[fileID] = cf
+	for i := range f.children[cf.ParentID] {
+		if f.children[cf.ParentID][i].ID == fileID {
+			f.children[cf.ParentID][i] = cf
+		}
+	}
+	return cf, nil
 }
 
 func (f *fakeWebProvider) MoveFile(fileID, newFolderID, newName string) (cloudfile.CloudFile, error) {
-	return f.GetFile(fileID)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	cf, ok := f.byID[fileID]
+	if !ok {
+		return cloudfile.CloudFile{}, fmt.Errorf("未找到：%s", fileID)
+	}
+	old := f.children[cf.ParentID]
+	for i, c := range old {
+		if c.ID == fileID {
+			f.children[cf.ParentID] = append(old[:i], old[i+1:]...)
+			break
+		}
+	}
+	cf.ParentID = newFolderID
+	cf.Parents = []string{newFolderID}
+	if newName != "" {
+		cf.Name = newName
+	}
+	f.byID[fileID] = cf
+	f.children[newFolderID] = append(f.children[newFolderID], cf)
+	return cf, nil
 }
 
 func (f *fakeWebProvider) UploadText(content, name, parentID, _ string, _ bool) (cloudfile.CloudFile, error) {

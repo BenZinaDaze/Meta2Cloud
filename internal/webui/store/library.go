@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS library_media (
     raw_json             TEXT    NOT NULL DEFAULT '{}',
     in_library           INTEGER NOT NULL DEFAULT 1,
     folder_modified_time INTEGER NOT NULL DEFAULT 0,
+    parent_id            TEXT    NOT NULL DEFAULT '',
     last_scanned_at      TEXT    NOT NULL,
     updated_at           TEXT    NOT NULL
 );
@@ -167,6 +168,12 @@ func (s *LibraryStore) runMigrations() error {
 			return err
 		}
 		log.Printf("已为 library_media 表新增 folder_modified_time 字段")
+	}
+	if !columns["parent_id"] {
+		if _, err := s.db.Exec("ALTER TABLE library_media ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''"); err != nil {
+			return err
+		}
+		log.Printf("已为 library_media 表新增 parent_id 字段")
 	}
 	return nil
 }
@@ -950,8 +957,8 @@ func (s *LibraryStore) upsertLibraryItem(payload map[string]any, scannedAt strin
 		drive_folder_id, media_type, tmdb_id, title, original_title, year,
 		poster_url, backdrop_url, overview, rating, status,
 		total_episodes, in_library_episodes, raw_json, in_library,
-		folder_modified_time, last_scanned_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+		folder_modified_time, parent_id, last_scanned_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
 	ON CONFLICT(drive_folder_id) DO UPDATE SET
 		media_type = excluded.media_type, tmdb_id = excluded.tmdb_id,
 		title = excluded.title, original_title = excluded.original_title,
@@ -961,6 +968,7 @@ func (s *LibraryStore) upsertLibraryItem(payload map[string]any, scannedAt strin
 		total_episodes = excluded.total_episodes, in_library_episodes = excluded.in_library_episodes,
 		raw_json = excluded.raw_json, in_library = excluded.in_library,
 		folder_modified_time = excluded.folder_modified_time,
+		parent_id = COALESCE(NULLIF(excluded.parent_id, ''), library_media.parent_id),
 		last_scanned_at = excluded.last_scanned_at, updated_at = excluded.updated_at`,
 		driveFolderID,
 		jsonx.Str(payload, "media_type"),
@@ -977,6 +985,7 @@ func (s *LibraryStore) upsertLibraryItem(payload map[string]any, scannedAt strin
 		inLibEps,
 		marshalJSON(payload),
 		folderModifiedTime,
+		jsonx.Str(payload, "drive_parent_id"),
 		scannedAt,
 		scannedAt,
 	)
@@ -1392,6 +1401,52 @@ func (s *LibraryStore) ListFolderIDsGroupedByTmdb() map[string][]string {
 		}
 	}
 	return out
+}
+
+// LibraryRef 可分类库条目的轻量引用（重归类用）。
+type LibraryRef struct {
+	FolderID  string
+	ParentID  string // 当前父目录 ID（网盘侧实际位置的本地记录，随扫描/移动维护）
+	MediaType string
+	TmdbID    int64
+	Title     string
+}
+
+// ListClassifiableItems 在库且已关联 TMDB 的条目（轻量列，无 JSON 解码）。
+func (s *LibraryStore) ListClassifiableItems() []LibraryRef {
+	rows, err := s.db.Query(`SELECT drive_folder_id, parent_id, media_type, tmdb_id, title
+		FROM library_media WHERE in_library = 1 AND tmdb_id > 0
+		ORDER BY media_type ASC, title COLLATE NOCASE ASC`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := []LibraryRef{}
+	for rows.Next() {
+		var r LibraryRef
+		if err := rows.Scan(&r.FolderID, &r.ParentID, &r.MediaType, &r.TmdbID, &r.Title); err == nil {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// UpdateMediaParentID 更新条目的父目录记录（重新归类/修正识别移动成功后调用）。
+func (s *LibraryStore) UpdateMediaParentID(driveFolderID, parentID string) {
+	if driveFolderID == "" {
+		return
+	}
+	if _, err := s.db.Exec("UPDATE library_media SET parent_id = ?, updated_at = ? WHERE drive_folder_id = ?",
+		parentID, utcNow(), driveFolderID); err != nil {
+		log.Printf("更新 parent_id 失败 [%s]: %v", driveFolderID, err)
+	}
+}
+
+// GetMediaRefByFolderID 返回目录对应库条目的媒体类型、TMDB ID 与父目录记录。
+func (s *LibraryStore) GetMediaRefByFolderID(folderID string) (mediaType string, tmdbID int64, parentID string, ok bool) {
+	err := s.db.QueryRow("SELECT media_type, tmdb_id, parent_id FROM library_media WHERE drive_folder_id = ?",
+		folderID).Scan(&mediaType, &tmdbID, &parentID)
+	return mediaType, tmdbID, parentID, err == nil
 }
 
 // ListFolderIDsByTmdb 返回关联到同一 (mediaType, tmdbID) 的全部目录 ID。
