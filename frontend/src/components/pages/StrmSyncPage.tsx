@@ -54,6 +54,9 @@ const TRIGGER_LABELS: Record<string, string> = {
   manual: '手动',
   schedule: '定时',
   ingest: '入库',
+  reclassify: '重新归类',
+  'title-pin-adopt': '更新译名',
+  reidentify: '重新识别',
 }
 
 const ACTION_LABELS: Record<string, { label: string; className: string }> = {

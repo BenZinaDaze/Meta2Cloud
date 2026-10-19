@@ -40,7 +40,8 @@ type sidecarFetcher interface {
 // ingestRunFlushIdle 入库钩子 run 的合并窗口：静默该时长后收尾 run。
 const ingestRunFlushIdle = 20 * time.Second
 
-// syncTrigger 值：manual / schedule / ingest。
+// syncTrigger 值：manual / schedule / ingest / reclassify / title-pin-adopt / reidentify
+// （后三者由各操作完成后以字面量传入 TriggerStrmSync）。
 const (
 	triggerManual   = "manual"
 	triggerSchedule = "schedule"
