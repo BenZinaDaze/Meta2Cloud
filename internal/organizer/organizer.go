@@ -19,20 +19,17 @@ import (
 
 // MediaOrganizer 媒体文件夹整理器。
 //
-// provider 为任意网盘 Provider；movieRootID / tvRootID 为空时使用 rootFolderID；
-// dryRun 为 true 时只计算路径，不实际创建文件夹。
+// provider 为任意网盘 Provider；movieRootID / tvRootID 为空时使用 rootFolderID。
 type MediaOrganizer struct {
 	provider cloudfile.Provider
 	rootID   string
-	dryRun   bool
 }
 
 // New 构造整理器（rootFolderID 为媒体库根目录，分类布局下的所有目录链挂在其下）。
-func New(provider cloudfile.Provider, rootFolderID string, dryRun bool) *MediaOrganizer {
+func New(provider cloudfile.Provider, rootFolderID string) *MediaOrganizer {
 	return &MediaOrganizer{
 		provider: provider,
 		rootID:   rootFolderID,
-		dryRun:   dryRun,
 	}
 }
 
@@ -60,7 +57,7 @@ func (o *MediaOrganizer) FolderPathForPath(path string) string {
 }
 
 // EnsureFolderFor 根据文件名在云存储中按需创建文件夹（幂等），返回叶子文件夹。
-// 解析失败或 dryRun 时返回 nil。
+// 解析失败时返回 nil。
 func (o *MediaOrganizer) EnsureFolderFor(name string, isfile bool) *cloudfile.CloudFile {
 	meta := mediaparser.MetaInfo(name, "", isfile, nil, nil)
 	folder, err := o.ensureFolders(meta, name)
@@ -195,11 +192,6 @@ func (o *MediaOrganizer) ensureFoldersUnder(baseID string, meta *mediaparser.Met
 		log.Printf("[%s] %q → /%s/Season %02d", kind, label, topName, seasonInt)
 	} else {
 		log.Printf("[%s] %q → /%s", kind, label, topName)
-	}
-
-	if o.dryRun {
-		log.Printf("dryRun=true，跳过云存储操作")
-		return nil, nil, nil
 	}
 
 	// 第一层：片名/剧名 (年份)

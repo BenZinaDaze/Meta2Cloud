@@ -132,7 +132,7 @@ type Provider interface {
 	// MoveFile 移动文件到另一个文件夹，可同时重命名（newName 传空串表示不改名）。
 	MoveFile(fileID string, newFolderID string, newName string) (CloudFile, error)
 
-	// UploadText 上传文本内容为文件（适合 NFO 等小文件）。
+	// UploadText 上传文本内容为文件（适合字幕等小文件）。
 	UploadText(content string, name string, parentID string, mimeType string, overwrite bool) (CloudFile, error)
 
 	// UploadBytes 上传二进制内容为文件（适合图片等非文本文件）。

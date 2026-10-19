@@ -72,9 +72,7 @@ type U115 struct {
 type Pipeline struct {
 	SkipTMDB             bool `yaml:"skip_tmdb"`
 	MoveOnTMDBMiss       bool `yaml:"move_on_tmdb_miss"`
-	DryRun               bool `yaml:"dry_run"`
 	ReplaceExistingVideo bool `yaml:"replace_existing_video"`
-	SkipMetadataUpload   bool `yaml:"skip_metadata_upload"`
 	// MergeDuplicateFolders 同一媒体存在多个目录（历史译名差异）时自动合并进钉扎目录；
 	// nil/未配置时默认开启。
 	MergeDuplicateFolders *bool `yaml:"merge_duplicate_folders"`
@@ -397,9 +395,7 @@ func parsePipeline(m map[string]any) Pipeline {
 	return Pipeline{
 		SkipTMDB:             boolean(m, "skip_tmdb", false),
 		MoveOnTMDBMiss:       boolean(m, "move_on_tmdb_miss", false),
-		DryRun:               boolean(m, "dry_run", false),
 		ReplaceExistingVideo: boolean(m, "replace_existing_video", false),
-		SkipMetadataUpload:   boolean(m, "skip_metadata_upload", false),
 	}
 }
 
@@ -448,7 +444,7 @@ var DefaultStrmMediaExt = []string{
 }
 
 // DefaultStrmSidecarExt STRM 同步默认下载的伴随文件扩展名（默认仅外挂字幕）。
-// NFO/图片不下载：媒体服务器对 strm 用文件名+刮削即可，海报图片可由刮削器自行拉取。
+// 图片等元数据不下载：媒体服务器对 strm 用文件名+刮削即可，海报可由刮削器自行拉取。
 var DefaultStrmSidecarExt = []string{"srt", "ass", "ssa"}
 
 // normalizeStrmURLBase 归一化 STRM 外部访问地址：去掉首尾空白与末尾斜杠；

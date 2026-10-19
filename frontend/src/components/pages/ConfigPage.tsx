@@ -147,9 +147,6 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   if (mediavault.timeout === undefined || mediavault.timeout === null || mediavault.timeout === '') {
     mediavault.timeout = 10
   }
-  if (pipeline.skip_metadata_upload === undefined || pipeline.skip_metadata_upload === null) {
-    pipeline.skip_metadata_upload = false
-  }
   if (strm.enabled === undefined || strm.enabled === null) {
     strm.enabled = false
   }
@@ -1839,22 +1836,10 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                       onChange={(v) => set('pipeline', 'move_on_tmdb_miss', v)}
                     />
                   </Field>
-                  <Field label="Dry Run 模式" description="只打印计划">
-                    <Toggle
-                      value={(cfg?.pipeline as Record<string, unknown>)?.dry_run as boolean | undefined}
-                      onChange={(v) => set('pipeline', 'dry_run', v)}
-                    />
-                  </Field>
                   <Field label="替换同名视频" description="先移除再整理">
                     <Toggle
                       value={(cfg?.pipeline as Record<string, unknown>)?.replace_existing_video === true}
                       onChange={(v) => set('pipeline', 'replace_existing_video', v)}
-                    />
-                  </Field>
-                  <Field label="跳过元数据上传" description="关闭时上传全部 NFO 和图片；开启时只移动媒体文件，不上传任何 NFO 或图片">
-                    <Toggle
-                      value={(cfg?.pipeline as Record<string, unknown>)?.skip_metadata_upload === true}
-                      onChange={(v) => set('pipeline', 'skip_metadata_upload', v)}
                     />
                   </Field>
                 </FieldGroup>

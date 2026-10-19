@@ -14,8 +14,6 @@ import (
 	"meta2cloud/internal/cloudfile"
 	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/mediaparser"
-	"meta2cloud/internal/nfo"
-	"meta2cloud/internal/pipeline"
 	"meta2cloud/internal/tmdb"
 )
 
@@ -202,7 +200,7 @@ func seasonsToAny(seasons []SeasonStatus) []any {
 	return out
 }
 
-// doRefreshItem 刷新单条媒体元数据（NFO/图片重传 + 更新构造）。
+// doRefreshItem 刷新单条媒体元数据（拉取 TMDB 最新信息并构造库记录更新）。
 func doRefreshItem(tmdbID int64, mediaType, driveFolderID, title, year string) (map[string]any, error) {
 	cfg := RT().GetConfig()
 	if tmdbID <= 0 {
@@ -224,114 +222,15 @@ func doRefreshItem(tmdbID int64, mediaType, driveFolderID, title, year string) (
 		tmdbID = jsonx.Int(found, "tmdb_id", jsonx.Int(found, "id", 0))
 	}
 
-	client := RT().GetStorageProvider()
-	gen := nfo.NewGenerator(cfg.TmdbImageBaseURL())
-	uploader := pipeline.NewImageUploader(client, cfg.TmdbImageBaseURL())
-	// 空切片而非 nil：JSON 序列化为 [] 而非 null
-	// （前端 `const { errors = [] } = res.data` 的解构默认值只对 undefined 生效，null.length 会抛 TypeError）
-	uploaded := []string{}
-	errors := []string{}
-
 	info, err := fetchTmdbInfoForRefresh(tmdbID, mediaType)
 	if err != nil {
 		return nil, err
 	}
 
-	skipMetadataUpload := cfg.Pipeline.SkipMetadataUpload
-	if mediaType == "movie" {
-		if !skipMetadataUpload {
-			var videoFiles []cloudfile.CloudFile
-			if files, err := client.ListFiles(driveFolderID, 50); err == nil {
-				for _, f := range files {
-					if f.IsVideo() {
-						videoFiles = append(videoFiles, f)
-					}
-				}
-			}
-			if len(videoFiles) > 0 {
-				for _, videoFile := range videoFiles {
-					nfoName := nfo.NfoNameFor(videoFile.Name)
-					xmlStr := gen.Generate(info, mediaparser.MediaUnknown, nil)
-					if _, err := client.UploadText(xmlStr, nfoName, driveFolderID, "text/xml", true); err != nil {
-						errors = append(errors, fmt.Sprintf("%s: %v", nfoName, err))
-					} else {
-						uploaded = append(uploaded, nfoName)
-					}
-				}
-			} else {
-				xmlStr := gen.Generate(info, mediaparser.MediaUnknown, nil)
-				if _, err := client.UploadText(xmlStr, "movie.nfo", driveFolderID, "text/xml", true); err != nil {
-					errors = append(errors, fmt.Sprintf("movie.nfo: %v", err))
-				} else {
-					uploaded = append(uploaded, "movie.nfo")
-				}
-			}
-		}
-		uploaded = append(uploaded, uploadArtifacts(client, uploader, info, driveFolderID, &errors)...)
-	} else if mediaType == "tv" {
-		// 季文件夹
-		seasonFolders := []cloudfile.CloudFile{}
-		if files, err := client.ListFiles(driveFolderID, 200); err == nil {
-			for _, f := range files {
-				if f.IsFolder() && seasonNameRe.MatchString(f.Name) {
-					seasonFolders = append(seasonFolders, f)
-				}
-			}
-		}
-		if !skipMetadataUpload {
-			xmlStr := gen.GenerateTVShow(info)
-			if _, err := client.UploadText(xmlStr, "tvshow.nfo", driveFolderID, "text/xml", true); err != nil {
-				errors = append(errors, fmt.Sprintf("tvshow.nfo: %v", err))
-			} else {
-				uploaded = append(uploaded, "tvshow.nfo")
-			}
-			uploaded = append(uploaded, uploadArtifacts(client, uploader, info, driveFolderID, &errors)...)
-			tmdbClient := RT().GetTmdbClient()
-			for _, seasonFolder := range seasonFolders {
-				m := seasonNumRe.FindString(seasonFolder.Name)
-				if m == "" {
-					continue
-				}
-				seasonNum, _ := strconv.Atoi(m)
-				seasonDetail := tmdbClient.GetSeasonDetail(int(tmdbID), seasonNum)
-				if seasonDetail == nil {
-					continue
-				}
-				xmlStr := gen.GenerateSeason(seasonDetail, seasonNum)
-				if _, err := client.UploadText(xmlStr, "season.nfo", seasonFolder.ID, "text/xml", true); err != nil {
-					errors = append(errors, fmt.Sprintf("Season %d/season.nfo: %v", seasonNum, err))
-				} else {
-					uploaded = append(uploaded, fmt.Sprintf("Season %d/season.nfo", seasonNum))
-				}
-				if p := jsonx.Str(seasonDetail, "poster_path"); p != "" {
-					if uploader.UploadSeasonPoster(p, seasonNum, driveFolderID) != nil {
-						uploaded = append(uploaded, fmt.Sprintf("season%02d-poster.jpg", seasonNum))
-					}
-				}
-			}
-		}
-	}
-	updates := buildItemUpdates(info, mediaType, driveFolderID, client)
+	updates := buildItemUpdates(info, mediaType, driveFolderID, RT().GetStorageProvider())
 	return map[string]any{
-		"ok": len(errors) == 0, "uploaded": uploaded, "errors": errors,
-		"tmdb_id": tmdbID, "updates": updates,
+		"ok": true, "tmdb_id": tmdbID, "updates": updates,
 	}, nil
-}
-
-// uploadArtifacts 上传 poster/fanart，返回成功清单。
-func uploadArtifacts(_ cloudfile.Provider, uploader *pipeline.ImageUploader, info map[string]any, driveFolderID string, errors *[]string) []string {
-	uploaded := []string{}
-	if p := jsonx.Str(info, "poster_path"); p != "" {
-		if uploader.UploadPoster(p, driveFolderID) != nil {
-			uploaded = append(uploaded, "poster.jpg")
-		}
-	}
-	if b := jsonx.Str(info, "backdrop_path"); b != "" {
-		if uploader.UploadFanart(b, driveFolderID) != nil {
-			uploaded = append(uploaded, "fanart.jpg")
-		}
-	}
-	return uploaded
 }
 
 // persistLibraryItem 更新库条目并返回最新数据。
@@ -445,7 +344,6 @@ func handleRefreshItem(w http.ResponseWriter, r *http.Request) {
 		fmt.Sprintf("已刷新元数据：tmdb_id=%d (%s)", body.TmdbID, body.MediaType), map[string]any{
 			"tmdb_id": body.TmdbID, "media_type": body.MediaType,
 			"drive_folder_id": body.DriveFolderID,
-			"uploaded":        result["uploaded"], "errors": result["errors"],
 		})
 	if item := persistLibraryItem(body.DriveFolderID, result); item != nil {
 		result["item"] = item
@@ -518,8 +416,7 @@ func handleReidentifyItem(w http.ResponseWriter, r *http.Request) {
 	if reclassified || renamed {
 		TriggerStrmSync("reidentify")
 	}
-	errs, _ := result["errors"].([]string)
-	partial := len(errs) > 0 || renameError != "" || reclassifyError != ""
+	partial := renameError != "" || reclassifyError != ""
 	result["partial"] = partial
 	result["ok"] = !partial
 	writeJSON(w, http.StatusOK, result)
@@ -734,5 +631,3 @@ func handleBangumiCalendar(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_, _ = io.Copy(w, resp.Body)
 }
-
-// imageUploaderAlias 图片上传器别名（pipeline 包复用）。

@@ -95,26 +95,11 @@ func normalizeModifiedTime(value string) int64 {
 }
 
 var (
-	tmdbIDNfoRe      = regexp.MustCompile(`(?i)<tmdbid>(\d+)</tmdbid>`)
-	tmdbIDUniqueRe   = regexp.MustCompile(`(?i)<uniqueid type="tmdb"[^>]*>(\d+)</uniqueid>`)
 	seasonEpFileRe   = regexp.MustCompile(`[Ss](\d+)[Ee](\d+)`)
 	folderYearRe     = regexp.MustCompile(`\((\d{4})\)`)
 	folderYearTailRe = regexp.MustCompile(`\s*\(\d{4}\)\s*$`)
 	seasonFolderRe   = regexp.MustCompile(`(?i)Season\s+(\d+)`)
 )
-
-// ParseTmdbIDFromNFO 从 NFO 内容提取 TMDB ID。
-func ParseTmdbIDFromNFO(content string) int64 {
-	if m := tmdbIDNfoRe.FindStringSubmatch(content); m != nil {
-		n, _ := strconv.ParseInt(m[1], 10, 64)
-		return n
-	}
-	if m := tmdbIDUniqueRe.FindStringSubmatch(content); m != nil {
-		n, _ := strconv.ParseInt(m[1], 10, 64)
-		return n
-	}
-	return 0
-}
 
 // ParseEpisodeFromFilename 从文件名解析 (season, episode)。
 func ParseEpisodeFromFilename(filename string) (int, int, bool) {

@@ -227,7 +227,7 @@ export default function ReidentifyModal({
         <DialogHeader>
           <DialogTitle>修正识别</DialogTitle>
           <DialogDescription>
-            重新绑定 TMDB 条目并重写 NFO、封面与本地库记录；目录名与分类归位会按需一并修正（TMDB 可与当前一致）。
+            重新绑定 TMDB 条目并更新本地库记录；目录名与分类归位会按需一并修正（TMDB 可与当前一致）。
           </DialogDescription>
         </DialogHeader>
 

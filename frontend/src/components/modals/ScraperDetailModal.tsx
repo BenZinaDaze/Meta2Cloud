@@ -87,12 +87,7 @@ export default function ScraperDetailModal({
         item.title,
         item.year
       )
-      const { uploaded = [], errors = [] } = res.data || {}
-      if (errors.length === 0) {
-        toast.success(`元数据已刷新，共上传 ${uploaded.length} 个文件`)
-      } else {
-        toast.warning(`部分文件上传失败（${errors.length} 个错误）`)
-      }
+      toast.success('元数据已刷新')
       if (res.data?.item) {
         setItem(res.data.item)
         onUpdated?.(res.data.item)
@@ -152,7 +147,7 @@ export default function ScraperDetailModal({
       size="icon-xs"
       onClick={handleRefreshMeta}
       disabled={refreshing || loadingDetail}
-      title="刷新媒体信息（NFO + 封面）"
+      title="刷新媒体信息（TMDB 元数据）"
       className="ml-1"
     >
       <RefreshCw className={`size-3 ${refreshing ? 'animate-spin' : ''}`} />

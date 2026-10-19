@@ -302,8 +302,7 @@ func (p *Pipeline) moveSubtitlesForVideo(video cloudfile.CloudFile, cleanVideoNa
 		match := &matches[i]
 		targetSubtitleName := matcher.BuildTargetName(cleanVideoName, match.SubtitleFile.Extension(), match.LanguageTags)
 
-		if p.dryRun || targetFolder == nil {
-			p.log(fmt.Sprintf("      字幕：%s  [dry-run，不移动]", targetSubtitleName), "INFO")
+		if targetFolder == nil {
 			continue
 		}
 

@@ -1,14 +1,13 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Meta2Cloud combines a Go backend with a Vite/React frontend. Backend code lives in `cmd/meta2cloud/` (CLI entry: `serve` and `pipeline` subcommands) and `internal/`: `cloudfile/` (storage abstraction), `storage/` (Pan115 provider + registry), `u115/` (115 open-platform client), `config/` (YAML loading), `mediaparser/` (filename parsing), `tmdb/`, `nfo/`, `organizer/`, `pipeline/` (organize flow, subtitle matcher, image uploader), `scraper/` (RSS spiders), `webui/` (HTTP server, JWT auth, runtime singletons, API handlers, background watchers), and `webui/store/` (SQLite stores). Configuration templates and runtime data belong under `config/`. Helper scripts are in `scripts/`. Backend tests live next to the code as `*_test.go`. Frontend source is under `frontend/src/`, with reusable UI in `frontend/src/components/`, shared helpers in `frontend/src/lib/` and `frontend/src/utils/`, and public assets in `frontend/public/`.
+Meta2Cloud combines a Go backend with a Vite/React frontend. Backend code lives in `cmd/meta2cloud/` (CLI entry: `serve` subcommand) and `internal/`: `cloudfile/` (storage abstraction), `storage/` (Pan115 provider + registry), `u115/` (115 open-platform client), `config/` (YAML loading), `mediaparser/` (filename parsing), `tmdb/`, `organizer/`, `pipeline/` (organize flow, subtitle matcher), `scraper/` (RSS spiders), `webui/` (HTTP server, JWT auth, runtime singletons, API handlers, background watchers), and `webui/store/` (SQLite stores). Configuration templates and runtime data belong under `config/`. Helper scripts are in `scripts/`. Backend tests live next to the code as `*_test.go`. Frontend source is under `frontend/src/`, with reusable UI in `frontend/src/components/`, shared helpers in `frontend/src/lib/` and `frontend/src/utils/`, and public assets in `frontend/public/`.
 
 ## Build, Test, and Development Commands
 Use standard Go toolchain from the repository root; run npm commands from `frontend/`.
 
 - `go build ./...` builds the backend.
 - `go run ./cmd/meta2cloud serve` starts the WebUI backend (port 38765) from the repository root.
-- `go run ./cmd/meta2cloud pipeline --dry-run` previews organizer changes without moving files.
 - `go run ./cmd/meta2cloud pipeline` runs the organizer.
 - `go test ./internal/... -count=1` runs backend tests.
 - `go vet ./...` runs static analysis.

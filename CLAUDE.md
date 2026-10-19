@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Meta2Cloud is a media organization tool that automatically organizes movies and TV shows from cloud drives (115网盘). It parses filenames, queries TMDB for metadata, generates NFO files, downloads posters, and organizes files into a proper media library structure.
+Meta2Cloud is a media organization tool that automatically organizes movies and TV shows from cloud drives (115网盘). It parses filenames, queries TMDB for canonical titles, and organizes files into a proper media library structure.
 
 The backend is written in Go (rewritten from Python); the frontend is React 19 + TypeScript + Tailwind CSS v4.
 
@@ -20,7 +20,6 @@ go run ./cmd/meta2cloud serve
 
 # Run organization pipeline (equivalent of the old `python -m core`)
 go run ./cmd/meta2cloud pipeline              # production run
-go run ./cmd/meta2cloud pipeline --dry-run    # preview without changes
 go run ./cmd/meta2cloud pipeline --no-tmdb    # skip TMDB lookup
 go run ./cmd/meta2cloud pipeline --no-images  # skip image downloads
 
@@ -45,7 +44,7 @@ Or use `scripts/dev.sh` to start both together.
 ```bash
 docker compose up -d                  # Start container
 docker logs -f meta2cloud             # View logs
-docker exec meta2cloud /app/meta2cloud pipeline --dry-run  # Run pipeline in container
+docker exec meta2cloud /app/meta2cloud pipeline  # Run pipeline in container
 ```
 
 ## Architecture
@@ -58,9 +57,8 @@ docker exec meta2cloud /app/meta2cloud pipeline --dry-run  # Run pipeline in con
 - `internal/config/` — YAML config loading (`config/config.yaml`, `config/parser-rules.yaml`)
 - `internal/mediaparser/` — Filename parsing library (video + anime parsers, Chinese numeral/trad-simp/pinyin utilities, release-group matcher, streaming-platform table)
 - `internal/tmdb/` — TMDB v3 client (search/detail/name matching, 429 retry, cache interface)
-- `internal/nfo/` — Plex/Kodi/Infuse-compatible NFO XML generation
 - `internal/organizer/` — Media folder organizer (idempotent `Title (Year)/Season NN` chains)
-- `internal/pipeline/` — Full pipeline (scan→parse→TMDB→NFO→folders→images→move), subtitle matcher, image uploader
+- `internal/pipeline/` — Full pipeline (scan→parse→TMDB→folders→move), subtitle matcher
 - `internal/scraper/` — RSS spiders (mikan + anibt) with factory/registry
 - `internal/webui/` — HTTP server (Go 1.22 ServeMux), JWT auth, runtime singletons, all `/api/*` handlers, background watchers (115 auto-organize + RSS polling)
 - `internal/webui/store/` — SQLite stores: library entities (tmdb_media/library_media/app_state), TMDB entity cache adapter, ingest history, app logs, RSS subscriptions, 115 auto-organize state

@@ -434,7 +434,7 @@ func validateMainConfigPayload(payload map[string]any) string {
 	if host, ok := mediavaultSec["host"].(string); ok {
 		mediavaultSec["host"] = strings.TrimRight(hostPrefixRe.ReplaceAllString(host, ""), "/")
 	}
-	for _, key := range []string{"skip_tmdb", "move_on_tmdb_miss", "dry_run", "replace_existing_video", "skip_metadata_upload"} {
+	for _, key := range []string{"skip_tmdb", "move_on_tmdb_miss", "replace_existing_video"} {
 		if msg := validateBoolField(payload, key); msg != "" {
 			return msg
 		}

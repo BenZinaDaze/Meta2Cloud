@@ -52,14 +52,6 @@ func (a ingestStoreAdapter) RecordIngest(r pipeline.IngestRecord) error {
 // titlePinAdapter 将 *store.LibraryStore 适配为 pipeline.TitlePinStore 接口。
 type titlePinAdapter struct{ s *store.LibraryStore }
 
-func (a titlePinAdapter) GetTitlePin(mediaType string, tmdbID int64) (string, string, bool) {
-	pin, ok := a.s.GetTitlePin(mediaType, tmdbID)
-	if !ok {
-		return "", "", false
-	}
-	return pin.PinnedTitle, pin.PinnedYear, true
-}
-
 func (a titlePinAdapter) ResolveTitlePin(mediaType string, tmdbID int64, fallbackTitle, fallbackYear string) (string, string, error) {
 	return a.s.ResolveTitlePin(mediaType, tmdbID, fallbackTitle, fallbackYear)
 }

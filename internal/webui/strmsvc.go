@@ -29,7 +29,7 @@ import (
 // strmWalkMaxDepth 网盘映射目录遍历深度上限。
 const strmWalkMaxDepth = 8
 
-// strmSidecarMaxBytes 伴随文件（字幕/图片/NFO）单文件下载大小上限。
+// strmSidecarMaxBytes 伴随文件（外挂字幕等）单文件下载大小上限。
 const strmSidecarMaxBytes = 20 << 20
 
 // sidecarFetcher 下载网盘小文件内容的能力（由 Pan115Provider / 测试 fake 实现）。
@@ -441,7 +441,7 @@ func writeStrmFile(localPath, content string) error {
 	return os.WriteFile(localPath, []byte(content+"\n"), 0o644)
 }
 
-// upsertSidecarFile 下载网盘伴随文件（外挂字幕/图片/NFO）到本地 .strm 同目录，
+// upsertSidecarFile 下载网盘伴随文件（外挂字幕等）到本地 .strm 同目录，
 // 保持网盘原始命名（整理阶段已完成字幕改名与语言标注）。
 // 增量策略与 .strm 一致：记录未变且本地文件大小一致则跳过，避免重复下载。
 func upsertSidecarFile(st *store.StrmStore, f cloudfile.CloudFile, relPath, pickCode, localPath string, fetcher sidecarFetcher, runID int64) string {
@@ -520,7 +520,7 @@ func HandleVideoIngested(result pipeline.ProcessResult) error {
 	}
 	localRoot := filepath.Clean(mapping.LocalPath)
 
-	// 视频同目录的伴随文件（外挂字幕/图片/NFO，整理阶段已随视频改名就位）
+	// 视频同目录的伴随文件（外挂字幕等，整理阶段已随视频改名就位）
 	var fetcher sidecarFetcher
 	sidecarSet := map[string]struct{}{}
 	if cfg.Strm.FetchSidecar {

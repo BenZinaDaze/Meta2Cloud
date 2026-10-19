@@ -821,7 +821,7 @@ func downloadURLFromPayload(payload map[string]any) (string, error) {
 // GetHTTPClient 暴露底层 http.Client（下载等直接使用）。
 func (c *Client) GetHTTPClient() *http.Client { return c.HTTP }
 
-// FetchBytes 下载小文件内容到内存（外挂字幕/图片/NFO 等伴随文件），limit 为最大字节数。
+// FetchBytes 下载小文件内容到内存（外挂字幕等伴随文件），limit 为最大字节数。
 // 直链获取与内容拉取使用同一 UA 保证直链可用；请求计入共享 QPS 节拍。
 func (c *Client) FetchBytes(pickCode string, limit int64) ([]byte, error) {
 	url, err := c.GetDownloadURL(pickCode)
@@ -959,7 +959,7 @@ func ComputeUploadHashes(filePath string) (UploadHashes, error) {
 	}, nil
 }
 
-// ComputeUploadHashesBytes 直接对内存数据计算上传特征值（NFO/图片等小文件免落盘）。
+// ComputeUploadHashesBytes 直接对内存数据计算上传特征值（字幕等小文件免落盘）。
 func ComputeUploadHashesBytes(data []byte) UploadHashes {
 	sha1All := sha1.Sum(data)
 	preEnd := len(data)

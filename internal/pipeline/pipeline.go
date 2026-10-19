@@ -1,6 +1,6 @@
 // Package pipeline Meta2Cloud 完整流水线（对应 Python 版 core/pipeline.py）。
 //
-// 流程：扫描 → 解析 → TMDB（整剧+单集）→ NFO → 文件夹 → 图片 → 移动。
+// 流程：扫描 → 解析 → TMDB（整剧+单集）→ 文件夹 → 移动。
 package pipeline
 
 import (
@@ -15,7 +15,6 @@ import (
 	"meta2cloud/internal/config"
 	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/mediaparser"
-	"meta2cloud/internal/nfo"
 	"meta2cloud/internal/organizer"
 	"meta2cloud/internal/tmdb"
 )
@@ -29,7 +28,6 @@ type ProcessResult struct {
 	// TargetChain 自媒体库根到目标目录的节点链（含 ID 与实际目录名）。
 	// 整理时链条本来就在手，STRM 单文件钩子用它本地计算相对路径，免网络反查。
 	TargetChain []cloudfile.CloudFile
-	NfoUploaded bool
 	Moved       bool
 }
 
@@ -65,8 +63,6 @@ type IngestStore interface {
 // TitlePinStore 标题钉扎存储接口（webui 层实现，可为 nil）。
 // 记录每个媒体首次整理时的目录名，TMDB 后续改译名不再影响目录结构。
 type TitlePinStore interface {
-	// GetTitlePin 只读查询钉扎记录。
-	GetTitlePin(mediaType string, tmdbID int64) (title, year string, ok bool)
 	// ResolveTitlePin 返回钉扎标题/年份；无记录时按「最早入库历史 → fallback」落库。
 	ResolveTitlePin(mediaType string, tmdbID int64, fallbackTitle, fallbackYear string) (title, year string, err error)
 }
@@ -79,10 +75,7 @@ type Pipeline struct {
 	provider             cloudfile.Provider
 	cfg                  *config.Config
 	logFn                LogFunc
-	dryRun               bool
 	skipTmdb             bool
-	skipImages           bool
-	skipMetadataUpload   bool
 	replaceExistingVideo bool
 
 	organizer *organizer.MediaOrganizer
@@ -91,19 +84,7 @@ type Pipeline struct {
 	tmdbWriteCache tmdb.Cache
 	tmdb           *tmdb.Client
 
-	nfoGen      *nfo.Generator
-	imgUploader *ImageUploader
-
-	// 幂等去重集合
-	tvshowNfoDone    map[string]bool
-	seasonNfoDone    map[string]bool
-	posterDone       map[string]bool
-	seasonPosterDone map[string]bool
-	// 剧名文件夹缓存：tmdb_id → 剧名文件夹 ID
-	showFolderCache map[string]string
-	// 季封面缓存："tmdb_id:season" → poster_path
-	seasonPosterCache map[string]string
-	// 季详情缓存："tmdb_id:season" → detail
+	// 季详情缓存："tmdb_id:season" → detail（通知集数统计用）
 	seasonDetailCache map[string]map[string]any
 	// 字幕组匹配器
 	rgMatcher *mediaparser.ReleaseGroupsMatcher
@@ -119,16 +100,14 @@ type Pipeline struct {
 	categories *config.CategoriesConfig
 	// 分类目录缓存：父ID/目录名 → 目录ID
 	categoryDirCache map[string]string
-	// 入库成功回调（可选；dry-run 不触发，用于 STRM 生成等后处理，返回 error 表示失败/不适用）
+	// 入库成功回调（可选，用于 STRM 生成等后处理，返回 error 表示失败/不适用）
 	onVideoIngested func(ProcessResult) error
 }
 
 // Options Pipeline 构造参数。
 type Options struct {
-	DryRun     bool
-	SkipTmdb   bool
-	SkipImages bool
-	LogFn      LogFunc
+	SkipTmdb bool
+	LogFn    LogFunc
 	// TmdbCache WebUI SQLite 缓存（可为 nil）
 	TmdbCache tmdb.Cache
 	// TmdbClient 注入自定义 TMDB 客户端（测试用；为 nil 时按配置构造）
@@ -141,56 +120,37 @@ type Options struct {
 	DuplicateFolders DuplicateFolderSource
 	// Categories 媒体分类配置（可为 nil = 未启用分类布局）
 	Categories *config.CategoriesConfig
-	// OnVideoIngested 单文件整理成功（入库）后回调，dry-run 不触发（可为 nil）；
+	// OnVideoIngested 单文件整理成功（入库）后回调（可为 nil）；
 	// 返回 nil 表示 STRM 等后处理成功
 	OnVideoIngested func(ProcessResult) error
 }
 
 // New 构造流水线。
 func New(provider cloudfile.Provider, cfg *config.Config, opts Options) *Pipeline {
-	dryRun := opts.DryRun || cfg.Pipeline.DryRun
 	skipTmdb := opts.SkipTmdb || cfg.Pipeline.SkipTMDB
 
 	p := &Pipeline{
 		provider:             provider,
 		cfg:                  cfg,
 		logFn:                opts.LogFn,
-		dryRun:               dryRun,
 		skipTmdb:             skipTmdb,
-		skipImages:           opts.SkipImages,
-		skipMetadataUpload:   cfg.Pipeline.SkipMetadataUpload,
 		replaceExistingVideo: cfg.Pipeline.ReplaceExistingVideo,
-		organizer: organizer.New(
-			provider,
-			cfg.ActiveRootFolderID(),
-			dryRun,
-		),
-		tmdbWriteCache:    opts.TmdbCache,
-		tvshowNfoDone:     map[string]bool{},
-		seasonNfoDone:     map[string]bool{},
-		posterDone:        map[string]bool{},
-		seasonPosterDone:  map[string]bool{},
-		showFolderCache:   map[string]string{},
-		seasonPosterCache: map[string]string{},
-		seasonDetailCache: map[string]map[string]any{},
-		categoryDirCache:  map[string]string{},
-		notifyItems:       []notifyItem{},
-		ingestStore:       opts.IngestStore,
-		pinStore:          opts.TitlePinStore,
-		dupSource:         opts.DuplicateFolders,
-		categories:        opts.Categories,
-		onVideoIngested:   opts.OnVideoIngested,
+		organizer:            organizer.New(provider, cfg.ActiveRootFolderID()),
+		tmdbWriteCache:       opts.TmdbCache,
+		seasonDetailCache:    map[string]map[string]any{},
+		categoryDirCache:     map[string]string{},
+		notifyItems:          []notifyItem{},
+		ingestStore:          opts.IngestStore,
+		pinStore:             opts.TitlePinStore,
+		dupSource:            opts.DuplicateFolders,
+		categories:           opts.Categories,
+		onVideoIngested:      opts.OnVideoIngested,
 	}
 
 	if opts.TmdbClient != nil {
 		p.tmdb = opts.TmdbClient
 	} else if !skipTmdb && cfg.IsTmdbReady() {
 		p.tmdb = tmdb.NewClient(cfg.Tmdb.APIKey, cfg.Tmdb.Language, cfg.Tmdb.Proxy, cfg.Tmdb.Timeout, opts.TmdbCache)
-	}
-
-	p.nfoGen = nfo.NewGenerator(cfg.TmdbImageBaseURL())
-	if !opts.SkipImages && !dryRun {
-		p.imgUploader = NewImageUploader(provider, cfg.TmdbImageBaseURL())
 	}
 
 	p.rgMatcher = mediaparser.NewReleaseGroupsMatcher(cfg.Parser.CustomReleaseGroups)
@@ -258,9 +218,6 @@ func (p *Pipeline) getSeasonDetailCached(tmdbID string, seasonNum int) map[strin
 		if len(sd) > 0 {
 			p.writeCache(fmt.Sprintf("/tv/%s/season/%d", tmdbID, seasonNum), sd)
 		}
-		if _, ok := p.seasonPosterCache[key]; !ok {
-			p.seasonPosterCache[key] = jsonx.Str(sd, "poster_path")
-		}
 	}
 	return p.seasonDetailCache[key]
 }
@@ -296,17 +253,8 @@ func (p *Pipeline) Run() PipelineSummary {
 
 	p.log(strings.Repeat("=", 68))
 	p.log("  Meta2Cloud 开始整理")
-	if p.dryRun {
-		p.log("  ⚠️  DRY-RUN 模式 — 不会操作网盘", "WARNING")
-	}
 	if p.skipTmdb || p.tmdb == nil {
-		p.log("  ℹ️  跳过 TMDB — 不生成 NFO", "INFO")
-	}
-	if p.skipMetadataUpload {
-		p.log("  ℹ️  跳过元数据上传 — 仅移动媒体文件，不上传任何 NFO 或图片", "INFO")
-	}
-	if p.skipImages {
-		p.log("  ℹ️  跳过图片下载", "INFO")
+		p.log("  ℹ️  跳过 TMDB — 只按文件名整理", "INFO")
 	}
 	p.log(strings.Repeat("=", 68))
 
@@ -382,9 +330,6 @@ func (p *Pipeline) Run() PipelineSummary {
 // ── 空文件夹清理 ────────────────────────────────────────────
 
 func (p *Pipeline) cleanupEmptyFolders(folderID, folderName string, isRoot bool) bool {
-	if p.dryRun {
-		return false
-	}
 	// 第一阶段：纯遍历，在内存中收集可删目录（判定不做任何删除，不受网盘删除异步生效影响）
 	var deletable []struct{ id, name string }
 	var walk func(id, name string, isRoot bool) bool
@@ -485,7 +430,7 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
-// resolvePinnedTitle 查询标题钉扎；dry-run 只读不写（避免污染钉扎表）。
+// resolvePinnedTitle 查询标题钉扎（无记录时按「最早入库历史 → fallback」落库）。
 func (p *Pipeline) resolvePinnedTitle(isTV bool, tmdbInfo map[string]any, fallbackTitle, fallbackYear string) (string, string) {
 	if p.pinStore == nil {
 		return "", ""
@@ -496,12 +441,6 @@ func (p *Pipeline) resolvePinnedTitle(isTV bool, tmdbInfo map[string]any, fallba
 	}
 	id, err := strconv.ParseInt(tmdbIDOf(tmdbInfo), 10, 64)
 	if err != nil || id <= 0 {
-		return "", ""
-	}
-	if p.dryRun {
-		if title, year, ok := p.pinStore.GetTitlePin(mediaType, id); ok {
-			return title, year
-		}
 		return "", ""
 	}
 	title, year, err := p.pinStore.ResolveTitlePin(mediaType, id, fallbackTitle, fallbackYear)
@@ -635,22 +574,15 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 		}
 	}
 
-	// Step 5.5: 生成 NFO 内容（NFO 正文用 TMDB 当前译名，文件名用 meta 钉扎名）
-	var nfoContent, nfoName, cleanName string
+	// Step 5.5: 生成标准文件名（TMDB 元数据 + 钉扎名）
+	var cleanName string
 	if tmdbInfo != nil {
 		cleanName = buildCleanNameFromMeta(meta, isTV, seasonNum, episodeNum, fileExt(video.Name))
-		nfoContent = p.nfoGen.Generate(tmdbInfo, meta.Type, episodeDetail)
-		if cleanName != "" {
-			nfoName = strings.TrimSuffix(cleanName, fileExt(cleanName)) + ".nfo"
-		} else {
-			nfoName = nfo.NfoNameFor(video.Name)
-		}
 	}
 
 	// Step 6: 创建目标文件夹（分类启用时先解析分类目录链：媒体库根/一级/二级）
 	var targetFolder *cloudfile.CloudFile
 	var targetChain []cloudfile.CloudFile
-	var topFolderID string
 	baseID := ""
 	if p.categories != nil {
 		level1, level2 := "", ""
@@ -660,13 +592,11 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 			// 无 TMDB 元数据：落"其他"一级目录（无法判定二级）
 			level1 = p.categories.Dirs.Other
 		}
-		if !p.dryRun {
-			if nodes, bid, err := p.ensureCategoryChain(level1, level2); err == nil {
-				baseID = bid
-				targetChain = nodes
-			} else {
-				log.Printf("分类目录创建失败，回退默认根目录：%v", err)
-			}
+		if nodes, bid, err := p.ensureCategoryChain(level1, level2); err == nil {
+			baseID = bid
+			targetChain = nodes
+		} else {
+			log.Printf("分类目录创建失败，回退默认根目录：%v", err)
 		}
 		if level2 != "" {
 			p.log(fmt.Sprintf("      分类：%s/%s", level1, level2), "INFO")
@@ -674,45 +604,27 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 			p.log(fmt.Sprintf("      分类：%s", level1), "INFO")
 		}
 	}
-	if !p.dryRun {
-		var orgChain []cloudfile.CloudFile
-		if baseID != "" {
-			orgChain, targetFolder = p.organizer.EnsureFolderWithChainUnder(baseID, meta, video.Name)
-		} else {
-			orgChain, targetFolder = p.organizer.EnsureFolderWithChainForMeta(meta, video.Name)
-		}
-		if targetFolder == nil {
-			result.Status = "failed"
-			result.Reason = "文件夹创建失败"
-			p.log("      ❌  "+result.Reason, "ERROR")
-			return result
-		}
-		targetChain = append(targetChain, orgChain...)
-		result.TargetFolder = targetFolder
-		result.TargetChain = targetChain
-		if isTV && tmdbInfo != nil {
-			tmdbIDKey := tmdbIDOf(tmdbInfo)
-			if cached, ok := p.showFolderCache[tmdbIDKey]; ok && tmdbIDKey != "" {
-				topFolderID = cached
-			} else if len(targetFolder.Parents) > 0 {
-				topFolderID = targetFolder.Parents[0]
-				if tmdbIDKey != "" {
-					p.showFolderCache[tmdbIDKey] = topFolderID
-				}
-			}
-		} else {
-			topFolderID = targetFolder.ID
-		}
-		folderPath := p.organizer.FolderPathForMeta(meta)
-		p.log(fmt.Sprintf("      文件夹：%s  [%s...]", folderPath, firstN12(targetFolder.ID)), "SUCCESS")
+	var orgChain []cloudfile.CloudFile
+	if baseID != "" {
+		orgChain, targetFolder = p.organizer.EnsureFolderWithChainUnder(baseID, meta, video.Name)
 	} else {
-		folderPath := p.organizer.FolderPathForMeta(meta)
-		p.log(fmt.Sprintf("      文件夹：%s  [dry-run，不创建]", folderPath), "INFO")
+		orgChain, targetFolder = p.organizer.EnsureFolderWithChainForMeta(meta, video.Name)
 	}
+	if targetFolder == nil {
+		result.Status = "failed"
+		result.Reason = "文件夹创建失败"
+		p.log("      ❌  "+result.Reason, "ERROR")
+		return result
+	}
+	targetChain = append(targetChain, orgChain...)
+	result.TargetFolder = targetFolder
+	result.TargetChain = targetChain
+	folderPath := p.organizer.FolderPathForMeta(meta)
+	p.log(fmt.Sprintf("      文件夹：%s  [%s...]", folderPath, firstN12(targetFolder.ID)), "SUCCESS")
 
 	// Step 7.5: 同名文件预检
 	pendingReplaceID := ""
-	if targetFolder != nil && !p.dryRun {
+	if targetFolder != nil {
 		targetName := firstNonEmpty(cleanName, video.Name)
 		existing, err := p.provider.FindFile(targetName, targetFolder.ID)
 		if err == nil && existing != nil {
@@ -732,109 +644,8 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 		}
 	}
 
-	// Step 8-11: 元数据上传
-	uploadMetadata := func() {
-		if p.skipMetadataUpload {
-			p.log("      元数据：跳过（skipMetadataUpload 已开启）", "INFO")
-			return
-		}
-		// Step 8: 单集/电影 NFO
-		if nfoContent != "" && nfoName != "" {
-			if !p.dryRun && targetFolder != nil {
-				if _, err := p.provider.UploadText(nfoContent, nfoName, targetFolder.ID, "text/xml", true); err != nil {
-					log.Printf("上传单集 NFO 失败：%v", err)
-					p.log(fmt.Sprintf("      NFO：上传失败 — %v", err), "ERROR")
-				} else {
-					result.NfoUploaded = true
-					p.log(fmt.Sprintf("      NFO：%s  ✓", nfoName), "SUCCESS")
-				}
-			} else {
-				p.log(fmt.Sprintf("      NFO：%s  [dry-run，不上传]", nfoName), "INFO")
-			}
-		} else if !p.skipTmdb && tmdbInfo == nil {
-			p.log("      NFO：跳过（TMDB 无数据）", "INFO")
-		}
-
-		// Step 9: tvshow.nfo → 剧名文件夹
-		if isTV && tmdbInfo != nil {
-			if !p.dryRun && topFolderID != "" && !p.tvshowNfoDone[topFolderID] {
-				xmlStr := p.nfoGen.GenerateTVShow(tmdbInfo)
-				if _, err := p.provider.UploadText(xmlStr, "tvshow.nfo", topFolderID, "text/xml", true); err != nil {
-					log.Printf("上传 tvshow.nfo 失败：%v", err)
-					p.log(fmt.Sprintf("      tvshow.nfo：失败 — %v", err), "ERROR")
-				} else {
-					p.tvshowNfoDone[topFolderID] = true
-					p.log("      tvshow.nfo：→ 剧名文件夹  ✓", "SUCCESS")
-				}
-			} else if p.dryRun && topFolderID == "" {
-				p.log("      tvshow.nfo：→ 剧名文件夹  [dry-run]", "INFO")
-			}
-		}
-
-		// Step 10: season.nfo → Season 文件夹
-		if isTV && tmdbInfo != nil && targetFolder != nil {
-			seasonFolderID := targetFolder.ID
-			if !p.dryRun && !p.seasonNfoDone[seasonFolderID] {
-				seasonDetail := p.getSeasonDetailCached(tmdbIDOf(tmdbInfo), seasonNum)
-				xmlStr := p.nfoGen.GenerateSeason(seasonDetail, seasonNum)
-				if _, err := p.provider.UploadText(xmlStr, "season.nfo", seasonFolderID, "text/xml", true); err != nil {
-					log.Printf("上传 season.nfo 失败：%v", err)
-					p.log(fmt.Sprintf("      season.nfo：失败 — %v", err), "ERROR")
-				} else {
-					p.seasonNfoDone[seasonFolderID] = true
-					p.log(fmt.Sprintf("      season.nfo：→ Season %d 文件夹  ✓", seasonNum), "SUCCESS")
-				}
-			} else if p.dryRun && !p.seasonNfoDone[seasonFolderID] {
-				p.log(fmt.Sprintf("      season.nfo：→ Season %d 文件夹  [dry-run]", seasonNum), "INFO")
-			}
-		}
-
-		// Step 11: poster.jpg / fanart.jpg
-		if tmdbInfo != nil && p.imgUploader != nil && targetFolder != nil {
-			imgTopID := firstNonEmpty(topFolderID, targetFolder.ID)
-			if !p.posterDone[imgTopID] {
-				uploadedAny := false
-				if poster := jsonx.Str(tmdbInfo, "poster_path"); poster != "" {
-					if f := p.imgUploader.UploadPoster(poster, imgTopID); f != nil {
-						p.log("      poster.jpg：✓", "SUCCESS")
-						uploadedAny = true
-					}
-				}
-				if fanart := jsonx.Str(tmdbInfo, "backdrop_path"); fanart != "" {
-					if f := p.imgUploader.UploadFanart(fanart, imgTopID); f != nil {
-						p.log("      fanart.jpg：✓", "SUCCESS")
-						uploadedAny = true
-					}
-				}
-				if uploadedAny {
-					p.posterDone[imgTopID] = true
-				}
-			}
-		} else if tmdbInfo != nil && p.dryRun {
-			p.log("      poster.jpg / fanart.jpg：[dry-run，不下载]", "INFO")
-		}
-
-		// Step 11.5: season poster（季封面）
-		if isTV && tmdbInfo != nil && p.imgUploader != nil && targetFolder != nil && topFolderID != "" {
-			seasonPosterKey := fmt.Sprintf("%s:s%d", topFolderID, seasonNum)
-			if !p.seasonPosterDone[seasonPosterKey] {
-				seasonDetail := p.getSeasonDetailCached(tmdbIDOf(tmdbInfo), seasonNum)
-				if sp := jsonx.Str(seasonDetail, "poster_path"); sp != "" {
-					if f := p.imgUploader.UploadSeasonPoster(sp, seasonNum, topFolderID); f != nil {
-						p.log(fmt.Sprintf("      season%02d-poster.jpg：✓", seasonNum), "SUCCESS")
-					}
-				}
-				p.seasonPosterDone[seasonPosterKey] = true
-			}
-		}
-	}
-
-	if pendingReplaceID == "" && result.Status != "failed" {
-		uploadMetadata()
-	}
-
 	// Step 12: 移动视频文件（同时改名为标准格式）
-	if !p.dryRun && targetFolder != nil && result.Status == "ok" {
+	if targetFolder != nil && result.Status == "ok" {
 		if pendingReplaceID != "" {
 			if _, err := p.provider.TrashFile(pendingReplaceID); err != nil {
 				result.Status = "failed"
@@ -871,17 +682,9 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 			result.File = updated
 			p.log("      移动：✓", "SUCCESS")
 		}
-	} else if result.Status == "ok" {
-		targetName := firstNonEmpty(cleanName, video.Name)
-		p.log(fmt.Sprintf("      移动：%s  [dry-run，不移动]", targetName), "INFO")
 	}
 
-	// Step 12.5: 替换模式下移动成功后上传元数据
-	if pendingReplaceID != "" && result.Moved {
-		uploadMetadata()
-	}
-
-	// Step 13: 移动关联的字幕文件（dry-run 下也预览；视频被跳过也处理）
+	// Step 13: 移动关联的字幕文件（视频被跳过也处理）
 	if len(subtitleIndex) > 0 && result.Status != "failed" {
 		p.moveSubtitlesForVideo(video, firstNonEmpty(cleanName, video.Name), targetFolder, subtitleIndex)
 		p.log("", "INFO")
@@ -889,9 +692,9 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 
 	p.recordIngest(&result, meta, tmdbInfo, seasonNum, episodeNum, episodeDetail)
 
-	// 入库成功回调（STRM 生成等后处理；dry-run 与失败/跳过不触发）
+	// 入库成功回调（STRM 生成等后处理；失败/跳过不触发）
 	strmOK := false
-	if p.onVideoIngested != nil && result.Status == "ok" && !p.dryRun && result.TargetFolder != nil {
+	if p.onVideoIngested != nil && result.Status == "ok" && result.TargetFolder != nil {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -927,8 +730,7 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 }
 
 func (p *Pipeline) recordIngest(result *ProcessResult, meta *mediaparser.MetaBase, tmdbInfo map[string]any, seasonNum int, episodeNum *int, episodeDetail map[string]any) {
-	// dry-run 未实际入库，不写历史
-	if p.ingestStore == nil || p.dryRun {
+	if p.ingestStore == nil {
 		return
 	}
 	isTV := meta.Type == mediaparser.MediaTV

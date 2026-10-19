@@ -328,7 +328,6 @@ func TestPipelineTVFlow(t *testing.T) {
 
 	p := New(provider, cfg, Options{
 		TmdbClient: tmdbClient,
-		SkipImages: true,
 	})
 	summary := p.Run()
 
@@ -350,19 +349,6 @@ func TestPipelineTVFlow(t *testing.T) {
 		t.Fatal("视频未移动到目标文件夹（含标准改名）")
 	}
 	_ = video
-	// NFO 同名
-	nfoFile, _ := provider.FindFile("绝命毒师 - S01E03.nfo", season.ID)
-	if nfoFile == nil {
-		t.Fatal("单集 NFO 未上传")
-	}
-	tvshow, _ := provider.FindFile("tvshow.nfo", top.ID)
-	if tvshow == nil {
-		t.Fatal("tvshow.nfo 未上传到剧名文件夹")
-	}
-	seasonNfo, _ := provider.FindFile("season.nfo", season.ID)
-	if seasonNfo == nil {
-		t.Fatal("season.nfo 未上传到 Season 文件夹")
-	}
 	// 字幕跟随移动并改名
 	movedSub, _ := provider.FindFile("绝命毒师 - S01E03.zh-CN.srt", season.ID)
 	if movedSub == nil {
@@ -384,7 +370,7 @@ func TestPipelineMovieFlow(t *testing.T) {
 	tmdbClient := tmdb.NewClient("key", "zh-CN", "", 5, nil)
 	tmdbClient.SetTestBaseURL(server.URL)
 
-	p := New(provider, cfg, Options{TmdbClient: tmdbClient, SkipImages: true})
+	p := New(provider, cfg, Options{TmdbClient: tmdbClient})
 	summary := p.Run()
 	if summary.OKCount != 1 {
 		t.Fatalf("summary = %+v", summary)
@@ -396,28 +382,6 @@ func TestPipelineMovieFlow(t *testing.T) {
 	moved, _ := provider.FindFile("盗梦空间 (2010).mkv", movieFolder.ID)
 	if moved == nil {
 		t.Fatal("电影未移动（标准命名 盗梦空间 (2010).mkv）")
-	}
-}
-
-func TestPipelineDryRun(t *testing.T) {
-	provider := newFakeProvider()
-	scan := provider.AddFolder("扫描", "0")
-	provider.AddFile("Inception.2010.1080p.BluRay.x264.mkv", scan.ID)
-
-	cfg := newTestConfig()
-	cfg.U115.DownloadFolderID = scan.ID
-
-	p := New(provider, cfg, Options{DryRun: true, SkipTmdb: true})
-	summary := p.Run()
-	if summary.OKCount != 1 {
-		t.Fatalf("summary = %+v", summary)
-	}
-	// dry-run 不应创建任何文件夹
-	if existing, _ := provider.FindFile("Inception (2010)", "root"); existing != nil {
-		t.Fatal("dry-run 不应创建文件夹")
-	}
-	if list, _ := provider.ListFiles(scan.ID, 100); len(list) != 1 {
-		t.Fatal("dry-run 不应移动文件")
 	}
 }
 
@@ -496,7 +460,6 @@ func TestPipelineTitlePinReuse(t *testing.T) {
 	// TMDB 当前译名为「绝命毒师」，钉扎名「旧译名」→ 目录沿用钉扎名
 	p := New(provider, cfg, Options{
 		TmdbClient: tmdbClient,
-		SkipImages: true,
 		TitlePinStore: newFakeTitlePinStore(map[string][2]string{
 			"tv:1396": {"旧译名", "2008"},
 		}),
@@ -530,11 +493,9 @@ func TestPipelineMergeDuplicateFolders(t *testing.T) {
 	oldFolder := provider.AddFolder("旧译名 (2025)", "root")
 	oldSeason := provider.AddFolder("Season 01", oldFolder.ID)
 	provider.AddFile("旧译名 - S01E01.mkv", oldSeason.ID)
-	provider.AddFile("tvshow.nfo", oldFolder.ID)
 	newFolder := provider.AddFolder("新译名 (2025)", "root")
 	newSeason := provider.AddFolder("Season 01", newFolder.ID)
 	provider.AddFile("新译名 - S01E02.mkv", newSeason.ID)
-	provider.AddFile("tvshow.nfo", newFolder.ID)
 
 	cfg := newTestConfig()
 	cfg.U115.DownloadFolderID = scan.ID
@@ -713,7 +674,6 @@ func TestPipelineCategoryLayout(t *testing.T) {
 	// 分类启用：剧集根/动漫（动画流派命中）
 	p := New(provider, cfg, Options{
 		TmdbClient: tmdbClient,
-		SkipImages: true,
 		Categories: &config.CategoriesConfig{
 			Dirs: config.CategoryDirs{TV: "剧集", Movie: "电影", Other: "其他"},
 			TV: []config.CategoryRule{

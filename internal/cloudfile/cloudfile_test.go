@@ -23,9 +23,9 @@ func TestVideoByExtension(t *testing.T) {
 }
 
 func TestNonVideo(t *testing.T) {
-	f := CloudFile{ID: "1", Name: "movie.nfo", FileType: TypeFile, MimeType: "text/xml"}
+	f := CloudFile{ID: "1", Name: "movie.zh-CN.srt", FileType: TypeFile}
 	if f.IsVideo() {
-		t.Error("NFO 文件不应识别为视频")
+		t.Error("字幕文件不应识别为视频")
 	}
 }
 

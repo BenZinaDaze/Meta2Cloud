@@ -33,7 +33,7 @@ type DuplicateFolderGroup struct {
 // ── 重复目录合并 ────────────────────────────────────────────
 
 // mergeDuplicateFoldersPass 把同一媒体因译名差异产生的多个目录合并进钉扎目录。
-// 每轮每个媒体只处理一次；dry-run 只记录日志。
+// 每轮每个媒体只处理一次。
 func (p *Pipeline) mergeDuplicateFoldersPass() {
 	if p.dupSource == nil || p.pinStore == nil {
 		return
@@ -59,19 +59,7 @@ func (p *Pipeline) mergeDuplicateFoldersPass() {
 
 // mergeDuplicateGroup 合并一个媒体分组的重复目录，返回是否有目录被回收。
 func (p *Pipeline) mergeDuplicateGroup(g DuplicateFolderGroup) bool {
-	var pinTitle, pinYear string
-	if p.dryRun {
-		// dry-run 只读，不落库
-		title, year, ok := p.pinStore.GetTitlePin(g.MediaType, g.TmdbID)
-		if ok {
-			pinTitle, pinYear = title, year
-		}
-	} else {
-		title, year, err := p.pinStore.ResolveTitlePin(g.MediaType, g.TmdbID, "", "")
-		if err == nil {
-			pinTitle, pinYear = title, year
-		}
-	}
+	pinTitle, pinYear, _ := p.pinStore.ResolveTitlePin(g.MediaType, g.TmdbID, "", "")
 
 	// 组内目录按 ID 逐个定位（分类布局下媒体目录不在根目录直下，无法按名列举）
 	var located []cloudfile.CloudFile
@@ -93,9 +81,7 @@ func (p *Pipeline) mergeDuplicateGroup(g DuplicateFolderGroup) bool {
 			if parsedTitle == "" {
 				continue
 			}
-			if p.dryRun {
-				pinTitle, pinYear = parsedTitle, parsedYear
-			} else if t, y, err := p.pinStore.ResolveTitlePin(g.MediaType, g.TmdbID, parsedTitle, parsedYear); err == nil {
+			if t, y, err := p.pinStore.ResolveTitlePin(g.MediaType, g.TmdbID, parsedTitle, parsedYear); err == nil {
 				pinTitle, pinYear = t, y
 			}
 			if pinTitle != "" {
@@ -237,10 +223,6 @@ func (p *Pipeline) mergeFolderInto(candidate, target cloudfile.CloudFile) bool {
 	if moved == 0 && skipped == 0 {
 		return false
 	}
-	if p.dryRun {
-		p.log(fmt.Sprintf("      [dry-run] 将移动 %d 个文件，跳过 %d 个同名文件", moved, skipped), "INFO")
-		return false
-	}
 	p.log(fmt.Sprintf("      移动 %d 个文件，跳过 %d 个同名文件", moved, skipped), "INFO")
 	if p.folderHasContent(candidate.ID) {
 		p.log(fmt.Sprintf("      ⚠ 目录内仍有视频/字幕残留，保留目录：%s", candidate.Name), "WARNING")
@@ -266,23 +248,15 @@ func (p *Pipeline) moveFolderContents(srcID, dstID string) (moved, skipped int) 
 	}
 	for _, item := range items {
 		if item.IsFolder() {
-			subDst := dstID
-			if !p.dryRun {
-				sub, err := cloudfile.GetOrCreateFolder(p.provider, item.Name, dstID)
-				if err != nil {
-					log.Printf("合并重复目录：创建子目录失败 %q: %v", item.Name, err)
-					skipped++
-					continue
-				}
-				subDst = sub.ID
+			sub, err := cloudfile.GetOrCreateFolder(p.provider, item.Name, dstID)
+			if err != nil {
+				log.Printf("合并重复目录：创建子目录失败 %q: %v", item.Name, err)
+				skipped++
+				continue
 			}
-			m, s := p.moveFolderContents(item.ID, subDst)
+			m, s := p.moveFolderContents(item.ID, sub.ID)
 			moved += m
 			skipped += s
-			continue
-		}
-		if p.dryRun {
-			moved++
 			continue
 		}
 		if existing, err := p.provider.FindFile(item.Name, dstID); err == nil && existing != nil {
