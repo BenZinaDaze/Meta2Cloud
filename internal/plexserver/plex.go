@@ -342,28 +342,6 @@ func (c *Client) LibraryItems(sectionKey string, plexType int) ([]Metadata, erro
 	}
 }
 
-// RecentlyViewedTop 按最近观看排序取分区前 limit 条（单次小分页请求）。
-// 手动「标记已观看」不产生任何实时事件（SSE/WS 实测均不推送），
-// 观看同步哨兵靠本接口低成本感知 lastViewedAt 变化。plexType：1=电影，4=剧集。
-func (c *Client) RecentlyViewedTop(sectionKey string, plexType, limit int) ([]Metadata, error) {
-	query := url.Values{}
-	query.Set("type", strconv.Itoa(plexType))
-	query.Set("sort", "lastViewedAt:desc")
-	query.Set("X-Plex-Container-Start", "0")
-	query.Set("X-Plex-Container-Size", strconv.Itoa(limit))
-	data, _, err := c.get("/library/sections/"+sectionKey+"/all", query)
-	if err != nil {
-		return nil, err
-	}
-	var page struct {
-		MediaContainer mediaContainer `json:"MediaContainer"`
-	}
-	if err := json.Unmarshal(data, &page); err != nil {
-		return nil, err
-	}
-	return page.MediaContainer.Metadata, nil
-}
-
 // Metadata 按 ratingKey 查详情（Guid/文件路径齐全，用于会话身份补解析）。
 func (c *Client) Metadata(ratingKey string) (*Metadata, error) {
 	data, _, err := c.get("/library/metadata/"+ratingKey, nil)

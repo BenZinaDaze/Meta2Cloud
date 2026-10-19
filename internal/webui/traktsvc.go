@@ -1154,80 +1154,6 @@ func ensureTraktSSELoop() {
 	})
 }
 
-// ── Plex 观看哨兵（手动「标记已观看」的低成本感知）───────────
-// 手动标记已观看不产生任何实时事件（SSE/WS 实测均静默），定时全量兜底
-// 最坏要等一个同步间隔。哨兵每个会话轮询周期对各库取「最近观看前 5」做
-// 指纹比对，有变化即触发一轮全量同步，把感知延迟压到一个轮询周期内。
-// 每 tick 固定 1+N 个微型请求（sections + 每库前 5 条），不消耗 Trakt 配额。
-
-// sentinelFingerprint 计算单库「最近观看」指纹：ratingKey:lastViewedAt 拼接。
-// 标记/取消标记都会改变 top 集合或时间戳，指纹必变。
-func sentinelFingerprint(items []plexserver.Metadata) string {
-	parts := make([]string, 0, len(items))
-	for _, it := range items {
-		parts = append(parts, fmt.Sprintf("%s:%d", it.RatingKey, it.LastViewedAt))
-	}
-	return strings.Join(parts, ",")
-}
-
-// ensureTraktSentinelLoop 启动 Plex 观看哨兵（幂等）。门控与 SSE 循环同理：
-// 只看 →Trakt 方向与两侧就绪，不受「启用定时同步」影响。
-func ensureTraktSentinelLoop() {
-	traktSentinelOnce.Do(func() {
-		go func() {
-			log.Printf("Plex 观看哨兵线程已启动")
-			baseline := map[string]string{} // sectionKey:type → 指纹；缺席=尚未播种
-			for {
-				cfg := RT().GetConfig()
-				plexClient := RT().GetPlexClient()
-				if !cfg.Trakt.SyncToTrakt || !cfg.IsPlexReady() || !cfg.IsTraktReady() || plexClient == nil {
-					if !sleepWatcher(traktSentinelWatcher, 30*time.Second) {
-						return
-					}
-					continue
-				}
-				changed := false
-				changedPrev := map[string]string{} // key → 触发前的旧指纹（单飞被拒时回滚）
-				if sections, err := plexClient.Sections(); err == nil {
-					for _, s := range sections {
-						plexType := 1
-						if s.Type == "show" {
-							plexType = 4
-						}
-						items, err := plexClient.RecentlyViewedTop(s.Key, plexType, 5)
-						if err != nil {
-							continue
-						}
-						fp := sentinelFingerprint(items)
-						key := s.Key + ":" + s.Type
-						if old, ok := baseline[key]; ok && fp != old {
-							changed = true
-							changedPrev[key] = old
-							log.Printf("Plex 观看哨兵检测到「%s」库观看状态变化", s.Title)
-						}
-						baseline[key] = fp
-					}
-				}
-				if changed {
-					// 引擎自身写 Plex（←Trakt 方向）也会改指纹，多触发的一轮
-					// 经影子比对为空操作，无害。触发被单飞拒绝（恰有同步在跑）
-					// 时不消费信号：回滚旧指纹，下个 tick 重新检测触发
-					if TriggerTraktSync("plex_activity") {
-						appLog("trakt", "sentinel_triggered", "INFO", "Plex 观看哨兵检测到变化，触发同步", nil)
-					} else {
-						for k, old := range changedPrev {
-							baseline[k] = old
-						}
-					}
-				}
-				if !sleepWatcher(traktSentinelWatcher, time.Duration(cfg.Trakt.SessionPollSeconds)*time.Second) {
-					return
-				}
-			}
-		}()
-	})
-}
-
 // sleepWatcher 可中断的睡眠：stopCh 关闭时返回 false（线程退出）。
 func sleepWatcher(w *watcherState, d time.Duration) bool {
 	select {
@@ -1354,12 +1280,10 @@ var (
 	traktSessionWatcher  = &watcherState{stopCh: make(chan struct{})}
 	traktSSEWatcher      = &watcherState{stopCh: make(chan struct{})}
 	traktActivityWatcher = &watcherState{stopCh: make(chan struct{})}
-	traktSentinelWatcher = &watcherState{stopCh: make(chan struct{})}
 	traktOnce            sync.Once
 	traktSessionOnce     sync.Once
 	traktSSEOnce         sync.Once
 	traktActivityOnce    sync.Once
-	traktSentinelOnce    sync.Once
 )
 
 // ensureTraktSyncLoop 启动观看同步定时循环（幂等；sync_interval_seconds < 60 时空转等待）。

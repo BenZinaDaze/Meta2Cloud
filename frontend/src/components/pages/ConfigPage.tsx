@@ -1643,7 +1643,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                         max={604800}
                       />
                     </Field>
-                    <Field label="正在看轮询间隔" description="秒；SSE 关闭时的兜底轮询与观看哨兵的检查周期">
+                    <Field label="正在看轮询间隔" description="秒；SSE 关闭或断开时的兜底轮询周期">
                       <NumberInput
                         value={(cfg?.trakt as Record<string, unknown>)?.session_poll_seconds as number | undefined ?? 45}
                         onChange={(v) => set('trakt', 'session_poll_seconds', v)}

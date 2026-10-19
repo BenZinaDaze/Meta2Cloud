@@ -278,7 +278,6 @@ func StartupBackgroundWatchers() {
 	ensureTraktSessionLoop()
 	ensureTraktSSELoop()
 	ensureTraktActivityLoop()
-	ensureTraktSentinelLoop()
 }
 
 // StopBackgroundWatchers 停止全部后台监听线程（幂等）。
@@ -287,7 +286,7 @@ func StartupBackgroundWatchers() {
 // 注意：停止后当前进程内不会重启（ensure*Loop 的 sync.Once 已消费）；
 // 生产环境进程生命周期即线程生命周期，不受影响。
 func StopBackgroundWatchers() {
-	for _, w := range []*watcherState{u115AutoWatcher, rssWatcher, strmWatcher, traktWatcher, traktSessionWatcher, traktSSEWatcher, traktActivityWatcher, traktSentinelWatcher} {
+	for _, w := range []*watcherState{u115AutoWatcher, rssWatcher, strmWatcher, traktWatcher, traktSessionWatcher, traktSSEWatcher, traktActivityWatcher} {
 		w.mu.Lock()
 		if !w.stopped {
 			w.stopped = true

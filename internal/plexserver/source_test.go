@@ -416,33 +416,6 @@ func TestStreamNotifications(t *testing.T) {
 	}
 }
 
-// TestRecentlyViewedTop 观看哨兵数据源：按 lastViewedAt:desc 排序的小分页请求。
-func TestRecentlyViewedTop(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /library/sections/4/all", func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
-		if q.Get("sort") != "lastViewedAt:desc" || q.Get("type") != "1" ||
-			q.Get("X-Plex-Container-Start") != "0" || q.Get("X-Plex-Container-Size") != "2" {
-			t.Errorf("查询参数不符：%v", q)
-		}
-		w.Header().Set("X-Plex-Container-Total-Size", "12")
-		fmt.Fprint(w, `{"MediaContainer":{"Metadata":[
-			{"ratingKey":"814","title":"A","lastViewedAt":1792349545},
-			{"ratingKey":"815","title":"B"}]}}`)
-	})
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-	client := NewClient(srv.URL, "tok", "cid", WithHTTPClient(srv.Client()))
-
-	items, err := client.RecentlyViewedTop("4", 1, 2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(items) != 2 || items[0].RatingKey != "814" || items[0].LastViewedAt != 1792349545 || items[1].LastViewedAt != 0 {
-		t.Fatalf("解析不符：%+v", items)
-	}
-}
-
 // TestStreamNotificationsNotSupported 旧版 PMS 无 SSE 端点时应返回可识别的哨兵错误。
 func TestStreamNotificationsNotSupported(t *testing.T) {
 	mux := http.NewServeMux()
