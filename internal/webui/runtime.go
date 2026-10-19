@@ -498,7 +498,7 @@ func (rt *Runtime) GetPlexClient() *plexserver.Client {
 	return rt.getPlexClientLocked()
 }
 
-// GetTraktSyncStore 观看同步影子存储单例（独立 traktsync.db）。
+// GetTraktSyncStore 观看同步同步状态存储单例（独立 traktsync.db）。
 func (rt *Runtime) GetTraktSyncStore() *store.TraktSyncStore {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()

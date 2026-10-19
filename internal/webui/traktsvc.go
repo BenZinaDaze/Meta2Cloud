@@ -823,7 +823,7 @@ const sessionPushThreshold = 0.8
 // sessionPushCooldown 同一观看推送后的最小间隔（防重复推送）。
 const sessionPushCooldown = int64(3600)
 
-// sessionEchoSkew trakt 影子已是新看时视为回声的时间窗口（与引擎 echoSkew 对齐）。
+// sessionEchoSkew trakt 同步状态已是新看时视为回声的时间窗口（与引擎 echoSkew 对齐）。
 const sessionEchoSkew = int64(600)
 
 // sessionMaxMisses 连续缺席轮询若干次后移除会话观察行。
@@ -917,7 +917,7 @@ func pollPlexSessionsOnce() {
 }
 
 // tryPushWatchedSession 会话进度达标（≥80%）时把该集推送到 Trakt。
-// 内置防重门控（近期推送过 / trakt 影子已是新看则跳过），
+// 内置防重门控（近期推送过 / trakt 同步状态已是新看则跳过），
 // 轮询与 SSE 实时推送两条路径共用，保证不会重复计 plays。
 // source 标记来源（"sse" / "poll"），title 为展示用媒体标题；
 // 每次实际尝试（无论成败）都经 RecordSessionPushRun 落一条 run 记录，
@@ -1228,7 +1228,7 @@ func checkTraktActivityOnce() {
 	if stamp == seen {
 		return
 	}
-	// 抑制回环：变化若由本端刚完成的推送造成，等价内容已在影子内，消费戳即可
+	// 抑制回环：变化若由本端刚完成的推送造成，等价内容已记录在同步状态里，消费戳即可
 	if pushed, _ := syncStore.TraktPushedAt(); time.Now().Unix()-pushed < 180 {
 		_ = syncStore.SetMeta("trakt.activity_seen", strconv.FormatInt(stamp, 10))
 		return
@@ -1275,7 +1275,7 @@ func ensureTraktActivityLoop() {
 	})
 }
 
-// resolveSessionKey 会话身份解析：影子快路径 → 会话行缓存 → Plex 详情补解析。
+// resolveSessionKey 会话身份解析：状态记录快路径 → 会话行缓存 → Plex 详情补解析。
 func resolveSessionKey(store *store.TraktSyncStore, source *plexserver.Source, sess *plexserver.Metadata) (watched.MediaKey, bool) {
 	if shadow, ok, _ := store.GetShadowByPlexRef(sess.RatingKey); ok && shadow.Key.TMDBID > 0 {
 		return shadow.Key, true

@@ -1,6 +1,6 @@
 // Package watched 定义观看状态源的统一抽象（仿 cloudfile.Provider 模式）。
 // 同步引擎只依赖本包的接口与模型；Trakt / Plex（及未来的 Emby、Jellyfin）
-// 各自提供 HTTP 客户端 + Provider 实现，接入新播放端不影响引擎与影子存储。
+// 各自提供 HTTP 客户端 + Provider 实现，接入新播放端不影响引擎与同步状态存储。
 package watched
 
 import (
@@ -27,7 +27,7 @@ func (k MediaKey) String() string {
 
 // ItemState 单侧观测到的观看状态。
 type ItemState struct {
-	Present bool   // 本轮枚举中出现（缺席≠未看，由引擎结合影子判断）
+	Present bool   // 本轮枚举中出现（缺席≠未看，由引擎结合同步状态判断）
 	Watched bool   // 已观看
 	LastAt  int64  // 最近观看时间（unix 秒；0=未知）
 	Plays   int    // 观看次数（仅用于冲突/重看判断，不做两侧对齐）

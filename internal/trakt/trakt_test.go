@@ -176,7 +176,7 @@ func TestAddHistoryNotFoundFailsChunk(t *testing.T) {
 
 	source := NewTraktSource(c)
 	results := source.MarkWatched(context.Background(), []watched.WatchOp{{Key: movieKey(999)}})
-	// not_found 非空 → 整块失败（影子不落盘，下轮重试）
+	// not_found 非空 → 整块失败（状态记录不更新，下轮重试）
 	for _, res := range results {
 		if res.OK {
 			t.Fatalf("not_found 非空时期望整块失败：%+v", res)

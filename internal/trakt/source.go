@@ -58,7 +58,7 @@ func (s *TraktSource) ListAll(ctx context.Context) (map[watched.MediaKey]watched
 		}
 		progress, err := s.Client.ShowWatchedProgress(show.Show.IDs.Trakt)
 		if err != nil {
-			// 单剧进度失败不拖垮整轮：跳过该剧（影子保留旧值，下轮重试）
+			// 单剧进度失败不拖垮整轮：跳过该剧（同步状态保留旧值，下轮重试）
 			continue
 		}
 		var resetAt int64
@@ -86,7 +86,7 @@ func (s *TraktSource) ListAll(ctx context.Context) (map[watched.MediaKey]watched
 	return out, nil
 }
 
-// MarkWatched 批量记录已看；分块提交，块内未匹配或 added=0 均视为失败（影子不动，下轮重试）。
+// MarkWatched 批量记录已看；分块提交，块内未匹配或 added=0 均视为失败（同步状态不动，下轮重试）。
 func (s *TraktSource) MarkWatched(ctx context.Context, ops []watched.WatchOp) []watched.OpResult {
 	return s.apply(s.Client.AddHistory, ops, true)
 }
@@ -145,8 +145,8 @@ func (s *TraktSource) apply(fn historyFunc, ops []watched.WatchOp, requireAdded 
 			continue
 		}
 		// 记录已看必须拿到服务端确认（added>0）：added=0 说明载荷未被实际
-		// 接受（如条目嵌套未匹配），按失败处理（影子不动，下轮重试），
-		// 严禁在未确认写入的情况下把影子标成已看。取消已看不要求 deleted>0：
+		// 接受（如条目嵌套未匹配），按失败处理（同步状态不动，下轮重试），
+		// 严禁在未确认写入的情况下把同步状态标成已看。取消已看不要求 deleted>0：
 		// 目标本就未看时 deleted=0 即幂等达成。
 		if requireAdded && result.Count == 0 {
 			msg := fmt.Sprintf("Trakt 返回 added=0（写入未被接受），本批将下轮重试")

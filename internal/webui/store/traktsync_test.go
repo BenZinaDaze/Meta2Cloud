@@ -39,7 +39,7 @@ func TestShadowRoundTrip(t *testing.T) {
 	if got.PlexRef != "rating-1" || !got.PlexSeen || got.PlexWatched == nil || !*got.PlexWatched ||
 		got.PlexPlays != 2 || got.PlexLastAt != 1700000000 ||
 		got.TraktWatched == nil || *got.TraktWatched || got.SessionPushedAt != 1700000100 {
-		t.Fatalf("影子往返不符：%+v", got)
+		t.Fatalf("状态往返不符：%+v", got)
 	}
 
 	// upsert 覆盖

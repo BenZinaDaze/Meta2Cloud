@@ -1,10 +1,10 @@
-// traktsync.go —— Plex ↔ Trakt 观看同步的影子状态存储。
+// traktsync.go —— Plex ↔ Trakt 观看同步的同步状态存储。
 //
 // 独立 traktsync.db，不与 library.db 等任何现有库/表混用（本功能对其他库零写入；
 // 唯一跨库动作是 webui 层只读查询 media_title_pins 做身份反查）。
 //
 // sync_items 语义（与 syncengine.Shadow 注释一致）：
-//   - 影子 = 每侧「最后确认态」，仅在干净读取或远端写成功后更新
+//   - 同步状态 = 每侧「最后确认态」，仅在干净读取或远端写成功后更新
 //   - Trakt reset = 行存在且 trakt 侧已看但本轮枚举缺席；从未看过 = 无行或 watched 为 NULL
 //   - *_seen=0（缺席本轮枚举）≠ 取消观看，引擎会跳过该侧 diff
 package store
@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS sync_meta (
 );
 `
 
-// TraktSyncStore 观看同步影子存储（独立 traktsync.db）。
+// TraktSyncStore 观看同步同步状态存储（独立 traktsync.db）。
 // 实现 syncengine.ShadowStore。
 type TraktSyncStore struct {
 	db *sql.DB
@@ -173,7 +173,7 @@ func scanShadowItem(row interface{ Scan(...any) error }) (watched.MediaKey, sync
 	return key, sh, nil
 }
 
-// AllShadow 读取全部影子行。
+// AllShadow 读取全部状态记录。
 func (s *TraktSyncStore) AllShadow() (map[watched.MediaKey]syncengine.Shadow, error) {
 	rows, err := s.db.Query(syncItemSelect)
 	if err != nil {
@@ -191,7 +191,7 @@ func (s *TraktSyncStore) AllShadow() (map[watched.MediaKey]syncengine.Shadow, er
 	return out, rows.Err()
 }
 
-// GetShadow 按键读取影子行。
+// GetShadow 按键读取状态记录。
 func (s *TraktSyncStore) GetShadow(key watched.MediaKey) (syncengine.Shadow, bool, error) {
 	mediaType, tmdbID, season, episode := itemKeyValues(key)
 	row := s.db.QueryRow(syncItemSelect+" WHERE media_type = ? AND tmdb_id = ? AND season = ? AND episode = ?",
@@ -206,7 +206,7 @@ func (s *TraktSyncStore) GetShadow(key watched.MediaKey) (syncengine.Shadow, boo
 	return sh, true, nil
 }
 
-// SaveShadow 批量保存影子行（upsert；事务保证批内一致）。
+// SaveShadow 批量保存状态记录（upsert；事务保证批内一致）。
 func (s *TraktSyncStore) SaveShadow(items []syncengine.Shadow) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -261,7 +261,7 @@ func (s *TraktSyncStore) SaveShadow(items []syncengine.Shadow) error {
 	return tx.Commit()
 }
 
-// UpdateTraktWatched 会话轮询专用：只进不退地更新 trakt 侧影子与推送时间戳
+// UpdateTraktWatched 会话轮询专用：只进不退地更新 trakt 侧同步状态与推送时间戳
 // （行不存在则先建行，两侧其余字段保持未知态，待下轮全量同步补齐）。
 func (s *TraktSyncStore) UpdateTraktWatched(key watched.MediaKey, at int64, sessionPushedAt int64) error {
 	sh, ok, err := s.GetShadow(key)
@@ -282,7 +282,7 @@ func (s *TraktSyncStore) UpdateTraktWatched(key watched.MediaKey, at int64, sess
 	return s.SaveShadow([]syncengine.Shadow{sh})
 }
 
-// GetShadowByPlexRef 按 ratingKey 查影子行（会话轮询的身份快路径）。
+// GetShadowByPlexRef 按 ratingKey 查状态记录（会话轮询的身份快路径）。
 func (s *TraktSyncStore) GetShadowByPlexRef(ref string) (syncengine.Shadow, bool, error) {
 	row := s.db.QueryRow(syncItemSelect+" WHERE plex_ref = ? LIMIT 1", ref)
 	_, sh, err := scanShadowItem(row)

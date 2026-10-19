@@ -4,10 +4,10 @@
 // 新增 Emby/Jellyfin 等播放端只需提供各自的 watched.Provider 实现。
 //
 // 一轮同步（Run）：
-//  1. 全量拉取两侧观看状态 + 读取影子表
+//  1. 全量拉取两侧观看状态 + 读取同步状态表
 //  2. 逐键三方比对（当前两侧状态 vs 最后确认态）判定变化方向
 //  3. 依据方向开关与 echo 防重生成写入计划，双侧反向冲突按「新者胜」裁决
-//  4. 批量执行写入，成功后才落影子（幂等：影子=写后状态，重跑零 delta）
+//  4. 批量执行写入，成功后才更新状态记录（幂等：状态=写后状态，重跑零 delta）
 package syncengine
 
 import (
@@ -23,8 +23,8 @@ const (
 	echoSkew = 10 * time.Minute
 )
 
-// Shadow 影子行：两侧「最后确认态」。语义规则（与 store/traktsync.go DDL 注释一致）：
-//   - 影子仅在干净读取或远端写成功后更新
+// Shadow 状态记录：两侧「最后确认态」。语义规则（与 store/traktsync.go DDL 注释一致）：
+//   - 同步状态仅在干净读取或远端写成功后更新
 //   - Trakt reset = 行存在且 trakt 侧已看但本轮枚举缺席；从未看过 = 无行或 watched 未知
 //   - 播放端缺席本轮枚举（seen=false）≠ 取消观看，本轮跳过该侧 diff
 type Shadow struct {
@@ -65,7 +65,7 @@ type RunItem struct {
 	Err       string
 }
 
-// ShadowStore 影子存储接口（internal/webui/store 的 TraktSyncStore 实现；
+// ShadowStore 同步状态存储接口（internal/webui/store 的 TraktSyncStore 实现；
 // 独立 traktsync.db，不与其他库混用）。
 type ShadowStore interface {
 	AllShadow() (map[watched.MediaKey]Shadow, error)
@@ -110,14 +110,14 @@ func (e *Engine) log(level, message string, details map[string]any) {
 	}
 }
 
-// sideDelta 单侧相对影子的变化。
+// sideDelta 单侧相对同步状态的变化。
 type sideDelta struct {
 	to    bool  // true=新看/重看，false=取消观看
 	at    int64 // 事件时间
 	plays int
 }
 
-// detectDelta 与影子比对单侧变化。seen=false（基线未建立）返回 nil，本轮仅记录观察。
+// detectDelta 与同步状态比对单侧变化。seen=false（基线未建立）返回 nil，本轮仅记录观察。
 // 缺席语义按侧区分：absentMeansReset=true（Trakt——已看记录缺席即 reset）；
 // false（播放端——文件移走/重扫中常见，缺席不等于取消）。
 func detectDelta(seen, present, absentMeansReset bool, prevWatched *bool, prevAt int64, prevPlays int, cur watched.ItemState) *sideDelta {
@@ -178,7 +178,7 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 
 	// 过期读取防护（最终一致性）：Trakt 的已看列表在写入后存在延迟。
 	// 若本端最近一次写入晚于 Trakt 数据时间戳（留时钟容差），本轮 Trakt 侧
-	// 视图不可信——跳过 Trakt 侧 diff 与观察态落影子，避免把「还没读到」
+	// 视图不可信——跳过 Trakt 侧 diff 与观察态更新状态记录，避免把「还没读到」
 	// 误判成「被重置」而对播放端发起取消。
 	traktStaleMovies, traktStaleShows := false, false
 	if sp, ok := e.Trakt.(watched.WatchedStampProvider); ok {
@@ -286,7 +286,7 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 				summary.Skipped++
 			}
 		default:
-			// 双侧都变：同向=状态已自行收敛，仅更新影子；反向=冲突，
+			// 双侧都变：同向=状态已自行收敛，仅更新同步状态；反向=冲突，
 			// 一律以 Trakt 为准（用户指定：Trakt 记录更全更权威），
 			// 把 Trakt 当前状态刷向播放端。
 			if pDelta.to == tDelta.to {
@@ -308,7 +308,7 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 		at      int64
 	}
 	outcomes := map[watched.MediaKey][]sideOutcome{}
-	// 写入失败的键：本轮影子整行不推进（观测态也不覆盖），
+	// 写入失败的键：本轮状态记录整行不推进（观测态也不覆盖），
 	// 使下一轮能重新检测到同一变化并重试。
 	failedKeys := map[watched.MediaKey]bool{}
 	traktWriteOK := false
@@ -378,11 +378,11 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 		_ = e.Store.SetTraktPushedAt(e.now().Unix())
 	}
 
-	// ── Phase C：构建并保存影子（仅落盘有变化或新建的行） ──────
+	// ── Phase C：构建并保存同步状态（仅落盘有变化或新建的行） ──────
 	var toSave []Shadow
 	for key := range keys {
 		if failedKeys[key] {
-			continue // 影子整行不推进，下轮重试
+			continue // 状态记录整行不推进，下轮重试
 		}
 		p := playbackMap[key]
 		t := traktMap[key]
@@ -394,7 +394,7 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 		// 观察态覆盖。两侧缺席语义不同：
 		// Plex 缺席（文件移走/重扫中）≠ 取消 → 保留旧值、seen 置 false；
 		// Trakt /sync/watched 是权威全量 → 缺席即未看，落未看态。
-		// 但本轮为过期读取（traktStale）时，Trakt 观察态整体不落影子，
+		// 但本轮为过期读取（traktStale）时，Trakt 观察态整体不更新状态记录，
 		// 保持上一轮确认值，待数据新鲜后再 diff。
 		if p.Present {
 			row.PlexSeen = true
@@ -419,7 +419,7 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 			row.TraktLastAt = 0
 		}
 		// 成功写入覆盖目标侧（Plex 服务器时间不可知，scrobble 后以 now 近似）：
-		// 按计划重放，仅当该计划的结果为 OK 时落影子；失败键影子不动，下轮重试。
+		// 按计划重放，仅当该计划的结果为 OK 时更新状态记录；失败键同步状态不动，下轮重试。
 		for _, plan := range plans {
 			if plan.key != key {
 				continue
@@ -471,7 +471,7 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 
 // planEcho 生成「把 delta 写到 targetSide」的计划；返回 false 表示因方向开关或
 // echo 防重跳过（防重复 play：会话轮询推送、双端近乎同时观看等）。
-// target 为目标侧当前观测态，sh 为影子。
+// target 为目标侧当前观测态，sh 为同步状态。
 func (e *Engine) planEcho(key watched.MediaKey, targetSide string, delta sideDelta, target watched.ItemState, sh Shadow) (writePlan, bool) {
 	if targetSide == "trakt" && !e.ToTrakt {
 		return writePlan{}, false
@@ -538,7 +538,7 @@ func maxInt(a, b int) int {
 	return b
 }
 
-// shadowChanged 比较影子行是否变化（SessionPushedAt 由会话轮询维护，不参与）。
+// shadowChanged 比较状态记录是否变化（SessionPushedAt 由会话轮询维护，不参与）。
 func shadowChanged(old, new Shadow) bool {
 	return old.PlexRef != new.PlexRef ||
 		old.PlexSeen != new.PlexSeen ||

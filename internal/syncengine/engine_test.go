@@ -167,7 +167,7 @@ func TestFirstRunUnionTraktToPlex(t *testing.T) {
 	}
 	sh := store.items[key]
 	if sh.PlexWatched == nil || !*sh.PlexWatched || sh.TraktWatched == nil || !*sh.TraktWatched {
-		t.Fatalf("影子应为双侧已看：%+v", sh)
+		t.Fatalf("状态应为双侧已看：%+v", sh)
 	}
 	// 重跑幂等：零写入
 	plex.watchLog = nil
@@ -242,7 +242,7 @@ func TestPlexUnwatchPropagatesToTrakt(t *testing.T) {
 	}
 	sh := store.items[key]
 	if sh.TraktWatched == nil || *sh.TraktWatched {
-		t.Fatalf("影子 trakt 侧应已取消：%+v", sh)
+		t.Fatalf("状态 trakt 侧应已取消：%+v", sh)
 	}
 }
 
@@ -377,7 +377,7 @@ func TestStaleTraktReadNoReset(t *testing.T) {
 	}
 	sh := store.items[key]
 	if sh.TraktWatched == nil || !*sh.TraktWatched {
-		t.Fatalf("陈旧轮影子 trakt 侧应保持旧值：%+v", sh)
+		t.Fatalf("陈旧轮状态 trakt 侧应保持旧值：%+v", sh)
 	}
 
 	// 数据新鲜后（时间戳超过写入时刻），缺席才被识别为 reset 并传播
@@ -418,7 +418,7 @@ func TestSameDirectionConvergenceNoWrites(t *testing.T) {
 	}
 	sh := store.items[key]
 	if sh.PlexWatched == nil || *sh.PlexWatched || sh.TraktWatched == nil || *sh.TraktWatched {
-		t.Fatalf("影子应记录双侧未看：%+v", sh)
+		t.Fatalf("状态应记录双侧未看：%+v", sh)
 	}
 }
 
@@ -434,7 +434,7 @@ func TestEchoGuardSessionPush(t *testing.T) {
 		t.Fatalf("基线 Run 出错：%v", err)
 	}
 
-	// 模拟会话轮询已推送（trakt 刚在 2 分钟前记录）而影子 plex 侧未更新
+	// 模拟会话轮询已推送（trakt 刚在 2 分钟前记录）而状态 plex 侧未更新
 	pushAt := int64(1700000400)
 	trakt.setWatched(key, pushAt, 1)
 	sh := store.items[key]
@@ -454,7 +454,7 @@ func TestEchoGuardSessionPush(t *testing.T) {
 	}
 	sh = store.items[key]
 	if sh.PlexWatched == nil || !*sh.PlexWatched {
-		t.Fatalf("影子 plex 侧应更新为已看：%+v", sh)
+		t.Fatalf("状态 plex 侧应更新为已看：%+v", sh)
 	}
 }
 
@@ -482,7 +482,7 @@ func TestFailedWriteShadowUntouchedAndRetried(t *testing.T) {
 	}
 	sh := store.items[key]
 	if sh.TraktWatched != nil && *sh.TraktWatched && sh.TraktLastAt == 1700010000 {
-		t.Fatalf("失败键影子不应落盘：%+v", sh)
+		t.Fatalf("失败键状态不应落盘：%+v", sh)
 	}
 	// 下一轮恢复后重试成功
 	trakt.failKeys = nil

@@ -469,7 +469,7 @@ type HistoryEpisode struct {
 // HistoryResult 一次 /sync/history[/remove] 的结果。
 type HistoryResult struct {
 	Count         int // added/deleted 的电影+集总数（0 不代表失败，可能 already_exists）
-	NotFoundCount int // 未匹配条目数；>0 时调用方应视本批为部分失败（影子不落盘，下轮重试）
+	NotFoundCount int // 未匹配条目数；>0 时调用方应视本批为部分失败（状态记录不更新，下轮重试）
 }
 
 // AddHistory 批量记录已看（单次 POST；调用方按 ≤100 集/请求分块）。
