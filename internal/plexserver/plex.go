@@ -4,7 +4,10 @@
 package plexserver
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -95,7 +98,7 @@ type PartInfo struct {
 // Metadata Plex 条目（电影/集/会话共用；字段缺席=零值）。
 type Metadata struct {
 	RatingKey        string      `json:"ratingKey"`
-	Key              string      `json:"key"` // 如 /library/metadata/{show}/children/...（集条目）
+	Key              string      `json:"key"`  // 如 /library/metadata/{show}/children/...（集条目）
 	Type             string      `json:"type"` // movie | episode | show ...
 	Title            string      `json:"title"`
 	Year             int         `json:"year"`
@@ -339,6 +342,28 @@ func (c *Client) LibraryItems(sectionKey string, plexType int) ([]Metadata, erro
 	}
 }
 
+// RecentlyViewedTop 按最近观看排序取分区前 limit 条（单次小分页请求）。
+// 手动「标记已观看」不产生任何实时事件（SSE/WS 实测均不推送），
+// 观看同步哨兵靠本接口低成本感知 lastViewedAt 变化。plexType：1=电影，4=剧集。
+func (c *Client) RecentlyViewedTop(sectionKey string, plexType, limit int) ([]Metadata, error) {
+	query := url.Values{}
+	query.Set("type", strconv.Itoa(plexType))
+	query.Set("sort", "lastViewedAt:desc")
+	query.Set("X-Plex-Container-Start", "0")
+	query.Set("X-Plex-Container-Size", strconv.Itoa(limit))
+	data, _, err := c.get("/library/sections/"+sectionKey+"/all", query)
+	if err != nil {
+		return nil, err
+	}
+	var page struct {
+		MediaContainer mediaContainer `json:"MediaContainer"`
+	}
+	if err := json.Unmarshal(data, &page); err != nil {
+		return nil, err
+	}
+	return page.MediaContainer.Metadata, nil
+}
+
 // Metadata 按 ratingKey 查详情（Guid/文件路径齐全，用于会话身份补解析）。
 func (c *Client) Metadata(ratingKey string) (*Metadata, error) {
 	data, _, err := c.get("/library/metadata/"+ratingKey, nil)
@@ -385,4 +410,133 @@ func (c *Client) Sessions() ([]Metadata, error) {
 		return nil, err
 	}
 	return out.MediaContainer.Metadata, nil
+}
+
+// ── 实时播放通知（SSE）──────────────────────────────────────
+
+// ErrNotificationsUnsupported 该 Plex 版本未提供 SSE 通知端点（HTTP 404）。
+var ErrNotificationsUnsupported = errors.New("此 Plex 版本不支持实时通知流（SSE 端点不存在）")
+
+// PlaybackNotification 播放会话实时通知（/:/eventsource/notifications）。
+type PlaybackNotification struct {
+	State        string // playing | paused | buffering | stopped
+	SessionKey   string
+	RatingKey    string
+	ViewOffsetMS int64
+	DurationMS   int64
+}
+
+// StreamNotifications 订阅 Plex 实时通知流（SSE，阻塞调用）：
+// 连接建立（HTTP 200）后回调一次 onOpen，之后每条播放会话通知回调一次 onEvent，
+// 直至 ctx 取消或连接出错；断线重连由调用方负责。
+// 注意使用独立的无超时 http.Client——常规 client 的 Timeout 会掐断长连接，
+// 生命周期由 ctx 控制。filters=playing 只订阅播放事件，减少无关流量。
+func (c *Client) StreamNotifications(ctx context.Context, onOpen func(), onEvent func(PlaybackNotification)) error {
+	transport := c.HTTP.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	streamClient := &http.Client{Transport: transport}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/:/eventsource/notifications?filters=playing", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	if c.Token != "" {
+		req.Header.Set("X-Plex-Token", c.Token)
+	}
+	req.Header.Set("X-Plex-Client-Identifier", c.ClientIdentifier)
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNotificationsUnsupported
+	}
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("Plex 通知流订阅失败：HTTP %d", resp.StatusCode)
+	}
+	if onOpen != nil {
+		onOpen()
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	var dataLines []string
+	dispatch := func() {
+		if len(dataLines) == 0 {
+			return
+		}
+		payload := strings.Join(dataLines, "\n")
+		dataLines = nil
+		for _, n := range parsePlaybackNotification(payload) {
+			onEvent(n)
+		}
+	}
+	for scanner.Scan() {
+		line := scanner.Text()
+		switch {
+		case strings.HasPrefix(line, "data:"):
+			dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
+		case line == "":
+			dispatch()
+		}
+	}
+	dispatch()
+	return scanner.Err()
+}
+
+// parsePlaybackNotification 解析一条 SSE data（Plex 通知容器），
+// 仅提取播放会话状态（type == "playing"；stopped 等状态也在此类型下）。
+func parsePlaybackNotification(payload string) []PlaybackNotification {
+	dec := json.NewDecoder(strings.NewReader(payload))
+	dec.UseNumber()
+	var raw struct {
+		Type                         string           `json:"type"`
+		PlaySessionStateNotification []map[string]any `json:"PlaySessionStateNotification"`
+	}
+	if err := dec.Decode(&raw); err != nil || raw.Type != "playing" {
+		return nil
+	}
+	out := make([]PlaybackNotification, 0, len(raw.PlaySessionStateNotification))
+	for _, item := range raw.PlaySessionStateNotification {
+		n := PlaybackNotification{
+			State:        jsonStr(item["state"]),
+			SessionKey:   jsonStr(item["sessionKey"]),
+			RatingKey:    jsonStr(item["ratingKey"]),
+			ViewOffsetMS: jsonInt(item["viewOffset"]),
+			DurationMS:   jsonInt(item["duration"]),
+		}
+		if n.SessionKey == "" && n.RatingKey == "" {
+			continue
+		}
+		out = append(out, n)
+	}
+	return out
+}
+
+// jsonStr / jsonInt Plex 通知字段兼容：不同版本可能给字符串或数字。
+func jsonStr(v any) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case json.Number:
+		return t.String()
+	}
+	return ""
+}
+
+func jsonInt(v any) int64 {
+	switch t := v.(type) {
+	case string:
+		n, _ := strconv.ParseInt(t, 10, 64)
+		return n
+	case json.Number:
+		n, _ := t.Int64()
+		return n
+	case float64:
+		return int64(t)
+	}
+	return 0
 }

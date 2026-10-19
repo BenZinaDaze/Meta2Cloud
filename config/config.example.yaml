@@ -171,6 +171,10 @@ trakt:
   # 「正在看」会话轮询间隔（秒）；播放进度 ≥80% 时记录到 Trakt
   session_poll_seconds: 45
 
+  # 实时推送（SSE 长连接）：观看进度秒级同步；不想保持与 Plex 的长连接可关闭，
+  # 关闭后由会话轮询兜底（最坏延迟约一个轮询间隔）
+  sse_enabled: true
+
   # 同步方向开关：Trakt → Plex / Plex → Trakt
   sync_to_plex: true
   sync_to_trakt: true

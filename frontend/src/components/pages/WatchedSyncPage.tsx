@@ -62,12 +62,16 @@ interface WatchedSyncStatus {
   sync_interval_seconds: number
   session_poll_seconds: number
   running: boolean
+  sse_enabled?: boolean
+  sse_connected?: boolean
   last_run: WatchedSyncRun | null
 }
 
 const TRIGGER_LABELS: Record<string, string> = {
   manual: '手动',
   schedule: '定时',
+  activity: 'Trakt 活动',
+  plex_activity: 'Plex 变动',
 }
 
 const DIRECTION_LABELS: Record<string, { label: string; className: string }> = {
@@ -306,7 +310,7 @@ export default function WatchedSyncPage(props: WatchedSyncPageProps) {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <StatCard
           label="状态"
           icon={<ArrowLeftRight className="size-3" />}
@@ -332,6 +336,19 @@ export default function WatchedSyncPage(props: WatchedSyncPageProps) {
             <span className={status?.plex_connected ? (status?.plex_reachable ? '' : 'text-warning') : 'text-muted-foreground'}>
               {status?.plex_connected ? (status?.plex_reachable ? '已连接' : '不可达') : '未连接'}
             </span>
+          }
+        />
+        <StatCard
+          label="实时推送"
+          icon={<ArrowLeftRight className="size-3" />}
+          value={
+            status?.sse_enabled === false ? (
+              <span className="text-muted-foreground">未启用</span>
+            ) : status?.sse_connected ? (
+              <span className="text-success">已连接</span>
+            ) : (
+              <span className="text-muted-foreground">轮询模式</span>
+            )
           }
         />
         <StatCard

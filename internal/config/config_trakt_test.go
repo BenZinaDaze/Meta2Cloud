@@ -16,6 +16,9 @@ func TestParseTraktDefaults(t *testing.T) {
 	if got.SessionPollSeconds != 45 {
 		t.Errorf("SessionPollSeconds = %d", got.SessionPollSeconds)
 	}
+	if !got.SSEEnabled {
+		t.Error("SSEEnabled 默认应为 true")
+	}
 	if !got.SyncToPlex || !got.SyncToTrakt {
 		t.Error("方向开关默认均应开启")
 	}

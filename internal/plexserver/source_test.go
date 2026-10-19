@@ -3,11 +3,13 @@ package plexserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"meta2cloud/internal/watched"
 )
@@ -73,7 +75,7 @@ func TestParseTitleYear(t *testing.T) {
 
 func TestResolveByPathFallback(t *testing.T) {
 	idx := fakeTitleIndex{
-		"tv|沙丘|2021":  418249,
+		"tv|沙丘|2021":     418249,
 		"movie|阿凡达|2009": 19995,
 	}
 	s := NewSource(nil, idx)
@@ -365,5 +367,103 @@ func TestIdentityAndSessions(t *testing.T) {
 	progress := float64(sessions[0].ViewOffset) / float64(sessions[0].Duration)
 	if progress < 0.8 {
 		t.Fatalf("期望进度 ≥0.8，实际 %.2f", progress)
+	}
+}
+
+// TestStreamNotifications SSE 事件流解析（含字符串数字兼容）。
+func TestStreamNotifications(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /:/eventsource/notifications", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Plex-Token") != "tok" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if got := r.URL.Query().Get("filters"); got != "playing" {
+			t.Errorf("filters 参数应为 playing，实际 %q", got)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		f := w.(http.Flusher)
+		fmt.Fprint(w, "event: notification\n")
+		fmt.Fprint(w, `data: {"type":"playing","PlaySessionStateNotification":[{"state":"playing","sessionKey":"s1","ratingKey":"9","viewOffset":"480000","duration":600000}]}`+"\n\n")
+		f.Flush()
+		<-r.Context().Done() // 保持连接直至客户端断开
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	client := NewClient(srv.URL, "tok", "cid", WithHTTPClient(srv.Client()))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	got := make(chan PlaybackNotification, 4)
+	opened := make(chan struct{}, 1)
+	go func() {
+		_ = client.StreamNotifications(ctx, func() { opened <- struct{}{} }, func(n PlaybackNotification) { got <- n })
+	}()
+
+	select {
+	case <-opened:
+	case <-ctx.Done():
+		t.Fatal("超时未回调 onOpen")
+	}
+	select {
+	case n := <-got:
+		if n.State != "playing" || n.SessionKey != "s1" || n.RatingKey != "9" ||
+			n.ViewOffsetMS != 480000 || n.DurationMS != 600000 {
+			t.Fatalf("事件解析不符：%+v", n)
+		}
+	case <-ctx.Done():
+		t.Fatal("超时未收到事件")
+	}
+}
+
+// TestRecentlyViewedTop 观看哨兵数据源：按 lastViewedAt:desc 排序的小分页请求。
+func TestRecentlyViewedTop(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /library/sections/4/all", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if q.Get("sort") != "lastViewedAt:desc" || q.Get("type") != "1" ||
+			q.Get("X-Plex-Container-Start") != "0" || q.Get("X-Plex-Container-Size") != "2" {
+			t.Errorf("查询参数不符：%v", q)
+		}
+		w.Header().Set("X-Plex-Container-Total-Size", "12")
+		fmt.Fprint(w, `{"MediaContainer":{"Metadata":[
+			{"ratingKey":"814","title":"A","lastViewedAt":1792349545},
+			{"ratingKey":"815","title":"B"}]}}`)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	client := NewClient(srv.URL, "tok", "cid", WithHTTPClient(srv.Client()))
+
+	items, err := client.RecentlyViewedTop("4", 1, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].RatingKey != "814" || items[0].LastViewedAt != 1792349545 || items[1].LastViewedAt != 0 {
+		t.Fatalf("解析不符：%+v", items)
+	}
+}
+
+// TestStreamNotificationsNotSupported 旧版 PMS 无 SSE 端点时应返回可识别的哨兵错误。
+func TestStreamNotificationsNotSupported(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /:/eventsource/notifications", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	client := NewClient(srv.URL, "tok", "cid", WithHTTPClient(srv.Client()))
+
+	err := client.StreamNotifications(context.Background(), nil, func(PlaybackNotification) {})
+	if !errors.Is(err, ErrNotificationsUnsupported) {
+		t.Fatalf("应返回 ErrNotificationsUnsupported，实际 %v", err)
+	}
+}
+
+func TestParsePlaybackNotificationIgnoresNonPlaying(t *testing.T) {
+	if got := parsePlaybackNotification(`{"type":"activity","ActivityNotification":[{"event":"updated"}]}`); len(got) != 0 {
+		t.Fatalf("非 playing 类型应忽略：%+v", got)
+	}
+	if got := parsePlaybackNotification(`not-json`); len(got) != 0 {
+		t.Fatalf("坏载荷应返回空：%+v", got)
 	}
 }

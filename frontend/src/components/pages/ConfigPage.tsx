@@ -177,6 +177,9 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   if (trakt.session_poll_seconds === undefined || trakt.session_poll_seconds === null || trakt.session_poll_seconds === '') {
     trakt.session_poll_seconds = 45
   }
+  if (trakt.sse_enabled === undefined || trakt.sse_enabled === null) {
+    trakt.sse_enabled = true
+  }
   if (trakt.sync_to_plex === undefined || trakt.sync_to_plex === null) {
     trakt.sync_to_plex = true
   }
@@ -265,20 +268,33 @@ function TextInput({ value, onChange, placeholder, type = 'text', mono = false }
 
 function NumberInput({ value, onChange, min, max }: {
   value: number | undefined
-  onChange: (v: number) => void
+  onChange: (v: number | undefined) => void
   min?: number
   max?: number
 }) {
+  // 编辑期用本地草稿，失焦/回车才钳位提交——边输边钳会把 4 立刻变成 15，
+  // 后续输入拼成 155，导致 45、100 这类含下限以下前缀的数值无法正常键入
+  const [draft, setDraft] = useState<string | null>(null)
+  const finish = () => {
+    if (draft == null) return
+    const raw = draft.trim()
+    setDraft(null)
+    if (raw === '') {
+      onChange(undefined) // 清空交由保存时取默认值
+      return
+    }
+    const v = Number(raw)
+    if (Number.isNaN(v)) return // 非法输入直接还原为原值
+    onChange(Math.min(max ?? v, Math.max(min ?? v, v)))
+  }
   return (
     <Input
       type="number"
-      value={value ?? ''}
-      onChange={(e) => {
-        const v = Number(e.target.value)
-        if (!Number.isNaN(v)) {
-          const clamped = Math.min(max ?? v, Math.max(min ?? v, v))
-          onChange(clamped)
-        }
+      value={draft ?? value ?? ''}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={finish}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') finish()
       }}
       min={min}
       max={max}
@@ -1453,141 +1469,156 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                   )}
                 </div>
 
-                <Separator className="opacity-60" />
-
-                {/* Trakt 配对 */}
-                <div>
-                  <div className="mb-3 flex flex-wrap items-center gap-3">
-                    <span className="text-[13px] font-medium">Trakt 授权</span>
-                    <Badge variant={traktOauth?.token_expired ? 'warning' : traktOauth?.authorized ? 'success' : 'secondary'}>
-                      {traktOauth?.token_expired ? 'Token 已过期' : traktOauth?.authorized ? '已授权' : '未授权'}
-                    </Badge>
-                    {Boolean(traktOauth?.authorized) && (
-                      <Button variant="outline" size="sm" onClick={handleTraktDisconnect}>
-                        断开
-                      </Button>
-                    )}
+                {/* ── Trakt 侧（跨侧分隔用实线 + 侧标题）── */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <Separator />
+                    <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Trakt 侧</span>
                   </div>
-                  <p className="mb-3 text-xs text-muted-foreground">
-                    先在 trakt.tv/oauth/applications 创建应用（类型任选，Redirect URI 填 http://localhost），
-                    把 Client ID 填入下方并保存，再点击「设备码配对」。授权后 token 有效期 90 天，会自动续期。
-                  </p>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleTraktPair}
-                      disabled={traktPairBusy || !(cfg?.trakt as Record<string, unknown>)?.client_id}
-                    >
-                      {traktPairBusy ? '处理中…' : traktPolling ? '等待确认…' : '设备码配对'}
-                    </Button>
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="text-[13px] font-medium">授权状态</span>
+                      <Badge variant={traktOauth?.token_expired ? 'warning' : traktOauth?.authorized ? 'success' : 'secondary'}>
+                        {traktOauth?.token_expired ? 'Token 已过期' : traktOauth?.authorized ? '已授权' : '未授权'}
+                      </Badge>
+                      {Boolean(traktOauth?.authorized) && (
+                        <Button variant="outline" size="sm" onClick={handleTraktDisconnect}>
+                          断开
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      先在 trakt.tv/oauth/applications 创建应用（类型任选，Redirect URI 填 http://localhost），
+                      把 Client ID 填入下方并保存，再点击「设备码配对」。授权后 token 有效期 90 天，会自动续期。
+                    </p>
+                    <FieldGroup>
+                      <Field label="Client ID" description="trakt.tv/oauth/applications 创建" fullWidth>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="min-w-0 flex-1 sm:max-w-xl">
+                            <TextInput
+                              value={(cfg?.trakt as Record<string, unknown>)?.client_id as string | undefined}
+                              onChange={(v) => set('trakt', 'client_id', v)}
+                              placeholder="your-trakt-client-id"
+                              mono
+                            />
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleTraktPair}
+                            disabled={traktPairBusy || !(cfg?.trakt as Record<string, unknown>)?.client_id}
+                            className="shrink-0"
+                          >
+                            {traktPairBusy ? '处理中…' : traktPolling ? '等待确认…' : '设备码配对'}
+                          </Button>
+                          {traktPairing && (
+                            <a
+                              href={traktPairing.verification_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                            >
+                              打开 {traktPairing.verification_url.replace(/^https?:\/\//, '')}
+                              <ExternalLink className="size-3" />
+                            </a>
+                          )}
+                        </div>
+                      </Field>
+                    </FieldGroup>
                     {traktPairing && (
-                      <a
-                        href={traktPairing.verification_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                      >
-                        打开 {traktPairing.verification_url.replace(/^https?:\/\//, '')}
-                        <ExternalLink className="size-3" />
-                      </a>
+                      <div className="inline-flex flex-col gap-1 animate-stagger-in rounded-xl border border-border/70 bg-muted/40 p-3">
+                        <div className="text-xs text-muted-foreground">在 Trakt 页面输入以下代码：</div>
+                        <div className="font-mono text-2xl font-semibold tracking-[0.3em]">{traktPairing.user_code}</div>
+                      </div>
                     )}
+                    <NoticeMessage message={traktMessage} />
                   </div>
-                  {traktPairing && (
-                    <div className="mt-3 inline-flex flex-col gap-1 animate-stagger-in rounded-xl border border-border/70 bg-muted/40 p-3">
-                      <div className="text-xs text-muted-foreground">在 Trakt 页面输入以下代码：</div>
-                      <div className="font-mono text-2xl font-semibold tracking-[0.3em]">{traktPairing.user_code}</div>
-                    </div>
-                  )}
-                  <NoticeMessage message={traktMessage} />
                 </div>
 
-                <Separator className="opacity-60" />
-
-                <FieldGroup>
-                  <Field label="Client ID" description="trakt.tv/oauth/applications 创建（Trakt 为 PKCE 模式，无需 Client Secret）">
-                    <TextInput
-                      value={(cfg?.trakt as Record<string, unknown>)?.client_id as string | undefined}
-                      onChange={(v) => set('trakt', 'client_id', v)}
-                      placeholder="your-trakt-client-id"
-                      mono
-                    />
-                  </Field>
-                </FieldGroup>
-
-                <Separator className="opacity-60" />
-
-                {/* Plex 配对 */}
-                <div>
-                  <div className="mb-3 flex flex-wrap items-center gap-3">
-                    <span className="text-[13px] font-medium">Plex 连接</span>
-                    <Badge variant={syncStatus?.plex_connected ? 'success' : 'secondary'}>
-                      {syncStatus?.plex_connected ? '已授权' : '未授权'}
-                    </Badge>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handlePlexPair}
-                      disabled={plexPairBusy || !(cfg?.plex as Record<string, unknown>)?.base_url}
-                    >
-                      {plexPairBusy ? '处理中…' : plexPolling ? '等待授权…' : 'PIN 授权'}
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={handlePlexTest} disabled={plexTestBusy || !syncStatus?.plex_connected}>
-                      {plexTestBusy ? '测试中…' : '测试连接'}
-                    </Button>
+                {/* ── Plex 侧 ── */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <Separator />
+                    <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Plex 侧</span>
                   </div>
-                  <p className="mb-3 text-xs text-muted-foreground">
-                    填写 Plex 服务器地址（如 http://192.168.1.10:32400）并保存后，点击「PIN 授权」，
-                    在弹出的 Plex 授权页登录并确认。授权凭证保存在本地 plex-auth.json。
-                  </p>
-                  {plexPairing && (
-                    <div className="mb-3 inline-flex flex-col gap-1 animate-stagger-in rounded-xl border border-border/70 bg-muted/40 p-3">
-                      <div className="text-xs text-muted-foreground">1. 在 Plex 授权页确认（无需输入代码，页面会自动关联）</div>
-                      <a
-                        href={plexPairing.auth_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="text-[13px] font-medium">连接状态</span>
+                      <Badge variant={syncStatus?.plex_connected ? 'success' : 'secondary'}>
+                        {syncStatus?.plex_connected ? '已授权' : '未授权'}
+                      </Badge>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handlePlexPair}
+                        disabled={plexPairBusy || !(cfg?.plex as Record<string, unknown>)?.base_url}
                       >
-                        打开 Plex 授权页 <ExternalLink className="size-3" />
-                      </a>
-                      <div className="text-xs text-muted-foreground">备用代码：{plexPairing.code}</div>
+                        {plexPairBusy ? '处理中…' : plexPolling ? '等待授权…' : 'PIN 授权'}
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={handlePlexTest} disabled={plexTestBusy || !syncStatus?.plex_connected}>
+                        {plexTestBusy ? '测试中…' : '测试连接'}
+                      </Button>
                     </div>
-                  )}
-                  <NoticeMessage message={plexMessage} />
+                    <p className="text-xs text-muted-foreground">
+                      填写 Plex 服务器地址（如 http://192.168.1.10:32400）并保存后，点击「PIN 授权」，
+                      在弹出的 Plex 授权页登录并确认。授权凭证保存在本地 plex-auth.json。
+                    </p>
+                    <FieldGroup>
+                      <Field label="Plex 服务器地址" description="Meta2Cloud 需能直连该地址" fullWidth>
+                        <div className="max-w-xl">
+                          <TextInput
+                            value={(cfg?.plex as Record<string, unknown>)?.base_url as string | undefined}
+                            onChange={(v) => set('plex', 'base_url', v)}
+                            placeholder="http://192.168.1.10:32400"
+                            mono
+                          />
+                        </div>
+                      </Field>
+                      <Field label="请求超时" description="秒">
+                        <NumberInput
+                          value={(cfg?.plex as Record<string, unknown>)?.timeout as number | undefined ?? 10}
+                          onChange={(v) => set('plex', 'timeout', v)}
+                          min={1}
+                          max={120}
+                        />
+                      </Field>
+                    </FieldGroup>
+                    {plexPairing && (
+                      <div className="inline-flex flex-col gap-1 animate-stagger-in rounded-xl border border-border/70 bg-muted/40 p-3">
+                        <div className="text-xs text-muted-foreground">1. 在 Plex 授权页确认（无需输入代码，页面会自动关联）</div>
+                        <a
+                          href={plexPairing.auth_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                        >
+                          打开 Plex 授权页 <ExternalLink className="size-3" />
+                        </a>
+                        <div className="text-xs text-muted-foreground">备用代码：{plexPairing.code}</div>
+                      </div>
+                    )}
+                    <NoticeMessage message={plexMessage} />
+                  </div>
                 </div>
 
-                <Separator className="opacity-60" />
-
-                <FieldGroup>
-                  <Field label="Plex 服务器地址" description="Meta2Cloud 需能直连该地址">
-                    <TextInput
-                      value={(cfg?.plex as Record<string, unknown>)?.base_url as string | undefined}
-                      onChange={(v) => set('plex', 'base_url', v)}
-                      placeholder="http://192.168.1.10:32400"
-                      mono
-                    />
-                  </Field>
-                  <Field label="Plex 请求超时" description="秒">
-                    <NumberInput
-                      value={(cfg?.plex as Record<string, unknown>)?.timeout as number | undefined ?? 10}
-                      onChange={(v) => set('plex', 'timeout', v)}
-                      min={1}
-                      max={120}
-                    />
-                  </Field>
-                </FieldGroup>
-
-                <Separator className="opacity-60" />
-
-                {/* 同步选项 */}
-                <div>
-                  <div className="mb-3 text-[13px] font-medium">同步选项</div>
+                {/* ── 同步选项（两侧共用）── */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <Separator />
+                    <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">同步选项 · 两侧共用</span>
+                  </div>
+                  {/* 开关区：集中放一起 */}
                   <FieldGroup>
-                    <Field label="启用定时同步">
+                    <Field label="启用定时同步" description="按下方间隔自动全量同步">
                       <Toggle
                         value={(cfg?.trakt as Record<string, unknown>)?.enabled as boolean | undefined}
                         onChange={(v) => set('trakt', 'enabled', v)}
+                      />
+                    </Field>
+                    <Field label="实时推送（SSE）" description="与 Plex 保持长连接，观看进度秒级同步；关闭后由轮询兜底">
+                      <Toggle
+                        value={(cfg?.trakt as Record<string, unknown>)?.sse_enabled as boolean | undefined}
+                        onChange={(v) => set('trakt', 'sse_enabled', v)}
                       />
                     </Field>
                     <Field label="同步方向 → Plex" description="Trakt 已看标记到 Plex">
@@ -1602,6 +1633,11 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                         onChange={(v) => set('trakt', 'sync_to_trakt', v)}
                       />
                     </Field>
+                  </FieldGroup>
+                  {/* 同段内子分组分隔：淡虚线（与跨侧实线区分） */}
+                  <div className="border-t border-dashed border-border/50" />
+                  {/* 参数区：集中放一起 */}
+                  <FieldGroup>
                     <Field label="同步间隔" description="秒（<60 视为关闭定时同步）">
                       <NumberInput
                         value={(cfg?.trakt as Record<string, unknown>)?.sync_interval_seconds as number | undefined ?? 900}
@@ -1610,7 +1646,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                         max={604800}
                       />
                     </Field>
-                    <Field label="正在看轮询间隔" description="秒；播放进度 ≥80% 记录到 Trakt">
+                    <Field label="正在看轮询间隔" description="秒；SSE 关闭时的兜底轮询与观看哨兵的检查周期">
                       <NumberInput
                         value={(cfg?.trakt as Record<string, unknown>)?.session_poll_seconds as number | undefined ?? 45}
                         onChange={(v) => set('trakt', 'session_poll_seconds', v)}

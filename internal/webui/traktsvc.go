@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -228,7 +229,7 @@ func traktOauthStatusPayload() map[string]any {
 		}
 	}
 	return map[string]any{
-		"ready": ready,
+		"ready":     ready,
 		"client_id": cfg.ClientID, "token_path": cfg.TokenJSON,
 		"token_exists": tokenExists, "authorized": authorized,
 		"token_valid": tokenValid, "token_expired": tokenExpired,
@@ -676,6 +677,9 @@ func traktSyncStatusPayload() map[string]any {
 		"running":                TraktSyncRunning(),
 		"sync_watcher_alive":     watcherAlive(traktWatcher),
 		"session_watcher_alive":  watcherAlive(traktSessionWatcher),
+		"sse_enabled":            cfg.Trakt.SSEEnabled,
+		"sse_connected":          sseConnected(),
+		"activity_watcher_alive": watcherAlive(traktActivityWatcher),
 		"last_polled_at":         traktWatcher.lastPolledAt,
 		"last_poll_error":        traktWatcher.lastPollError,
 		"last_session_polled_at": traktSessionWatcher.lastPolledAt,
@@ -841,7 +845,7 @@ func pollPlexSessionsOnce() {
 	traktSessionWatcher.lastPollError = nil
 	traktSessionWatcher.mu.Unlock()
 
-	if !cfg.Trakt.Enabled || !cfg.IsPlexReady() || !cfg.IsTraktReady() {
+	if !cfg.Trakt.SyncToTrakt || !cfg.IsPlexReady() || !cfg.IsTraktReady() {
 		return
 	}
 	if authorized, _ := traktOauthStatusPayload()["authorized"].(bool); !authorized {
@@ -895,44 +899,9 @@ func pollPlexSessionsOnce() {
 			row.Episode = key.Episode
 		}
 		syncStore.UpsertSyncSession(row)
-		if !keyOK || progress < sessionPushThreshold {
-			continue
+		if keyOK {
+			tryPushWatchedSession(syncStore, traktClient, key, progress)
 		}
-
-		// 防重：近期已推送或 trakt 影子已是新看 → 跳过
-		shadow, hasShadow, _ := syncStore.GetShadow(key)
-		now := time.Now().Unix()
-		if hasShadow {
-			if shadow.SessionPushedAt > 0 && now-shadow.SessionPushedAt < sessionPushCooldown {
-				continue
-			}
-			if shadow.TraktWatched != nil && *shadow.TraktWatched && now-shadow.TraktLastAt < sessionEchoSkew {
-				continue
-			}
-		}
-		movies := []trakt.HistoryMovie{}
-		episodes := []trakt.HistoryEpisode{}
-		if key.Type == "movie" {
-			movies = append(movies, trakt.HistoryMovie{TMDBID: key.TMDBID, WatchedAt: time.Unix(now, 0)})
-		} else {
-			episodes = append(episodes, trakt.HistoryEpisode{
-				ShowTMDBID: key.TMDBID, Season: key.Season, Episode: key.Episode,
-				WatchedAt: time.Unix(now, 0),
-			})
-		}
-		result, err := traktClient.AddHistory(movies, episodes)
-		if err != nil {
-			appLog("trakt", "session_push_failed", "WARNING",
-				fmt.Sprintf("正在看推送 Trakt 失败（%s）：%v", key, err), nil)
-			continue
-		}
-		if result.NotFoundCount > 0 {
-			continue // 未匹配，影子不动，下轮重试
-		}
-		_ = syncStore.UpdateTraktWatched(key, now, now)
-		_ = syncStore.SetTraktPushedAt(now) // 供下轮全量同步的过期读取防护
-		appLog("trakt", "session_pushed", "SUCCESS",
-			fmt.Sprintf("正在看已记录到 Trakt：%s（进度 %.0f%%）", key, progress*100), nil)
 	}
 
 	// 缺席检测：连续 2 次未见移除
@@ -944,6 +913,425 @@ func pollPlexSessionsOnce() {
 			syncStore.DeleteSyncSession(row.SessionKey)
 		}
 	}
+}
+
+// tryPushWatchedSession 会话进度达标（≥80%）时把该集推送到 Trakt。
+// 内置防重门控（近期推送过 / trakt 影子已是新看则跳过），
+// 轮询与 SSE 实时推送两条路径共用，保证不会重复计 plays。
+// traktSessionPushMu 串行化单媒体推送：SSE worker 与会话轮询并发调用本核心，
+// 防重闸（session_pushed_at/echo）的检查与写入须原子完成，避免同瞬双推重复 play。
+var traktSessionPushMu sync.Mutex
+
+func tryPushWatchedSession(syncStore *store.TraktSyncStore, traktClient *trakt.Client, key watched.MediaKey, progress float64) bool {
+	traktSessionPushMu.Lock()
+	defer traktSessionPushMu.Unlock()
+	if progress < sessionPushThreshold {
+		return false
+	}
+	if !RT().GetConfig().Trakt.SyncToTrakt {
+		return false
+	}
+	shadow, hasShadow, _ := syncStore.GetShadow(key)
+	now := time.Now().Unix()
+	if hasShadow {
+		if shadow.SessionPushedAt > 0 && now-shadow.SessionPushedAt < sessionPushCooldown {
+			return false
+		}
+		if shadow.TraktWatched != nil && *shadow.TraktWatched && now-shadow.TraktLastAt < sessionEchoSkew {
+			return false
+		}
+	}
+	movies := []trakt.HistoryMovie{}
+	episodes := []trakt.HistoryEpisode{}
+	if key.Type == "movie" {
+		movies = append(movies, trakt.HistoryMovie{TMDBID: key.TMDBID, WatchedAt: time.Unix(now, 0)})
+	} else {
+		episodes = append(episodes, trakt.HistoryEpisode{
+			ShowTMDBID: key.TMDBID, Season: key.Season, Episode: key.Episode,
+			WatchedAt: time.Unix(now, 0),
+		})
+	}
+	result, err := traktClient.AddHistory(movies, episodes)
+	if err != nil {
+		appLog("trakt", "session_push_failed", "WARNING",
+			fmt.Sprintf("正在看推送 Trakt 失败（%s）：%v", key, err), nil)
+		return false
+	}
+	if result.NotFoundCount > 0 {
+		return false // 未匹配，影子不动，下轮重试
+	}
+	_ = syncStore.UpdateTraktWatched(key, now, now)
+	_ = syncStore.SetTraktPushedAt(now) // 供下轮全量同步的过期读取防护
+	appLog("trakt", "session_pushed", "SUCCESS",
+		fmt.Sprintf("正在看已记录到 Trakt：%s（进度 %.0f%%）", key, progress*100), nil)
+	return true
+}
+
+// ── 实时推送（Plex SSE）─────────────────────────────────────
+
+// traktSSEState SSE 连接状态（状态接口展示用）。
+var traktSSEState struct {
+	mu        sync.Mutex
+	connected bool
+}
+
+func setSSEConnected(connected bool) {
+	traktSSEState.mu.Lock()
+	traktSSEState.connected = connected
+	traktSSEState.mu.Unlock()
+}
+
+func sseConnected() bool {
+	traktSSEState.mu.Lock()
+	defer traktSSEState.mu.Unlock()
+	return traktSSEState.connected
+}
+
+// sseEventQueueSize SSE 事件异步分发的有界队列长度：
+// 处理慢（如 Trakt 冷却）时丢弃最旧事件——进度事件几秒后自然再来，
+// 且 45s 轮询兜底，丢事件不影响正确性，只保证连接读循环不被卡死。
+const sseEventQueueSize = 64
+
+// handlePlexPlaybackNotification 处理一条实时播放通知：
+// 更新会话观察行，进度达标即推送 Trakt（与轮询共用门控）。
+func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *trakt.Client, syncStore *store.TraktSyncStore, notif plexserver.PlaybackNotification) {
+	defer func() {
+		if r := recover(); r != nil {
+			appLog("trakt", "sse_event_panic", "ERROR", fmt.Sprintf("实时通知处理异常：%v", r), nil)
+		}
+	}()
+	if notif.RatingKey == "" {
+		return
+	}
+	// duration 缺失时先取会话观察行，再退回详情接口
+	duration := notif.DurationMS
+	if row := syncStore.GetSyncSession(notif.SessionKey); row != nil {
+		if duration == 0 {
+			duration = row.DurationMS
+		}
+	}
+	if duration == 0 {
+		if md, err := plexClient.Metadata(notif.RatingKey); err == nil {
+			duration = int64(md.Duration)
+		}
+	}
+	source := plexserver.NewSource(plexClient, buildTitleIndex())
+	sess := &plexserver.Metadata{
+		SessionKey: notif.SessionKey, RatingKey: notif.RatingKey,
+		ViewOffset: int(notif.ViewOffsetMS), Duration: int(duration),
+	}
+	key, keyOK := resolveSessionKey(syncStore, source, sess)
+
+	progress := 0.0
+	if duration > 0 {
+		progress = float64(notif.ViewOffsetMS) / float64(duration)
+	}
+	title := sessionDisplayTitle(sess)
+	row := store.TraktSyncSession{
+		SessionKey: notif.SessionKey, PlexRef: notif.RatingKey,
+		ViewOffsetMS: notif.ViewOffsetMS, DurationMS: duration,
+		MaxProgress: progress, Title: &title,
+	}
+	if keyOK {
+		row.MediaType = key.Type
+		row.TmdbID = key.TMDBID
+		row.Season = key.Season
+		row.Episode = key.Episode
+	}
+	syncStore.UpsertSyncSession(row)
+	if keyOK {
+		tryPushWatchedSession(syncStore, traktClient, key, progress)
+	}
+}
+
+// ensureTraktSSELoop 启动 Plex 实时通知订阅（幂等）：
+// 常驻一条 SSE 连接，断线指数退避重连；事件经有界队列异步分发。
+func ensureTraktSSELoop() {
+	traktSSEOnce.Do(func() {
+		go func() {
+			log.Printf("Plex 实时通知线程已启动")
+			backoff := 5 * time.Second
+			lastGateOK := true
+			for {
+				// 门控只看 sse 开关、配对就绪与 →Trakt 方向，不受「启用定时同步」影响：
+				// 实时推送是事件驱动的观看同步，与定时全量是两个独立开关
+				gate := func() (plexClient *plexserver.Client, traktClient *trakt.Client, syncStore *store.TraktSyncStore, ok bool) {
+					cfg := RT().GetConfig()
+					if !cfg.Trakt.SSEEnabled || !cfg.Trakt.SyncToTrakt || !cfg.IsPlexReady() || !cfg.IsTraktReady() {
+						return nil, nil, nil, false
+					}
+					plexClient = RT().GetPlexClient()
+					traktClient = RT().GetTraktClient()
+					syncStore = RT().GetTraktSyncStore()
+					if plexClient == nil || traktClient == nil || syncStore == nil {
+						return nil, nil, nil, false
+					}
+					return plexClient, traktClient, syncStore, true
+				}
+				plexClient, traktClient, syncStore, ok := gate()
+				if !ok {
+					setSSEConnected(false)
+					if lastGateOK {
+						log.Printf("Plex 实时通知未启用或未就绪（需 sse_enabled 开启、完成 Trakt 与 Plex 配对且开启 →Trakt 方向），30s 后重查")
+						lastGateOK = false
+					}
+					if !sleepWatcher(traktSSEWatcher, 30*time.Second) {
+						return
+					}
+					continue
+				}
+				lastGateOK = true
+
+				// 有界异步分发：读循环永不被 Trakt 写入阻塞
+				events := make(chan plexserver.PlaybackNotification, sseEventQueueSize)
+				go func() {
+					defer func() {
+						if r := recover(); r != nil {
+							appLog("trakt", "sse_worker_panic", "ERROR", fmt.Sprintf("实时事件分发异常：%v", r), nil)
+						}
+					}()
+					for notif := range events {
+						handlePlexPlaybackNotification(plexClient, traktClient, syncStore, notif)
+					}
+				}()
+
+				// 「已连接」只在真正订阅成功（HTTP 200）后报告，
+				// 订阅被拒/断线不算连接成功，退避继续累加
+				var openedAt time.Time
+				ctx, cancel := context.WithCancel(context.Background())
+				go func() {
+					select {
+					case <-traktSSEWatcher.stopCh:
+						cancel()
+					case <-ctx.Done():
+					}
+				}()
+				err := plexClient.StreamNotifications(ctx, func() {
+					openedAt = time.Now()
+					log.Printf("Plex 实时通知已连接：%s，观看进度秒级同步", plexClient.BaseURL)
+					setSSEConnected(true)
+					appLog("trakt", "sse_connected", "INFO",
+						fmt.Sprintf("Plex 实时通知已连接（%s），观看进度秒级同步", plexClient.BaseURL), nil)
+				}, func(n plexserver.PlaybackNotification) {
+					select {
+					case events <- n:
+					default:
+						// 队列满：丢最旧，保最新
+						select {
+						case <-events:
+						default:
+						}
+						select {
+						case events <- n:
+						default:
+						}
+					}
+				})
+				cancel()
+				close(events)
+				setSSEConnected(false)
+				msg := "连接结束"
+				if err != nil {
+					msg = err.Error()
+				}
+				appLog("trakt", "sse_disconnected", "WARNING",
+					fmt.Sprintf("Plex 实时通知断开（%s），%s 后重连；期间由轮询兜底", msg, backoff), nil)
+				// 退避策略：稳定连接（存活 ≥60s）后重置；秒断（订阅被拒/服务不可达）
+				// 则逐次加倍直至 60s，避免日志刷屏；端点不存在（旧版 PMS）降到 10 分钟一探
+				switch {
+				case errors.Is(err, plexserver.ErrNotificationsUnsupported):
+					backoff = 10 * time.Minute
+				case !openedAt.IsZero() && time.Since(openedAt) >= 60*time.Second:
+					backoff = 5 * time.Second
+				case backoff < 60*time.Second:
+					backoff *= 2
+				}
+				if !sleepWatcher(traktSSEWatcher, backoff) {
+					return
+				}
+			}
+		}()
+	})
+}
+
+// ── Plex 观看哨兵（手动「标记已观看」的低成本感知）───────────
+// 手动标记已观看不产生任何实时事件（SSE/WS 实测均静默），定时全量兜底
+// 最坏要等一个同步间隔。哨兵每个会话轮询周期对各库取「最近观看前 5」做
+// 指纹比对，有变化即触发一轮全量同步，把感知延迟压到一个轮询周期内。
+// 每 tick 固定 1+N 个微型请求（sections + 每库前 5 条），不消耗 Trakt 配额。
+
+// sentinelFingerprint 计算单库「最近观看」指纹：ratingKey:lastViewedAt 拼接。
+// 标记/取消标记都会改变 top 集合或时间戳，指纹必变。
+func sentinelFingerprint(items []plexserver.Metadata) string {
+	parts := make([]string, 0, len(items))
+	for _, it := range items {
+		parts = append(parts, fmt.Sprintf("%s:%d", it.RatingKey, it.LastViewedAt))
+	}
+	return strings.Join(parts, ",")
+}
+
+// ensureTraktSentinelLoop 启动 Plex 观看哨兵（幂等）。门控与 SSE 循环同理：
+// 只看 →Trakt 方向与两侧就绪，不受「启用定时同步」影响。
+func ensureTraktSentinelLoop() {
+	traktSentinelOnce.Do(func() {
+		go func() {
+			log.Printf("Plex 观看哨兵线程已启动")
+			baseline := map[string]string{} // sectionKey:type → 指纹；缺席=尚未播种
+			for {
+				cfg := RT().GetConfig()
+				plexClient := RT().GetPlexClient()
+				if !cfg.Trakt.SyncToTrakt || !cfg.IsPlexReady() || !cfg.IsTraktReady() || plexClient == nil {
+					if !sleepWatcher(traktSentinelWatcher, 30*time.Second) {
+						return
+					}
+					continue
+				}
+				changed := false
+				changedPrev := map[string]string{} // key → 触发前的旧指纹（单飞被拒时回滚）
+				if sections, err := plexClient.Sections(); err == nil {
+					for _, s := range sections {
+						plexType := 1
+						if s.Type == "show" {
+							plexType = 4
+						}
+						items, err := plexClient.RecentlyViewedTop(s.Key, plexType, 5)
+						if err != nil {
+							continue
+						}
+						fp := sentinelFingerprint(items)
+						key := s.Key + ":" + s.Type
+						if old, ok := baseline[key]; ok && fp != old {
+							changed = true
+							changedPrev[key] = old
+							log.Printf("Plex 观看哨兵检测到「%s」库观看状态变化", s.Title)
+						}
+						baseline[key] = fp
+					}
+				}
+				if changed {
+					// 引擎自身写 Plex（←Trakt 方向）也会改指纹，多触发的一轮
+					// 经影子比对为空操作，无害。触发被单飞拒绝（恰有同步在跑）
+					// 时不消费信号：回滚旧指纹，下个 tick 重新检测触发
+					if TriggerTraktSync("plex_activity") {
+						appLog("trakt", "sentinel_triggered", "INFO", "Plex 观看哨兵检测到变化，触发同步", nil)
+					} else {
+						for k, old := range changedPrev {
+							baseline[k] = old
+						}
+					}
+				}
+				if !sleepWatcher(traktSentinelWatcher, time.Duration(cfg.Trakt.SessionPollSeconds)*time.Second) {
+					return
+				}
+			}
+		}()
+	})
+}
+
+// sleepWatcher 可中断的睡眠：stopCh 关闭时返回 false（线程退出）。
+func sleepWatcher(w *watcherState, d time.Duration) bool {
+	select {
+	case <-w.stopCh:
+		return false
+	case <-time.After(d):
+		return true
+	}
+}
+
+// ── Trakt 反向准实时（last_activities 提前触发）─────────────
+
+// traktActivityCheckSeconds last_activities 检查间隔。
+const traktActivityCheckSeconds = 120
+
+func maxI64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// checkTraktActivityOnce 轻查 Trakt 数据时间戳：有变化（且非本端刚写入造成）
+// 即提前触发全量同步，不必等 900s 定时。
+func checkTraktActivityOnce() {
+	cfg := RT().GetConfig()
+	if !cfg.IsTraktReady() {
+		return
+	}
+	traktClient := RT().GetTraktClient()
+	syncStore := RT().GetTraktSyncStore()
+	if traktClient == nil || syncStore == nil {
+		return
+	}
+	if TraktSyncRunning() {
+		return
+	}
+	movies, shows, err := traktClient.LastActivities()
+	if err != nil {
+		msg := fmt.Sprintf("%v", err)
+		traktActivityWatcher.mu.Lock()
+		traktActivityWatcher.lastPollError = &msg
+		traktActivityWatcher.mu.Unlock()
+		return
+	}
+	stamp := maxI64(movies, shows)
+	if stamp <= 0 {
+		return
+	}
+	seenStr := syncStore.GetMeta("trakt.activity_seen")
+	if seenStr == "" {
+		// 首次检查仅记录基线，不触发（避免每次重启都自动跑一轮）
+		_ = syncStore.SetMeta("trakt.activity_seen", strconv.FormatInt(stamp, 10))
+		return
+	}
+	seen, _ := strconv.ParseInt(seenStr, 10, 64)
+	if stamp == seen {
+		return
+	}
+	// 抑制回环：变化若由本端刚完成的推送造成，等价内容已在影子内，消费戳即可
+	if pushed, _ := syncStore.TraktPushedAt(); time.Now().Unix()-pushed < 180 {
+		_ = syncStore.SetMeta("trakt.activity_seen", strconv.FormatInt(stamp, 10))
+		return
+	}
+	// 单飞被拒（已有同步在跑）则不消费戳，下个 tick 重新触发——
+	// 变化可能落在运行中同步的枚举之后，漏消费要等下一轮定时才被捞回
+	if TriggerTraktSync("activity") {
+		_ = syncStore.SetMeta("trakt.activity_seen", strconv.FormatInt(stamp, 10))
+		appLog("trakt", "activity_triggered", "INFO", "检测到 Trakt 侧数据变化，提前触发同步", map[string]any{
+			"stamp": stamp, "seen": seen,
+		})
+	}
+}
+
+// ensureTraktActivityLoop 启动 Trakt 数据变化探测（幂等）。
+func ensureTraktActivityLoop() {
+	traktActivityOnce.Do(func() {
+		go func() {
+			log.Printf("Trakt 数据变化探测线程已启动")
+			for {
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							msg := fmt.Sprintf("%v", r)
+							traktActivityWatcher.mu.Lock()
+							traktActivityWatcher.lastPollError = &msg
+							traktActivityWatcher.mu.Unlock()
+						}
+					}()
+					nowStr := utcNowISO()
+					traktActivityWatcher.mu.Lock()
+					traktActivityWatcher.lastPolledAt = &nowStr
+					traktActivityWatcher.mu.Unlock()
+					checkTraktActivityOnce()
+				}()
+				select {
+				case <-traktActivityWatcher.stopCh:
+					log.Printf("Trakt 数据变化探测线程已停止")
+					return
+				case <-time.After(traktActivityCheckSeconds * time.Second):
+				}
+			}
+		}()
+	})
 }
 
 // resolveSessionKey 会话身份解析：影子快路径 → 会话行缓存 → Plex 详情补解析。
@@ -962,10 +1350,16 @@ func resolveSessionKey(store *store.TraktSyncStore, source *plexserver.Source, s
 // ── 后台轮询循环 ───────────────────────────────────────────
 
 var (
-	traktWatcher       = &watcherState{stopCh: make(chan struct{})}
-	traktSessionWatcher = &watcherState{stopCh: make(chan struct{})}
-	traktOnce          sync.Once
-	traktSessionOnce   sync.Once
+	traktWatcher         = &watcherState{stopCh: make(chan struct{})}
+	traktSessionWatcher  = &watcherState{stopCh: make(chan struct{})}
+	traktSSEWatcher      = &watcherState{stopCh: make(chan struct{})}
+	traktActivityWatcher = &watcherState{stopCh: make(chan struct{})}
+	traktSentinelWatcher = &watcherState{stopCh: make(chan struct{})}
+	traktOnce            sync.Once
+	traktSessionOnce     sync.Once
+	traktSSEOnce         sync.Once
+	traktActivityOnce    sync.Once
+	traktSentinelOnce    sync.Once
 )
 
 // ensureTraktSyncLoop 启动观看同步定时循环（幂等；sync_interval_seconds < 60 时空转等待）。

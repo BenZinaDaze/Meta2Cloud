@@ -148,6 +148,7 @@ type Trakt struct {
 	TokenJSON           string `yaml:"token_json"`
 	SyncIntervalSeconds int    `yaml:"sync_interval_seconds"`
 	SessionPollSeconds  int    `yaml:"session_poll_seconds"`
+	SSEEnabled          bool   `yaml:"sse_enabled"`
 	SyncToPlex          bool   `yaml:"sync_to_plex"`
 	SyncToTrakt         bool   `yaml:"sync_to_trakt"`
 }
@@ -202,6 +203,7 @@ func Default() *Config {
 			TokenJSON:           "config/trakt-token.json",
 			SyncIntervalSeconds: 900,
 			SessionPollSeconds:  45,
+			SSEEnabled:          true,
 			SyncToPlex:          true,
 			SyncToTrakt:         true,
 		},
@@ -582,6 +584,7 @@ func parseTrakt(m map[string]any) Trakt {
 		TokenJSON:           str(m, "token_json", "config/trakt-token.json"),
 		SyncIntervalSeconds: maxInt(integer(m, "sync_interval_seconds", 900), 60),
 		SessionPollSeconds:  maxInt(integer(m, "session_poll_seconds", 45), 15),
+		SSEEnabled:          boolean(m, "sse_enabled", true),
 		SyncToPlex:          boolean(m, "sync_to_plex", true),
 		SyncToTrakt:         boolean(m, "sync_to_trakt", true),
 	}
