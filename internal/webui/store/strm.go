@@ -266,7 +266,7 @@ func (s *StrmStore) failStaleRunningRuns() {
 		return
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
-		log.Printf("已收尾 %d 条遗留的进行中同步记录", n)
+		log.Printf("已将 %d 条中断的同步记录标记为失败", n)
 	}
 }
 

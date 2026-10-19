@@ -35,6 +35,9 @@ interface WatchedSyncRun {
   unresolved: number
   skipped: number
   error: string | null
+  /** 实时推送（sse/poll）记录的媒体标题与进度；全量同步为 null */
+  title: string | null
+  progress: number | null
 }
 
 interface WatchedSyncRunItem {
@@ -71,7 +74,8 @@ const TRIGGER_LABELS: Record<string, string> = {
   manual: '手动',
   schedule: '定时',
   activity: 'Trakt 活动',
-  plex_activity: 'Plex 变动',
+  sse: '实时推送',
+  poll: '会话轮询',
 }
 
 const DIRECTION_LABELS: Record<string, { label: string; className: string }> = {
@@ -316,7 +320,7 @@ export default function WatchedSyncPage(props: WatchedSyncPageProps) {
           icon={<ArrowLeftRight className="size-3" />}
           value={
             <span className={running ? 'text-primary' : ''}>
-              {running ? '同步中' : status?.enabled ? '空闲（定时已开启）' : '空闲'}
+              {running ? '同步中' : '空闲'}
             </span>
           }
         />
@@ -383,6 +387,7 @@ export default function WatchedSyncPage(props: WatchedSyncPageProps) {
             <tr>
               <th className="px-4 py-2.5 font-medium">时间</th>
               <th className="px-4 py-2.5 font-medium">触发</th>
+              <th className="hidden max-w-[260px] px-3 py-2.5 font-medium md:table-cell">内容</th>
               <th className="px-4 py-2.5 text-right font-medium">→Trakt</th>
               <th className="px-4 py-2.5 text-right font-medium">→Plex</th>
               <th className="px-4 py-2.5 text-right font-medium">冲突</th>
@@ -394,7 +399,7 @@ export default function WatchedSyncPage(props: WatchedSyncPageProps) {
           <tbody>
             {runs.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-xs text-muted-foreground">
+                <td colSpan={9} className="px-4 py-8 text-center text-xs text-muted-foreground">
                   暂无同步记录——在「配置 → 观看同步」完成 Trakt 与 Plex 配对后，点击「立即同步」即可开始双向同步观看状态
                 </td>
               </tr>
@@ -414,6 +419,9 @@ export default function WatchedSyncPage(props: WatchedSyncPageProps) {
                         {TRIGGER_LABELS[run.trigger] || run.trigger}
                       </Badge>
                     </td>
+                    <td className="hidden max-w-[260px] truncate px-3 py-2.5 text-xs md:table-cell" title={run.title ?? ''}>
+                      {run.title ? `${run.title} · ${Math.round((run.progress ?? 0) * 100)}%` : '—'}
+                    </td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{run.to_trakt || '-'}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{run.to_plex || '-'}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{run.conflicts || '-'}</td>
@@ -424,8 +432,9 @@ export default function WatchedSyncPage(props: WatchedSyncPageProps) {
                           <Loader2 className="size-3 animate-spin" />进行中
                         </span>
                       ) : failed ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-destructive" title={run.error || ''}>
-                          <AlertCircle className="size-3" />失败
+                        <span className="inline-flex max-w-[200px] items-center gap-1 text-xs text-destructive" title={run.error || ''}>
+                          <AlertCircle className="size-3 shrink-0" />
+                          <span className="truncate">{run.error ? `失败：${run.error}` : '失败'}</span>
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-xs text-success">
@@ -439,7 +448,7 @@ export default function WatchedSyncPage(props: WatchedSyncPageProps) {
                   </tr>
                   {expanded && (
                     <tr className="border-t border-border/40 bg-muted/20">
-                      <td colSpan={8} className="px-4 py-3">
+                      <td colSpan={9} className="px-4 py-3">
                         <RunItems runId={run.id} running={run.finished_at == null} />
                       </td>
                     </tr>

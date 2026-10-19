@@ -1612,7 +1612,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                         onChange={(v) => set('trakt', 'enabled', v)}
                       />
                     </Field>
-                    <Field label="实时推送（SSE）" description="与 Plex 保持长连接，观看进度秒级同步；关闭后由轮询兜底">
+                    <Field label="实时推送（SSE）" description="与 Plex 保持长连接，播放进度实时同步到 Trakt；关闭后由会话轮询同步">
                       <Toggle
                         value={(cfg?.trakt as Record<string, unknown>)?.sse_enabled as boolean | undefined}
                         onChange={(v) => set('trakt', 'sse_enabled', v)}
@@ -1643,7 +1643,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                         max={604800}
                       />
                     </Field>
-                    <Field label="正在看轮询间隔" description="秒；SSE 关闭或断开时的兜底轮询周期">
+                    <Field label="正在看轮询间隔" description="秒；SSE 关闭或断开时的同步轮询周期">
                       <NumberInput
                         value={(cfg?.trakt as Record<string, unknown>)?.session_poll_seconds as number | undefined ?? 45}
                         onChange={(v) => set('trakt', 'session_poll_seconds', v)}

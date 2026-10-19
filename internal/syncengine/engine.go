@@ -217,7 +217,7 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 	shadow, err := e.Store.AllShadow()
 	if err != nil {
 		summary.Err = err.Error()
-		return summary, fmt.Errorf("读取影子状态失败：%w", err)
+		return summary, fmt.Errorf("读取同步状态失败：%w", err)
 	}
 
 	// ── Phase A：逐键比对，生成写入计划 ─────────────────────
@@ -463,7 +463,7 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 	if len(toSave) > 0 {
 		if err := e.Store.SaveShadow(toSave); err != nil {
 			summary.Err = err.Error()
-			return summary, fmt.Errorf("保存影子状态失败：%w", err)
+			return summary, fmt.Errorf("保存同步状态失败：%w", err)
 		}
 	}
 	return summary, nil

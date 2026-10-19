@@ -188,3 +188,82 @@ func TestSyncSessions(t *testing.T) {
 		t.Fatalf("删除后应不存在：%+v", row)
 	}
 }
+
+// TestPurgeLegacySentinelRuns plex_activity 遗留记录连同明细启动即清理。
+func TestPurgeLegacySentinelRuns(t *testing.T) {
+	s := openTestTraktSyncStore(t)
+	runA, _ := s.StartSyncRun("plex_activity")
+	runB, _ := s.StartSyncRun("manual")
+	_ = s.InsertRunItem(runA, syncengine.RunItem{Title: "旧哨兵", Direction: "to_trakt", Action: "watched", Success: true})
+	_ = s.InsertRunItem(runB, syncengine.RunItem{Title: "正常", Direction: "to_plex", Action: "watched", Success: true})
+	_ = s.FinishSyncRun(runA, syncengine.RunSummary{ToTrakt: 1})
+	_ = s.FinishSyncRun(runB, syncengine.RunSummary{ToPlex: 1})
+
+	s.purgeLegacySentinelRuns()
+
+	runs, total, err := s.ListSyncRuns(10, 0)
+	if err != nil || total != 1 || len(runs) != 1 {
+		t.Fatalf("清理后应仅剩 1 条：total=%d n=%d err=%v", total, len(runs), err)
+	}
+	if runs[0].ID != runB {
+		t.Fatalf("留下的应是 manual 记录：%+v", runs[0])
+	}
+	if items, _ := s.ListRunItems(runA, 10); len(items) != 0 {
+		t.Fatalf("plex_activity 明细应一并清理：n=%d", len(items))
+	}
+}
+
+// TestRecordSessionPushRunAndFilter 实时推送落记录；零变化/尚无明细的 run 不进列表，
+// 落下首条明细后（进行中）即显示。
+func TestRecordSessionPushRunAndFilter(t *testing.T) {
+	s := openTestTraktSyncStore(t)
+
+	emptyID, _ := s.StartSyncRun("schedule")
+	_ = s.FinishSyncRun(emptyID, syncengine.RunSummary{})
+	runningID, _ := s.StartSyncRun("manual") // 尚无明细：不应显示
+
+	if err := s.RecordSessionPushRun("sse", syncengine.RunItem{
+		Key: watched.MediaKey{Type: "tv", TMDBID: 9, Season: 1, Episode: 2},
+		Title: "剧 S01E02", Direction: "to_trakt", Action: "watched",
+	}, 0.98, true, ""); err != nil {
+		t.Fatalf("RecordSessionPushRun 成功记录出错：%v", err)
+	}
+	if err := s.RecordSessionPushRun("poll", syncengine.RunItem{
+		Key: watched.MediaKey{Type: "movie", TMDBID: 8},
+		Title: "片", Direction: "to_trakt", Action: "watched",
+	}, 0.9, false, "Trakt 写入失败：boom"); err != nil {
+		t.Fatalf("RecordSessionPushRun 失败记录出错：%v", err)
+	}
+
+	// 进行中 run 未落明细前不可见（避免「出现又消失」的观感）
+	runs, total, err := s.ListSyncRuns(10, 0)
+	if err != nil || total != 2 || len(runs) != 2 {
+		t.Fatalf("应仅显示 2 条推送记录：total=%d n=%d err=%v", total, len(runs), err)
+	}
+	// 落下首条明细后（仍在进行中）即出现——「同步一条显示一条」
+	if err := s.InsertRunItem(runningID, syncengine.RunItem{
+		Key: watched.MediaKey{Type: "tv", TMDBID: 7, Season: 1, Episode: 1},
+		Title: "另一剧 S01E01", Direction: "to_trakt", Action: "watched", Success: true,
+	}); err != nil {
+		t.Fatalf("InsertRunItem 出错：%v", err)
+	}
+	runs, total, err = s.ListSyncRuns(10, 0)
+	if err != nil || total != 3 || len(runs) != 3 {
+		t.Fatalf("明细落地后应显示 3 条：total=%d n=%d err=%v", total, len(runs), err)
+	}
+	var running *TraktSyncRun
+	for i := range runs {
+		if runs[i].ID == runningID {
+			running = &runs[i]
+		}
+	}
+	if running == nil || running.FinishedAt != nil {
+		t.Fatalf("进行中 run 应显示：%+v", runs)
+	}
+	// 零变化 run 被过滤
+	for _, r := range runs {
+		if r.ID == emptyID {
+			t.Fatal("零变化 run 不应出现在列表")
+		}
+	}
+}

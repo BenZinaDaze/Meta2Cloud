@@ -105,7 +105,7 @@ const strmTriggerLabels: Record<string, string> = {
 }
 
 const watchedTriggerLabels: Record<string, string> = {
-  manual: '手动', schedule: '定时', activity: 'Trakt 活动', plex_activity: 'Plex 变动',
+  manual: '手动', schedule: '定时', activity: 'Trakt 活动', sse: '实时推送', poll: '会话轮询',
 }
 
 interface PlaybackStats {

@@ -15,6 +15,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"meta2cloud/internal/syncengine"
@@ -53,7 +54,9 @@ CREATE TABLE IF NOT EXISTS sync_runs (
 	conflicts     INTEGER NOT NULL DEFAULT 0,
 	unresolved    INTEGER NOT NULL DEFAULT 0,
 	skipped       INTEGER NOT NULL DEFAULT 0,
-	error         TEXT
+	error         TEXT,
+	title         TEXT,
+	progress      REAL
 );
 
 CREATE TABLE IF NOT EXISTS sync_run_items (
@@ -113,8 +116,17 @@ func OpenTraktSyncStore(dbPath string) (*TraktSyncStore, error) {
 		db.Close()
 		return nil, err
 	}
+	// 既有库补列（v2.4.0 的表没有 title/progress）：列已存在时报错忽略
+	for _, col := range []string{"title TEXT", "progress REAL"} {
+		if _, err := db.Exec("ALTER TABLE sync_runs ADD COLUMN " + col); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column") {
+			db.Close()
+			return nil, err
+		}
+	}
 	s := &TraktSyncStore{db: db}
 	s.failStaleRunningRuns()
+	s.purgeLegacySentinelRuns()
 	return s, nil
 }
 
@@ -243,7 +255,7 @@ func (s *TraktSyncStore) SaveShadow(items []syncengine.Shadow) error {
 			seenInt(sh.PlexSeen), plexWatch, sh.PlexPlays, sh.PlexLastAt,
 			seenInt(sh.TraktSeen), traktWatch, sh.TraktPlays, sh.TraktLastAt,
 			sh.SessionPushedAt, now); err != nil {
-			return fmt.Errorf("保存影子 %s 失败：%w", sh.Key, err)
+			return fmt.Errorf("保存同步状态 %s 失败：%w", sh.Key, err)
 		}
 	}
 	return tx.Commit()
@@ -320,11 +332,25 @@ func (s *TraktSyncStore) failStaleRunningRuns() {
 		return
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
-		log.Printf("已收尾 %d 条遗留的进行中观看同步记录", n)
+		log.Printf("已将 %d 条中断的观看同步记录标记为失败", n)
+	}
+}
+
+// purgeLegacySentinelRuns 删除已下线的 Plex 观看哨兵（plex_activity）遗留记录
+// 及其明细，使同步列表不残留已不存在触发来源的条目。
+func (s *TraktSyncStore) purgeLegacySentinelRuns() {
+	res, err := s.db.Exec(`DELETE FROM sync_runs WHERE trigger_type = 'plex_activity'`)
+	if err != nil {
+		return
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		_, _ = s.db.Exec("DELETE FROM sync_run_items WHERE run_id NOT IN (SELECT id FROM sync_runs)")
+		log.Printf("已清理 %d 条 plex_activity 类型的遗留观看同步记录", n)
 	}
 }
 
 // TraktSyncRun 一次同步 run 的统计（对外载荷）。
+// Title/Progress 仅实时推送（sse/poll）记录使用：单条推送的媒体与进度。
 type TraktSyncRun struct {
 	ID         int64
 	StartedAt  string
@@ -336,15 +362,18 @@ type TraktSyncRun struct {
 	Unresolved int
 	Skipped    int
 	Error      *string
+	Title      *string
+	Progress   *float64
 }
 
 const syncRunSelect = `SELECT id, started_at, finished_at, trigger_type,
-	to_trakt, to_plex, conflicts, unresolved, skipped, error FROM sync_runs`
+	to_trakt, to_plex, conflicts, unresolved, skipped, error, title, progress FROM sync_runs`
 
 func scanSyncRun(row interface{ Scan(...any) error }) *TraktSyncRun {
 	var r TraktSyncRun
 	if err := row.Scan(&r.ID, &r.StartedAt, &r.FinishedAt, &r.Trigger,
-		&r.ToTrakt, &r.ToPlex, &r.Conflicts, &r.Unresolved, &r.Skipped, &r.Error); err != nil {
+		&r.ToTrakt, &r.ToPlex, &r.Conflicts, &r.Unresolved, &r.Skipped, &r.Error,
+		&r.Title, &r.Progress); err != nil {
 		return nil
 	}
 	return &r
@@ -355,13 +384,21 @@ func (s *TraktSyncStore) GetLastFinishedSyncRun() *TraktSyncRun {
 	return scanSyncRun(s.db.QueryRow(syncRunSelect + " WHERE finished_at IS NOT NULL ORDER BY id DESC LIMIT 1"))
 }
 
-// ListSyncRuns 按 limit/offset 列出同步历史（新→旧）。
+// syncRunMeaningfulWHERE 有实际内容才算「有记录价值」：run 落下第一条
+// 明细（含未识别/失败明细）即出现在列表——「同步一条显示一条」自然成立，
+// 结束后仍有内容则保留；实时推送记录（title 非空）与失败 run 恒显示。
+// 零变化的全量同步自始至终不出现（避免「出现又消失」的观感），只留应用日志。
+const syncRunMeaningfulWHERE = `WHERE (to_trakt > 0 OR to_plex > 0 OR unresolved > 0 OR error IS NOT NULL
+	OR title IS NOT NULL
+	OR EXISTS (SELECT 1 FROM sync_run_items ri WHERE ri.run_id = sync_runs.id))`
+
+// ListSyncRuns 按 limit/offset 列出有实际内容的同步历史（新→旧）。
 func (s *TraktSyncStore) ListSyncRuns(limit, offset int) ([]TraktSyncRun, int, error) {
 	var total int
-	if err := s.db.QueryRow("SELECT COUNT(*) FROM sync_runs").Scan(&total); err != nil {
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM sync_runs " + syncRunMeaningfulWHERE).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.db.Query(syncRunSelect+" ORDER BY id DESC LIMIT ? OFFSET ?", limit, offset)
+	rows, err := s.db.Query(syncRunSelect+" "+syncRunMeaningfulWHERE+" ORDER BY id DESC LIMIT ? OFFSET ?", limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -373,6 +410,42 @@ func (s *TraktSyncStore) ListSyncRuns(limit, offset int) ([]TraktSyncRun, int, e
 		}
 	}
 	return out, total, rows.Err()
+}
+
+// RecordSessionPushRun 记录一次实时推送（sse/poll）为独立 run：
+// 成功与失败都落记录（含失败原因与进度），供「Trakt 同步」页展示。
+func (s *TraktSyncStore) RecordSessionPushRun(source string, item syncengine.RunItem, progress float64, success bool, errMsg string) error {
+	now := traktSyncNow()
+	var errArg any
+	var titleArg any
+	if errMsg != "" {
+		errArg = errMsg
+	}
+	if item.Title != "" {
+		titleArg = item.Title
+	}
+	res, err := s.db.Exec(
+		`INSERT INTO sync_runs(started_at, finished_at, trigger_type, to_trakt, error, title, progress)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		now, now, source, boolInt(success), errArg, titleArg, progress)
+	if err != nil {
+		return err
+	}
+	runID, err := res.LastInsertId()
+	if err != nil {
+		return err
+	}
+	if !success && item.Err == "" {
+		item.Err = errMsg
+	}
+	return s.InsertRunItem(runID, item)
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // ── sync_run_items ──────────────────────────────────────────

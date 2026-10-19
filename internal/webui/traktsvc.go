@@ -745,6 +745,7 @@ func handleTraktSyncRuns(w http.ResponseWriter, r *http.Request) {
 			"trigger": run.Trigger, "to_trakt": run.ToTrakt, "to_plex": run.ToPlex,
 			"conflicts": run.Conflicts, "unresolved": run.Unresolved,
 			"skipped": run.Skipped, "error": run.Error,
+			"title": run.Title, "progress": run.Progress,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"total": total, "runs": list})
@@ -900,7 +901,7 @@ func pollPlexSessionsOnce() {
 		}
 		syncStore.UpsertSyncSession(row)
 		if keyOK {
-			tryPushWatchedSession(syncStore, traktClient, key, progress)
+			tryPushWatchedSession(syncStore, traktClient, key, title, progress, "poll")
 		}
 	}
 
@@ -918,11 +919,14 @@ func pollPlexSessionsOnce() {
 // tryPushWatchedSession 会话进度达标（≥80%）时把该集推送到 Trakt。
 // 内置防重门控（近期推送过 / trakt 影子已是新看则跳过），
 // 轮询与 SSE 实时推送两条路径共用，保证不会重复计 plays。
+// source 标记来源（"sse" / "poll"），title 为展示用媒体标题；
+// 每次实际尝试（无论成败）都经 RecordSessionPushRun 落一条 run 记录，
+// 防重闸静默跳过的不记录。
 // traktSessionPushMu 串行化单媒体推送：SSE worker 与会话轮询并发调用本核心，
 // 防重闸（session_pushed_at/echo）的检查与写入须原子完成，避免同瞬双推重复 play。
 var traktSessionPushMu sync.Mutex
 
-func tryPushWatchedSession(syncStore *store.TraktSyncStore, traktClient *trakt.Client, key watched.MediaKey, progress float64) bool {
+func tryPushWatchedSession(syncStore *store.TraktSyncStore, traktClient *trakt.Client, key watched.MediaKey, title string, progress float64, source string) bool {
 	traktSessionPushMu.Lock()
 	defer traktSessionPushMu.Unlock()
 	if progress < sessionPushThreshold {
@@ -941,6 +945,12 @@ func tryPushWatchedSession(syncStore *store.TraktSyncStore, traktClient *trakt.C
 			return false
 		}
 	}
+	item := syncengine.RunItem{
+		Key: key, Title: title, Direction: "to_trakt", Action: "watched",
+	}
+	record := func(success bool, errMsg string) {
+		_ = syncStore.RecordSessionPushRun(source, item, progress, success, errMsg)
+	}
 	movies := []trakt.HistoryMovie{}
 	episodes := []trakt.HistoryEpisode{}
 	if key.Type == "movie" {
@@ -953,17 +963,22 @@ func tryPushWatchedSession(syncStore *store.TraktSyncStore, traktClient *trakt.C
 	}
 	result, err := traktClient.AddHistory(movies, episodes)
 	if err != nil {
+		record(false, fmt.Sprintf("Trakt 写入失败：%v", err))
 		appLog("trakt", "session_push_failed", "WARNING",
-			fmt.Sprintf("正在看推送 Trakt 失败（%s）：%v", key, err), nil)
+			fmt.Sprintf("播放进度推送 Trakt 失败（%s）：%v", key, err), nil)
 		return false
 	}
 	if result.NotFoundCount > 0 {
-		return false // 未匹配，影子不动，下轮重试
+		record(false, "Trakt 未匹配到该媒体（not_found），稍后自动重试")
+		appLog("trakt", "session_push_failed", "WARNING",
+			fmt.Sprintf("播放进度推送 Trakt 未匹配（%s）：not_found，稍后自动重试", key), nil)
+		return false
 	}
 	_ = syncStore.UpdateTraktWatched(key, now, now)
 	_ = syncStore.SetTraktPushedAt(now) // 供下轮全量同步的过期读取防护
+	record(true, "")
 	appLog("trakt", "session_pushed", "SUCCESS",
-		fmt.Sprintf("正在看已记录到 Trakt：%s（进度 %.0f%%）", key, progress*100), nil)
+		fmt.Sprintf("播放进度已记录到 Trakt：%s（进度 %.0f%%）", key, progress*100), nil)
 	return true
 }
 
@@ -1040,7 +1055,7 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 	}
 	syncStore.UpsertSyncSession(row)
 	if keyOK {
-		tryPushWatchedSession(syncStore, traktClient, key, progress)
+		tryPushWatchedSession(syncStore, traktClient, key, title, progress, "sse")
 	}
 }
 
@@ -1072,7 +1087,7 @@ func ensureTraktSSELoop() {
 				if !ok {
 					setSSEConnected(false)
 					if lastGateOK {
-						log.Printf("Plex 实时通知未启用或未就绪（需 sse_enabled 开启、完成 Trakt 与 Plex 配对且开启 →Trakt 方向），30s 后重查")
+						log.Printf("Plex 实时通知未启用或未就绪（需开启 sse_enabled、完成 Trakt 与 Plex 配对并启用 →Trakt 方向），30 秒后重新检查")
 						lastGateOK = false
 					}
 					if !sleepWatcher(traktSSEWatcher, 30*time.Second) {
@@ -1108,10 +1123,10 @@ func ensureTraktSSELoop() {
 				}()
 				err := plexClient.StreamNotifications(ctx, func() {
 					openedAt = time.Now()
-					log.Printf("Plex 实时通知已连接：%s，观看进度秒级同步", plexClient.BaseURL)
+					log.Printf("Plex 实时通知已连接：%s", plexClient.BaseURL)
 					setSSEConnected(true)
 					appLog("trakt", "sse_connected", "INFO",
-						fmt.Sprintf("Plex 实时通知已连接（%s），观看进度秒级同步", plexClient.BaseURL), nil)
+						fmt.Sprintf("Plex 实时通知已连接（%s）", plexClient.BaseURL), nil)
 				}, func(n plexserver.PlaybackNotification) {
 					select {
 					case events <- n:
@@ -1135,7 +1150,7 @@ func ensureTraktSSELoop() {
 					msg = err.Error()
 				}
 				appLog("trakt", "sse_disconnected", "WARNING",
-					fmt.Sprintf("Plex 实时通知断开（%s），%s 后重连；期间由轮询兜底", msg, backoff), nil)
+					fmt.Sprintf("Plex 实时通知已断开（%s），将于 %s 后重新连接，期间由会话轮询同步", msg, backoff), nil)
 				// 退避策略：稳定连接（存活 ≥60s）后重置；秒断（订阅被拒/服务不可达）
 				// 则逐次加倍直至 60s，避免日志刷屏；端点不存在（旧版 PMS）降到 10 分钟一探
 				switch {
