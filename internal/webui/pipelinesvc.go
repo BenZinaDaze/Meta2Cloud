@@ -352,6 +352,15 @@ func handleIngestStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, is.Stats(days))
 }
 
+func handleIngestDailyStats(w http.ResponseWriter, r *http.Request) {
+	is := RT().GetIngestStore()
+	if is == nil {
+		writeJSONError(w, http.StatusInternalServerError, "入库历史存储不可用")
+		return
+	}
+	writeJSON(w, http.StatusOK, is.DailyStats(intQuery(r, "days", 30)))
+}
+
 func handleIngestRecent(w http.ResponseWriter, r *http.Request) {
 	is := RT().GetIngestStore()
 	if is == nil {

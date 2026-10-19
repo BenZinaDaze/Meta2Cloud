@@ -9,6 +9,7 @@ import MobileNav from '@/components/layout/MobileNav'
 import { toast } from 'sonner'
 
 const LoginPage = lazy(() => import('@/components/pages/LoginPage'))
+const DashboardPage = lazy(() => import('@/components/pages/DashboardPage'))
 const LibraryPage = lazy(() => import('@/components/pages/LibraryPage'))
 const ConfigPage = lazy(() => import('@/components/pages/ConfigPage'))
 const FileManagerPage = lazy(() => import('@/components/pages/FileManagerPage'))
@@ -215,7 +216,8 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
         >
           <Suspense fallback={<PageFallback />}>
             <Routes>
-              <Route path="/" element={<Navigate to="/library" replace />} />
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/library" element={<LibraryRoute filter="all" base="/library" shared={libraryShared} />} />
               <Route path="/movies" element={<LibraryRoute filter="movies" base="/movies" shared={libraryShared} />} />
               <Route path="/movies/:tmdbId" element={<LibraryRoute filter="movies" base="/movies" shared={libraryShared} />} />

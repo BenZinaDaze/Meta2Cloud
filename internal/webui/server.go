@@ -136,6 +136,7 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("GET /api/u115/offline/overview", handleU115OfflineOverview)
 	m.HandleFunc("GET /api/u115/offline/auto-organize-status", handleU115AutoOrganizeStatus)
 	m.HandleFunc("GET /api/u115/offline/quota", handleU115OfflineQuota)
+	m.HandleFunc("GET /api/u115/space", handleU115Space)
 	m.HandleFunc("POST /api/u115/offline/add-urls", handleU115OfflineAddURLs)
 	m.HandleFunc("POST /api/u115/offline/tasks/delete", handleU115OfflineDeleteTasks)
 	m.HandleFunc("POST /api/u115/offline/tasks/clear", handleU115OfflineClearTasks)
@@ -158,6 +159,7 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("GET /api/logs/live", handleLogsLiveWS)
 	m.HandleFunc("GET /api/ingest/history", handleIngestHistory)
 	m.HandleFunc("GET /api/ingest/stats", handleIngestStats)
+	m.HandleFunc("GET /api/ingest/stats/daily", handleIngestDailyStats)
 	m.HandleFunc("GET /api/ingest/recent", handleIngestRecent)
 
 	// strm（STRM 生成 + 302 直链播放）

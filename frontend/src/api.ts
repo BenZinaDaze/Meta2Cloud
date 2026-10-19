@@ -39,6 +39,7 @@ export const getLibrary = (params?: {
   sort_by?: string
   sort_order?: string
 }) => api.get('/library', { params })
+export const getStats = () => api.get('/stats')
 export const refreshLibrary = (full: boolean = false) => api.post('/library:refresh', null, { params: { full } })
 export const refreshMediaItem = (
   tmdb_id: number,
@@ -117,6 +118,7 @@ export const testU115Cookie = () => api.post('/u115/test-cookie')
 export const getU115OfflineOverview = (params?: Record<string, unknown>) =>
   api.get('/u115/offline/overview', { params })
 export const getU115OfflineQuota = () => api.get('/u115/offline/quota')
+export const getU115Space = () => api.get('/u115/space')
 export const addU115OfflineUrls = (data: { urls: string; wp_path_id?: string }) =>
   api.post('/u115/offline/add-urls', data)
 export const deleteU115OfflineTasks = (data: { info_hashes: string[]; del_source_file?: number }) =>
@@ -172,6 +174,12 @@ export const getIngestHistory = (params?: {
 
 export const getIngestStats = (days?: number) =>
   api.get('/ingest/stats', { params: { days } })
+
+export const getIngestDailyStats = (days?: number) =>
+  api.get('/ingest/stats/daily', { params: { days } })
+
+export const getIngestRecent = (limit?: number) =>
+  api.get('/ingest/recent', { params: { limit } })
 
 // ── 整理名称（标题钉扎）──
 export const listTitlePins = () => api.get('/title-pins')

@@ -285,20 +285,31 @@ func handleU115OauthExchange(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func handleU115TestConnection(w http.ResponseWriter, _ *http.Request) {
+// u115SpacePayload 获取 115 容量信息；不可用时写出错误响应并返回 false。
+// 测试连接与仪表盘的 /u115/space 共用。
+func u115SpacePayload(w http.ResponseWriter) (map[string]any, bool) {
 	client := RT().GetU115Client()
 	if client == nil {
 		writeJSONError(w, http.StatusBadRequest, "115 客户端不可用（请先完成授权）")
-		return
+		return nil, false
 	}
 	space, err := client.GetSpaceInfo()
 	if err != nil {
 		u115AuthError(w, err)
+		return nil, false
+	}
+	return map[string]any{
+		"total_space": space.TotalSize, "remain_space": space.RemainSize,
+	}, true
+}
+
+func handleU115TestConnection(w http.ResponseWriter, _ *http.Request) {
+	payload, ok := u115SpacePayload(w)
+	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ok": true, "total_space": space.TotalSize, "remain_space": space.RemainSize,
-	})
+	payload["ok"] = true
+	writeJSON(w, http.StatusOK, payload)
 }
 
 func handleU115TestCookie(w http.ResponseWriter, _ *http.Request) {
@@ -381,6 +392,14 @@ func handleU115OfflineOverview(w http.ResponseWriter, r *http.Request) {
 			"has_prev": taskPage.Page > 1, "has_next": taskPage.Page < totalPages,
 		},
 	})
+}
+
+func handleU115Space(w http.ResponseWriter, _ *http.Request) {
+	payload, ok := u115SpacePayload(w)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, payload)
 }
 
 func handleU115OfflineQuota(w http.ResponseWriter, _ *http.Request) {

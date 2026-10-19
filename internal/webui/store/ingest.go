@@ -320,3 +320,31 @@ func (s *IngestStore) Stats(days int) map[string]any {
 		"failed": failed.Int64, "no_tmdb": noTmdb.Int64,
 	}
 }
+
+// DailyStats 近 N 天按天聚合入库量（UTC 日期；只返回有记录的日期，空缺天由前端补零）。
+func (s *IngestStore) DailyStats(days int) []map[string]any {
+	if days <= 0 {
+		days = 30
+	}
+	cutoff := time.Now().UTC().AddDate(0, 0, -(days - 1)).Format("2006-01-02")
+	rows, err := s.db.Query(`SELECT substr(ingested_at, 1, 10) AS day,
+		COUNT(*),
+		COUNT(CASE WHEN media_type = 'movie' THEN 1 END)
+		FROM ingest_history WHERE substr(ingested_at, 1, 10) >= ?
+		GROUP BY day ORDER BY day`, cutoff)
+	if err != nil {
+		log.Printf("查询入库日统计失败: %v", err)
+		return nil
+	}
+	defer rows.Close()
+	out := []map[string]any{}
+	for rows.Next() {
+		var day string
+		var total, movies sql.NullInt64
+		if err := rows.Scan(&day, &total, &movies); err != nil {
+			continue
+		}
+		out = append(out, map[string]any{"date": day, "total": total.Int64, "movies": movies.Int64})
+	}
+	return out
+}

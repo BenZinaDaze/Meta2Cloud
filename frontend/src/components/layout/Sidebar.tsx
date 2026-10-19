@@ -16,6 +16,7 @@ import {
   LogOut,
   FolderOpen,
   FileVideo,
+  LayoutDashboard,
   Play,
   Tag,
 } from 'lucide-react'
@@ -234,6 +235,13 @@ export default function Sidebar({
       {/* Navigation */}
       <nav className="min-h-0 flex-1 overflow-y-auto py-1">
         <NavGroupLabel label="媒体库" />
+        <NavItem
+          icon={<LayoutDashboard className="size-4" />}
+          label="仪表盘"
+          to="/dashboard"
+          active={pathname === '/dashboard' || pathname === '/'}
+          onClick={closeMobile}
+        />
         <NavItem
           icon={<BookOpen className="size-4" />}
           label="媒体库总览"

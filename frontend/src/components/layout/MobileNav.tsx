@@ -1,4 +1,4 @@
-import { BookOpen, Search, Calendar, Cloud, Menu } from 'lucide-react'
+import { BookOpen, Search, Calendar, Cloud, LayoutDashboard, Menu } from 'lucide-react'
 import { NavLink, useLocation } from 'react-router'
 import { cn } from '@/lib/utils'
 
@@ -17,6 +17,7 @@ export default function MobileNav({
   const isMore = ['/subscriptions', '/ingest-history', '/title-pins', '/strm-sync', '/strm-playback', '/watched-sync', '/logs', '/config', '/config/filename-rules'].includes(pathname)
 
   const tabs = [
+    { to: '/dashboard', label: '仪表盘', icon: LayoutDashboard, isActive: pathname === '/dashboard' || pathname === '/' },
     { to: '/library', label: '媒体库', icon: BookOpen, isActive: isLibrary },
     { to: '/search', label: '检索', icon: Search, isActive: pathname === '/search' },
     { to: '/calendar', label: '新番', icon: Calendar, isActive: pathname === '/calendar' },
