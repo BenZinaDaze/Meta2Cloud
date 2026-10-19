@@ -28,7 +28,7 @@ func (s *TraktSource) Name() string { return "trakt" }
 //
 // 电影：/sync/watched/movies 直接给出逐部状态。
 // 剧集：/sync/watched/shows 只能列出「有记录的剧」，但记录可能是剧级聚合
-//（如 Trakt 官方 Plex 集成写入的条目，无 seasons 明细）；逐集的权威状态
+// （如 Trakt 官方 Plex 集成写入的条目，无 seasons 明细）；逐集的权威状态
 // 以 /shows/{id}/progress/watched 为准——每剧一调，枚举 completed 集。
 func (s *TraktSource) ListAll(ctx context.Context) (map[watched.MediaKey]watched.ItemState, error) {
 	out := map[watched.MediaKey]watched.ItemState{}

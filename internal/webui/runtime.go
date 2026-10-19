@@ -29,17 +29,17 @@ type Runtime struct {
 	rulesPath   string
 	configSig   [2]int64 // (config mtime, rules mtime)
 	categories  *config.CategoriesConfig
-	categoriesM int64    // categories.yaml mtime
+	categoriesM int64 // categories.yaml mtime
 	library     *store.LibraryStore
-	tmdbCache  *store.TmdbCache
-	provider   cloudfile.Provider
-	u115Client *u115.Client
-	tmdbClient *tmdb.Client
-	ingest     *store.IngestStore
-	logStore   *store.LogStore
-	rss        *store.RSSStore
-	u115Auto   *store.U115AutoStore
-	strm       *store.StrmStore
+	tmdbCache   *store.TmdbCache
+	provider    cloudfile.Provider
+	u115Client  *u115.Client
+	tmdbClient  *tmdb.Client
+	ingest      *store.IngestStore
+	logStore    *store.LogStore
+	rss         *store.RSSStore
+	u115Auto    *store.U115AutoStore
+	strm        *store.StrmStore
 	traktClient *trakt.Client
 	plexClient  *plexserver.Client
 	traktSync   *store.TraktSyncStore

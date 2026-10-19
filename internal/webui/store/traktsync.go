@@ -136,10 +136,10 @@ const syncItemSelect = `SELECT media_type, tmdb_id, season, episode, plex_ref,
 
 func scanShadowItem(row interface{ Scan(...any) error }) (watched.MediaKey, syncengine.Shadow, error) {
 	var (
-		key       watched.MediaKey
-		sh        syncengine.Shadow
-		plexRef   sql.NullString
-		plexWatch sql.NullBool
+		key        watched.MediaKey
+		sh         syncengine.Shadow
+		plexRef    sql.NullString
+		plexWatch  sql.NullBool
 		traktWatch sql.NullBool
 	)
 	err := row.Scan(&key.Type, &key.TMDBID, &key.Season, &key.Episode, &plexRef,
@@ -326,16 +326,16 @@ func (s *TraktSyncStore) failStaleRunningRuns() {
 
 // TraktSyncRun 一次同步 run 的统计（对外载荷）。
 type TraktSyncRun struct {
-	ID        int64
-	StartedAt string
+	ID         int64
+	StartedAt  string
 	FinishedAt *string
-	Trigger   string
-	ToTrakt   int
-	ToPlex    int
-	Conflicts int
+	Trigger    string
+	ToTrakt    int
+	ToPlex     int
+	Conflicts  int
 	Unresolved int
-	Skipped   int
-	Error     *string
+	Skipped    int
+	Error      *string
 }
 
 const syncRunSelect = `SELECT id, started_at, finished_at, trigger_type,
@@ -352,7 +352,7 @@ func scanSyncRun(row interface{ Scan(...any) error }) *TraktSyncRun {
 
 // GetLastFinishedSyncRun 最近一次已完成的同步。
 func (s *TraktSyncStore) GetLastFinishedSyncRun() *TraktSyncRun {
-	return scanSyncRun(s.db.QueryRow(syncRunSelect+" WHERE finished_at IS NOT NULL ORDER BY id DESC LIMIT 1"))
+	return scanSyncRun(s.db.QueryRow(syncRunSelect + " WHERE finished_at IS NOT NULL ORDER BY id DESC LIMIT 1"))
 }
 
 // ListSyncRuns 按 limit/offset 列出同步历史（新→旧）。

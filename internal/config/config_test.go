@@ -8,13 +8,13 @@ import (
 
 func TestNormalizeStrmURLBase(t *testing.T) {
 	cases := map[string]string{
-		"meta2cloud:38765":            "http://meta2cloud:38765",
-		" http://meta2cloud:38765/":   "http://meta2cloud:38765",
-		"https://strm.example.com":    "https://strm.example.com",
-		"https://strm.example.com/":   "https://strm.example.com",
-		"  192.168.1.10:38765  ":      "http://192.168.1.10:38765",
-		"":                            "",
-		"   ":                         "",
+		"meta2cloud:38765":          "http://meta2cloud:38765",
+		" http://meta2cloud:38765/": "http://meta2cloud:38765",
+		"https://strm.example.com":  "https://strm.example.com",
+		"https://strm.example.com/": "https://strm.example.com",
+		"  192.168.1.10:38765  ":    "http://192.168.1.10:38765",
+		"":                          "",
+		"   ":                       "",
 	}
 	for in, want := range cases {
 		if got := normalizeStrmURLBase(in); got != want {

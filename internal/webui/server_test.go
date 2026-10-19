@@ -1184,10 +1184,10 @@ func TestReidentifyReclassifiesFolder(t *testing.T) {
 				"original_language": "ja", "first_air_date": "2026-04-01",
 				"overview": "test", "poster_path": "/p.jpg", "backdrop_path": "/b.jpg",
 				"number_of_episodes": 12, "status": "Returning Series",
-				"genres":             []any{map[string]any{"id": 16, "name": "动画"}},
-				"credits":            map[string]any{"crew": []any{}, "cast": []any{}},
-				"external_ids":       map[string]any{},
-				"content_ratings":    map[string]any{"results": []any{}},
+				"genres":          []any{map[string]any{"id": 16, "name": "动画"}},
+				"credits":         map[string]any{"crew": []any{}, "cast": []any{}},
+				"external_ids":    map[string]any{},
+				"content_ratings": map[string]any{"results": []any{}},
 			})
 			return
 		}
@@ -1289,18 +1289,18 @@ func TestCategoriesReclassifyFlow(t *testing.T) {
 		case strings.HasPrefix(r.URL.Path, "/tv/325052"):
 			json.NewEncoder(w).Encode(map[string]any{
 				"id": 325052, "name": "错放的动漫", "original_language": "ja",
-				"genres":             []any{map[string]any{"id": 16, "name": "动画"}},
-				"credits":            map[string]any{"crew": []any{}, "cast": []any{}},
-				"external_ids":       map[string]any{},
-				"content_ratings":    map[string]any{"results": []any{}},
+				"genres":          []any{map[string]any{"id": 16, "name": "动画"}},
+				"credits":         map[string]any{"crew": []any{}, "cast": []any{}},
+				"external_ids":    map[string]any{},
+				"content_ratings": map[string]any{"results": []any{}},
 			})
 		case strings.HasPrefix(r.URL.Path, "/tv/999"):
 			json.NewEncoder(w).Encode(map[string]any{
 				"id": 999, "name": "普通剧", "original_language": "ja",
-				"genres":             []any{map[string]any{"id": 18, "name": "剧情"}},
-				"credits":            map[string]any{"crew": []any{}, "cast": []any{}},
-				"external_ids":       map[string]any{},
-				"content_ratings":    map[string]any{"results": []any{}},
+				"genres":          []any{map[string]any{"id": 18, "name": "剧情"}},
+				"credits":         map[string]any{"crew": []any{}, "cast": []any{}},
+				"external_ids":    map[string]any{},
+				"content_ratings": map[string]any{"results": []any{}},
 			})
 		default:
 			w.WriteHeader(404)
@@ -1400,10 +1400,10 @@ func TestMediaClassificationEndpoint(t *testing.T) {
 		if strings.HasPrefix(r.URL.Path, "/tv/325052") {
 			json.NewEncoder(w).Encode(map[string]any{
 				"id": 325052, "name": "错放的动漫", "original_language": "ja",
-				"genres":             []any{map[string]any{"id": 16, "name": "动画"}},
-				"credits":            map[string]any{"crew": []any{}, "cast": []any{}},
-				"external_ids":       map[string]any{},
-				"content_ratings":    map[string]any{"results": []any{}},
+				"genres":          []any{map[string]any{"id": 16, "name": "动画"}},
+				"credits":         map[string]any{"crew": []any{}, "cast": []any{}},
+				"external_ids":    map[string]any{},
+				"content_ratings": map[string]any{"results": []any{}},
 			})
 			return
 		}

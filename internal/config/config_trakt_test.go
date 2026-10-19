@@ -26,8 +26,8 @@ func TestParseTraktDefaults(t *testing.T) {
 
 func TestParseTraktFloors(t *testing.T) {
 	got := parseTrakt(map[string]any{
-		"sync_interval_seconds": 10,  // 低于下限 60
-		"session_poll_seconds":  5,   // 低于下限 15
+		"sync_interval_seconds": 10, // 低于下限 60
+		"session_poll_seconds":  5,  // 低于下限 15
 		"sync_to_plex":          false,
 		"client_id":             "  abc  ",
 	})

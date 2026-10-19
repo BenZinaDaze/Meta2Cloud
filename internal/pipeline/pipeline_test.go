@@ -217,8 +217,8 @@ func newTmdbServer(t *testing.T) *httptest.Server {
 		case strings.HasPrefix(r.URL.Path, "/tv/"):
 			json.NewEncoder(w).Encode(map[string]any{
 				"id": 1396.0, "name": "绝命毒师", "original_name": "Breaking Bad",
-					"original_language": "ja",
-				"first_air_date": "2008-01-20", "overview": "化学老师",
+				"original_language": "ja",
+				"first_air_date":    "2008-01-20", "overview": "化学老师",
 				"poster_path": "/bb.jpg", "backdrop_path": "/bbd.jpg",
 				"credits":            map[string]any{"crew": []any{}, "cast": []any{}},
 				"alternative_titles": map[string]any{"results": []any{}},
@@ -686,8 +686,8 @@ func TestSeasonSegmentsSparseEpisodes(t *testing.T) {
 func TestHashtagOf(t *testing.T) {
 	cases := map[string]string{
 		"学生会也有洞！":                 "学生会也有洞",
-		"Re:Zero − Starting Life":  "ReZeroStartingLife",
-		"咒术回战 2nd Season":          "咒术回战2ndSeason",
+		"Re:Zero − Starting Life": "ReZeroStartingLife",
+		"咒术回战 2nd Season":         "咒术回战2ndSeason",
 		"《某科学》〈超〉电磁炮【剧场版】":        "某科学超电磁炮剧场版",
 	}
 	for in, want := range cases {
@@ -798,8 +798,8 @@ func TestCleanupEmptyFolderChain(t *testing.T) {
 // flakyTrashProvider 前 N 次 TrashFile 失败，模拟网盘删除异步生效导致的短暂拒绝
 type flakyTrashProvider struct {
 	*fakeProvider
-	mu        sync.Mutex
-	failLeft  int
+	mu         sync.Mutex
+	failLeft   int
 	trashCalls int
 }
 

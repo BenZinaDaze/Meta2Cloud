@@ -91,14 +91,14 @@ type Media struct {
 // WatchedMovie GET /sync/watched/movies 条目。
 type WatchedMovie struct {
 	Plays         int   `json:"plays"`
-	LastWatchedAt Zeit `json:"last_watched_at"`
+	LastWatchedAt Zeit  `json:"last_watched_at"`
 	Movie         Media `json:"movie"`
 }
 
 // WatchedEpisode GET /sync/watched/shows 的集条目。
 type WatchedEpisode struct {
-	Number        int   `json:"number"`
-	Plays         int   `json:"plays"`
+	Number        int  `json:"number"`
+	Plays         int  `json:"plays"`
 	LastWatchedAt Zeit `json:"last_watched_at"`
 }
 
@@ -110,9 +110,9 @@ type WatchedSeason struct {
 
 // WatchedShow GET /sync/watched/shows 条目。
 type WatchedShow struct {
-	Plays         int            `json:"plays"`
-	LastWatchedAt Zeit           `json:"last_watched_at"`
-	Show          Media          `json:"show"`
+	Plays         int             `json:"plays"`
+	LastWatchedAt Zeit            `json:"last_watched_at"`
+	Show          Media           `json:"show"`
 	Seasons       []WatchedSeason `json:"seasons"`
 }
 
@@ -141,15 +141,15 @@ type Client struct {
 
 	HTTP *http.Client
 
-	rateMu    sync.Mutex
-	nextAt    time.Time
-	cooldown  time.Time
-	tokenMu   sync.Mutex
-	token     *Token
+	rateMu         sync.Mutex
+	nextAt         time.Time
+	cooldown       time.Time
+	tokenMu        sync.Mutex
+	token          *Token
 	OnTokenUpdated func(t Token)
 
 	// testingAPIBase / testingAuthBase 非空时覆盖 API / OAuth 基础地址（仅测试使用）。
-	testingAPIBase string
+	testingAPIBase  string
 	testingAuthBase string
 }
 
@@ -314,11 +314,11 @@ func (c *Client) CreateDeviceCode() (*DeviceCode, error) {
 // PollDeviceToken 轮询设备码授权结果（由前端驱动，每次调用一次）。
 func (c *Client) PollDeviceToken(deviceCode string) (PollResult, error) {
 	var raw struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		ExpiresIn    int64  `json:"expires_in"`
-		CreatedAt    int64  `json:"created_at"`
-		Error        string `json:"error"`
+		AccessToken      string `json:"access_token"`
+		RefreshToken     string `json:"refresh_token"`
+		ExpiresIn        int64  `json:"expires_in"`
+		CreatedAt        int64  `json:"created_at"`
+		Error            string `json:"error"`
 		ErrorDescription string `json:"error_description"`
 	}
 	err := c.postRaw("/oauth/device/token", map[string]any{
@@ -420,9 +420,9 @@ func (c *Client) SyncWatchedShows() ([]WatchedShow, error) {
 
 // ProgressEpisode 单集观看进度。
 type ProgressEpisode struct {
-	Number        int   `json:"number"`
-	Completed     bool  `json:"completed"`
-	LastWatchedAt Zeit  `json:"last_watched_at"`
+	Number        int  `json:"number"`
+	Completed     bool `json:"completed"`
+	LastWatchedAt Zeit `json:"last_watched_at"`
 }
 
 // ProgressSeason 单季观看进度。
@@ -600,8 +600,8 @@ func sortInts(nums []int) {
 // 官方用途：同步前比较，避免拉取尚未更新的数据。
 func (c *Client) LastActivities() (movies, shows int64, err error) {
 	var raw struct {
-		All      string `json:"all"`
-		Movies   struct {
+		All    string `json:"all"`
+		Movies struct {
 			WatchedAt string `json:"watched_at"`
 		} `json:"movies"`
 		Shows struct {

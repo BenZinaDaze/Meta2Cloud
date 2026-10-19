@@ -91,8 +91,8 @@ type Engine struct {
 	Playback watched.Provider // 播放端（Plex；未来 Emby/Jellyfin 亦实现此接口）
 	Trakt    watched.Provider // Trakt
 	Store    ShadowStore
-	ToPlex   bool  // trakt → 播放端
-	ToTrakt  bool  // 播放端 → trakt
+	ToPlex   bool // trakt → 播放端
+	ToTrakt  bool // 播放端 → trakt
 	Log      Logger
 	Now      func() time.Time // 测试注入；nil 用 time.Now
 }
@@ -207,7 +207,7 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 		for _, u := range rep.DrainUnresolved() {
 			summary.Unresolved++
 			_ = e.Store.InsertRunItem(runID, RunItem{
-				Title: fmt.Sprintf("%s（ref=%s）", u.Title, u.Ref),
+				Title:     fmt.Sprintf("%s（ref=%s）", u.Title, u.Ref),
 				Direction: "unresolved", Action: "unresolved",
 				Success: false, Err: u.Reason,
 			})

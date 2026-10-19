@@ -16,7 +16,7 @@ type fakeProvider struct {
 	unwatchLog []watched.MediaKey
 	failKeys   map[watched.MediaKey]bool // 这些键的写入返回失败
 	// WatchedStampProvider 能力（Trakt 侧测试用）：模拟数据时间戳
-	hasStamp             bool
+	hasStamp                bool
 	stampMovies, stampShows int64
 }
 
@@ -132,7 +132,7 @@ func (s *fakeStore) SetTraktPushedAt(at int64) error {
 
 func (s *fakeStore) TraktPushedAt() (int64, error) { return s.traktPushed, nil }
 
-func movie(id int64) watched.MediaKey  { return watched.MediaKey{Type: "movie", TMDBID: id} }
+func movie(id int64) watched.MediaKey { return watched.MediaKey{Type: "movie", TMDBID: id} }
 func episode(id, s, e int) watched.MediaKey {
 	return watched.MediaKey{Type: "tv", TMDBID: int64(id), Season: s, Episode: e}
 }

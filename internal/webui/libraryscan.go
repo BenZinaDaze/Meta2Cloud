@@ -397,9 +397,9 @@ func scanSingleMovieFolder(_ cloudfile.Provider, folder cloudfile.CloudFile, cfg
 			TmdbID: tmdbID, Title: title, OriginalTitle: jsonx.Str(tmdbInfo, "original_title"),
 			Year: year, MediaType: "movie",
 			PosterURL: strPtrOrNil(poster), BackdropURL: strPtrOrNil(backdrop),
-			Overview:       jsonx.Str(tmdbInfo, "overview"),
-			Rating:         roundTo1(jsonx.Float(tmdbInfo, "vote_average", 0)),
-			DriveFolderID:  &fid, FolderModifiedTime: &m,
+			Overview:      jsonx.Str(tmdbInfo, "overview"),
+			Rating:        roundTo1(jsonx.Float(tmdbInfo, "vote_average", 0)),
+			DriveFolderID: &fid, FolderModifiedTime: &m,
 			ParentFolderID: strPtrOrNil(folder.ParentID),
 		}
 	}

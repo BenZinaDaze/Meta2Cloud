@@ -85,13 +85,13 @@ func TestCreateSubscriptionKeepsTmdbIDAndPoster(t *testing.T) {
 	token := subscriptionTestToken(t, ts)
 
 	body := map[string]any{
-		"name":        "伊甸园的骄傲 [TestGroup]",
-		"media_title": "伊甸园的骄傲",
-		"media_type":  "tv",
-		"tmdb_id":     111110,
-		"poster_url":  "https://tmdb.nmd.im/t/p/w500/fakeposterTEST.jpg",
-		"site":        "mikan",
-		"rss_url":     "https://mikanani.me/RSS/Bangumi?bangumiId=3333&subgroupid=583",
+		"name":          "伊甸园的骄傲 [TestGroup]",
+		"media_title":   "伊甸园的骄傲",
+		"media_type":    "tv",
+		"tmdb_id":       111110,
+		"poster_url":    "https://tmdb.nmd.im/t/p/w500/fakeposterTEST.jpg",
+		"site":          "mikan",
+		"rss_url":       "https://mikanani.me/RSS/Bangumi?bangumiId=3333&subgroupid=583",
 		"subgroup_name": "TestGroup",
 		"season_number": 1,
 		"start_episode": 1,
