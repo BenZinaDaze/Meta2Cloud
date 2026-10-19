@@ -41,58 +41,60 @@ function PinCard({
   onDelete: () => void
 }) {
   const isTV = pin.media_type === 'tv'
+  const fullName = `${pin.pinned_title}${pin.pinned_year ? ` (${pin.pinned_year})` : ''}`
   return (
     <div
-      className={`overflow-hidden rounded-xl border p-3 transition-colors duration-200 hover:bg-card/80 sm:p-4 ${
+      className={`animate-stagger-in flex flex-col overflow-hidden rounded-xl border p-4 transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-1.5 hover:shadow-[0_16px_40px_-12px_oklch(8%_0.01_140/0.9),0_0_24px_-8px_oklch(76%_0.19_150/0.35)] ${
         pin.drifted
           ? 'border-warning/40 bg-warning/[0.04] hover:border-warning/60'
-          : 'border-border/60 bg-card/50 hover:border-primary/20'
+          : 'border-border/60 bg-card/50 hover:border-primary/40'
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            {isTV ? <Tv className="size-4 shrink-0 text-muted-foreground" /> : <Film className="size-4 shrink-0 text-muted-foreground" />}
-            <h3 className="truncate font-semibold">
-              {pin.pinned_title}
-              {pin.pinned_year && <span className="ml-1.5 font-normal text-muted-foreground">({pin.pinned_year})</span>}
-            </h3>
-            <Badge variant="outline" className="shrink-0 border-border/60 text-[10px] text-muted-foreground">
-              {isTV ? '电视剧' : '电影'}
-            </Badge>
-          </div>
+      <div className="flex min-w-0 items-center gap-2">
+        {isTV ? <Tv className="size-4 shrink-0 text-muted-foreground" /> : <Film className="size-4 shrink-0 text-muted-foreground" />}
+        <h3 className="min-w-0 truncate font-semibold" title={fullName}>
+          {pin.pinned_title}
+          {pin.pinned_year && <span className="ml-1.5 font-normal text-muted-foreground">({pin.pinned_year})</span>}
+        </h3>
+        <Badge variant="outline" className="ml-auto shrink-0 border-border/60 text-[10px] text-muted-foreground">
+          {isTV ? '电视剧' : '电影'}
+        </Badge>
+      </div>
 
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <a
-              href={`https://www.themoviedb.org/${isTV ? 'tv' : 'movie'}/${pin.tmdb_id}?language=zh-CN`}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 font-mono transition-colors hover:bg-accent hover:text-foreground"
-              title="在 TMDB 打开"
-            >
-              tmdb {pin.tmdb_id}
-              <ExternalLink className="size-3 opacity-60" />
-            </a>
-            <span className="text-border">·</span>
-            <span>{sourceLabels[pin.source] || pin.source}</span>
-            <span className="text-border">·</span>
-            <span>{relativeTime(pin.created_at)}建立</span>
-          </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <a
+          href={`https://www.themoviedb.org/${isTV ? 'tv' : 'movie'}/${pin.tmdb_id}?language=zh-CN`}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 font-mono transition-colors hover:bg-accent hover:text-foreground"
+          title="在 TMDB 打开"
+        >
+          tmdb {pin.tmdb_id}
+          <ExternalLink className="size-3 opacity-60" />
+        </a>
+        <span className="text-border">·</span>
+        <span>{sourceLabels[pin.source] || pin.source}</span>
+        <span className="text-border">·</span>
+        <span>{relativeTime(pin.created_at)}建立</span>
+      </div>
 
-          {pin.drifted && (
-            <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-warning/30 bg-warning/[0.06] px-2.5 py-1.5 text-xs">
-              <ArrowRightLeft className="size-3 shrink-0 text-warning" />
-              <span className="text-muted-foreground">TMDB 当前译名：</span>
-              <span className="font-medium text-foreground">
-                {pin.current_title}
-                {pin.current_year && pin.current_year !== pin.pinned_year && (
-                  <span className="ml-1 font-normal text-muted-foreground">({pin.current_year})</span>
-                )}
-              </span>
-            </div>
-          )}
-        </div>
-
+      <div className="mt-auto flex items-center justify-between gap-2 pt-3">
+        {pin.drifted ? (
+          <span
+            className="flex min-w-0 items-center gap-1.5 text-xs text-warning"
+            title={`TMDB 当前译名：${pin.current_title}${pin.current_year ? ` (${pin.current_year})` : ''}`}
+          >
+            <ArrowRightLeft className="size-3.5 shrink-0" />
+            <span className="min-w-0 truncate">
+              {pin.current_title}
+              {pin.current_year && pin.current_year !== pin.pinned_year && (
+                <span className="text-muted-foreground"> ({pin.current_year})</span>
+              )}
+            </span>
+          </span>
+        ) : (
+          <span />
+        )}
         <div className="flex shrink-0 items-center gap-2">
           {pin.drifted && (
             <Button
@@ -240,9 +242,9 @@ export default function TitlePinsPage({ onToast }: TitlePinsPageProps) {
           description={kw ? '换个关键词试试' : '完成一次媒体整理后会自动记录每个媒体的整理名称'}
         />
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {driftedCount > 0 && (
-            <div className="flex items-center gap-2 rounded-xl border border-warning/30 bg-warning/[0.06] px-3 py-2 text-xs text-muted-foreground">
+            <div className="col-span-full flex items-center gap-2 rounded-xl border border-warning/30 bg-warning/[0.06] px-3 py-2 text-xs text-muted-foreground">
               <ArrowRightLeft className="size-3.5 shrink-0 text-warning" />
               <span>
                 {driftedCount} 个媒体的 TMDB 译名已变化（高亮显示），整理仍沿用首次目录名
