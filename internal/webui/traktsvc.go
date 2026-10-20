@@ -846,6 +846,12 @@ func pollPlexSessionsOnce() {
 	traktSessionWatcher.lastPollError = nil
 	traktSessionWatcher.mu.Unlock()
 
+	// 纯兜底策略：SSE 在线时不并行轮询——实时事件已覆盖会话观察与推送，
+	// 仅在 SSE 未连接（开关关闭/断线窗口/旧版 PMS 无端点）时才主动轮询。
+	// 心跳簿记已在上方更新，watcher 存活状态不受影响。
+	if sseConnected() {
+		return
+	}
 	if !cfg.Trakt.SyncToTrakt || !cfg.IsPlexReady() || !cfg.IsTraktReady() {
 		return
 	}
@@ -1056,6 +1062,11 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 	syncStore.UpsertSyncSession(row)
 	if keyOK {
 		tryPushWatchedSession(syncStore, traktClient, key, title, progress, "sse")
+	}
+	// 播放结束即清理会话观察行：轮询不与 SSE 并行运行后，
+	// 缺席检测不再触发，收尾改由 stopped 事件承担
+	if notif.State == "stopped" {
+		syncStore.DeleteSyncSession(notif.SessionKey)
 	}
 }
 
@@ -1343,6 +1354,7 @@ func ensureTraktSyncLoop() {
 }
 
 // ensureTraktSessionLoop 启动 Plex 会话轮询（正在看 → Trakt）。
+// 纯兜底：每轮先查 SSE 是否在线，在线则跳过实际轮询（见 pollPlexSessionsOnce）。
 func ensureTraktSessionLoop() {
 	traktSessionOnce.Do(func() {
 		go func() {
