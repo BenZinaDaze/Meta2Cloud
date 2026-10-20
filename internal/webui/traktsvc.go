@@ -1307,6 +1307,38 @@ var (
 	traktSSEOnce        sync.Once
 )
 
+// plexReachable 轻探测 Plex 可达性（/identity，失败含 DNS/连接错误）。
+func plexReachable() bool {
+	plexClient := RT().GetPlexClient()
+	if plexClient == nil {
+		return true // 未完成 Plex 配对时不等待，由同步自身报出明确的配置错误
+	}
+	_, err := plexClient.Identity()
+	return err == nil
+}
+
+// waitPlexReachable 等待 Plex 恢复可达：30 秒一探，上限 10 分钟。
+// Plex 常与本服务同 compose 部署、随之同时重启——启动首轮同步若在
+// 对端未就绪时触发，会在 DNS/连接层立刻失败并留下错误记录。探测
+// 不可达时短周期等待，恢复后立即开始本轮；超时放弃，交由下一轮定时。
+func waitPlexReachable() bool {
+	if plexReachable() {
+		return true
+	}
+	appLog("trakt", "plex_unreachable", "WARNING", "Plex 暂不可达，等待就绪后开始本轮同步", nil)
+	deadline := time.Now().Add(10 * time.Minute)
+	for time.Now().Before(deadline) {
+		if !sleepWatcher(traktWatcher, 30*time.Second) {
+			return false
+		}
+		if plexReachable() {
+			return true
+		}
+	}
+	appLog("trakt", "plex_unreachable_timeout", "WARNING", "等待 Plex 就绪超时，本轮定时同步跳过", nil)
+	return false
+}
+
 // ensureTraktSyncLoop 启动观看同步定时循环（幂等；sync_interval_seconds < 60 时空转等待）。
 func ensureTraktSyncLoop() {
 	traktOnce.Do(func() {
@@ -1315,7 +1347,8 @@ func ensureTraktSyncLoop() {
 			for {
 				cfg := RT().GetConfig()
 				interval := cfg.Trakt.SyncIntervalSeconds
-				enabled := cfg.Trakt.Enabled && interval >= 60
+				// 定时同步需两侧均已配置；配对未完成时静默跳过（手动触发会报出明确原因）
+				enabled := cfg.Trakt.Enabled && interval >= 60 && cfg.IsPlexReady() && cfg.IsTraktReady()
 				if interval < 60 {
 					interval = 60 // 空转等待下限，保持响应配置变更
 				}
@@ -1333,7 +1366,7 @@ func ensureTraktSyncLoop() {
 					traktWatcher.mu.Lock()
 					traktWatcher.lastPolledAt = &nowStr
 					traktWatcher.mu.Unlock()
-					if enabled {
+					if enabled && waitPlexReachable() {
 						TriggerTraktSync(triggerSchedule)
 					}
 				}()
