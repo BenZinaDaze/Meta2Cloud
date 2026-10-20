@@ -247,7 +247,7 @@ export default function LogsPage() {
             </div>
             <Select value={level} onValueChange={setLevel}>
               <SelectTrigger className="h-10 w-36 rounded-full border-border/70 bg-card/50 focus:ring-0 focus:ring-offset-0">
-                <SelectValue placeholder="级别: 全部" />
+                <SelectValue placeholder="级别：全部" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部</SelectItem>

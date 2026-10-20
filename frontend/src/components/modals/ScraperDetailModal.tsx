@@ -75,7 +75,7 @@ export default function ScraperDetailModal({
     if (!item) return
     const folderId = item.drive_folder_id
     if (!folderId) {
-      toast.error('该媒体项缺少 Drive 文件夹 ID，无法刷新')
+      toast.error('该媒体项缺少网盘文件夹 ID，无法刷新')
       return
     }
     setRefreshing(true)
@@ -115,7 +115,7 @@ export default function ScraperDetailModal({
 
   async function handleRemoveFromLibrary() {
     if (!item?.drive_folder_id) {
-      toast.error('该媒体项缺少 Drive 文件夹 ID，无法移出媒体库')
+      toast.error('该媒体项缺少网盘文件夹 ID，无法移出媒体库')
       return
     }
     setRemoving(true)
@@ -227,7 +227,7 @@ export default function ScraperDetailModal({
               disabled={removing}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {removing ? '移出中...' : '确认移出'}
+              {removing ? '移出中…' : '确认移出'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

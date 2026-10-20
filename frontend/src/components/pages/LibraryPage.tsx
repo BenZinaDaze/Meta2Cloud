@@ -253,7 +253,7 @@ export default function LibraryPage({
     </div>
   )
 
-  const pageTitle = { all: '全部媒体', movies: '电影', tv: '电视剧' }[filter] || '全部媒体'
+  const pageTitle = { all: '全部媒体', movies: '电影', tv: '剧集' }[filter] || '全部媒体'
 
   const refreshBtn = (
     <Button
@@ -303,7 +303,7 @@ export default function LibraryPage({
       <PageHeader
         kicker="Cinematic catalog"
         title={pageTitle}
-        description="以更清晰的方式浏览你在 Drive 中维护的电影与剧集元数据，快速检索、刷新并查看季集完整度。"
+        description="浏览网盘媒体库中的电影与剧集元数据，支持检索、刷新与季集完整度查看。"
         actions={
           <>
             <Select
@@ -333,7 +333,7 @@ export default function LibraryPage({
               <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 type="text"
-                placeholder="搜索标题..."
+                placeholder="搜索标题…"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 className="h-10 w-full rounded-full pl-10 pr-4 sm:w-72"
@@ -346,7 +346,7 @@ export default function LibraryPage({
       {stats && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-4">
           {filter !== 'tv' && <StatCard label="电影总数" value={stats.movies} />}
-          {filter !== 'movies' && <StatCard label="电视剧总数" value={stats.tv} />}
+          {filter !== 'movies' && <StatCard label="剧集总数" value={stats.tv} />}
           <div className={filter === 'all' ? 'col-span-2 sm:col-span-1' : 'col-span-1'}>
             <StatCard
               label="最后刷新"
@@ -394,8 +394,8 @@ export default function LibraryPage({
         ) : (
           <StatePanel
             icon={<Search className="size-6" />}
-            title="没有匹配的结果"
-            description="换一个标题关键词，或者试试原始标题。"
+            title="未找到匹配结果"
+            description="请尝试其他标题关键词或原始标题。"
           />
         )
       )}
@@ -405,7 +405,7 @@ export default function LibraryPage({
           <StatePanel
             icon={<RefreshIcon className="size-6" />}
             title="媒体库为空"
-            description="点击上方刷新媒体库，重新扫描 Drive 内容。"
+            description="点击上方刷新媒体库，重新扫描网盘内容。"
           />
         ) : (
           <>
@@ -420,7 +420,7 @@ export default function LibraryPage({
             )}
             {data.tv_shows.length > 0 && (
               <SectionRow
-                title="电视剧"
+                title="剧集"
                 count={data.total_tv}
                 items={data.tv_shows}
                 onSelect={setSelected}

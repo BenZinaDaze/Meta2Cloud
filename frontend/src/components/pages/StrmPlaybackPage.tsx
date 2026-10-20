@@ -221,7 +221,7 @@ export default function StrmPlaybackPage(props: StrmPlaybackPageProps) {
     return (
       <div className="flex flex-col gap-5">
         <h1 className="text-2xl font-bold leading-tight sm:text-[34px]">播放记录</h1>
-        <StatePanel title="正在加载" description="播放记录加载中..." />
+        <StatePanel title="正在加载" description="播放记录加载中…" />
       </div>
     )
   }
@@ -241,7 +241,7 @@ export default function StrmPlaybackPage(props: StrmPlaybackPageProps) {
           label="直链延迟"
           icon={<Gauge className="size-3" />}
           value={<span className="text-xl">{stats ? `${Math.round(stats.avg_latency_ms)} ms` : '-'}</span>}
-          hint="实时向 115 换取直链的平均耗时（缓存命中不计）"
+          hint="实时向 115 获取直链的平均耗时（缓存命中不计）"
         />
         <StatCard
           label="缓存命中率"

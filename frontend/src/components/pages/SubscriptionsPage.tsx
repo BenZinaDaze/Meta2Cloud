@@ -351,9 +351,9 @@ export default function SubscriptionsPage({
         ) : error ? (
           <StatePanel icon="!" title="加载订阅失败" description={error} tone="danger" compact />
         ) : items.length === 0 ? (
-          <StatePanel icon={<Rss className="size-6" />} title="还没有 RSS 订阅" description="去资源检索页找到对应字幕组后，点击「订阅 RSS」即可创建。" />
+          <StatePanel icon={<Rss className="size-6" />} title="暂无 RSS 订阅" description="在资源检索页找到对应字幕组后，点击「订阅 RSS」即可创建。" />
         ) : filteredItems.length === 0 ? (
-          <StatePanel icon="🗂" title="当前筛选下没有订阅" description="换一个筛选条件，或者先创建新的订阅规则。" compact />
+          <StatePanel icon="🗂" title="当前筛选条件下暂无订阅" description="请调整筛选条件，或先创建新的订阅规则。" compact />
         ) : (
           <div className="grid grid-cols-2 gap-3 pb-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-10">
             {filteredItems.map((item, index) => (

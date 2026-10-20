@@ -261,7 +261,7 @@ export default function Sidebar({
           />
           <NavItem
             icon={<Tv className="size-4" />}
-            label="电视剧"
+            label="剧集"
             to="/tv"
             active={pathname === '/tv' || pathname.startsWith('/tv/')}
             onClick={closeMobile}

@@ -57,7 +57,7 @@ function PinCard({
           {pin.pinned_year && <span className="ml-1.5 font-normal text-muted-foreground">({pin.pinned_year})</span>}
         </h3>
         <Badge variant="outline" className="ml-auto shrink-0 border-border/60 text-[10px] text-muted-foreground">
-          {isTV ? '电视剧' : '电影'}
+          {isTV ? '剧集' : '电影'}
         </Badge>
       </div>
 
@@ -163,7 +163,7 @@ export default function TitlePinsPage({ onToast }: TitlePinsPageProps) {
         await load()
       } catch (e) {
         const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-        onToast('error', '采用新译名失败', msg || (e instanceof Error ? e.message : String(e)))
+        onToast('error', '采用最新译名失败', msg || (e instanceof Error ? e.message : String(e)))
       } finally {
         setAdoptingKey('')
       }
@@ -232,14 +232,14 @@ export default function TitlePinsPage({ onToast }: TitlePinsPageProps) {
       />
 
       {loading ? (
-        <StatePanel title="正在加载" description="整理名称列表加载中..." />
+        <StatePanel title="正在加载" description="整理名称列表加载中…" />
       ) : error ? (
         <StatePanel icon="!" title={`加载失败：${error}`} description="请检查后端服务状态" tone="danger" />
       ) : filtered.length === 0 ? (
         <StatePanel
           icon={<Tag className="size-5" />}
           title={kw ? '没有匹配的记录' : '暂无整理名称记录'}
-          description={kw ? '换个关键词试试' : '完成一次媒体整理后会自动记录每个媒体的整理名称'}
+          description={kw ? '请尝试其他关键词' : '完成一次媒体整理后会自动记录每个媒体的整理名称'}
         />
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -266,11 +266,11 @@ export default function TitlePinsPage({ onToast }: TitlePinsPageProps) {
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除这条整理名称？</AlertDialogTitle>
+            <AlertDialogTitle>删除该整理名称？</AlertDialogTitle>
             <AlertDialogDescription>
-              将删除「{deleteTarget?.pinned_title}」的固定名称记录，网盘目录与媒体文件不受影响。
+              将删除「{deleteTarget?.pinned_title}」的整理名称记录，网盘目录与媒体文件不受影响。
               下次整理会重新确定名称（优先取最早入库记录，其次 TMDB 匹配结果）；
-              若此前是识别错了媒体，重新整理前建议确认文件命名可被正确识别。
+              若此前是识别有误，重新整理前建议确认文件命名可被正确识别。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

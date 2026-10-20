@@ -97,7 +97,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           <div className="mb-6">
             <h1 className="text-2xl font-bold tracking-tight">欢迎回来</h1>
             <p className="mt-1.5 text-sm text-muted-foreground">
-              进入你的媒体档案馆，继续管理电影、剧集和扫描配置。
+              进入媒体档案馆，继续管理电影、剧集和扫描配置。
             </p>
           </div>
 

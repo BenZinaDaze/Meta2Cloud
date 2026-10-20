@@ -205,7 +205,7 @@ export default function ScraperResultsView({ item, onBack }: ScraperResultsViewP
 
       if (aggregates.length === 0) {
         setSearchState('error')
-        setErrorMsg('各大爬虫站点均未匹配到此资源。')
+        setErrorMsg('各资源站均未匹配到此资源。')
         return
       }
 
@@ -298,7 +298,7 @@ export default function ScraperResultsView({ item, onBack }: ScraperResultsViewP
   const handlePushU115 = async (ep: Episode) => {
     const url = ep.magnet_url || ep.torrent_url
     if (!url) {
-      toast.warning('无效下载链接', { description: '该资源缺少真实下载地址' })
+      toast.warning('无效下载链接', { description: '该资源缺少有效下载地址' })
       return
     }
     try {
@@ -438,7 +438,7 @@ export default function ScraperResultsView({ item, onBack }: ScraperResultsViewP
           </div>
 
           {groupedEpisodes.length === 0 ? (
-            <StatePanel icon="📭" title="没有获取到有效的剧集种子/磁力项" description="请尝试其他关键词或字幕组。" />
+            <StatePanel icon="📭" title="未获取到有效的剧集种子/磁力项" description="请尝试其他关键词或字幕组。" />
           ) : (
             <div className="flex flex-col gap-10">
               {mediaGroups.filter(([mediaTitle]) => mediaTitle === currentActiveMedia).map(([mediaTitle, subgroups]) => (
@@ -489,7 +489,7 @@ export default function ScraperResultsView({ item, onBack }: ScraperResultsViewP
                               {name}
                               <span className="ml-2 rounded-md bg-info/15 px-2 py-0.5 align-middle text-xs font-medium text-info">{siteLabels[site] || site.toUpperCase()}</span>
                               {loading ? (
-                                <span className="ml-2 text-sm font-normal text-muted-foreground">加载中...</span>
+                                <span className="ml-2 text-sm font-normal text-muted-foreground">加载中…</span>
                               ) : (
                                 <span className="ml-2 text-sm font-medium text-muted-foreground">({episodes.length})</span>
                               )}

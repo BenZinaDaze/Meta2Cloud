@@ -183,7 +183,7 @@ export default function IngestHistoryPage(props: IngestHistoryPageProps) {
     return (
       <div className="flex flex-col gap-5">
         <h1 className="text-2xl font-bold leading-tight sm:text-[34px]">入库记录</h1>
-        <StatePanel title="正在加载" description="入库记录正在加载中..." />
+        <StatePanel title="正在加载" description="入库记录正在加载中…" />
       </div>
     )
   }
@@ -202,7 +202,7 @@ export default function IngestHistoryPage(props: IngestHistoryPageProps) {
       <PageHeader
         kicker="Import Log"
         title="入库记录"
-        description="查看所有媒体的入库历史，包括电影和剧集的时间、状态及元数据信息。"
+        description="查看所有媒体的入库记录，包括电影和剧集的时间、状态及元数据信息。"
         actions={
           <>
             <div className="relative w-full min-w-0 sm:w-56">
@@ -212,7 +212,7 @@ export default function IngestHistoryPage(props: IngestHistoryPageProps) {
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleRefresh()}
-                placeholder="搜索标题..."
+                placeholder="搜索标题…"
                 className="h-10 rounded-full pl-10"
               />
             </div>
@@ -263,7 +263,7 @@ export default function IngestHistoryPage(props: IngestHistoryPageProps) {
       <section className="min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-card/40 px-4 py-4 sm:px-6 sm:py-6">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold tracking-tight">入库历史</h2>
+            <h2 className="text-lg font-semibold tracking-tight">入库记录</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               共 {data?.pagination.total || 0} 条记录
             </p>
@@ -274,7 +274,7 @@ export default function IngestHistoryPage(props: IngestHistoryPageProps) {
           <StatePanel
             icon={<Clock className="size-6" />}
             title="暂无入库记录"
-            description="当有媒体文件完成整理后，入库历史将显示在这里。"
+            description="当有媒体文件完成整理后，入库记录将显示在这里。"
           />
         ) : (
           <>

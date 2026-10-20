@@ -242,7 +242,7 @@ export default function DetailModal({
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/50 backdrop-blur-sm">
               <span className="flex items-center gap-2 animate-pulse text-sm text-muted-foreground">
                 <RefreshCw className="size-4 animate-spin" />
-                加载详情中...
+                加载详情中…
               </span>
             </div>
           )}

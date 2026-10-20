@@ -138,7 +138,7 @@ export default function ReidentifyModal({
       const filtered = (res.data?.results || []).filter((entry: MediaItem) => entry.media_type === item.media_type)
       setResults(filtered)
       if (filtered.length === 0) {
-        toast.warning('没有找到同类型结果', { description: '可以换关键词，或者直接输入 TMDB ID。' })
+        toast.warning('未找到同类型结果', { description: '可尝试其他关键词，或直接输入 TMDB ID。' })
       }
     } catch (e) {
       toast.error('TMDB 搜索失败', {
@@ -276,7 +276,7 @@ export default function ReidentifyModal({
                 <div className="max-h-[360px] space-y-2 overflow-y-auto rounded-xl border border-border/70 bg-card/40 p-2">
                   {results.length === 0 ? (
                     <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-                      {searching ? '搜索中...' : '先搜索，再从结果里选择正确条目。'}
+                      {searching ? '搜索中…' : '先搜索，再从结果里选择正确条目。'}
                     </div>
                   ) : (
                     results.map((result) => (
@@ -354,7 +354,7 @@ export default function ReidentifyModal({
                 {clsLoading ? (
                   <div className="flex items-center gap-1.5 text-muted-foreground">
                     <LoaderCircle className="size-3 animate-spin" />
-                    分类核对中...
+                    分类核对中…
                   </div>
                 ) : clsInfo ? (
                   <>
@@ -381,7 +381,7 @@ export default function ReidentifyModal({
               {loadingPreview ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <LoaderCircle className="size-4 animate-spin" />
-                  加载中...
+                  加载中…
                 </div>
               ) : preview ? (
                 <div className="space-y-3">

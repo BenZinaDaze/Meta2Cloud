@@ -31,7 +31,7 @@ function PageFallback() {
     <div className="flex min-h-[240px] items-center justify-center">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <span className="size-1.5 animate-tide-breathe rounded-full bg-primary" />
-        页面加载中...
+        页面加载中…
       </div>
     </div>
   )
@@ -77,7 +77,7 @@ export default function App() {
         <div className="pointer-events-none absolute inset-0 bg-ambient" />
         <div className="relative flex items-center gap-2.5 text-muted-foreground">
           <span className="size-1.5 animate-tide-breathe rounded-full bg-primary" />
-          正在验证身份...
+          正在验证身份…
         </div>
       </div>
     )

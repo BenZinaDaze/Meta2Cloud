@@ -788,7 +788,7 @@ export default function DashboardPage() {
       />
 
       {loading ? (
-        <StatePanel title="正在加载" description="仪表盘数据加载中..." />
+        <StatePanel title="正在加载" description="仪表盘数据加载中…" />
       ) : (
         <>
           {/* 库存规模 */}

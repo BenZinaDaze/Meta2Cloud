@@ -465,7 +465,7 @@ export default function SubscriptionModal({
                         <SelectValue placeholder="选择类型" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="tv">电视剧</SelectItem>
+                        <SelectItem value="tv">剧集</SelectItem>
                         <SelectItem value="movie">电影</SelectItem>
                       </SelectContent>
                     </Select>

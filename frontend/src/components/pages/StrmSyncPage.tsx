@@ -94,7 +94,7 @@ function RunFiles({ runId }: { runId: number }) {
   }, [runId])
 
   if (error) return <p className="px-3 py-2 text-xs text-destructive">明细加载失败：{error}</p>
-  if (!files) return <p className="px-3 py-2 text-xs text-muted-foreground">加载中...</p>
+  if (!files) return <p className="px-3 py-2 text-xs text-muted-foreground">加载中…</p>
   if (files.length === 0) return <p className="px-3 py-2 text-xs text-muted-foreground">无文件明细（全部跳过）</p>
 
   return (
@@ -206,7 +206,7 @@ export default function StrmSyncPage(props: StrmSyncPageProps) {
     return (
       <div className="flex flex-col gap-5">
         <h1 className="text-2xl font-bold leading-tight sm:text-[34px]">STRM 同步</h1>
-        <StatePanel title="正在加载" description="STRM 同步状态加载中..." />
+        <StatePanel title="正在加载" description="STRM 同步状态加载中…" />
       </div>
     )
   }
@@ -220,7 +220,7 @@ export default function StrmSyncPage(props: StrmSyncPageProps) {
         actions={
           <Button onClick={handleSync} disabled={syncing || running || !status?.enabled} className="rounded-full">
             {running ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-            {running ? '同步中...' : '立即同步'}
+            {running ? '同步中…' : '立即同步'}
           </Button>
         }
       />

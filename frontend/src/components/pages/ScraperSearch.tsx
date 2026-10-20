@@ -102,7 +102,7 @@ export default function ScraperSearch({
             <Search className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="text"
-              placeholder="搜索任何电影或电视剧..."
+              placeholder="搜索任何电影或剧集…"
               className="h-11 rounded-full pl-11 pr-24"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -112,7 +112,7 @@ export default function ScraperSearch({
               disabled={loading}
               className="absolute bottom-1.5 right-1.5 top-1.5 h-auto min-w-[72px] rounded-full"
             >
-              {loading ? '搜索中...' : '搜索'}
+              {loading ? '搜索中…' : '搜索'}
             </Button>
           </form>
         }

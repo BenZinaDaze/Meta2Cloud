@@ -369,7 +369,7 @@ export default function CategoriesPage({ onToast }: CategoriesPageProps) {
             value={config.dirs[kind]}
             onChange={(e) => updateDirs({ [kind]: e.target.value })}
             className="h-9 w-44 font-medium"
-            title="一级目录名（挂在媒体库根下）"
+            title="一级目录名（位于媒体库根下）"
           />
           <span className="hidden text-xs text-muted-foreground sm:inline">一级目录 · 挂在媒体库根下</span>
           <div className="ml-auto flex shrink-0 items-center gap-2">

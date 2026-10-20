@@ -379,7 +379,7 @@ export default function FileManagerPage() {
                 <Input
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="搜索文件..."
+                  placeholder="搜索文件…"
                   className="w-48 pl-8"
                 />
               </div>
@@ -422,10 +422,10 @@ export default function FileManagerPage() {
           {/* 文件列表 */}
           <div data-scroll-container="file-manager-list" className="min-h-0 flex-1 overflow-y-auto">
             {loading && !data ? (
-              <div className="p-6 text-center text-muted-foreground">加载中...</div>
+              <div className="p-6 text-center text-muted-foreground">加载中…</div>
             ) : sortedItems.length === 0 ? (
               <div className="flex h-full items-center justify-center text-muted-foreground">
-                {searchQuery ? '没有找到匹配的文件' : '文件夹为空'}
+                {searchQuery ? '未找到匹配的文件' : '文件夹为空'}
               </div>
             ) : (
               <div className="divide-y divide-border/50">
@@ -708,7 +708,7 @@ function MoveModal({
           </div>
           <div className="max-h-[200px] select-none overflow-y-auto rounded-xl border border-border/70 bg-card/40">
             {loading ? (
-              <div className="p-4 text-center text-muted-foreground">加载中...</div>
+              <div className="p-4 text-center text-muted-foreground">加载中…</div>
             ) : folders.length === 0 ? (
               <div className="p-4 text-center text-muted-foreground">无子文件夹</div>
             ) : (

@@ -239,7 +239,7 @@ export default function U115OfflinePage({ onToast }: U115OfflinePageProps) {
               刷新
             </Button>
             <Button variant="outline" size="sm" onClick={() => handleClear('0')} disabled={busy} className="rounded-full">
-              清空已完成
+              清空已完成任务
             </Button>
           </>
         }
