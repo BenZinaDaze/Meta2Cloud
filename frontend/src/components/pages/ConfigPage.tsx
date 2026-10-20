@@ -877,7 +877,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
         setU115QrPreviewUrl('')
       }
       setU115Polling(true)
-      setU115OauthMessage({ type: 'success', text: '115 扫码会话已创建，请使用 App 扫码并确认，系统会自动轮询。' })
+      setU115OauthMessage({ type: 'success', text: '115 扫码会话已创建，请使用 App 扫码并确认，授权将自动完成。' })
       loadU115OauthStatus()
     } catch (e) {
       setU115Polling(false)
@@ -1345,14 +1345,14 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                       placeholder="选择云下载目录"
                     />
                   </Field>
-                  <Field label="媒体库根目录" description="分类目录挂在此目录下（点击选择）">
+                  <Field label="媒体库根目录" description="分类目录位于此目录下（点击选择）">
                     <FolderSelectInput
                       value={(cfg?.u115 as Record<string, unknown>)?.root_folder_id as string | undefined}
                       onChange={(v: string) => set('u115', 'root_folder_id', v)}
                       placeholder="选择媒体库根目录"
                     />
                   </Field>
-                  <Field label="共享请求 QPS" description="整理/播放/下载全项目共用，调低更防风控">
+                  <Field label="共享请求 QPS" description="整理/播放/下载全项目共用，调低可降低风控风险">
                     <NumberInput
                       value={(cfg?.u115 as Record<string, unknown>)?.qps as number | undefined}
                       onChange={(v) => set('u115', 'qps', v)}
@@ -1427,8 +1427,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
               <CardHeader>
                 <CardTitle className="text-base">观看同步（Trakt ↔ Plex）</CardTitle>
                 <CardDescription>
-                  每轮均为双向同步：两侧各自把对方缺少的已看记录补齐；同一媒体状态冲突时以 Trakt
-                  为准（Trakt 记录更全）。运行历史与逐条明细见侧边栏「Trakt 同步」页。
+                  双向同步两侧观看状态；冲突时以 Trakt 为准。同步历史与明细见「Trakt 同步」页。
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -1466,15 +1465,11 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                   )}
                 </div>
 
-                {/* ── Trakt 侧（跨侧分隔用实线 + 侧标题）── */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <Separator />
-                    <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Trakt 侧</span>
-                  </div>
+                {/* ── Trakt 侧（独立面板）── */}
+                <div className="space-y-4 rounded-xl border border-border/60 bg-card/40 p-4">
+                  <div className="text-sm font-medium">Trakt 授权</div>
                   <div className="space-y-3">
                     <div className="flex flex-wrap items-center gap-3">
-                      <span className="text-[13px] font-medium">授权状态</span>
                       <Badge variant={traktOauth?.token_expired ? 'warning' : traktOauth?.authorized ? 'success' : 'secondary'}>
                         {traktOauth?.token_expired ? 'Token 已过期' : traktOauth?.authorized ? '已授权' : '未授权'}
                       </Badge>
@@ -1532,15 +1527,11 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                   </div>
                 </div>
 
-                {/* ── Plex 侧 ── */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <Separator />
-                    <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Plex 侧</span>
-                  </div>
+                {/* ── Plex 侧（独立面板）── */}
+                <div className="space-y-4 rounded-xl border border-border/60 bg-card/40 p-4">
+                  <div className="text-sm font-medium">Plex 连接</div>
                   <div className="space-y-3">
                     <div className="flex flex-wrap items-center gap-3">
-                      <span className="text-[13px] font-medium">连接状态</span>
                       <Badge variant={syncStatus?.plex_connected ? 'success' : 'secondary'}>
                         {syncStatus?.plex_connected ? '已授权' : '未授权'}
                       </Badge>
@@ -1599,11 +1590,8 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                 </div>
 
                 {/* ── 同步选项（两侧共用）── */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <Separator />
-                    <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">同步选项 · 两侧共用</span>
-                  </div>
+                <div className="space-y-4 rounded-xl border border-border/60 bg-card/40 p-4">
+                  <div className="text-sm font-medium">同步设置</div>
                   {/* 开关区：集中放一起 */}
                   <FieldGroup>
                     <Field label="启用定时同步" description="按下方间隔自动全量同步">
@@ -1618,13 +1606,13 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                         onChange={(v) => set('trakt', 'sse_enabled', v)}
                       />
                     </Field>
-                    <Field label="同步方向 → Plex" description="Trakt 已看标记到 Plex">
+                    <Field label="同步方向 → Plex" description="将 Trakt 观看状态同步至 Plex">
                       <Toggle
                         value={(cfg?.trakt as Record<string, unknown>)?.sync_to_plex as boolean | undefined}
                         onChange={(v) => set('trakt', 'sync_to_plex', v)}
                       />
                     </Field>
-                    <Field label="同步方向 → Trakt" description="Plex 已看/正在看记录到 Trakt">
+                    <Field label="同步方向 → Trakt" description="将 Plex 观看记录同步至 Trakt">
                       <Toggle
                         value={(cfg?.trakt as Record<string, unknown>)?.sync_to_trakt as boolean | undefined}
                         onChange={(v) => set('trakt', 'sync_to_trakt', v)}
@@ -1643,7 +1631,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                         max={604800}
                       />
                     </Field>
-                    <Field label="正在看轮询间隔" description="秒；SSE 关闭或断开时的同步轮询周期">
+                    <Field label="会话轮询间隔" description="秒；SSE 未连接时生效，用于检测播放进度">
                       <NumberInput
                         value={(cfg?.trakt as Record<string, unknown>)?.session_poll_seconds as number | undefined ?? 45}
                         onChange={(v) => set('trakt', 'session_poll_seconds', v)}

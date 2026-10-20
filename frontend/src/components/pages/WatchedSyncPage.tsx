@@ -207,11 +207,11 @@ function RunItems({ runId, running, onToast }: {
   }, [runId, running])
 
   if (error) return <p className="px-3 py-2 text-xs text-destructive">明细加载失败：{error}</p>
-  if (!items) return <p className="px-3 py-2 text-xs text-muted-foreground">加载中...</p>
+  if (!items) return <p className="px-3 py-2 text-xs text-muted-foreground">加载中…</p>
   if (items.length === 0) {
     return (
       <p className="px-3 py-2 text-xs text-muted-foreground">
-        {running ? '正在枚举两侧观看状态，稍后这里会逐条显示同步内容…' : '无逐条明细（本轮无变更，或仅统计未记录）'}
+        {running ? '正在比对两侧观看状态，明细将逐条显示…' : '无逐条明细（本轮无变更）'}
       </p>
     )
   }
@@ -221,7 +221,7 @@ function RunItems({ runId, running, onToast }: {
       {running && (
         <div className="flex items-center gap-2 border-b border-border/40 bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground">
           <Loader2 className="size-3 animate-spin text-primary" />
-          同步进行中，已处理 {items.length} 条（Trakt 侧按批提交，明细会一批约 100 条地出现）
+          同步进行中，已处理 {items.length} 条；Trakt 按批次提交，明细按批显示
         </div>
       )}
       <table className="w-full text-left text-xs">
@@ -304,7 +304,7 @@ function IgnoreTab({ onToast }: { onToast?: (type: 'success' | 'error', title: s
     }
   }
 
-  if (!data) return <p className="py-6 text-center text-xs text-muted-foreground">加载中...</p>
+  if (!data) return <p className="py-6 text-center text-xs text-muted-foreground">加载中…</p>
 
   return (
     <div className="space-y-6">
@@ -313,7 +313,7 @@ function IgnoreTab({ onToast }: { onToast?: (type: 'success' | 'error', title: s
         <div className="mb-2 flex items-center gap-2 text-[13px] font-medium">
           <AlertCircle className="size-3.5 text-warning" />
           反复同步失败的媒体
-          <span className="text-[11px] font-normal text-muted-foreground">近 7 天失败 ≥2 次；持续失败多为 Trakt 侧缺该媒体的 TMDB 映射，建议忽略止损</span>
+          <span className="text-[11px] font-normal text-muted-foreground">近 7 天失败 ≥2 次；持续失败通常为 Trakt 缺少该媒体的 TMDB 映射，可选择忽略</span>
         </div>
         {data.candidates.length === 0 ? (
           <p className="rounded-lg border border-border/50 px-4 py-5 text-center text-xs text-muted-foreground">
@@ -471,7 +471,7 @@ export default function WatchedSyncPage(props: WatchedSyncPageProps) {
     return (
       <div className="flex flex-col gap-5">
         <h1 className="text-2xl font-bold leading-tight sm:text-[34px]">Trakt 同步</h1>
-        <StatePanel title="正在加载" description="Trakt 同步状态加载中..." />
+        <StatePanel title="正在加载" description="Trakt 同步状态加载中…" />
       </div>
     )
   }
@@ -481,11 +481,11 @@ export default function WatchedSyncPage(props: WatchedSyncPageProps) {
       <PageHeader
         kicker="Trakt Sync"
         title="Trakt 同步"
-        description="Trakt 与 Plex 观看状态双向同步的运行历史与逐条明细：同步了什么内容、往哪个方向、结果如何。配对与同步选项在「配置 → 观看同步」设置。"
+        description="观看状态双向同步的运行记录与逐条明细，含时间、方向与结果。配对与同步设置在「配置 → 观看同步」。"
         actions={
           <Button onClick={handleSync} disabled={syncing || running || !ready} className="rounded-full">
             {running ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-            {running ? '同步中...' : '立即同步'}
+            {running ? '同步中…' : '立即同步'}
           </Button>
         }
       />
