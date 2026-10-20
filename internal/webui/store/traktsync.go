@@ -90,6 +90,15 @@ CREATE TABLE IF NOT EXISTS sync_meta (
 	key   TEXT PRIMARY KEY,
 	value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS sync_ignores (
+	media_type TEXT NOT NULL,             -- movie | tv（媒体级：整部电影/整部剧）
+	tmdb_id    INTEGER NOT NULL,
+	title      TEXT,                      -- 忽略时快照，列表展示用
+	reason     TEXT,                      -- 触发忽略的错误（如 Trakt 无法识别 tmdb id）
+	created_at TEXT NOT NULL,
+	PRIMARY KEY (media_type, tmdb_id)
+);
 `
 
 // TraktSyncStore 观看同步同步状态存储（独立 traktsync.db）。
@@ -660,4 +669,121 @@ func (s *TraktSyncStore) TraktPushedAt() (int64, error) {
 		return 0, nil
 	}
 	return strconv.ParseInt(v, 10, 64)
+}
+
+// ── sync_ignores（手动忽略清单）──────────────────────────────
+
+// TraktSyncIgnore 一条忽略记录（媒体级：整部电影/整部剧）。
+type TraktSyncIgnore struct {
+	MediaType string
+	TmdbID    int64
+	Title     *string
+	Reason    *string
+	CreatedAt string
+}
+
+// AddSyncIgnore 添加/更新媒体级忽略（upsert，重复添加仅刷新标题与原因）。
+func (s *TraktSyncStore) AddSyncIgnore(mediaType string, tmdbID int64, title, reason string) error {
+	var titleArg, reasonArg any
+	if title != "" {
+		titleArg = title
+	}
+	if reason != "" {
+		reasonArg = reason
+	}
+	_, err := s.db.Exec(`INSERT INTO sync_ignores(media_type, tmdb_id, title, reason, created_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(media_type, tmdb_id) DO UPDATE SET title = excluded.title, reason = excluded.reason`,
+		mediaType, tmdbID, titleArg, reasonArg, traktSyncNow())
+	return err
+}
+
+// RemoveSyncIgnore 解除忽略，媒体重新参与同步。
+func (s *TraktSyncStore) RemoveSyncIgnore(mediaType string, tmdbID int64) error {
+	_, err := s.db.Exec("DELETE FROM sync_ignores WHERE media_type = ? AND tmdb_id = ?", mediaType, tmdbID)
+	return err
+}
+
+// ListSyncIgnores 全部忽略记录（新→旧）。
+func (s *TraktSyncStore) ListSyncIgnores() []TraktSyncIgnore {
+	rows, err := s.db.Query("SELECT media_type, tmdb_id, title, reason, created_at FROM sync_ignores ORDER BY created_at DESC")
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := []TraktSyncIgnore{}
+	for rows.Next() {
+		var it TraktSyncIgnore
+		if err := rows.Scan(&it.MediaType, &it.TmdbID, &it.Title, &it.Reason, &it.CreatedAt); err != nil {
+			return nil
+		}
+		out = append(out, it)
+	}
+	return out
+}
+
+// AllIgnores 忽略清单的引擎视图：媒体级 MediaKey（Season/Episode 为零）集合。
+// 实现 syncengine.IgnoreProvider。
+func (s *TraktSyncStore) AllIgnores() (map[watched.MediaKey]bool, error) {
+	rows, err := s.db.Query("SELECT media_type, tmdb_id FROM sync_ignores")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[watched.MediaKey]bool{}
+	for rows.Next() {
+		var k watched.MediaKey
+		if err := rows.Scan(&k.Type, &k.TMDBID); err != nil {
+			return nil, err
+		}
+		out[k] = true
+	}
+	return out, rows.Err()
+}
+
+// IsIgnoredMedia 媒体是否被忽略（实时推送等非引擎路径使用）。
+func (s *TraktSyncStore) IsIgnoredMedia(mediaType string, tmdbID int64) bool {
+	var one int
+	return s.db.QueryRow("SELECT 1 FROM sync_ignores WHERE media_type = ? AND tmdb_id = ?", mediaType, tmdbID).Scan(&one) == nil
+}
+
+// TraktFailingMedia 反复同步失败的媒体聚合（忽略候选）。
+type TraktFailingMedia struct {
+	MediaType string
+	TmdbID    int64
+	Title     *string
+	Fails     int
+	LastError *string
+	LastAt    string
+}
+
+// FailingMediaCandidates 近 days 天失败 ≥2 次且未被忽略的媒体，按失败次数降序——
+// 持续失败多为 Trakt 侧数据缺映射（tmdb id 无法识别），建议用户手动忽略。
+func (s *TraktSyncStore) FailingMediaCandidates(days int) []TraktFailingMedia {
+	cutoff := time.Now().AddDate(0, 0, -days).UTC().Format("2006-01-02T15:04:05.000000-07:00")
+	rows, err := s.db.Query(`
+		SELECT ri.media_type, ri.tmdb_id, MAX(ri.title), COUNT(*), MAX(ri.error), MAX(r.started_at)
+		FROM sync_run_items ri
+		JOIN sync_runs r ON r.id = ri.run_id
+		WHERE ri.success = 0 AND ri.media_type IS NOT NULL AND ri.tmdb_id IS NOT NULL
+			AND r.started_at >= ?
+			AND NOT EXISTS (SELECT 1 FROM sync_ignores ig
+				WHERE ig.media_type = ri.media_type AND ig.tmdb_id = ri.tmdb_id)
+		GROUP BY ri.media_type, ri.tmdb_id
+		HAVING COUNT(*) >= 2
+		ORDER BY COUNT(*) DESC
+		LIMIT 50`, cutoff)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := []TraktFailingMedia{}
+	for rows.Next() {
+		var c TraktFailingMedia
+		if err := rows.Scan(&c.MediaType, &c.TmdbID, &c.Title, &c.Fails, &c.LastError, &c.LastAt); err != nil {
+			return nil
+		}
+		out = append(out, c)
+	}
+	return out
 }

@@ -784,6 +784,96 @@ func handleTraktSyncRunItems(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": list})
 }
 
+// ── 忽略清单（Trakt 无法识别等持续失败媒体的手动止损）────────
+
+// traktMediaTitle 查媒体展示标题（tmdb_media 缓存优先，回退 library_media）。
+func traktMediaTitle(mediaType string, tmdbID int64) string {
+	libStore := RT().GetLibraryStore()
+	if libStore == nil {
+		return ""
+	}
+	if row := libStore.GetTmdbEntry(mediaType, tmdbID); row != nil && row.Title != "" {
+		return row.Title
+	}
+	return libStore.GetMediaTitle(mediaType, tmdbID)
+}
+
+// handleTraktSyncIgnores GET /api/trakt/sync/ignores：忽略清单 + 反复失败候选。
+func handleTraktSyncIgnores(w http.ResponseWriter, _ *http.Request) {
+	syncStore := RT().GetTraktSyncStore()
+	if syncStore == nil {
+		writeJSONError(w, http.StatusInternalServerError, "观看同步存储不可用")
+		return
+	}
+	ignores := make([]map[string]any, 0)
+	for _, it := range syncStore.ListSyncIgnores() {
+		ignores = append(ignores, map[string]any{
+			"media_type": it.MediaType, "tmdb_id": it.TmdbID,
+			"title": it.Title, "reason": it.Reason, "created_at": it.CreatedAt,
+		})
+	}
+	candidates := make([]map[string]any, 0)
+	for _, c := range syncStore.FailingMediaCandidates(7) {
+		title := ""
+		if c.Title != nil {
+			title = *c.Title
+		}
+		if title == "" {
+			title = traktMediaTitle(c.MediaType, c.TmdbID)
+		}
+		candidates = append(candidates, map[string]any{
+			"media_type": c.MediaType, "tmdb_id": c.TmdbID, "title": title,
+			"fails": c.Fails, "last_error": c.LastError, "last_at": c.LastAt,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ignores": ignores, "candidates": candidates})
+}
+
+// handleTraktSyncIgnoreSet POST /api/trakt/sync/ignore
+// {action: "add"|"remove", media_type, tmdb_id, reason?}。
+func handleTraktSyncIgnoreSet(w http.ResponseWriter, r *http.Request) {
+	syncStore := RT().GetTraktSyncStore()
+	if syncStore == nil {
+		writeJSONError(w, http.StatusInternalServerError, "观看同步存储不可用")
+		return
+	}
+	var req struct {
+		Action    string `json:"action"`
+		MediaType string `json:"media_type"`
+		TmdbID    int64  `json:"tmdb_id"`
+		Reason    string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "请求体格式错误")
+		return
+	}
+	if (req.MediaType != "movie" && req.MediaType != "tv") || req.TmdbID <= 0 {
+		writeJSONError(w, http.StatusBadRequest, "media_type 须为 movie/tv 且 tmdb_id 有效")
+		return
+	}
+	switch req.Action {
+	case "add":
+		title := traktMediaTitle(req.MediaType, req.TmdbID)
+		if err := syncStore.AddSyncIgnore(req.MediaType, req.TmdbID, title, req.Reason); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("保存忽略失败：%v", err))
+			return
+		}
+		appLog("trakt", "ignore_added", "INFO",
+			fmt.Sprintf("已忽略媒体 %s:%d（两侧均不再同步）", req.MediaType, req.TmdbID), nil)
+		writeJSON(w, http.StatusOK, map[string]any{"message": "已忽略，该媒体将不再参与同步"})
+	case "remove":
+		if err := syncStore.RemoveSyncIgnore(req.MediaType, req.TmdbID); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("解除忽略失败：%v", err))
+			return
+		}
+		appLog("trakt", "ignore_removed", "INFO",
+			fmt.Sprintf("已解除忽略 %s:%d，下轮同步自动纳入", req.MediaType, req.TmdbID), nil)
+		writeJSON(w, http.StatusOK, map[string]any{"message": "已恢复，下轮同步自动纳入"})
+	default:
+		writeJSONError(w, http.StatusBadRequest, "action 须为 add 或 remove")
+	}
+}
+
 // enrichRunItemTitles 就地为明细补充媒体标题（原位覆盖 Title）。
 // 优先 tmdb_media 缓存（含剧名/译名），回退 library_media；两者都只读。
 // unresolved 明细在记录时已带播放端标题，不覆盖。
@@ -939,6 +1029,10 @@ func tryPushWatchedSession(syncStore *store.TraktSyncStore, traktClient *trakt.C
 		return false
 	}
 	if !RT().GetConfig().Trakt.SyncToTrakt {
+		return false
+	}
+	// 已忽略的媒体不参与同步（含实时推送），静默跳过不落记录
+	if syncStore.IsIgnoredMedia(key.Type, key.TMDBID) {
 		return false
 	}
 	shadow, hasShadow, _ := syncStore.GetShadow(key)

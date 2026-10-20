@@ -513,3 +513,99 @@ func TestOAuthEndpointsUseAuthHost(t *testing.T) {
 		t.Fatalf("激活页默认值应为 auth.trakt.tv/activate，实际 %s", DefaultVerificationURL)
 	}
 }
+
+// TestNotFoundShowLevelAttribution 整剧未匹配：只连坐该剧的键，同批他剧按成功。
+func TestNotFoundShowLevelAttribution(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"added":     map[string]int{"episodes": 2},
+			"not_found": map[string]any{"shows": []any{map[string]any{"ids": map[string]any{"tmdb": 329623}}}},
+		})
+	})
+	c := newTestClient(t, handler)
+	c.token = testToken()
+
+	source := NewTraktSource(c)
+	ops := []watched.WatchOp{}
+	for ep := 1; ep <= 12; ep++ {
+		ops = append(ops, watched.WatchOp{Key: watched.MediaKey{Type: "tv", TMDBID: 329623, Season: 1, Episode: ep}})
+	}
+	ops = append(ops,
+		watched.WatchOp{Key: watched.MediaKey{Type: "tv", TMDBID: 999, Season: 1, Episode: 1}},
+		watched.WatchOp{Key: watched.MediaKey{Type: "tv", TMDBID: 999, Season: 1, Episode: 2}})
+	results := source.MarkWatched(context.Background(), ops)
+	failed, ok := 0, 0
+	for _, res := range results {
+		if res.Key.TMDBID == 329623 {
+			if res.OK {
+				t.Fatalf("未收录剧的键应失败：%+v", res)
+			}
+			if want := "Trakt 未收录该剧（tmdb 329623 无映射）"; res.Err != want {
+				t.Fatalf("错误说明不符：%q", res.Err)
+			}
+			failed++
+		} else if res.Key.TMDBID == 999 {
+			if !res.OK {
+				t.Fatalf("同批已匹配的他剧键应成功：%+v", res)
+			}
+			ok++
+		}
+	}
+	if failed != 12 || ok != 2 {
+		t.Fatalf("归因数量不符：failed=%d ok=%d", failed, ok)
+	}
+}
+
+// TestNotFoundEpisodeLevelAttribution 单集级未匹配：仅该集失败，同剧其余成功。
+func TestNotFoundEpisodeLevelAttribution(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"added": map[string]int{"episodes": 2},
+			"not_found": map[string]any{"episodes": []any{
+				map[string]any{"ids": map[string]any{"tmdb": 500}, "season": 1, "number": 5},
+			}},
+		})
+	})
+	c := newTestClient(t, handler)
+	c.token = testToken()
+
+	source := NewTraktSource(c)
+	ops := []watched.WatchOp{
+		{Key: watched.MediaKey{Type: "tv", TMDBID: 500, Season: 1, Episode: 4}},
+		{Key: watched.MediaKey{Type: "tv", TMDBID: 500, Season: 1, Episode: 5}},
+		{Key: watched.MediaKey{Type: "tv", TMDBID: 500, Season: 1, Episode: 6}},
+	}
+	results := source.MarkWatched(context.Background(), ops)
+	for _, res := range results {
+		if res.Key.Episode == 5 {
+			if res.OK || res.Err != "Trakt 未收录该集 S01E05（tmdb 500）" {
+				t.Fatalf("未收录集应失败且说明带集号：%+v", res)
+			}
+		} else if !res.OK {
+			t.Fatalf("同剧其余集应成功：%+v", res)
+		}
+	}
+}
+
+// TestNotFoundUnknownShapeFallsBackWholeChunk 未知 not_found 形态：回退整批失败。
+func TestNotFoundUnknownShapeFallsBackWholeChunk(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"added":     map[string]int{"episodes": 0},
+			"not_found": "weird-shape", // 非对象非数组的异常形态
+		})
+	})
+	c := newTestClient(t, handler)
+	c.token = testToken()
+
+	source := NewTraktSource(c)
+	results := source.MarkWatched(context.Background(), []watched.WatchOp{
+		{Key: watched.MediaKey{Type: "tv", TMDBID: 500, Season: 1, Episode: 1}},
+		{Key: watched.MediaKey{Type: "tv", TMDBID: 501, Season: 1, Episode: 1}},
+	})
+	for _, res := range results {
+		if res.OK {
+			t.Fatalf("未知形态应整批保守失败：%+v", res)
+		}
+	}
+}

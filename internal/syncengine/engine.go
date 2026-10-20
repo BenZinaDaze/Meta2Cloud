@@ -79,6 +79,13 @@ type ShadowStore interface {
 	TraktPushedAt() (int64, error)
 }
 
+// IgnoreProvider 可选的忽略清单能力（媒体级）：被忽略的媒体两侧均不参与同步，
+// 状态记录保持不动，恢复忽略后自动重新检测变化。TraktSyncStore 实现；
+// 测试桩可不实现（视为无忽略）。
+type IgnoreProvider interface {
+	AllIgnores() (map[watched.MediaKey]bool, error)
+}
+
 // traktStaleMargin Trakt 数据时间戳与本端写入时刻的比较容差（秒），
 // 吸收两侧时钟偏差。
 const traktStaleMargin = 120
@@ -232,6 +239,20 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 		keys[k] = struct{}{}
 	}
 
+	// 媒体级忽略清单：被忽略的媒体本轮完全跳过（不比对、不写入、状态记录
+	// 保持原值），恢复忽略后按原状态记录重新检测变化。典型场景：Trakt 侧
+	// 缺该媒体的 tmdb 映射，写入永远 not_found，用户手动忽略止损。
+	if ip, ok := e.Store.(IgnoreProvider); ok {
+		if set, err := ip.AllIgnores(); err == nil && len(set) > 0 {
+			for k := range keys {
+				if set[watched.MediaKey{Type: k.Type, TMDBID: k.TMDBID}] {
+					delete(keys, k)
+					summary.Skipped++
+				}
+			}
+		}
+	}
+
 	var plans []writePlan
 	for key := range keys {
 		p := playbackMap[key]
@@ -331,6 +352,7 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 		for _, res := range results {
 			byKey[res.Key] = res
 		}
+		failed, firstKey, firstErr := 0, "", ""
 		for _, p := range items {
 			res := byKey[p.key]
 			outcome := sideOutcome{side: side, ok: res.OK, desired: p.desired, at: p.at}
@@ -349,9 +371,10 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 			})
 			if !res.OK {
 				failedKeys[p.key] = true
-				e.log("WARNING", fmt.Sprintf("观看同步写入 %s 失败：%s", p.key, res.Err), map[string]any{
-					"key": p.key.String(), "side": side, "action": action,
-				})
+				if failed == 0 {
+					firstKey, firstErr = p.key.String(), res.Err
+				}
+				failed++
 				continue
 			}
 			if side == "trakt" {
@@ -360,6 +383,14 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 			} else {
 				summary.ToPlex++
 			}
+		}
+		// 失败日志聚合成每侧一条：逐键明细已完整落库（同步记录页可查），
+		// 大批量失败（如 Trakt 缺整部剧的 tmdb 映射）不再逐条刷日志
+		if failed > 0 {
+			e.log("WARNING", fmt.Sprintf("观看同步写入 %s 侧失败 %d 条，下轮重试；示例 %s：%s（明细见同步记录）",
+				side, failed, firstKey, firstErr), map[string]any{
+				"side": side, "failed": failed,
+			})
 		}
 	}
 	var traktPlans, plexPlans []writePlan

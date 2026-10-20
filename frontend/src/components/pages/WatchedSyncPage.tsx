@@ -11,16 +11,21 @@ import {
   Loader2,
   Tv,
   Film,
+  Ban,
+  Undo2,
 } from 'lucide-react'
 import {
   getWatchedSyncStatus,
   triggerWatchedSync,
   listWatchedSyncRuns,
   getWatchedSyncRunItems,
+  getWatchedSyncIgnores,
+  setWatchedSyncIgnore,
 } from '@/api'
 import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import PageHeader from '@/components/shared/PageHeader'
 import { relativeTime } from '@/lib/time'
 
@@ -68,6 +73,23 @@ interface WatchedSyncStatus {
   sse_enabled?: boolean
   sse_connected?: boolean
   last_run: WatchedSyncRun | null
+}
+
+interface WatchedSyncIgnore {
+  media_type: string
+  tmdb_id: number
+  title: string | null
+  reason: string | null
+  created_at: string
+}
+
+interface WatchedFailingMedia {
+  media_type: string
+  tmdb_id: number
+  title: string
+  fails: number
+  last_error: string | null
+  last_at: string
 }
 
 const TRIGGER_LABELS: Record<string, string> = {
@@ -120,7 +142,45 @@ function itemDisplayName(item: WatchedSyncRunItem): string {
   return title
 }
 
-function RunItems({ runId, running }: { runId: number; running: boolean }) {
+// 明细失败行上的快捷忽略按钮（媒体级，加完即生效，下轮同步起排除）。
+function IgnoreItemButton({ mediaType, tmdbId, reason, onToast }: {
+  mediaType: string
+  tmdbId: number
+  reason: string
+  onToast?: (type: 'success' | 'error', title: string, message?: string) => void
+}) {
+  const [busy, setBusy] = useState(false)
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true)
+        try {
+          const res = await setWatchedSyncIgnore({ action: 'add', media_type: mediaType, tmdb_id: tmdbId, reason })
+          onToast?.('success', '已忽略', res.data?.message || '该媒体将不再参与同步')
+        } catch (e) {
+          const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+          onToast?.('error', '忽略失败', detail || (e as Error).message)
+        } finally {
+          setBusy(false)
+        }
+      }}
+      className="h-6 shrink-0 gap-1 rounded-full px-2 text-[11px] text-muted-foreground"
+      title="忽略这部媒体（两侧不再同步，可在「忽略列表」恢复）"
+    >
+      {busy ? <Loader2 className="size-3 animate-spin" /> : <Ban className="size-3" />}
+      忽略
+    </Button>
+  )
+}
+
+function RunItems({ runId, running, onToast }: {
+  runId: number
+  running: boolean
+  onToast?: (type: 'success' | 'error', title: string, message?: string) => void
+}) {
   const [items, setItems] = useState<WatchedSyncRunItem[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -192,8 +252,14 @@ function RunItems({ runId, running }: { runId: number; running: boolean }) {
                   {it.success ? (
                     <span className="inline-flex items-center gap-1 text-success"><CheckCircle className="size-3" />成功</span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 text-destructive" title={it.error || ''}>
-                      <AlertCircle className="size-3" />{it.error || '失败'}
+                    <span className="flex items-center gap-2">
+                      <span className="inline-flex min-w-0 items-center gap-1 text-destructive" title={it.error || ''}>
+                        <AlertCircle className="size-3 shrink-0" />
+                        <span className="truncate">{it.error || '失败'}</span>
+                      </span>
+                      {it.media_type && it.tmdb_id && (
+                        <IgnoreItemButton mediaType={it.media_type} tmdbId={it.tmdb_id} reason={it.error || ''} onToast={onToast} />
+                      )}
                     </span>
                   )}
                 </td>
@@ -202,6 +268,127 @@ function RunItems({ runId, running }: { runId: number; running: boolean }) {
           })}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// 忽略列表 tab：反复失败的候选（一键忽略）+ 已忽略媒体（可恢复）。
+// 忽略是媒体级的——整部电影/整部剧两侧均不再参与同步，恢复后下轮自动纳入。
+function IgnoreTab({ onToast }: { onToast?: (type: 'success' | 'error', title: string, message?: string) => void }) {
+  const [data, setData] = useState<{ ignores: WatchedSyncIgnore[]; candidates: WatchedFailingMedia[] } | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    try {
+      const res = await getWatchedSyncIgnores()
+      setData({ ignores: res.data?.ignores || [], candidates: res.data?.candidates || [] })
+    } catch { /* 静默，下次操作后刷新 */ }
+  }, [])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const act = async (action: 'add' | 'remove', mediaType: string, tmdbId: number, reason?: string) => {
+    const key = `${mediaType}:${tmdbId}`
+    setBusy(key)
+    try {
+      const res = await setWatchedSyncIgnore({ action, media_type: mediaType, tmdb_id: tmdbId, reason })
+      onToast?.('success', action === 'add' ? '已忽略' : '已恢复', res.data?.message)
+      await load()
+    } catch (e) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      onToast?.('error', '操作失败', detail || (e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (!data) return <p className="py-6 text-center text-xs text-muted-foreground">加载中...</p>
+
+  return (
+    <div className="space-y-6">
+      {/* 候选区：近 7 天失败 ≥2 次且未忽略的媒体 */}
+      <div>
+        <div className="mb-2 flex items-center gap-2 text-[13px] font-medium">
+          <AlertCircle className="size-3.5 text-warning" />
+          反复同步失败的媒体
+          <span className="text-[11px] font-normal text-muted-foreground">近 7 天失败 ≥2 次；持续失败多为 Trakt 侧缺该媒体的 TMDB 映射，建议忽略止损</span>
+        </div>
+        {data.candidates.length === 0 ? (
+          <p className="rounded-lg border border-border/50 px-4 py-5 text-center text-xs text-muted-foreground">
+            没有反复失败的媒体
+          </p>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border/60">
+            {data.candidates.map((c) => {
+              const key = `${c.media_type}:${c.tmdb_id}`
+              return (
+                <div key={key} className="flex items-center gap-3 border-b border-border/40 px-4 py-2.5 last:border-b-0">
+                  <DirectionIcon mediaType={c.media_type} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm">{c.title || `TMDB ${c.tmdb_id}`}</div>
+                    <div className="truncate text-[11px] text-muted-foreground" title={c.last_error || ''}>
+                      失败 {c.fails} 次 · {c.last_error || '未知原因'} · 最近 {relativeTime(c.last_at)}
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busy === key}
+                    onClick={() => act('add', c.media_type, c.tmdb_id, c.last_error || '')}
+                    className="shrink-0 rounded-full"
+                  >
+                    {busy === key ? <Loader2 className="size-3.5 animate-spin" /> : <Ban className="size-3.5" />}
+                    忽略
+                  </Button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 已忽略区 */}
+      <div>
+        <div className="mb-2 flex items-center gap-2 text-[13px] font-medium">
+          <Ban className="size-3.5 text-muted-foreground" />
+          已忽略的媒体
+          <span className="text-[11px] font-normal text-muted-foreground">两侧均不参与同步；恢复后下轮同步自动纳入</span>
+        </div>
+        {data.ignores.length === 0 ? (
+          <p className="rounded-lg border border-border/50 px-4 py-5 text-center text-xs text-muted-foreground">
+            暂无忽略的媒体
+          </p>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border/60">
+            {data.ignores.map((it) => {
+              const key = `${it.media_type}:${it.tmdb_id}`
+              return (
+                <div key={key} className="flex items-center gap-3 border-b border-border/40 px-4 py-2.5 last:border-b-0">
+                  <DirectionIcon mediaType={it.media_type} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm">{it.title || `TMDB ${it.tmdb_id}`}</div>
+                    <div className="truncate text-[11px] text-muted-foreground" title={it.reason || ''}>
+                      {it.reason ? `${it.reason} · ` : ''}忽略于 {relativeTime(it.created_at)}
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busy === key}
+                    onClick={() => act('remove', it.media_type, it.tmdb_id)}
+                    className="shrink-0 rounded-full"
+                  >
+                    {busy === key ? <Loader2 className="size-3.5 animate-spin" /> : <Undo2 className="size-3.5" />}
+                    恢复
+                  </Button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -381,6 +568,12 @@ export default function WatchedSyncPage(props: WatchedSyncPageProps) {
         </div>
       )}
 
+      <Tabs defaultValue="runs">
+        <TabsList className="h-auto gap-1 bg-card/40 p-1">
+          <TabsTrigger value="runs" className="rounded-full px-4">同步记录</TabsTrigger>
+          <TabsTrigger value="ignore" className="rounded-full px-4">忽略列表</TabsTrigger>
+        </TabsList>
+        <TabsContent value="runs" className="mt-4">
       <div className="overflow-hidden rounded-xl border border-border/60 bg-card/50">
         <table className="w-full text-left text-sm">
           <thead className="bg-muted/40 text-xs text-muted-foreground">
@@ -449,7 +642,7 @@ export default function WatchedSyncPage(props: WatchedSyncPageProps) {
                   {expanded && (
                     <tr className="border-t border-border/40 bg-muted/20">
                       <td colSpan={9} className="px-4 py-3">
-                        <RunItems runId={run.id} running={run.finished_at == null} />
+                        <RunItems runId={run.id} running={run.finished_at == null} onToast={props.onToast} />
                       </td>
                     </tr>
                   )}
@@ -483,6 +676,11 @@ export default function WatchedSyncPage(props: WatchedSyncPageProps) {
           </Button>
         </div>
       )}
+        </TabsContent>
+        <TabsContent value="ignore" className="mt-4">
+          <IgnoreTab onToast={props.onToast} />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

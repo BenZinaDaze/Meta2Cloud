@@ -466,10 +466,22 @@ type HistoryEpisode struct {
 	WatchedAt  time.Time
 }
 
+// NotFoundEntry not_found 中一条未匹配条目，归一化到本地键语义。
+// Season/Episode 为 -1 表示整部媒体（或整季）缺失。
+type NotFoundEntry struct {
+	MediaType string // "movie" | "tv"
+	TmdbID    int64  // 电影自身 / 剧集所属剧的 tmdb id；0=响应未回带（仅块内单一剧时可归因）
+	Season    int
+	Episode   int
+}
+
 // HistoryResult 一次 /sync/history[/remove] 的结果。
 type HistoryResult struct {
 	Count         int // added/deleted 的电影+集总数（0 不代表失败，可能 already_exists）
 	NotFoundCount int // 未匹配条目数；>0 时调用方应视本批为部分失败（状态记录不更新，下轮重试）
+	// NotFound 解析后的未匹配清单，供调用方精确归因到具体键；
+	// 响应形态无法可靠解析时为 nil（NotFoundCount 仍为保守值，调用方整批按失败处理）
+	NotFound []NotFoundEntry
 }
 
 // AddHistory 批量记录已看（单次 POST；调用方按 ≤100 集/请求分块）。
@@ -518,8 +530,72 @@ func (c *Client) postHistory(path string, movies []HistoryMovie, episodes []Hist
 	for _, m := range raw.Deleted {
 		result.Count += m
 	}
-	result.NotFoundCount = countNotFound(raw.NotFound)
+	if entries := parseNotFound(raw.NotFound); entries != nil {
+		result.NotFound = entries
+		result.NotFoundCount = len(entries)
+	} else {
+		result.NotFoundCount = countNotFound(raw.NotFound) // 未知形态：保守计数
+	}
 	return result, nil
+}
+
+// parseNotFound 把 not_found 解析为结构化清单（现行对象形态；电影/剧/季/集
+// 四类条目都带 ids.tmdb，季用 number、集用 season+number 标识）。
+// 返回 nil 表示形态无法可靠解析（空对象返回空清单而非 nil）。
+func parseNotFound(raw json.RawMessage) []NotFoundEntry {
+	if len(raw) == 0 || string(raw) == "null" {
+		return []NotFoundEntry{}
+	}
+	var obj map[string][]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil // 旧版扁平形态无法归因到键，交由保守路径
+	}
+	var out []NotFoundEntry
+	for kind, list := range obj {
+		for _, item := range list {
+			var e struct {
+				IDs struct {
+					TMDB int64 `json:"tmdb"`
+				} `json:"ids"`
+				Number *int `json:"number"`
+				Season *int `json:"season"`
+			}
+			if err := json.Unmarshal(item, &e); err != nil {
+				return nil
+			}
+			entry := NotFoundEntry{Season: -1, Episode: -1}
+			switch kind {
+			case "movies":
+				entry.MediaType = "movie"
+				entry.TmdbID = e.IDs.TMDB
+			case "shows":
+				entry.MediaType = "tv"
+				entry.TmdbID = e.IDs.TMDB
+			case "seasons":
+				entry.MediaType = "tv"
+				entry.TmdbID = e.IDs.TMDB
+				if e.Number != nil {
+					entry.Season = *e.Number
+				} else if e.Season != nil {
+					entry.Season = *e.Season
+				}
+				if entry.Season < 0 {
+					return nil
+				}
+			case "episodes":
+				entry.MediaType = "tv"
+				entry.TmdbID = e.IDs.TMDB // 嵌套载荷可能不回带：留 0 待调用方按单一剧归因
+				if e.Season == nil || e.Number == nil {
+					return nil
+				}
+				entry.Season, entry.Episode = *e.Season, *e.Number
+			default:
+				return nil // 未知分组：无法归因
+			}
+			out = append(out, entry)
+		}
+	}
+	return out
 }
 
 // countNotFound 统计 not_found 条目数（对象/数组两形态都覆盖）。

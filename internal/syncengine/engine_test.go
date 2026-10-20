@@ -3,6 +3,7 @@ package syncengine
 import (
 	"context"
 	"testing"
+	"time"
 
 	"meta2cloud/internal/watched"
 )
@@ -94,6 +95,11 @@ type fakeStore struct {
 	runs        []RunSummary
 	runItems    []RunItem
 	traktPushed int64
+	ignores     map[watched.MediaKey]bool // 媒体级忽略（nil=未启用该能力）
+}
+
+func (s *fakeStore) AllIgnores() (map[watched.MediaKey]bool, error) {
+	return s.ignores, nil
 }
 
 func newFakeStore() *fakeStore { return &fakeStore{items: map[watched.MediaKey]Shadow{}} }
@@ -593,5 +599,54 @@ func TestSummaryCountsLogged(t *testing.T) {
 	}
 	if len(store.runItems) != 1 || store.runItems[0].Direction != "to_trakt" {
 		t.Fatalf("run 明细缺失或不符：%+v", store.runItems)
+	}
+}
+
+// TestIgnoredMediaSkipped 媒体级忽略：两侧均不写入、计入跳过、状态记录不动；
+// 解除忽略后自动重新检测并同步。
+func TestIgnoredMediaSkipped(t *testing.T) {
+	plex, trakt := newFakeProvider("plex"), newFakeProvider("trakt")
+	store := newFakeStore()
+	ep1 := watched.MediaKey{Type: "tv", TMDBID: 329623, Season: 1, Episode: 1}
+	ep5 := watched.MediaKey{Type: "tv", TMDBID: 329623, Season: 1, Episode: 5}
+	plex.setWatched(ep1, 1700000000, 1)
+
+	// 首跑建立基线（ep1 写入 Trakt）
+	e := newEngine(plex, trakt, store, true, true)
+	if _, err := e.Run(context.Background(), "test"); err != nil {
+		t.Fatalf("基线 Run 出错：%v", err)
+	}
+
+	// 媒体级忽略整部剧：新看的 ep5 不再传播到 Trakt
+	store.ignores = map[watched.MediaKey]bool{{Type: "tv", TMDBID: 329623}: true}
+	plex.setWatched(ep5, 1700009000, 1)
+	summary, err := e.Run(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("Run 出错：%v", err)
+	}
+	if summary.ToTrakt != 0 || summary.ToPlex != 0 {
+		t.Fatalf("被忽略媒体不应产生写入：%+v", summary)
+	}
+	if summary.Skipped != 2 {
+		t.Fatalf("被忽略媒体的两把键都应计入跳过：%+v", summary)
+	}
+	if n := len(store.runItems); n != 1 { // 仅首跑的那一条
+		t.Fatalf("被忽略媒体不应新增明细，应仍为 1 条：%d", n)
+	}
+	if st := trakt.state[ep5]; st.Present && st.Watched {
+		t.Fatal("Trakt 侧不应被写入")
+	}
+
+	// 解除忽略：ep5 无状态记录 → 并集路径重新写入
+	// （首跑已记 traktPushed，给桩一个新鲜时间戳避免被判过期读取）
+	store.ignores = nil
+	fresh := time.Now().Add(time.Hour).Unix()
+	trakt.stampMovies, trakt.stampShows = fresh, fresh
+	summary, err = e.Run(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("恢复 Run 出错：%v", err)
+	}
+	if summary.ToTrakt != 1 {
+		t.Fatalf("恢复忽略后应重新同步：%+v", summary)
 	}
 }

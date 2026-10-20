@@ -153,6 +153,8 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("POST /api/trakt/sync", handleTraktSyncTrigger)
 	m.HandleFunc("GET /api/trakt/sync/runs", handleTraktSyncRuns)
 	m.HandleFunc("GET /api/trakt/sync/runs/{runID}/items", handleTraktSyncRunItems)
+	m.HandleFunc("GET /api/trakt/sync/ignores", handleTraktSyncIgnores)
+	m.HandleFunc("POST /api/trakt/sync/ignore", handleTraktSyncIgnoreSet)
 
 	// logs / ingest
 	m.HandleFunc("GET /api/logs", handleGetLogs)

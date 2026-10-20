@@ -154,6 +154,13 @@ export const listWatchedSyncRuns = (params?: { limit?: number; offset?: number }
   api.get('/trakt/sync/runs', { params })
 export const getWatchedSyncRunItems = (runId: number | string, params?: { limit?: number }) =>
   api.get(`/trakt/sync/runs/${runId}/items`, { params })
+export const getWatchedSyncIgnores = () => api.get('/trakt/sync/ignores')
+export const setWatchedSyncIgnore = (data: {
+  action: 'add' | 'remove'
+  media_type: string
+  tmdb_id: number
+  reason?: string
+}) => api.post('/trakt/sync/ignore', data)
 
 // ── 其他 ──
 export const getLogs = (params?: { limit?: number; offset?: number }) =>

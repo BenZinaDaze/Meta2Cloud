@@ -223,13 +223,13 @@ func TestRecordSessionPushRunAndFilter(t *testing.T) {
 	runningID, _ := s.StartSyncRun("manual") // 尚无明细：不应显示
 
 	if err := s.RecordSessionPushRun("sse", syncengine.RunItem{
-		Key: watched.MediaKey{Type: "tv", TMDBID: 9, Season: 1, Episode: 2},
+		Key:   watched.MediaKey{Type: "tv", TMDBID: 9, Season: 1, Episode: 2},
 		Title: "剧 S01E02", Direction: "to_trakt", Action: "watched",
 	}, 0.98, true, ""); err != nil {
 		t.Fatalf("RecordSessionPushRun 成功记录出错：%v", err)
 	}
 	if err := s.RecordSessionPushRun("poll", syncengine.RunItem{
-		Key: watched.MediaKey{Type: "movie", TMDBID: 8},
+		Key:   watched.MediaKey{Type: "movie", TMDBID: 8},
 		Title: "片", Direction: "to_trakt", Action: "watched",
 	}, 0.9, false, "Trakt 写入失败：boom"); err != nil {
 		t.Fatalf("RecordSessionPushRun 失败记录出错：%v", err)
@@ -242,7 +242,7 @@ func TestRecordSessionPushRunAndFilter(t *testing.T) {
 	}
 	// 落下首条明细后（仍在进行中）即出现——「同步一条显示一条」
 	if err := s.InsertRunItem(runningID, syncengine.RunItem{
-		Key: watched.MediaKey{Type: "tv", TMDBID: 7, Season: 1, Episode: 1},
+		Key:   watched.MediaKey{Type: "tv", TMDBID: 7, Season: 1, Episode: 1},
 		Title: "另一剧 S01E01", Direction: "to_trakt", Action: "watched", Success: true,
 	}); err != nil {
 		t.Fatalf("InsertRunItem 出错：%v", err)
@@ -292,14 +292,14 @@ func TestRepairSessionPushItems(t *testing.T) {
 	_, _ = s.db.Exec(`UPDATE sync_runs SET finished_at = ?, to_trakt = 1, title = '剧 S01E01' WHERE id = ?`,
 		traktSyncNow(), runID)
 	_ = s.InsertRunItem(runID, syncengine.RunItem{
-		Key: watched.MediaKey{Type: "tv", TMDBID: 5, Season: 1, Episode: 1},
+		Key:   watched.MediaKey{Type: "tv", TMDBID: 5, Season: 1, Episode: 1},
 		Title: "剧 S01E01", Direction: "to_trakt", Action: "watched", Success: false,
 	})
 	failID, _ := s.StartSyncRun("poll")
 	_, _ = s.db.Exec(`UPDATE sync_runs SET finished_at = ?, to_trakt = 0, error = 'Trakt 写入失败：boom' WHERE id = ?`,
 		traktSyncNow(), failID)
 	_ = s.InsertRunItem(failID, syncengine.RunItem{
-		Key: watched.MediaKey{Type: "tv", TMDBID: 6, Season: 1, Episode: 1},
+		Key:   watched.MediaKey{Type: "tv", TMDBID: 6, Season: 1, Episode: 1},
 		Title: "剧 S01E02", Direction: "to_trakt", Action: "watched", Success: false,
 		Err: "Trakt 写入失败：boom",
 	})
@@ -311,5 +311,66 @@ func TestRepairSessionPushItems(t *testing.T) {
 	}
 	if items, _ := s.ListRunItems(failID, 10); len(items) != 1 || items[0].Success {
 		t.Fatalf("失败 run 的明细应保持 success=false：%+v", items)
+	}
+}
+
+// TestSyncIgnoresRoundTrip 忽略清单增删查 + 引擎视图 + 候选聚合（排除已忽略）。
+func TestSyncIgnoresRoundTrip(t *testing.T) {
+	s := openTestTraktSyncStore(t)
+
+	// 造两条失败明细（同媒体两集，跨两次 run）与一条成功
+	run1, _ := s.StartSyncRun("schedule")
+	run2, _ := s.StartSyncRun("schedule")
+	for _, run := range []int64{run1, run2} {
+		_ = s.InsertRunItem(run, syncengine.RunItem{
+			Key:   watched.MediaKey{Type: "tv", TMDBID: 329623, Season: 1, Episode: 5},
+			Title: "剧 A S01E05", Direction: "to_trakt", Action: "watched",
+			Success: false, Err: "Trakt 返回 1 条未匹配（tmdb id 无法识别）",
+		})
+	}
+	_ = s.InsertRunItem(run2, syncengine.RunItem{
+		Key:   watched.MediaKey{Type: "tv", TMDBID: 329623, Season: 1, Episode: 6},
+		Title: "剧 A S01E06", Direction: "to_trakt", Action: "watched",
+		Success: false, Err: "Trakt 返回 1 条未匹配（tmdb id 无法识别）",
+	})
+	_ = s.FinishSyncRun(run1, syncengine.RunSummary{})
+	_ = s.FinishSyncRun(run2, syncengine.RunSummary{})
+
+	// 候选：该媒体失败 3 次
+	cands := s.FailingMediaCandidates(7)
+	if len(cands) != 1 || cands[0].MediaType != "tv" || cands[0].TmdbID != 329623 || cands[0].Fails != 3 {
+		t.Fatalf("候选聚合不符：%+v", cands)
+	}
+
+	// 忽略后：候选排除、引擎视图命中、单集键被媒体级覆盖
+	if err := s.AddSyncIgnore("tv", 329623, "剧 A", "tmdb id 无法识别"); err != nil {
+		t.Fatalf("AddSyncIgnore：%v", err)
+	}
+	if cands := s.FailingMediaCandidates(7); len(cands) != 0 {
+		t.Fatalf("已忽略媒体不应再出现在候选：%+v", cands)
+	}
+	if !s.IsIgnoredMedia("tv", 329623) {
+		t.Fatal("IsIgnoredMedia 应命中")
+	}
+	set, err := s.AllIgnores()
+	if err != nil || len(set) != 1 {
+		t.Fatalf("AllIgnores 不符：n=%d err=%v", len(set), err)
+	}
+	if !set[watched.MediaKey{Type: "tv", TMDBID: 329623}] {
+		t.Fatal("引擎视图应含媒体级键")
+	}
+	if got := s.ListSyncIgnores(); len(got) != 1 || got[0].Title == nil || *got[0].Title != "剧 A" {
+		t.Fatalf("ListSyncIgnores 不符：%+v", got)
+	}
+
+	// 解除忽略
+	if err := s.RemoveSyncIgnore("tv", 329623); err != nil {
+		t.Fatalf("RemoveSyncIgnore：%v", err)
+	}
+	if s.IsIgnoredMedia("tv", 329623) || len(s.ListSyncIgnores()) != 0 {
+		t.Fatal("解除后应为空")
+	}
+	if cands := s.FailingMediaCandidates(7); len(cands) != 1 {
+		t.Fatalf("解除后候选应恢复：%+v", cands)
 	}
 }

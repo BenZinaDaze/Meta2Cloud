@@ -100,6 +100,67 @@ func (s *TraktSource) MarkUnwatched(ctx context.Context, keys []watched.MediaKey
 	return s.apply(s.Client.RemoveHistory, ops, false)
 }
 
+// notFoundFailedKeys 把 not_found 清单归因到块内的具体键，返回 键→错误说明。
+// entries 为 nil、存在无法归因的条目（未回带 id 且块内不止一部剧、或对不上
+// 任何键）时返回 ok=false，调用方回退整批失败的保守策略。
+func notFoundFailedKeys(chunk []watched.WatchOp, entries []NotFoundEntry) (map[watched.MediaKey]string, bool) {
+	if entries == nil {
+		return nil, false
+	}
+	inChunk := map[watched.MediaKey]bool{}
+	showIDs := map[int64]bool{}
+	for _, op := range chunk {
+		inChunk[op.Key] = true
+		if op.Key.Type == "tv" {
+			showIDs[op.Key.TMDBID] = true
+		}
+	}
+	var loneShow int64
+	if len(showIDs) == 1 {
+		for id := range showIDs {
+			loneShow = id
+		}
+	}
+	failed := map[watched.MediaKey]string{}
+	for _, e := range entries {
+		if e.TmdbID == 0 {
+			if loneShow == 0 {
+				return nil, false
+			}
+			e.TmdbID = loneShow
+		}
+		hit := false
+		for k := range inChunk {
+			if k.Type != e.MediaType || k.TMDBID != e.TmdbID {
+				continue
+			}
+			switch {
+			case e.Season < 0:
+				if e.MediaType == "movie" {
+					failed[k] = fmt.Sprintf("Trakt 未收录该电影（tmdb %d 无映射）", e.TmdbID)
+				} else {
+					failed[k] = fmt.Sprintf("Trakt 未收录该剧（tmdb %d 无映射）", e.TmdbID)
+				}
+				hit = true
+			case e.Episode < 0:
+				if k.Season == e.Season {
+					failed[k] = fmt.Sprintf("Trakt 未收录该剧第 %d 季（tmdb %d）", e.Season, e.TmdbID)
+					hit = true
+				}
+			default:
+				if k.Season == e.Season && k.Episode == e.Episode {
+					failed[k] = fmt.Sprintf("Trakt 未收录该集 S%02dE%02d（tmdb %d）", e.Season, e.Episode, e.TmdbID)
+					hit = true
+				}
+			}
+		}
+		if !hit {
+			return nil, false
+		}
+	}
+	return failed, true
+}
+
 type historyFunc func(movies []HistoryMovie, episodes []HistoryEpisode) (*HistoryResult, error)
 
 func (s *TraktSource) apply(fn historyFunc, ops []watched.WatchOp, requireAdded bool) []watched.OpResult {
@@ -138,9 +199,28 @@ func (s *TraktSource) apply(fn historyFunc, ops []watched.WatchOp, requireAdded 
 			continue
 		}
 		if result.NotFoundCount > 0 {
-			msg := fmt.Sprintf("Trakt 返回 %d 条未匹配（tmdb id 无法识别），本批将下轮重试", result.NotFoundCount)
+			// 精确归因：not_found 只连坐真正未匹配的键，同批已匹配的按成功
+			// 推进（Trakt 逐条独立处理，未匹配之外的条目已实际写入）。
+			// 无法归因（形态未知/对不上键）时回退整批失败的保守策略。
+			failedMsgs, ok := notFoundFailedKeys(chunk, result.NotFound)
+			if !ok {
+				msg := fmt.Sprintf("Trakt 返回 %d 条未匹配（tmdb id 无法识别），本批将下轮重试", result.NotFoundCount)
+				for _, op := range chunk {
+					results = append(results, watched.OpResult{Key: op.Key, OK: false, Err: msg})
+				}
+				continue
+			}
 			for _, op := range chunk {
-				results = append(results, watched.OpResult{Key: op.Key, OK: false, Err: msg})
+				if msg, bad := failedMsgs[op.Key]; bad {
+					results = append(results, watched.OpResult{Key: op.Key, OK: false, Err: msg})
+					continue
+				}
+				if requireAdded && result.Count == 0 {
+					results = append(results, watched.OpResult{Key: op.Key, OK: false,
+						Err: "Trakt 返回 added=0（写入未被接受），本批将下轮重试"})
+					continue
+				}
+				results = append(results, watched.OpResult{Key: op.Key, OK: true})
 			}
 			continue
 		}
