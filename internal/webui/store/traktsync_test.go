@@ -266,4 +266,50 @@ func TestRecordSessionPushRunAndFilter(t *testing.T) {
 			t.Fatal("零变化 run 不应出现在列表")
 		}
 	}
+	// 明细的 success 必须与推送结果一致（v2.4.1 缺陷：成功明细误写为失败）
+	var sseID, pollID int64
+	for _, r := range runs {
+		switch r.Trigger {
+		case "sse":
+			sseID = r.ID
+		case "poll":
+			pollID = r.ID
+		}
+	}
+	if items, _ := s.ListRunItems(sseID, 10); len(items) != 1 || !items[0].Success || items[0].Error != nil {
+		t.Fatalf("成功推送的明细应为 success=true 且无错误：%+v", items)
+	}
+	if items, _ := s.ListRunItems(pollID, 10); len(items) != 1 || items[0].Success || items[0].Error == nil {
+		t.Fatalf("失败推送的明细应为 success=false 且带原因：%+v", items)
+	}
+}
+
+// TestRepairSessionPushItems v2.4.1 写坏的成功明细（success=0 无错误）启动时回填。
+func TestRepairSessionPushItems(t *testing.T) {
+	s := openTestTraktSyncStore(t)
+	// 模拟缺陷现场：run 级成功，明细 success 误为 0
+	runID, _ := s.StartSyncRun("sse")
+	_, _ = s.db.Exec(`UPDATE sync_runs SET finished_at = ?, to_trakt = 1, title = '剧 S01E01' WHERE id = ?`,
+		traktSyncNow(), runID)
+	_ = s.InsertRunItem(runID, syncengine.RunItem{
+		Key: watched.MediaKey{Type: "tv", TMDBID: 5, Season: 1, Episode: 1},
+		Title: "剧 S01E01", Direction: "to_trakt", Action: "watched", Success: false,
+	})
+	failID, _ := s.StartSyncRun("poll")
+	_, _ = s.db.Exec(`UPDATE sync_runs SET finished_at = ?, to_trakt = 0, error = 'Trakt 写入失败：boom' WHERE id = ?`,
+		traktSyncNow(), failID)
+	_ = s.InsertRunItem(failID, syncengine.RunItem{
+		Key: watched.MediaKey{Type: "tv", TMDBID: 6, Season: 1, Episode: 1},
+		Title: "剧 S01E02", Direction: "to_trakt", Action: "watched", Success: false,
+		Err: "Trakt 写入失败：boom",
+	})
+
+	s.repairSessionPushItems()
+
+	if items, _ := s.ListRunItems(runID, 10); len(items) != 1 || !items[0].Success {
+		t.Fatalf("成功 run 的明细应被回填为 success=true：%+v", items)
+	}
+	if items, _ := s.ListRunItems(failID, 10); len(items) != 1 || items[0].Success {
+		t.Fatalf("失败 run 的明细应保持 success=false：%+v", items)
+	}
 }

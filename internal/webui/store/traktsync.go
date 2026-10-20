@@ -127,6 +127,7 @@ func OpenTraktSyncStore(dbPath string) (*TraktSyncStore, error) {
 	s := &TraktSyncStore{db: db}
 	s.failStaleRunningRuns()
 	s.purgeLegacySentinelRuns()
+	s.repairSessionPushItems()
 	return s, nil
 }
 
@@ -349,6 +350,15 @@ func (s *TraktSyncStore) purgeLegacySentinelRuns() {
 	}
 }
 
+// repairSessionPushItems 修正 v2.4.1 的记录缺陷：实时推送（sse/poll）成功时
+// 明细的 success 误写为 0，页面点开后显示为无原因的「失败」。按 run 级
+// 成功标志（to_trakt=1 且无错误）回填明细；幂等，修复后新数据不再命中。
+func (s *TraktSyncStore) repairSessionPushItems() {
+	_, _ = s.db.Exec(`UPDATE sync_run_items SET success = 1
+		WHERE run_id IN (SELECT id FROM sync_runs
+			WHERE trigger_type IN ('sse', 'poll') AND error IS NULL AND to_trakt = 1)`)
+}
+
 // TraktSyncRun 一次同步 run 的统计（对外载荷）。
 // Title/Progress 仅实时推送（sse/poll）记录使用：单条推送的媒体与进度。
 type TraktSyncRun struct {
@@ -435,6 +445,7 @@ func (s *TraktSyncStore) RecordSessionPushRun(source string, item syncengine.Run
 	if err != nil {
 		return err
 	}
+	item.Success = success
 	if !success && item.Err == "" {
 		item.Err = errMsg
 	}
