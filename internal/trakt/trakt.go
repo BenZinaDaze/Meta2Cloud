@@ -671,43 +671,6 @@ func sortInts(nums []int) {
 
 // ── 用户与连通性 ────────────────────────────────────────────
 
-// LastActivities 拉取观看数据的最后活动时间（unix 秒）。
-// 返回 movies 与 shows（含集，取 shows/episodes 两者的最大值）两个时间戳，
-// 官方用途：同步前比较，避免拉取尚未更新的数据。
-func (c *Client) LastActivities() (movies, shows int64, err error) {
-	var raw struct {
-		All    string `json:"all"`
-		Movies struct {
-			WatchedAt string `json:"watched_at"`
-		} `json:"movies"`
-		Shows struct {
-			WatchedAt string `json:"watched_at"`
-		} `json:"shows"`
-		Episodes struct {
-			WatchedAt string `json:"watched_at"`
-		} `json:"episodes"`
-	}
-	if err := c.getAuthed("/sync/last_activities", &raw); err != nil {
-		return 0, 0, err
-	}
-	p := func(s string) int64 {
-		if t, e := time.Parse(time.RFC3339, s); e == nil {
-			return t.Unix()
-		}
-		return 0
-	}
-	movies = p(raw.Movies.WatchedAt)
-	shows = max64i(p(raw.Shows.WatchedAt), p(raw.Episodes.WatchedAt))
-	return movies, shows, nil
-}
-
-func max64i(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 // Me 验证 token 有效性并返回当前用户名。
 func (c *Client) Me() (string, error) {
 	var raw struct {

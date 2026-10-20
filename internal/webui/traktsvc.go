@@ -679,7 +679,6 @@ func traktSyncStatusPayload() map[string]any {
 		"session_watcher_alive":  watcherAlive(traktSessionWatcher),
 		"sse_enabled":            cfg.Trakt.SSEEnabled,
 		"sse_connected":          sseConnected(),
-		"activity_watcher_alive": watcherAlive(traktActivityWatcher),
 		"last_polled_at":         traktWatcher.lastPolledAt,
 		"last_poll_error":        traktWatcher.lastPollError,
 		"last_session_polled_at": traktSessionWatcher.lastPolledAt,
@@ -1284,102 +1283,6 @@ func sleepWatcher(w *watcherState, d time.Duration) bool {
 	}
 }
 
-// ── Trakt 反向准实时（last_activities 提前触发）─────────────
-
-// traktActivityCheckSeconds last_activities 检查间隔。
-const traktActivityCheckSeconds = 120
-
-func maxI64(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-// checkTraktActivityOnce 轻查 Trakt 数据时间戳：有变化（且非本端刚写入造成）
-// 即提前触发全量同步，不必等 900s 定时。
-func checkTraktActivityOnce() {
-	cfg := RT().GetConfig()
-	if !cfg.IsTraktReady() {
-		return
-	}
-	traktClient := RT().GetTraktClient()
-	syncStore := RT().GetTraktSyncStore()
-	if traktClient == nil || syncStore == nil {
-		return
-	}
-	if TraktSyncRunning() {
-		return
-	}
-	movies, shows, err := traktClient.LastActivities()
-	if err != nil {
-		msg := fmt.Sprintf("%v", err)
-		traktActivityWatcher.mu.Lock()
-		traktActivityWatcher.lastPollError = &msg
-		traktActivityWatcher.mu.Unlock()
-		return
-	}
-	stamp := maxI64(movies, shows)
-	if stamp <= 0 {
-		return
-	}
-	seenStr := syncStore.GetMeta("trakt.activity_seen")
-	if seenStr == "" {
-		// 首次检查仅记录基线，不触发（避免每次重启都自动跑一轮）
-		_ = syncStore.SetMeta("trakt.activity_seen", strconv.FormatInt(stamp, 10))
-		return
-	}
-	seen, _ := strconv.ParseInt(seenStr, 10, 64)
-	if stamp == seen {
-		return
-	}
-	// 抑制回环：变化若由本端刚完成的推送造成，等价内容已记录在同步状态里，消费戳即可
-	if pushed, _ := syncStore.TraktPushedAt(); time.Now().Unix()-pushed < 180 {
-		_ = syncStore.SetMeta("trakt.activity_seen", strconv.FormatInt(stamp, 10))
-		return
-	}
-	// 单飞被拒（已有同步在跑）则不消费戳，下个 tick 重新触发——
-	// 变化可能落在运行中同步的枚举之后，漏消费要等下一轮定时才被捞回
-	if TriggerTraktSync("activity") {
-		_ = syncStore.SetMeta("trakt.activity_seen", strconv.FormatInt(stamp, 10))
-		appLog("trakt", "activity_triggered", "INFO", "检测到 Trakt 侧数据变化，提前触发同步", map[string]any{
-			"stamp": stamp, "seen": seen,
-		})
-	}
-}
-
-// ensureTraktActivityLoop 启动 Trakt 数据变化探测（幂等）。
-func ensureTraktActivityLoop() {
-	traktActivityOnce.Do(func() {
-		go func() {
-			log.Printf("Trakt 数据变化探测线程已启动")
-			for {
-				func() {
-					defer func() {
-						if r := recover(); r != nil {
-							msg := fmt.Sprintf("%v", r)
-							traktActivityWatcher.mu.Lock()
-							traktActivityWatcher.lastPollError = &msg
-							traktActivityWatcher.mu.Unlock()
-						}
-					}()
-					nowStr := utcNowISO()
-					traktActivityWatcher.mu.Lock()
-					traktActivityWatcher.lastPolledAt = &nowStr
-					traktActivityWatcher.mu.Unlock()
-					checkTraktActivityOnce()
-				}()
-				select {
-				case <-traktActivityWatcher.stopCh:
-					log.Printf("Trakt 数据变化探测线程已停止")
-					return
-				case <-time.After(traktActivityCheckSeconds * time.Second):
-				}
-			}
-		}()
-	})
-}
-
 // resolveSessionKey 会话身份解析：状态记录快路径 → 会话行缓存 → Plex 详情补解析。
 func resolveSessionKey(store *store.TraktSyncStore, source *plexserver.Source, sess *plexserver.Metadata) (watched.MediaKey, bool) {
 	if shadow, ok, _ := store.GetShadowByPlexRef(sess.RatingKey); ok && shadow.Key.TMDBID > 0 {
@@ -1396,14 +1299,12 @@ func resolveSessionKey(store *store.TraktSyncStore, source *plexserver.Source, s
 // ── 后台轮询循环 ───────────────────────────────────────────
 
 var (
-	traktWatcher         = &watcherState{stopCh: make(chan struct{})}
-	traktSessionWatcher  = &watcherState{stopCh: make(chan struct{})}
-	traktSSEWatcher      = &watcherState{stopCh: make(chan struct{})}
-	traktActivityWatcher = &watcherState{stopCh: make(chan struct{})}
-	traktOnce            sync.Once
-	traktSessionOnce     sync.Once
-	traktSSEOnce         sync.Once
-	traktActivityOnce    sync.Once
+	traktWatcher        = &watcherState{stopCh: make(chan struct{})}
+	traktSessionWatcher = &watcherState{stopCh: make(chan struct{})}
+	traktSSEWatcher     = &watcherState{stopCh: make(chan struct{})}
+	traktOnce           sync.Once
+	traktSessionOnce    sync.Once
+	traktSSEOnce        sync.Once
 )
 
 // ensureTraktSyncLoop 启动观看同步定时循环（幂等；sync_interval_seconds < 60 时空转等待）。

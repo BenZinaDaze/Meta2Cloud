@@ -320,36 +320,6 @@ func TestRateLimitCooldown(t *testing.T) {
 	}
 }
 
-func TestLastActivities(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/sync/last_activities" {
-			t.Fatalf("意外路径：%s", r.URL.Path)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"all":      "2023-11-15T20:00:00.000Z",
-			"movies":   map[string]any{"watched_at": "2023-11-14T10:00:00.000Z"},
-			"shows":    map[string]any{"watched_at": "2023-11-15T08:00:00.000Z"},
-			"episodes": map[string]any{"watched_at": "2023-11-15T12:00:00.000Z"},
-		})
-	})
-	c := newTestClient(t, handler)
-	c.token = testToken()
-
-	movies, shows, err := c.LastActivities()
-	if err != nil {
-		t.Fatalf("LastActivities 出错：%v", err)
-	}
-	// movies = movies.watched_at；shows = max(shows.watched_at, episodes.watched_at)
-	if want := time.Date(2023, 11, 14, 10, 0, 0, 0, time.UTC).Unix(); movies != want {
-		t.Fatalf("movies 时间不符：%d != %d", movies, want)
-	}
-	if want := time.Date(2023, 11, 15, 12, 0, 0, 0, time.UTC).Unix(); shows != want {
-		t.Fatalf("shows 时间应取 episodes 较大值：%d != %d", shows, want)
-	}
-}
-
-// TestListAllShowLevelEntriesViaProgress 剧级聚合条目（如 Trakt 官方 Plex 集成
-// 写入的记录，watched 列表无 seasons 明细）必须经 progress/watched 还原出逐集状态。
 func TestListAllShowLevelEntriesViaProgress(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /sync/watched/movies", func(w http.ResponseWriter, r *http.Request) {
