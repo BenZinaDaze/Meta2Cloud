@@ -1,114 +1,148 @@
 # ─────────────────────────────────────────────────────────
+# Meta2Cloud 主配置模板
+#
+# 首次启动会自动生成默认 config.yaml / parser-rules.yaml / categories.yaml
+# （WebUI 初始随机密码打印在启动日志），无需手动创建本文件。
+# 所有配置均可在 Web UI「配置」页修改，此文件仅作持久化与高级自定义。
+# ─────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────
 # WebUI 认证设置
 # ─────────────────────────────────────────────────────────
 webui:
-  # 登录用户名（留空则使用系统默认值）
-  username: ""
+  # 登录用户名（默认 admin）
+  username: "admin"
 
-  # 登录密码（必填，留空则任何人都可以访问——非常不安全）
+  # 登录密码（留空则无法登录；首次启动自动生成随机初始密码，见启动日志）
   password: ""
 
   # JWT 签名密钥（留空则自动生成并保存到 config/data/.jwt_secret）
   # 生产环境可指定固定密钥，确保重启后现有 token 仍有效
   secret_key: ""
 
-  # Token 有效期（小时），默认 24 小时
+  # Token 有效期（小时），范围 1–8760，默认 24
   token_expire_hours: 24
 
-  # /trigger 端点的 Webhook 密钥（留空则不校验，适合内网部署）
-  # rclone 通知时需在请求头 X-Webhook-Secret 中携带此密钥
+  # /trigger webhook 端点的密钥（留空则不校验，适合内网部署）
+  # 调用时在请求头 X-Webhook-Secret 中携带
   webhook_secret: ""
 
-  # 日志保留天数
-  # 日志按天写入 config/data/logs/YYYY-MM-DD.jsonl，超过保留天数的旧文件会自动清理
+  # 日志保留天数（范围 1–365，默认 7）
+  # 日志按天写入 config/data/logs/YYYY-MM-DD.jsonl，超期自动清理
   log_retention_days: 7
 
 # ─────────────────────────────────────────────────────────
-# 存储后端设置
+# 存储后端
 # ─────────────────────────────────────────────────────────
 storage:
-  # 主流程使用的存储 Provider
-  # 当前支持 pan115
-  # pipeline.py / organizer 会使用此 Provider 进行文件整理
-  # 也可以通过 CLI 参数 --storage 覆盖
+  # 当前仅支持 pan115（115 网盘）
   primary: "pan115"
-
-# Meta2Cloud 配置文件
 
 # ─────────────────────────────────────────────────────────
 # TMDB 设置
 # ─────────────────────────────────────────────────────────
 tmdb:
-  # TMDB v3 API Key（必填）
-  # 申请地址：https://www.themoviedb.org/settings/api
+  # TMDB v3 API Key（必填；免费申请：https://www.themoviedb.org/settings/api）
   api_key: ""
 
-  # 返回语言，IETF 语言标签
-  # 常用：zh-CN（简体中文）、zh-TW、en-US、ja-JP
+  # 返回语言（IETF 语言标签），常用：zh-CN / zh-TW / en-US / ja-JP
   language: "zh-CN"
 
   # HTTP 代理（可选），示例：http://proxy-host:port
   proxy: ""
 
-  # 请求超时（秒）
+  # 请求超时（秒），范围 1–120，默认 10
   timeout: 10
 
   # TMDB 图片代理根域名（可选）
-  # 只填根域名，不要带 /t/p；留空则使用默认 https://image.tmdb.org
+  # 只填根域名，不要带 /t/p；留空使用默认 https://image.tmdb.org
   image_base_url: ""
 
-# 文件名识别规则已独立到同目录的 parser-rules.yaml
-# 请复制 config/parser-rules.example.yaml 为 parser-rules.yaml 后单独维护
+# ─────────────────────────────────────────────────────────
+# 115 网盘设置
+# ─────────────────────────────────────────────────────────
+u115:
+  # 开放平台应用 Client ID
+  # 内置默认应用，可直接扫码授权；如需换成自己的应用再填写
+  client_id: ""
+
+  # OAuth token 持久化路径（扫码授权成功后自动写入，自动续期）
+  token_json: "config/115-token.json"
+
+  # 设备会话持久化路径（自动维护，一般无需改动）
+  session_json: "config/115-device-session.json"
+
+  # 115 网页 Cookie（可选）
+  # 用于分享转存等 Web 接口的补充认证；配置页可测试有效性
+  cookie: ""
+
+  # 云下载目录（整理的扫描源）
+  # 填网盘根目录起算的目录名（WebUI 目录选择器直选），也可填目录 ID
+  download_folder_id: ""
+
+  # 媒体库根目录（整理的目标）
+  # 不能与云下载目录相同，否则一键整理会误扫描媒体库
+  root_folder_id: ""
+
+  # 云下载完成后自动整理（默认 false，可在 WebUI 云下载页开启）
+  auto_organize_enabled: false
+
+  # 自动整理轮询间隔（秒），范围 10–600，默认 45
+  auto_organize_poll_seconds: 45
+
+  # 判定下载完成需保持稳定的秒数（范围 0–600，默认 30）
+  auto_organize_stable_seconds: 30
+
+  # 全项目共享的 115 请求 QPS 上限（范围 1–10，默认 3）
+  # 115 开放平台 QPS 限制为 3，调高易触发 429 风控冷却
+  qps: 3
 
 # ─────────────────────────────────────────────────────────
-# 流水线设置（pipeline.py）
+# 整理流水线设置
 # ─────────────────────────────────────────────────────────
 pipeline:
-  # 是否跳过 TMDB 查询（True = 只整理文件夹，不生成 NFO）
+  # 跳过 TMDB 查询，直接按识别结果整理目录（不匹配中文译名）
   skip_tmdb: false
 
-  # TMDB 找不到元数据时是否仍然移动文件
-  # True  = 找不到也继续移动（不生成 NFO）
-  # False = 找不到则跳过该文件
+  # TMDB 找不到元数据时是否仍移动文件
+  # true  = 找不到也继续移动；false = 跳过该文件
   move_on_tmdb_miss: false
 
-  # 替换同名视频（移除的文件可在回收站恢复）
+  # 替换目标目录中的同名视频（被替换文件可在网盘回收站恢复）
   replace_existing_video: false
 
-  # 重复目录自动合并
-  # TMDB 译名变更可能产生同一媒体的多个目录；开启后整理时自动把
-  # 其它目录的文件并入首次整理的目录（整理名称页可见），腾空后进回收站。
-  # True = 自动合并（默认）；False = 保留重复目录
+  # 同一媒体存在多个目录（历史译名差异）时，自动合并进首次整理的目录
+  # （整理名称页可见），腾空后原目录进回收站；默认开启
   merge_duplicate_folders: true
 
 # ─────────────────────────────────────────────────────────
 # 字幕整理设置
 # ─────────────────────────────────────────────────────────
 subtitle:
-  # 是否整理字幕文件（.srt / .ass / .ssa）
-  # True  = 字幕文件自动跟随视频移动到目标目录
-  # False = 跳过字幕整理
+  # 字幕（.srt / .ass / .ssa）自动跟随视频移动
   enabled: true
+
+# ─────────────────────────────────────────────────────────
+# RSS 订阅设置
+# ─────────────────────────────────────────────────────────
+rss:
+  # 订阅轮询间隔（秒），范围 10–3600，默认 300
+  poll_seconds: 300
 
 # ─────────────────────────────────────────────────────────
 # Telegram 通知设置（可选）
 # ─────────────────────────────────────────────────────────
 telegram:
   # Bot Token，从 @BotFather 获取
-  # 示例：your-bot-token
   bot_token: ""
 
-  # 接收通知的 Chat ID（个人账号或群组）
-  # 获取方式：给 bot 发一条消息后访问
-  # https://api.telegram.org/bot<your-bot-token>/getUpdates
-  # 找 "chat": {"id": ...}
+  # 接收通知的 Chat ID（给 bot 发消息后访问
+  # https://api.telegram.org/bot<token>/getUpdates，找 "chat": {"id": ...}）
   chat_id: ""
 
-  # 防抖延时（秒）：server.py 收到 /trigger 后等待该时间才真正运行 Pipeline
-  # 等待期间若再次收到触发，计时器重置（相当于"最后一次触发后再等 N 秒"）
-  # 作用：批量入库时多集合并成一条 TG 通知，而不是每集发一次
-  # 推荐：60（1 分钟），set 0 关闭防抖（立即触发，旧行为）
-  debounce_seconds: 60
+  # 防抖延时（秒），范围 0–600，默认 0
+  # 等待期间再次触发会重置计时，批量整理合并为一条通知
+  debounce_seconds: 0
 
 # ─────────────────────────────────────────────────────────
 # MediaVault 集成（可选）
@@ -117,66 +151,104 @@ mediavault:
   # 整理成功入库后，触发 MediaVault 目录监控
   enabled: false
 
-  # 接口协议
-  # 可选值：http / https
+  # 接口协议：http / https
   scheme: "http"
 
-  # MediaVault 地址
-  # 只填主机或主机:端口，不要带 http:// 或 https://
+  # MediaVault 地址，只填主机或主机:端口，不带 http:// 前缀
   host: ""
 
   # MediaVault API Key
   api_key: ""
 
-  # 可选：传给 MediaVault 的 source_dir
-  # 留空则使用 MediaVault 默认目录
+  # 可选：传给 MediaVault 的 source_dir，留空用其默认目录
   source_dir: ""
 
-  # 请求超时（秒）
+  # 请求超时（秒），范围 1–120，默认 10
   timeout: 10
+
+# ─────────────────────────────────────────────────────────
+# STRM 直链播放设置
+# ─────────────────────────────────────────────────────────
+# 生成本地 .strm 文件镜像网盘目录，播放时 302 跳转 115 直链。
+# 授权/开启等常规操作在 WebUI「STRM 同步」页完成。
+strm:
+  enabled: false
+
+  # 播放器能访问到 Meta2Cloud 的地址（支持域名/反代；省略协议自动补 http://）
+  url_base: ""
+
+  # 直链签名密钥（可选，防未授权调用；配置页可一键随机生成）
+  url_secret: ""
+
+  # 定时增量同步间隔（秒）；0 = 关闭定时，仅整理入库后与手动触发
+  sync_interval_seconds: 0
+
+  # 收集的视频扩展名（默认与播放器识别范围对齐）
+  media_ext: ["mp4", "mkv", "avi", "mov", "wmv", "flv", "ts", "m2ts", "webm", "rmvb", "rm", "mpg", "mpeg", "vob", "iso", "3gp"]
+
+  # 同步时是否下载伴随文件（默认仅外挂字幕，海报等交由媒体服务器刮削）
+  fetch_sidecar: true
+
+  # 伴随文件扩展名（默认仅字幕）
+  sidecar_ext: ["srt", "ass", "ssa"]
+
+  # 网盘目录 → 本地输出目录映射（可多条）
+  # pan_folder_id 填网盘目录（目录名或 ID）；local_path 在 Docker 中须为容器内路径
+  mappings: []
+  #  - pan_folder_id: "媒体库"
+  #    local_path: "/media/strm"
 
 # ─────────────────────────────────────────────────────────
 # 观看同步：Trakt ↔ Plex 双向同步（可选）
 # ─────────────────────────────────────────────────────────
-# WebUI「配置 → 观看同步」页可完成全部配对与选项设置。
+# WebUI「Trakt 同步」页可完成 Trakt 设备码授权与 Plex PIN 配对，无需手改本节。
 # 说明：
 #   - Trakt 已看记录 → Plex 标记已看；Plex 已看/正在看（≥80% 进度）→ 记录到 Trakt
-#   - 首次同步会合并两侧已看记录（并集），之后按增量双向同步；
-#     同一媒体两侧状态冲突时以 Trakt 为准（Trakt 记录更全更权威）
+#   - 首次同步合并两侧已看记录（并集），之后按增量双向同步；
+#     同一媒体两侧状态冲突时以 Trakt 为准
 #   - 身份以 TMDB ID 为锚：优先使用 Plex 条目的 tmdb:// GUID，
-#     否则按 Meta2Cloud 组织目录名（Title (Year)）反查
+#     否则按整理目录名（Title (Year)）反查
 trakt:
   # 是否启用定时同步
   enabled: false
 
-  # Trakt 应用凭证（https://trakt.tv/oauth/applications 创建应用后获取）
-  # 创建建议：类型任选，Redirect URI 填 http://localhost（授权走设备码流程，不发生回调）
-  # Trakt 为 PKCE 模式，无需 Client Secret
+  # Trakt 应用 Client ID（https://trakt.tv/oauth/applications 创建应用后获取）
+  # Trakt 为 PKCE 模式，无需 Client Secret；Redirect URI 填 http://localhost 即可
   client_id: ""
 
   # 授权 token 持久化路径（设备码配对成功后自动写入，90 天自动续期）
   token_json: "config/trakt-token.json"
 
-  # 双向全量同步间隔（秒）；<60 视为关闭定时同步，仅手动触发
+  # 双向全量同步间隔（秒），范围 60–604800，默认 900
   sync_interval_seconds: 900
 
-  # 会话轮询间隔（秒）；SSE 未连接时生效，用于检测播放进度（≥80% 记录到 Trakt）
+  # 会话轮询间隔（秒），范围 15–600，默认 45
+  # SSE 未连接时的兜底，用于检测播放进度（≥80% 记录到 Trakt）
   session_poll_seconds: 45
 
-  # 实时推送（SSE 长连接）：播放进度实时同步到 Trakt；与 Plex 的长连接可按需关闭，
-  # 关闭后由会话轮询同步（延迟约为一个轮询间隔）
+  # 实时推送（SSE 长连接）：播放进度实时同步到 Trakt；
+  # 关闭后由会话轮询兜底（延迟约为一个轮询间隔）
   sse_enabled: true
 
   # 同步方向开关：Trakt → Plex / Plex → Trakt
   sync_to_plex: true
   sync_to_trakt: true
 
+# ─────────────────────────────────────────────────────────
+# Plex Media Server 连接（配合观看同步）
+# ─────────────────────────────────────────────────────────
 plex:
-  # Plex Media Server 地址（Meta2Cloud 所在机器需能直连）
+  # Plex 服务器地址（Meta2Cloud 所在机器需能直连）
   base_url: ""
 
-  # 授权凭证持久化路径（PIN 授权成功后自动写入；含 client_identifier 配对态）
+  # 授权凭证持久化路径（PIN 配对成功后自动写入，含 client_identifier 配对态）
   token_json: "config/plex-auth.json"
 
-  # 请求超时（秒）
+  # 请求超时（秒），范围 1–120，默认 10
   timeout: 10
+
+# ─────────────────────────────────────────────────────────
+# 文件名识别规则已独立到同目录的 parser-rules.yaml
+# （custom_words / custom_release_groups，模板见 parser-rules.example.yaml）
+# 媒体分类目录树在 WebUI「分类配置」页维护，持久化于 categories.yaml
+# ─────────────────────────────────────────────────────────

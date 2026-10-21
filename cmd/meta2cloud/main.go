@@ -21,7 +21,7 @@ import (
 // version 构建时由 -ldflags "-X main.version=..." 注入（CI/脚本传入 tag）。
 var version = "dev"
 
-const usage = `Meta2Cloud — 扫描云存储媒体文件，查询 TMDB 元数据，生成 NFO，整理到目标文件夹
+const usage = `Meta2Cloud — 115 网盘影音管理平台：自动整理、资源检索订阅、STRM 直链播放、观看同步
 
 用法:
   meta2cloud serve [flags]        启动 Web 服务（整理通过 WebAPI 触发）

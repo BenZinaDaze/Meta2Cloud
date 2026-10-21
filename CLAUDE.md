@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Meta2Cloud is a media organization tool that automatically organizes movies and TV shows from cloud drives (115网盘). It parses filenames, queries TMDB for canonical titles, and organizes files into a proper media library structure.
+Meta2Cloud is a one-stop media management platform for 115 网盘 (cloud drive). It covers the full chain: 资源检索/订阅 (mikan + anibt) → 115 云下载 (offline tasks) → 自动整理 (filename parsing → TMDB matching → standardized folders) → 播放 (STRM 302 redirect for Emby/Jellyfin, or direct-connect players) → 观看同步 (Plex ↔ Trakt). Everything is operated through the Web UI / WebAPI — the CLI only starts the server.
 
-The backend is written in Go (rewritten from Python); the frontend is React 19 + TypeScript + Tailwind CSS v4.
+The backend is written in Go (rewritten from Python); the frontend is React 19 + TypeScript + react-router + Tailwind CSS v4.
 
 ## Development Commands
 
@@ -15,13 +15,10 @@ The backend is written in Go (rewritten from Python); the frontend is React 19 +
 # Build
 go build ./...
 
-# Run WebUI server (port 38765, serves frontend + API + background watchers)
+# Run WebUI server (port 38765, serves frontend + API + background watchers).
+# This is the ONLY subcommand — organizing is triggered via POST /api/pipeline/trigger
+# or POST /trigger (webhook), never via CLI.
 go run ./cmd/meta2cloud serve
-
-# Run organization pipeline (equivalent of the old `python -m core`)
-go run ./cmd/meta2cloud pipeline              # production run
-go run ./cmd/meta2cloud pipeline --no-tmdb    # skip TMDB lookup
-go run ./cmd/meta2cloud pipeline --no-images  # skip image downloads
 
 # Run tests
 go test ./internal/... -count=1               # all tests
@@ -43,35 +40,39 @@ Or use `scripts/dev.sh` to start both together.
 ### Docker
 ```bash
 docker compose up -d                  # Start container
-docker logs -f meta2cloud             # View logs
-docker exec meta2cloud /app/meta2cloud pipeline  # Run pipeline in container
+docker logs -f meta2cloud             # View logs (first-boot initial password appears here)
+docker exec meta2cloud /app/meta2cloud serve     # server runs under compose by default
 ```
 
 ## Architecture
 
 ### Backend Structure (Go, module `meta2cloud`)
-- `cmd/meta2cloud/` — CLI entry: `serve` (WebUI server) and `pipeline` (organize run) subcommands
+- `cmd/meta2cloud/` — CLI entry: `serve` subcommand only (host/port/root flags)
 - `internal/cloudfile/` — `CloudFile` unified data model + `Provider` interface (the storage abstraction every layer depends on)
 - `internal/storage/` — Pan115Provider + provider registry + minimal OSS multipart upload (hand-rolled V1 signing)
-- `internal/u115/` — 115 open-platform client (OAuth PKCE, rate limiting/cooldown, retries, files, upload hashes, share receive, offline downloads)
-- `internal/config/` — YAML config loading (`config/config.yaml`, `config/parser-rules.yaml`)
+- `internal/u115/` — 115 open-platform client (OAuth PKCE + QR scan, rate limiting/cooldown, retries, files, upload hashes, share receive, offline downloads)
+- `internal/config/` — YAML config loading; `EnsureDefaultFiles` generates default `config.yaml`/`parser-rules.yaml`/`categories.yaml` (with random initial WebUI password, printed to the startup log) on first boot
 - `internal/mediaparser/` — Filename parsing library (video + anime parsers, Chinese numeral/trad-simp/pinyin utilities, release-group matcher, streaming-platform table)
 - `internal/tmdb/` — TMDB v3 client (search/detail/name matching, 429 retry, cache interface)
 - `internal/organizer/` — Media folder organizer (idempotent `Title (Year)/Season NN` chains)
-- `internal/pipeline/` — Full pipeline (scan→parse→TMDB→folders→move), subtitle matcher
-- `internal/scraper/` — RSS spiders (mikan + anibt) with factory/registry
-- `internal/webui/` — HTTP server (Go 1.22 ServeMux), JWT auth, runtime singletons, all `/api/*` handlers, background watchers (115 auto-organize + RSS polling)
-- `internal/webui/store/` — SQLite stores: library entities (tmdb_media/library_media/app_state), TMDB entity cache adapter, ingest history, app logs, RSS subscriptions, 115 auto-organize state
+- `internal/pipeline/` — Organize flow (scan→parse→TMDB→folders→move), subtitle matcher; NFO/cover upload was removed in v2.4.0 — metadata is left to the player
+- `internal/scraper/` — Resource-site spiders (mikan + anibt) with factory/registry
+- `internal/trakt/` — Trakt client (device-code OAuth, history/sync endpoints)
+- `internal/plexserver/` — Plex Media Server client (PIN auth, sessions, SSE realtime push)
+- `internal/syncengine/` — Bidirectional watched-state sync engine (Trakt ↔ Plex, union merge on first sync, Trakt wins on conflict)
+- `internal/watched/` — Shared watched-record domain types
+- `internal/webui/` — HTTP server (Go 1.22 ServeMux), JWT auth, runtime singletons, all `/api/*` handlers, background watchers (115 云下载自动整理 + RSS 订阅轮询), STRM 302 redirect endpoint, WebSocket live logs
+- `internal/webui/store/` — SQLite stores: library entities (tmdb_media/library_media/app_state), TMDB entity cache adapter, ingest history, app logs, RSS subscriptions, 115 auto-organize state, STRM sync runs/playback, Trakt sync runs/ignores, media categories, title pins
 - `internal/jsonx/` — dynamic-JSON read helpers (Python `dict.get` semantics)
 
 ### Frontend Structure
-- `frontend/src/App.tsx` - Main app with routing and state management
+- `frontend/src/App.tsx` - Router setup (react-router; page navigation is route-driven, not state-driven)
 - `frontend/src/api.ts` - Axios API client
 - `frontend/src/components/` - React components (TypeScript)
-  - Page components: `LibraryPage`, `DownloadsPage`, `ConfigPage`, `SubscriptionsPage`, etc.
-  - Modal components: `DetailModal`, `SubscriptionModal`, `ParseTestModal`
-- Uses Tailwind CSS v4 with `@tailwindcss/vite` plugin
-- Uses Radix UI primitives and shadcn-style components
+  - `layout/` — Sidebar / MobileNav / Topbar (nav: 仪表盘、媒体库、新番列表、资源检索、订阅列表、云下载、文件管理、入库记录、整理名称、STRM 同步、播放记录、Trakt 同步、日志、配置)
+  - `pages/` — Page components matching the routes above (e.g. `DashboardPage`, `LibraryPage`, `CalendarPage`, `ScraperSearch`, `SubscriptionsPage`, `U115OfflinePage`, `FileManagerPage`, `TitlePinsPage`, `StrmSyncPage`, `StrmPlaybackPage`, `WatchedSyncPage`, `ConfigPage`)
+  - `modals/` — `DetailModal`, `SubscriptionModal`, `ParseTestModal`, `ReidentifyModal`, etc.
+- Uses Tailwind CSS v4 with `@tailwindcss/vite` plugin, Radix UI primitives and shadcn-style components
 
 ## Key Patterns
 
@@ -82,13 +83,13 @@ All cloud storage implementations implement `cloudfile.Provider` (in `internal/c
 `RT()` holds config/provider/u115-client/TMDB-client/store singletons, auto-invalidated when config file mtimes change. NOTE: guards use non-reentrant `sync.Mutex` — internal code must call the `*Locked` variants while holding the lock.
 
 ### API Authentication
-Backend uses JWT (HS256, `golang-jwt/jwt/v5`). Frontend stores token in localStorage, sends `Authorization: Bearer` header. Middleware exempts `/api/auth:login`, `/trigger*`, and non-`/api/` paths.
+Backend uses JWT (HS256, `golang-jwt/jwt/v5`). Frontend stores token in localStorage, sends `Authorization: Bearer` header. Middleware exempts `/api/auth:login`, `/trigger*`, `/strm/redirect` (protected by optional `url_secret` instead), and non-`/api/` paths.
 
 ### Routing Quirk
 Go's ServeMux doesn't allow a suffix after a wildcard segment (`{id}:check` is invalid). Such routes register the bare wildcard and dispatch on the suffix inside the handler (see `handleSubscriptionPostOp`).
 
 ### Configuration
-Config stored in YAML files (`config/config.yaml`, `config/parser-rules.yaml`). Editable via Web UI or directly. `META2CLOUD_CONFIG_DIR` env var is no longer used; the server resolves `config/` under `--root` (default: current directory).
+Three YAML files under `config/`: `config.yaml` (main), `parser-rules.yaml` (识别规则), `categories.yaml` (媒体分类). All are editable via Web UI; missing files are auto-generated with defaults on first boot. u115 目录配置存目录名（WebUI 目录选择器直选网盘目录），不再手填 cid。`META2CLOUD_CONFIG_DIR` env var is not used; the server resolves `config/` under `--root` (default: current directory).
 
 ### TMDB Caching
 TMDB responses are cached in the `tmdb_media` table of `library.db` (entity-keyed by media_type+tmdb_id, seasons/episodes nested in JSON columns). Pipeline and WebUI share the same cache.
