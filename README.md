@@ -90,6 +90,9 @@ services:
   meta2cloud:
     image: benz1/meta2cloud:latest
     container_name: meta2cloud
+    # 以 UID/GID 运行（默认 1000:1000，与媒体服务器 PUID/PGID=1000 一致，
+    # 使其可删除/重命名生成的 STRM 文件；如需修改在 .env 中设置 PUID/PGID）
+    user: "${PUID:-1000}:${PGID:-1000}"
     environment:
       - TZ=Asia/Shanghai
     volumes:
@@ -102,6 +105,8 @@ services:
 ```
 
 ```bash
+# 首次部署或从 root 运行的旧版本升级时需要：保证挂载目录可被 UID 1000 写入
+mkdir -p meta2cloud-config && chown -R 1000:1000 meta2cloud-config
 docker compose up -d
 ```
 

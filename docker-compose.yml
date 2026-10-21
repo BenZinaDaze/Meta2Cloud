@@ -4,6 +4,11 @@ services:
   meta2cloud:
     container_name: meta2cloud
     image: benz1/meta2cloud:latest
+    # 以 UID/GID 运行（默认 1000:1000，可在 .env 中覆盖）：与媒体服务器
+    # （Cirvel/Emby/Jellyfin 等 PUID/PGID=1000）一致，其才能删除/重命名本程序生成的 STRM 文件。
+    # PUID/PGID 从 .env 或 shell 环境读取（environment: 块中的同名变量不参与插值）。
+    # 要求挂载目录属主与之匹配（chown -R 1000:1000 meta2cloud-config strm），否则启动会 permission denied。
+    user: "${PUID:-1000}:${PGID:-1000}"
     environment:
       - TZ=Asia/Shanghai
     volumes:
