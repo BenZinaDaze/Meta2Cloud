@@ -6,6 +6,8 @@
 //	【FSD】标题[02][话名].mp4
 //	[Group] Title S2 - 01v2 [1920x1080].mkv
 //	标题 第02话 [X264]
+//	[桜都字幕组] 标题 第二季 [05][1080p][简繁内封].mkv（末尾未闭合括号按组截断）
+//	[SubsPlease] Title - 12 (1080p) [04B6C9EE].mkv（西式圆括号分辨率/校验码）
 //
 // 提取字段与 anitopy 命名一致：anime_title / anime_season / episode_number /
 // anime_type / anime_year / video_resolution / release_group / video_term / audio_term。
@@ -30,8 +32,7 @@ type AnitomyResult struct {
 }
 
 var (
-	// 括号分组
-	bracketRe = regexp.MustCompile(`\[([^\[\]]*)\]`)
+	// 括号分组（扫描方式提取，见 scanGroups）
 	// 纯集号（可带 v2 / .5 后缀，支持 - 分隔范围与多集）
 	epOnlyRe = regexp.MustCompile(`^\d{1,4}(?:\.5|v\d{1,2})?$`)
 	epListRe = regexp.MustCompile(`^\d{1,4}(?:[v.]\d{1,2})?(?:\s*[-&~]\s*\d{1,4})?(?:\s*[,+&]\s*\d{1,4})*$`)
@@ -101,6 +102,35 @@ func classifyBracket(content string, r *AnitomyResult) bool {
 	return false
 }
 
+// scanGroups 扫描标题中的 [] / () 分组（同等对待，与 anitopy 一致）。
+// 返回括号外文本片段与各分组内容；末尾未闭合的组（如 prepare_title 以 ] join
+// 截断产生的 "[简繁内封"）按闭合处理，避免残留混入标题。
+func scanGroups(title string) (freeParts, groups []string) {
+	last := 0
+	for i := 0; i < len(title); i++ {
+		open := title[i]
+		if open != '[' && open != '(' {
+			continue
+		}
+		closeCh := byte(']')
+		if open == '(' {
+			closeCh = ')'
+		}
+		rel := strings.IndexByte(title[i+1:], closeCh)
+		freeParts = append(freeParts, title[last:i])
+		if rel < 0 {
+			// 未闭合的尾部组：截到字符串末尾
+			groups = append(groups, title[i+1:])
+			return freeParts, groups
+		}
+		groups = append(groups, title[i+1:i+1+rel])
+		i += 1 + rel
+		last = i + 1
+	}
+	freeParts = append(freeParts, title[last:])
+	return freeParts, groups
+}
+
 // AnitomyParse 解析动漫文件名。
 func AnitomyParse(title string) AnitomyResult {
 	var r AnitomyResult
@@ -108,23 +138,17 @@ func AnitomyParse(title string) AnitomyResult {
 		return r
 	}
 
-	// 1. 提取括号分组
-	locs := bracketRe.FindAllStringSubmatchIndex(title, -1)
-	var freeParts []string
-	last := 0
+	// 1. 提取括号分组（[] 与 () 同等对待，含末尾未闭合组）
+	freeParts, groups := scanGroups(title)
 	firstContentKept := false
-	for _, loc := range locs {
-		freeParts = append(freeParts, title[last:loc[0]])
-		content := title[loc[2]:loc[3]]
+	for _, content := range groups {
 		classified := classifyBracket(content, &r)
 		// 首个非分类括号 = 字幕组
 		if !classified && !firstContentKept && r.ReleaseGroup == "" && !resolutionRe.MatchString(content) {
 			r.ReleaseGroup = strings.TrimSpace(content)
 			firstContentKept = true
 		}
-		last = loc[1]
 	}
-	freeParts = append(freeParts, title[last:])
 	freeText := strings.Join(freeParts, " ")
 
 	// 2. 免括号文本解析

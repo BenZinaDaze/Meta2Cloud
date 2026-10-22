@@ -413,15 +413,17 @@ func (m *MetaBase) Merge(o *MetaBase) {
 var (
 	titleEpisodeRe = regexp2.MustCompile(`Episode\s+(\d{1,4})`, regexp2.IgnoreCase)
 	//nolint:unused // 与 Python 版字段对齐保留
-	subtitleSeasonRe = regexp2.MustCompile(`(?<![全共]\s*)[第\s]+([0-9一二三四五六七八九十S\-]+)\s*季(?!\s*[全共])`, regexp2.IgnoreCase)
+	subtitleSeasonRe = regexp2.MustCompile(`(?<!(?:不包含|不包括|不含)\s*)(?<![全共]\s*)[第\s]+([0-9一二三四五六七八九十S\-]+)\s*季(?!\s*[全共])`, regexp2.IgnoreCase)
 	//nolint:unused
 	subtitleSeasonAllRe = regexp2.MustCompile(`[全共]\s*([0-9一二三四五六七八九十]+)\s*季`, regexp2.IgnoreCase)
 	//nolint:unused
-	subtitleEpisodeRe = regexp2.MustCompile(`(?<![全共]\s*)[第\s]+([0-9一二三四五六七八九十百零EP]+)\s*[集话話期幕](?!\s*[全共])`, regexp2.IgnoreCase)
+	subtitleEpisodeRe = regexp2.MustCompile(`(?<!(?:不包含|不包括|不含)\s*)(?<![全共]\s*)[第\s]+([0-9一二三四五六七八九十百零EP]+)\s*[集话話期幕](?!\s*[全共])`, regexp2.IgnoreCase)
 	//nolint:unused
 	subtitleEpisodeBetweenRe = regexp2.MustCompile(`[第]*\s*([0-9一二三四五六七八九十百零]+)\s*[集话話期幕]?\s*-\s*第*\s*([0-9一二三四五六七八九十百零]+)\s*[集话話期幕]`, regexp2.IgnoreCase)
 	//nolint:unused
 	subtitleEpisodeAllRe = regexp2.MustCompile(`([0-9一二三四五六七八九十百零]+)\s*集\s*全|[全共]\s*([0-9一二三四五六七八九十百零]+)\s*[集话話期幕]`, regexp2.IgnoreCase)
+	// 结尾分支显式区分有无右方括号，避免可选括号回溯后绕过数字后缀边界
+	subtitleEpisodeRangeFinRe = regexp2.MustCompile(`(?<!\d)\[?\s*(\d{1,4})\s*-\s*(\d{1,4})\s*(?:(?:Fin|End)(?![a-z0-9])|完结(?![一-鿿]))(?:\s*\](?!\d)|(?!\s*(?:\]\d|\d))\s*)`, regexp2.IgnoreCase)
 	//nolint:unused
 	subtitleKeywordRe = regexp2.MustCompile(`[全第季集话話期幕]`, regexp2.IgnoreCase)
 )
@@ -472,6 +474,8 @@ func (m *MetaBase) InitSubtitle(titleText string) {
 	}
 
 	if ok, _ := subtitleKeywordRe.MatchString(titleText); !ok {
+		// 副标题无中文季集标记时，仍识别 01-26Fin 等数字范围+完结标记
+		m.initEpisodeRangeFin(titleText)
 		return
 	}
 
@@ -619,6 +623,36 @@ func (m *MetaBase) InitSubtitle(titleText string) {
 			m.Type = MediaTV
 			m.subtitleFlag = true
 		}
+	}
+
+	// 01-26Fin 等数字范围+完结标记
+	m.initEpisodeRangeFin(titleText)
+}
+
+// initEpisodeRangeFin 识别 01-26Fin / [01-38 END] 等"数字范围+完结标记"格式的集数信息。
+func (m *MetaBase) initEpisodeRangeFin(titleText string) {
+	mt, _ := subtitleEpisodeRangeFinRe.FindStringMatch(titleText)
+	if mt == nil {
+		return
+	}
+	beginE, err1 := strconv.Atoi(mt.GroupByNumber(1).String())
+	endE, err2 := strconv.Atoi(mt.GroupByNumber(2).String())
+	if err1 != nil || err2 != nil {
+		return
+	}
+	if beginE < 1 || beginE > endE || endE >= 10000 {
+		return
+	}
+	// 两个数字都落在常见年份区间时视为年份范围而非集数（如 2019-2020完结）
+	if beginE >= 1900 && endE <= 2155 {
+		return
+	}
+	if m.BeginEpisode == nil {
+		m.BeginEpisode = intPtr(beginE)
+		m.EndEpisode = intPtr(endE)
+		m.TotalEpisode = endE
+		m.Type = MediaTV
+		m.subtitleFlag = true
 	}
 }
 
