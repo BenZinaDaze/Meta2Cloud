@@ -34,6 +34,17 @@ func TestParseStrmURLBaseNormalization(t *testing.T) {
 	}
 }
 
+func TestParseStrmRefreshPlex(t *testing.T) {
+	// yaml 显式开启 → 生效（通知 Plex 扫库的闸门在 strmsvc.notifyPlexRefresh）
+	if s := parseStrm(map[string]any{"refresh_plex": true}); !s.RefreshPlex {
+		t.Error("refresh_plex: true 应解析为 RefreshPlex = true")
+	}
+	// 缺省 → 默认 false
+	if s := parseStrm(map[string]any{}); s.RefreshPlex {
+		t.Error("refresh_plex 缺省应解析为 RefreshPlex = false")
+	}
+}
+
 func TestEnsureDefaultFiles(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")

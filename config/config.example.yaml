@@ -183,6 +183,10 @@ strm:
   # 定时增量同步间隔（秒）；0 = 关闭定时，仅整理入库后与手动触发
   sync_interval_seconds: 0
 
+  # 同步有增/改/删后通知 Plex 扫描对应分类的媒体库（按 Plex 库名与分类名一致匹配，
+  # 对不上时回退刷新全部电影/剧集库；需已配对 Plex）
+  refresh_plex: false
+
   # 收集的视频扩展名（默认与播放器识别范围对齐）
   media_ext: ["mp4", "mkv", "avi", "mov", "wmv", "flv", "ts", "m2ts", "webm", "rmvb", "rm", "mpg", "mpeg", "vob", "iso", "3gp"]
 

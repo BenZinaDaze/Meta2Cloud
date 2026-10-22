@@ -14,6 +14,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,6 +24,7 @@ import (
 	"meta2cloud/internal/cloudfile"
 	"meta2cloud/internal/config"
 	"meta2cloud/internal/pipeline"
+	"meta2cloud/internal/plexserver"
 	"meta2cloud/internal/webui/store"
 )
 
@@ -56,6 +58,7 @@ type strmService struct {
 	hookMu      sync.Mutex
 	hookRunID   int64
 	hookStats   strmRunStats
+	hookChanges *strmChanges
 	hookLastAt  time.Time
 	hookFlusher *time.Timer
 }
@@ -65,6 +68,63 @@ type strmRunStats struct {
 	Updated int
 	Removed int
 	Skipped int
+}
+
+// strmChanges 收集一轮同步中发生增/改/删的文件所属分类目录名
+// （取自 categories.yaml 的一级目录名与各分类名，与路径段求交），
+// 用于 strm.refresh_plex 开启时通知 Plex 只刷对应媒体库。
+type strmChanges struct {
+	names map[string]struct{}
+	cats  map[string]struct{}
+}
+
+// newStrmChanges 由分类配置构建收集器（cats 为 nil 时仍可用，只是匹配不到分类）。
+func newStrmChanges(cats *config.CategoriesConfig) *strmChanges {
+	sc := &strmChanges{names: map[string]struct{}{}, cats: map[string]struct{}{}}
+	if cats == nil {
+		return sc
+	}
+	for _, d := range []string{cats.Dirs.TV, cats.Dirs.Movie, cats.Dirs.Other} {
+		if d != "" {
+			sc.names[d] = struct{}{}
+		}
+	}
+	for _, r := range cats.TV {
+		if r.Name != "" {
+			sc.names[r.Name] = struct{}{}
+		}
+	}
+	for _, r := range cats.Movie {
+		if r.Name != "" {
+			sc.names[r.Name] = struct{}{}
+		}
+	}
+	return sc
+}
+
+// add 记录一条相对路径命中的分类名（nil 接收者安全；兼容 / 与本机分隔符）。
+func (sc *strmChanges) add(relPath string) {
+	if sc == nil {
+		return
+	}
+	for _, seg := range strings.FieldsFunc(relPath, func(r rune) bool { return r == '/' || r == os.PathSeparator }) {
+		if _, ok := sc.names[seg]; ok {
+			sc.cats[seg] = struct{}{}
+		}
+	}
+}
+
+// list 返回本轮变更涉及的分类名（有序，保证日志与匹配稳定）。
+func (sc *strmChanges) list() []string {
+	if sc == nil || len(sc.cats) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(sc.cats))
+	for c := range sc.cats {
+		out = append(out, c)
+	}
+	sort.Strings(out)
+	return out
 }
 
 var strmSvc = &strmService{}
@@ -175,10 +235,11 @@ func runStrmSync(trigger string) {
 
 	runID := st.StartSyncRun(trigger)
 	stats := strmRunStats{}
+	changes := newStrmChanges(RT().GetCategories())
 	var syncErr string
 
 	for _, mapping := range cfg.Strm.Mappings {
-		created, updated, removed, skipped, err := syncMapping(provider, st, cfg, mapping, runID)
+		created, updated, removed, skipped, err := syncMapping(provider, st, cfg, mapping, runID, changes)
 		stats.Created += created
 		stats.Updated += updated
 		stats.Removed += removed
@@ -196,10 +257,55 @@ func runStrmSync(trigger string) {
 	st.FinishSyncRun(runID, stats.Created, stats.Updated, stats.Removed, stats.Skipped, syncErr)
 	log.Printf("[strm] 同步完成（%s）：新增 %d 更新 %d 删除 %d 跳过 %d",
 		trigger, stats.Created, stats.Updated, stats.Removed, stats.Skipped)
+	if syncErr == "" {
+		notifyPlexRefresh(stats.Created+stats.Updated+stats.Removed, changes)
+	}
+}
+
+// notifyPlexRefresh strm 有实际变更后通知 Plex 扫描媒体库（strm.refresh_plex 开启时生效）。
+// 变更涉及的分类名与 Plex 库名一致时只刷对应库，对不上则回退全部电影/剧集库。
+// 异步执行且失败只记日志——不写进同步错误，避免触发保守跳过删除对账。
+func notifyPlexRefresh(changed int, changes *strmChanges) {
+	if changed <= 0 || !RT().GetConfig().Strm.RefreshPlex {
+		return
+	}
+	client := RT().GetPlexClient()
+	if client == nil { // Plex 未配对
+		return
+	}
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[strm] 通知 Plex panic：%v", r)
+			}
+		}()
+		sections, err := client.Sections()
+		if err != nil {
+			log.Printf("[strm] 通知 Plex 失败（获取媒体库列表）：%v", err)
+			return
+		}
+		targets := make([]plexserver.Section, 0, len(sections))
+		for _, s := range sections {
+			if slices.Contains(changes.list(), s.Title) {
+				targets = append(targets, s)
+			}
+		}
+		if len(targets) == 0 { // 库名与分类名对不上：宁可多刷不漏刷
+			targets = sections
+		}
+		for _, s := range targets {
+			if err := client.RefreshSection(s.Key); err != nil {
+				log.Printf("[strm] 通知 Plex 刷新媒体库 %s 失败：%v", s.Title, err)
+			}
+		}
+		log.Printf("[strm] 已通知 Plex 刷新 %d 个媒体库（变更分类：%s）",
+			len(targets), strings.Join(changes.list(), "、"))
+	}()
 }
 
 // syncMapping 同步单个映射，返回统计。遍历成功后清理该映射下网盘已不存在的 .strm。
-func syncMapping(provider cloudfile.Provider, st *store.StrmStore, cfg *config.Config, mapping config.StrmMapping, runID int64) (created, updated, removed, skipped int, err error) {
+// ch 非 nil 时同时记录变更文件命中的分类名。
+func syncMapping(provider cloudfile.Provider, st *store.StrmStore, cfg *config.Config, mapping config.StrmMapping, runID int64, ch *strmChanges) (created, updated, removed, skipped int, err error) {
 	extSet := strmMediaExtSet(cfg)
 	sidecarSet := map[string]struct{}{}
 	var fetcher sidecarFetcher
@@ -251,8 +357,10 @@ func syncMapping(provider cloudfile.Provider, st *store.StrmStore, cfg *config.C
 				switch upsertStrmFile(st, cfg, mapping, item, relPath, pickCode, localRoot, runID) {
 				case "created":
 					created++
+					ch.add(relPath)
 				case "updated":
 					updated++
+					ch.add(relPath)
 				default:
 					skipped++
 				}
@@ -266,8 +374,10 @@ func syncMapping(provider cloudfile.Provider, st *store.StrmStore, cfg *config.C
 				switch upsertSidecarFile(st, item, relPath, pickCode, localPath, fetcher, runID) {
 				case "created":
 					created++
+					ch.add(relPath)
 				case "updated":
 					updated++
+					ch.add(relPath)
 				default:
 					skipped++
 				}
@@ -292,6 +402,7 @@ func syncMapping(provider cloudfile.Provider, st *store.StrmStore, cfg *config.C
 		st.DeleteStrmFile(rec.ID)
 		st.InsertSyncFileDetail(runID, rec.FileName, rec.PanPath, rec.LocalPath, "removed", true, "")
 		removed++
+		ch.add(strings.TrimPrefix(rec.LocalPath, localRoot+string(os.PathSeparator)))
 	}
 
 	// 自内向外清理因网盘目录改名/合并而残留的本地空目录
@@ -538,8 +649,10 @@ func HandleVideoIngested(result pipeline.ProcessResult) error {
 	switch action {
 	case "created":
 		strmSvc.hookStats.Created++
+		strmSvc.hookChanges.add(relPath)
 	case "updated":
 		strmSvc.hookStats.Updated++
+		strmSvc.hookChanges.add(relPath)
 	default:
 		strmSvc.hookStats.Skipped++
 	}
@@ -562,8 +675,10 @@ func HandleVideoIngested(result pipeline.ProcessResult) error {
 				switch upsertSidecarFile(st, item, relPath, sidePickCode, sideLocal, fetcher, strmSvc.hookRunID) {
 				case "created":
 					strmSvc.hookStats.Created++
+					strmSvc.hookChanges.add(relPath)
 				case "updated":
 					strmSvc.hookStats.Updated++
+					strmSvc.hookChanges.add(relPath)
 				default:
 					strmSvc.hookStats.Skipped++
 				}
@@ -656,6 +771,7 @@ func ensureIngestRunLocked() {
 	strmSvc.flushIngestRunLocked()
 	strmSvc.hookRunID = st.StartSyncRun(triggerIngest)
 	strmSvc.hookStats = strmRunStats{}
+	strmSvc.hookChanges = newStrmChanges(RT().GetCategories())
 }
 
 // scheduleIngestFlush 窗口静默后收尾入库 run。
@@ -678,8 +794,12 @@ func (s *strmService) flushIngestRunLocked() {
 	if st := RT().GetStrmStore(); st != nil {
 		st.FinishSyncRun(s.hookRunID, s.hookStats.Created, s.hookStats.Updated, s.hookStats.Removed, s.hookStats.Skipped, "")
 	}
+	changed := s.hookStats.Created + s.hookStats.Updated + s.hookStats.Removed
+	changes := s.hookChanges
 	s.hookRunID = 0
 	s.hookStats = strmRunStats{}
+	s.hookChanges = nil
+	notifyPlexRefresh(changed, changes)
 }
 
 // ── HTTP 处理器（/api/strm/*） ───────────────────────────────

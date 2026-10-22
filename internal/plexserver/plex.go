@@ -241,11 +241,21 @@ func (c *Client) setClientHeaders(req *http.Request) {
 
 // get 调用 Plex 服务器（自动携带 X-Plex-Token）。
 func (c *Client) get(path string, query url.Values) ([]byte, http.Header, error) {
+	return c.do(http.MethodGet, path, query)
+}
+
+// post 调用 Plex 服务器写接口。
+func (c *Client) post(path string, query url.Values) ([]byte, http.Header, error) {
+	return c.do(http.MethodPost, path, query)
+}
+
+// do 发起对 Plex 服务器的请求（自动携带 X-Plex-Token）。
+func (c *Client) do(method, path string, query url.Values) ([]byte, http.Header, error) {
 	target := c.BaseURL + path
 	if len(query) > 0 {
 		target += "?" + query.Encode()
 	}
-	req, err := http.NewRequest(http.MethodGet, target, nil)
+	req, err := http.NewRequest(method, target, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -303,6 +313,12 @@ func (c *Client) Sections() ([]Section, error) {
 		}
 	}
 	return sections, nil
+}
+
+// RefreshSection 通知 PMS 异步扫描媒体库（key 为 Sections 返回的分区 key）。
+func (c *Client) RefreshSection(key string) error {
+	_, _, err := c.post("/library/sections/"+key+"/refresh", nil)
+	return err
 }
 
 // LibraryItems 分页枚举分区条目。plexType：1=电影，4=集（剧集叶子）。

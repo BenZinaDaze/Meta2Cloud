@@ -165,6 +165,9 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   if (!Array.isArray(strm.sidecar_ext) || strm.sidecar_ext.length === 0) {
     strm.sidecar_ext = ['srt', 'ass', 'ssa']
   }
+  if (strm.refresh_plex === undefined || strm.refresh_plex === null) {
+    strm.refresh_plex = false
+  }
   if (trakt.enabled === undefined || trakt.enabled === null) {
     trakt.enabled = false
   }
@@ -1981,6 +1984,12 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                       onChange={(v) => set('strm', 'fetch_sidecar', v)}
                     />
                   </Field>
+                  <Field label="同步后通知 Plex" description="同步有增/改/删后自动通知 Plex 扫描对应媒体库（需已配对 Plex）">
+                    <Toggle
+                      value={((cfg?.strm as Record<string, unknown>)?.refresh_plex as boolean) || false}
+                      onChange={(v) => set('strm', 'refresh_plex', v)}
+                    />
+                  </Field>
                   <Field label="伴随文件扩展名" description="单文件上限 20MB，与 .strm 同目录存放" fullWidth>
                     <ListField
                       value={((cfg?.strm as Record<string, unknown>)?.sidecar_ext as string[]) || []}
@@ -1991,7 +2000,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
 
                 <div className="text-xs leading-6 text-muted-foreground">
                   <p>.strm 内容形如 <code className="rounded bg-muted px-1 font-mono">http://服务地址/strm/redirect?pickcode=...</code>，播放时实时向 115 换取直链（直链与播放器 User-Agent 绑定，服务端自动透传并缓存）。</p>
-                  <p className="mt-1">触发方式：整理入库成功后自动生成 + 定时增量同步 + 本页保存后到「STRM 同步」页手动触发。将本地 STRM 目录作为媒体库加入 Emby / Jellyfin / Infuse 即可播放。</p>
+                  <p className="mt-1">触发方式：整理入库成功后自动生成 + 定时增量同步 + 本页保存后到「STRM 同步」页手动触发。开启「同步后通知 Plex」后，同步有增/改/删会自动通知 Plex 扫库。将本地 STRM 目录作为媒体库加入 Emby / Jellyfin / Infuse 即可播放。</p>
                 </div>
               </CardContent>
             </Card>

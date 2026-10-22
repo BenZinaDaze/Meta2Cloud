@@ -409,7 +409,7 @@ func TestSyncMappingFlow(t *testing.T) {
 	localRoot := filepath.Join(tmp, "media")
 	mapping := config.StrmMapping{PanFolderID: movieRoot.ID, LocalPath: localRoot}
 
-	created, updated, removed, skipped, err := syncMapping(fp, st, cfg, mapping, 0)
+	created, updated, removed, skipped, err := syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("首次同步失败：%v", err)
 	}
@@ -429,7 +429,7 @@ func TestSyncMappingFlow(t *testing.T) {
 	}
 
 	// 二次同步：全部跳过
-	created, updated, removed, skipped, err = syncMapping(fp, st, cfg, mapping, 0)
+	created, updated, removed, skipped, err = syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("二次同步失败：%v", err)
 	}
@@ -439,7 +439,7 @@ func TestSyncMappingFlow(t *testing.T) {
 
 	// pick_code 变化（网盘重新上传）：应重写
 	fp.replacePickCode(video.ID, "new123def456ghi78", 2<<30)
-	created, updated, _, _, err = syncMapping(fp, st, cfg, mapping, 0)
+	created, updated, _, _, err = syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("三次同步失败：%v", err)
 	}
@@ -452,7 +452,7 @@ func TestSyncMappingFlow(t *testing.T) {
 	delete(fp.byID, video.ID)
 	fp.children[movieRoot.ID] = nil
 	fp.mu.Unlock()
-	_, _, removed, _, err = syncMapping(fp, st, cfg, mapping, 0)
+	_, _, removed, _, err = syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("清理同步失败：%v", err)
 	}
@@ -489,7 +489,7 @@ func TestSyncSidecarFlow(t *testing.T) {
 	mapping := config.StrmMapping{PanFolderID: movieRoot.ID, LocalPath: localRoot}
 
 	fetchCount.Store(0)
-	created, _, _, _, err := syncMapping(fp, st, cfg, mapping, 0)
+	created, _, _, _, err := syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("首次同步失败：%v", err)
 	}
@@ -509,7 +509,7 @@ func TestSyncSidecarFlow(t *testing.T) {
 
 	// 二次同步：全部跳过，不重复下载
 	fetchCount.Store(0)
-	created, updated, _, skipped, err := syncMapping(fp, st, cfg, mapping, 0)
+	created, updated, _, skipped, err := syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("二次同步失败：%v", err)
 	}
@@ -522,7 +522,7 @@ func TestSyncSidecarFlow(t *testing.T) {
 
 	// 字幕在网盘更新（大小变化）→ 重新下载（updated）
 	fp.replacePickCode(sub.ID, "sub123def456ghi78", 4096)
-	_, updated, _, _, err = syncMapping(fp, st, cfg, mapping, 0)
+	_, updated, _, _, err = syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("三次同步失败：%v", err)
 	}
@@ -540,7 +540,7 @@ func TestSyncSidecarFlow(t *testing.T) {
 	fp.children[titleDir.ID] = filterOut(fp.children[titleDir.ID], sub.ID)
 	delete(fp.byID, sub.ID)
 	fp.mu.Unlock()
-	created, updated, removed, skipped, err := syncMapping(fp, st, cfg, mapping, 0)
+	created, updated, removed, skipped, err := syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("清理同步失败：%v", err)
 	}
@@ -584,19 +584,19 @@ func TestSyncRewritesWhenURLBaseChanges(t *testing.T) {
 	localRoot := filepath.Join(tmp, "media")
 	mapping := config.StrmMapping{PanFolderID: root.ID, LocalPath: localRoot}
 
-	if _, _, _, _, err := syncMapping(fp, st, cfg, mapping, 0); err != nil {
+	if _, _, _, _, err := syncMapping(fp, st, cfg, mapping, 0, nil); err != nil {
 		t.Fatalf("首次同步失败：%v", err)
 	}
 
 	// 全部跳过
-	_, _, _, skipped, err := syncMapping(fp, st, cfg, mapping, 0)
+	_, _, _, skipped, err := syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil || skipped != 1 {
 		t.Fatalf("第二次同步应跳过：skipped=%d err=%v", skipped, err)
 	}
 
 	// 改 url_base 后同步：内容不一致应重写（updated）
 	cfg.Strm.URLBase = "http://10.0.0.5:39000"
-	created, updated, _, _, err := syncMapping(fp, st, cfg, mapping, 0)
+	created, updated, _, _, err := syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("改地址后同步失败：%v", err)
 	}
@@ -613,7 +613,7 @@ func TestSyncRewritesWhenURLBaseChanges(t *testing.T) {
 
 	// 改 url_secret 后同理
 	cfg.Strm.URLSecret = "s3cret"
-	_, updated, _, _, err = syncMapping(fp, st, cfg, mapping, 0)
+	_, updated, _, _, err = syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil || updated != 1 {
 		t.Fatalf("url_secret 变更应重写：updated=%d err=%v", updated, err)
 	}
@@ -635,7 +635,7 @@ func TestUpsertSkipsWhenFileMissingOnDisk(t *testing.T) {
 	localRoot := filepath.Join(tmp, "media")
 	mapping := config.StrmMapping{PanFolderID: root.ID, LocalPath: localRoot}
 
-	if _, _, _, _, err := syncMapping(fp, st, cfg, mapping, 0); err != nil {
+	if _, _, _, _, err := syncMapping(fp, st, cfg, mapping, 0, nil); err != nil {
 		t.Fatalf("首次同步失败：%v", err)
 	}
 	strmPath := filepath.Join(localRoot, "a.strm")
@@ -643,7 +643,7 @@ func TestUpsertSkipsWhenFileMissingOnDisk(t *testing.T) {
 		t.Fatalf("删除本地 strm 失败：%v", err)
 	}
 	// 本地文件丢失时，即使记录未变也应补写
-	created, _, _, _, err := syncMapping(fp, st, cfg, mapping, 0)
+	created, _, _, _, err := syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("补写同步失败：%v", err)
 	}
@@ -758,7 +758,7 @@ func TestSweepOrphanStrmFiles(t *testing.T) {
 	newMapping := config.StrmMapping{PanFolderID: movieRoot.ID, LocalPath: newRoot}
 
 	// 旧位置同步 → 生成 1 条记录与 1 个文件
-	if _, _, _, _, err := syncMapping(fp, st, cfg, mapping, 0); err != nil {
+	if _, _, _, _, err := syncMapping(fp, st, cfg, mapping, 0, nil); err != nil {
 		t.Fatalf("旧位置同步失败：%v", err)
 	}
 	if st.CountStrmFiles() != 1 {
@@ -771,7 +771,7 @@ func TestSweepOrphanStrmFiles(t *testing.T) {
 
 	// 换位置同步：新位置生成；孤儿对账清掉旧位置记录与文件
 	runID := st.StartSyncRun("test")
-	if _, _, _, _, err := syncMapping(fp, st, cfg, newMapping, runID); err != nil {
+	if _, _, _, _, err := syncMapping(fp, st, cfg, newMapping, runID, nil); err != nil {
 		t.Fatalf("新位置同步失败：%v", err)
 	}
 	if orphans := sweepOrphanStrmFiles(st, []config.StrmMapping{newMapping}, runID); orphans != 1 {
@@ -829,5 +829,88 @@ func TestLocateMappingByPathChain(t *testing.T) {
 	m, rel, ok = locateMapping(&failGetFileProvider{fakeWebProvider: fp}, cfg, seasonDir, chain)
 	if !ok || m.LocalPath != "/mnt/santi" || rel != "Season 01" {
 		t.Fatalf("深路径映射匹配错误：%+v %q %v", m, rel, ok)
+	}
+}
+
+func testStrmCategories() *config.CategoriesConfig {
+	return &config.CategoriesConfig{
+		Dirs:  config.CategoryDirs{TV: "剧集", Movie: "电影", Other: "其他"},
+		Movie: []config.CategoryRule{{Name: "动漫电影"}, {Name: "普通电影"}},
+		TV:    []config.CategoryRule{{Name: "动漫"}},
+	}
+}
+
+func TestStrmChangesAddAndList(t *testing.T) {
+	sc := newStrmChanges(testStrmCategories())
+	sc.add("电影/动漫电影/玲芽之旅 (2022)")
+	sc.add("剧集/动漫/葬送的芙莉莲/Season 01")
+	sc.add("电影/普通电影/某种未分类片名")
+	sc.add("电影/其他未知目录名/xyz.strm")
+	got := sc.list()
+	want := map[string]bool{"动漫": true, "动漫电影": true, "普通电影": true, "电影": true, "剧集": true}
+	if len(got) != len(want) {
+		t.Fatalf("分类收集异常：%v，期望 %v", got, want)
+	}
+	for _, g := range got {
+		if !want[g] {
+			t.Fatalf("分类收集异常：多余的 %q（全部 %v）", g, got)
+		}
+	}
+	// nil 接收者安全
+	var nilChanges *strmChanges
+	nilChanges.add("电影/动漫电影/x")
+	if nilChanges.list() != nil {
+		t.Fatalf("nil 收集器应返回 nil")
+	}
+}
+
+func TestSyncMappingCollectsChangedCategories(t *testing.T) {
+	tmp := t.TempDir()
+	st, err := store.OpenStrmStore(filepath.Join(tmp, "strm.db"))
+	if err != nil {
+		t.Fatalf("打开 strm.db 失败：%v", err)
+	}
+	defer st.Close()
+
+	fp := newFakeWebProvider()
+	movieRoot := fp.addFolder("电影", "0")
+	catDir := fp.addFolder("动漫电影", movieRoot.ID)
+	titleDir := fp.addFolder("千与千寻 (2001)", catDir.ID)
+	fp.addVideoWithPickCode("千与千寻.mkv", titleDir.ID, "cat123def456ghi78", 1<<30)
+
+	cfg := testStrmConfig()
+	localRoot := filepath.Join(tmp, "media")
+	mapping := config.StrmMapping{PanFolderID: movieRoot.ID, LocalPath: localRoot}
+
+	changes := newStrmChanges(testStrmCategories())
+	if _, _, _, _, err := syncMapping(fp, st, cfg, mapping, 0, changes); err != nil {
+		t.Fatalf("首次同步失败：%v", err)
+	}
+	if got := changes.list(); len(got) != 1 || got[0] != "动漫电影" {
+		t.Fatalf("应收集到分类 动漫电影，得到 %v", got)
+	}
+
+	// 无变更的二次同步不应产生分类
+	changes2 := newStrmChanges(testStrmCategories())
+	if _, _, _, _, err := syncMapping(fp, st, cfg, mapping, 0, changes2); err != nil {
+		t.Fatalf("二次同步失败：%v", err)
+	}
+	if got := changes2.list(); len(got) != 0 {
+		t.Fatalf("无变更同步不应收集分类，得到 %v", got)
+	}
+
+	// 网盘侧删除源文件 → sweep 清 strm，应收集分类
+	fp.mu.Lock()
+	delete(fp.byID, titleDir.ID)
+	fp.children[catDir.ID] = nil
+	fp.mu.Unlock()
+	changes3 := newStrmChanges(testStrmCategories())
+	if _, _, removed, _, err := syncMapping(fp, st, cfg, mapping, 0, changes3); err != nil {
+		t.Fatalf("删除对账同步失败：%v", err)
+	} else if removed != 1 {
+		t.Fatalf("应清理 1 个 strm，得到 removed=%d", removed)
+	}
+	if got := changes3.list(); len(got) != 1 || got[0] != "动漫电影" {
+		t.Fatalf("删除对账应收集分类 动漫电影，得到 %v", got)
 	}
 }

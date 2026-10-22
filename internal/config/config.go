@@ -133,6 +133,7 @@ type Strm struct {
 	URLBase             string        `yaml:"url_base"`
 	URLSecret           string        `yaml:"url_secret"`
 	SyncIntervalSeconds int           `yaml:"sync_interval_seconds"`
+	RefreshPlex         bool          `yaml:"refresh_plex"`
 	MediaExt            []string      `yaml:"media_ext"`
 	FetchSidecar        bool          `yaml:"fetch_sidecar"`
 	SidecarExt          []string      `yaml:"sidecar_ext"`
@@ -556,6 +557,7 @@ func parseStrm(m map[string]any) Strm {
 		URLBase:             normalizeStrmURLBase(str(m, "url_base", "")),
 		URLSecret:           strings.TrimSpace(str(m, "url_secret", "")),
 		SyncIntervalSeconds: integer(m, "sync_interval_seconds", 0),
+		RefreshPlex:         boolean(m, "refresh_plex", false),
 		MediaExt:            mediaExt,
 		FetchSidecar:        boolean(m, "fetch_sidecar", true),
 		SidecarExt:          sidecarExt,
