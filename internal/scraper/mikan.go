@@ -13,7 +13,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
-const mikanBaseURL = "https://mikan.tangbai.cc"
+const mikanBaseURL = "https://mikanani.me"
 
 const mikanUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
 
@@ -40,8 +40,8 @@ func (s *MikanSpider) SiteID() string { return "mikan" }
 // SiteName 站点显示名。
 func (s *MikanSpider) SiteName() string { return "Mikan" }
 
-// RssHosts RSS 域名后缀。
-func (s *MikanSpider) RssHosts() []string { return []string{"mikanani.me", "mikan.tangbai.cc"} }
+// RssHosts RSS 域名后缀（mikanime.tv 为备用域名，302 跳转主站）。
+func (s *MikanSpider) RssHosts() []string { return []string{"mikanani.me", "mikanime.tv"} }
 
 // SetTestBaseURL 覆盖基础地址（仅测试使用）。
 func (s *MikanSpider) SetTestBaseURL(baseURL string) { s.baseURL = baseURL }

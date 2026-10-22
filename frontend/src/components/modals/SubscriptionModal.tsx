@@ -26,7 +26,7 @@ function parseKeywords(value: string): string[] {
 }
 
 const RSS_SITES = [
-  { id: 'mikan', name: 'Mikan', rss_hosts: ['mikanani.me', 'mikan.tangbai.cc'] },
+  { id: 'mikan', name: 'Mikan', rss_hosts: ['mikanani.me', 'mikanime.tv'] },
   { id: 'anibt', name: 'AniBT', rss_hosts: ['anibt.net'] },
 ]
 
