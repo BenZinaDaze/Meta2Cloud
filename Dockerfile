@@ -14,7 +14,7 @@ COPY frontend/ ./
 RUN VITE_APP_VERSION=${APP_VERSION} npm run build
 
 
-FROM golang:1.27-bookworm AS backend-builder
+FROM golang:1.27.3-bookworm AS backend-builder
 
 ARG APP_VERSION=dev
 
