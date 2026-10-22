@@ -86,10 +86,11 @@ func MetaInfo(title string, subtitle string, isfile bool, customWords []string, 
 		return &NewMetaVideo("", subtitle, isfile, rgMatcher).MetaBase
 	}
 
-	// 1. 自定义词预处理
+	// 1. 自定义词预处理（集偏移可跨字段作用于副标题）
 	matcher := NewWordsMatcher(customWords)
-	prepared, appliedWords := matcher.Prepare(title)
+	prepared, preparedSubtitle, appliedWords := matcher.PrepareWithSubtitle(title, subtitle)
 	title = prepared
+	subtitle = preparedSubtitle
 
 	// 2. 提取内嵌 ID 标签
 	tags := findMetaTags(title)
