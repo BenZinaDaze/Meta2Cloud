@@ -126,6 +126,7 @@ func serializeMeta(meta *mediaparser.MetaBase) map[string]any {
 		"tmdbid":          meta.TmdbID,
 		"doubanid":        meta.DoubanID,
 		"frame_rate":      meta.FrameRate(),
+		"apply_words":     meta.ApplyWords,
 	}
 }
 
