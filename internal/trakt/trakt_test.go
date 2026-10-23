@@ -3,6 +3,7 @@ package trakt
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -577,5 +578,30 @@ func TestNotFoundUnknownShapeFallsBackWholeChunk(t *testing.T) {
 		if res.OK {
 			t.Fatalf("未知形态应整批保守失败：%+v", res)
 		}
+	}
+}
+
+// TestUnauthorizedSentinel 已授权接口 401 与刷新被拒均应返回可 errors.Is 识别的 ErrUnauthorized。
+func TestUnauthorizedSentinel(t *testing.T) {
+	// 已授权接口 401（token 失效且刷新不可用时同步读取的典型错误）
+	c := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	c.token = testToken()
+	if _, err := c.SyncWatchedMovies(); !errors.Is(err, ErrUnauthorized) {
+		t.Errorf("已授权接口 401 应命中 ErrUnauthorized: %v", err)
+	}
+	if _, err := c.AddHistory(nil, []HistoryEpisode{{ShowTMDBID: 1, Season: 1, Episode: 1}}); !errors.Is(err, ErrUnauthorized) {
+		t.Errorf("写入接口 401 应命中 ErrUnauthorized: %v", err)
+	}
+
+	// 刷新被拒（refresh_token 失效/撤销，Trakt 以 400 invalid_grant 应答）
+	c2 := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"invalid_grant","error_description":"The provided authorization grant is invalid"}`))
+	}))
+	c2.token = &Token{AccessToken: "expired", RefreshToken: "stale", RefreshTime: time.Now().Unix() - 7200, ExpiresIn: 3600}
+	if err := c2.RefreshToken(); !errors.Is(err, ErrUnauthorized) {
+		t.Errorf("刷新被拒应命中 ErrUnauthorized: %v", err)
 	}
 }

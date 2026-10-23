@@ -6,6 +6,7 @@ package webui
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -25,6 +26,7 @@ import (
 	"meta2cloud/internal/config"
 	"meta2cloud/internal/pipeline"
 	"meta2cloud/internal/plexserver"
+	"meta2cloud/internal/u115"
 	"meta2cloud/internal/webui/store"
 )
 
@@ -236,7 +238,7 @@ func runStrmSync(trigger string) {
 	runID := st.StartSyncRun(trigger)
 	stats := strmRunStats{}
 	changes := newStrmChanges(RT().GetCategories())
-	var syncErr string
+	var syncErr error
 
 	for _, mapping := range cfg.Strm.Mappings {
 		created, updated, removed, skipped, err := syncMapping(provider, st, cfg, mapping, runID, changes)
@@ -245,21 +247,33 @@ func runStrmSync(trigger string) {
 		stats.Removed += removed
 		stats.Skipped += skipped
 		if err != nil {
-			syncErr = fmt.Sprintf("映射 %s → %s：%v", mapping.PanFolderID, mapping.LocalPath, err)
+			syncErr = fmt.Errorf("映射 %s → %s：%w", mapping.PanFolderID, mapping.LocalPath, err)
 			log.Printf("[strm] %s", syncErr)
 			break // 单个映射失败即停，避免误删另一映射的失效文件
 		}
 	}
 	// 保守原则：任一映射遍历失败时跳过孤儿对账等删除类操作，宁可不删不误删
-	if syncErr == "" {
+	if syncErr == nil {
 		stats.Removed += sweepOrphanStrmFiles(st, cfg.Strm.Mappings, runID)
 	}
-	st.FinishSyncRun(runID, stats.Created, stats.Updated, stats.Removed, stats.Skipped, syncErr)
+	st.FinishSyncRun(runID, stats.Created, stats.Updated, stats.Removed, stats.Skipped, errText(syncErr))
 	log.Printf("[strm] 同步完成（%s）：新增 %d 更新 %d 删除 %d 跳过 %d",
 		trigger, stats.Created, stats.Updated, stats.Removed, stats.Skipped)
-	if syncErr == "" {
+	if syncErr == nil {
+		NotifyServiceHealth("115", true, "")
 		notifyPlexRefresh(stats.Created+stats.Updated+stats.Removed, changes)
+	} else if u115.IsAuth(syncErr) {
+		// 仅 115 授权失效才上报健康状态；瞬时网络/限流错误不告警
+		NotifyServiceHealth("115", false, "STRM 同步："+syncErr.Error())
 	}
+}
+
+// errText 错误转字符串（nil → 空串）。
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // notifyPlexRefresh strm 有实际变更后通知 Plex 扫描媒体库（strm.refresh_plex 开启时生效）。
@@ -285,6 +299,9 @@ func notifyPlexRefresh(changed int, changes *strmChanges) {
 			appLog("strm", "plex_notify", "ERROR", "通知 Plex 失败（获取媒体库列表）："+err.Error(),
 				map[string]any{"changed": changed})
 			log.Printf("[strm] 通知 Plex 失败（获取媒体库列表）：%v", err)
+			if errors.Is(err, plexserver.ErrUnauthorized) {
+				NotifyServiceHealth("Plex", false, err.Error())
+			}
 			return
 		}
 		targets := make([]plexserver.Section, 0, len(sections))
@@ -303,6 +320,9 @@ func notifyPlexRefresh(changed int, changes *strmChanges) {
 				appLog("strm", "plex_notify", "ERROR", fmt.Sprintf("通知 Plex 刷新媒体库 %s 失败：%v", s.Title, err),
 					map[string]any{"section": s.Title})
 				log.Printf("[strm] 通知 Plex 刷新媒体库 %s 失败：%v", s.Title, err)
+				if errors.Is(err, plexserver.ErrUnauthorized) {
+					NotifyServiceHealth("Plex", false, err.Error())
+				}
 			}
 		}
 		cats := "全部媒体库"
@@ -314,6 +334,8 @@ func notifyPlexRefresh(changed int, changes *strmChanges) {
 		if failed > 0 {
 			level = "WARN"
 			msg += fmt.Sprintf("，%d 个失败", failed)
+		} else {
+			NotifyServiceHealth("Plex", true, "")
 		}
 		appLog("strm", "plex_notify", level, msg,
 			map[string]any{"targets": len(targets), "failed": failed, "changed": changed})

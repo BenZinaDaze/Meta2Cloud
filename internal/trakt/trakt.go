@@ -8,6 +8,7 @@ package trakt
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -131,6 +132,10 @@ func (z Zeit) Unix() int64 {
 }
 
 // ── 客户端 ──────────────────────────────────────────────────
+
+// ErrUnauthorized Trakt 授权失效：token 刷新被拒（refresh_token 失效/撤销）
+// 或授权接口返回 401。调用方用 errors.Is 识别授权失效，与健康监测等上层逻辑解耦。
+var ErrUnauthorized = errors.New("Trakt 授权已失效，请重新完成设备码配对")
 
 // Client Trakt API v2 客户端。
 // Trakt 现为 PKCE 模式、不再签发 Client Secret：设备码流程与 token 刷新
@@ -271,12 +276,17 @@ func (c *Client) refreshTokenLocked() error {
 	// redirect_uri 须与应用登记一致：我们的授权走设备码流程（无浏览器回调），
 	// 该值仅出现在刷新请求；Trakt Development 应用只接受 localhost 系回调，
 	// 故固定为 http://localhost（创建应用时 Redirect URI 按此填写）。
-	if err := c.postUnauthed("/oauth/token", map[string]any{
+	status, err := c.postAuthBase("/oauth/token", map[string]any{
 		"refresh_token": c.token.RefreshToken,
 		"client_id":     c.ClientID,
 		"grant_type":    "refresh_token",
 		"redirect_uri":  "http://localhost",
-	}, &out); err != nil {
+	}, &out)
+	if err != nil {
+		// refresh_token 失效/撤销时 Trakt 以 400/401 拒绝刷新请求：归类为授权失效
+		if status == http.StatusBadRequest || status == http.StatusUnauthorized {
+			return fmt.Errorf("Trakt token 刷新失败（HTTP %d）：%w", status, ErrUnauthorized)
+		}
 		return err
 	}
 	if out.AccessToken == "" {
@@ -785,18 +795,34 @@ func (c *Client) do(method, base, path string, payload any, auth bool) ([]byte, 
 	return data, resp.StatusCode, resp.Header, nil
 }
 
-func (c *Client) postUnauthed(path string, payload any, out any) error {
+// statusError 构造 4xx/5xx 状态错误；401 归类为授权失效（ErrUnauthorized）。
+func statusError(path string, status int, data []byte) error {
+	err := fmt.Errorf("Trakt %s 失败：HTTP %d（%s）", path, status, truncateBody(data))
+	if status == http.StatusUnauthorized {
+		return fmt.Errorf("%w（%v）", ErrUnauthorized, err)
+	}
+	return err
+}
+
+// postAuthBase 调用 OAuth 主机（auth.trakt.tv）接口并回传 HTTP 状态码
+// （refreshTokenLocked 需按状态区分「刷新被拒」与网络类失败）。
+func (c *Client) postAuthBase(path string, payload any, out any) (int, error) {
 	data, status, _, err := c.do(http.MethodPost, c.authBase(), path, payload, false)
 	if err != nil {
-		return err
+		return status, err
 	}
 	if status >= 400 {
-		return fmt.Errorf("Trakt %s 失败：HTTP %d（%s）", path, status, truncateBody(data))
+		return status, statusError(path, status, data)
 	}
 	if out == nil {
-		return nil
+		return status, nil
 	}
-	return json.Unmarshal(data, out)
+	return status, json.Unmarshal(data, out)
+}
+
+func (c *Client) postUnauthed(path string, payload any, out any) error {
+	_, err := c.postAuthBase(path, payload, out)
+	return err
 }
 
 // postRaw 同 postUnauthed，但 4xx 也尝试解析 JSON 体（设备码轮询用 error 字段传状态）。
@@ -817,7 +843,7 @@ func (c *Client) postAuthed(path string, payload any, out any) error {
 		return err
 	}
 	if status >= 400 {
-		return fmt.Errorf("Trakt %s 失败：HTTP %d（%s）", path, status, truncateBody(data))
+		return statusError(path, status, data)
 	}
 	if out == nil {
 		return nil
@@ -834,7 +860,7 @@ func (c *Client) getAuthed(path string, out any) error {
 		return err
 	}
 	if status >= 400 {
-		return fmt.Errorf("Trakt %s 失败：HTTP %d（%s）", path, status, truncateBody(data))
+		return statusError(path, status, data)
 	}
 	return json.Unmarshal(data, out)
 }
@@ -846,7 +872,7 @@ func (c *Client) getWithPagination(path string) ([]byte, int, error) {
 		return nil, 0, err
 	}
 	if status >= 400 {
-		return nil, 0, fmt.Errorf("Trakt %s 失败：HTTP %d（%s）", path, status, truncateBody(data))
+		return nil, 0, statusError(path, status, data)
 	}
 	pageCount := 1
 	if v := header.Get("X-Pagination-Page-Count"); v != "" {

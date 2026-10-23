@@ -104,7 +104,18 @@ func pollU115AutoOrganizeOnce() {
 	if cfg.ActiveStorageName() != "pan115" || !cfg.U115.AutoOrganizeEnabled || cfg.U115.DownloadFolderID == "" {
 		return
 	}
-	if authorized, _ := u115OauthStatusPayload()["authorized"].(bool); !authorized {
+	auth := u115OauthStatusPayload()
+	if authorized, _ := auth["authorized"].(bool); !authorized {
+		// 最常见失效形态：本地 token 过期且自动刷新被拒——调 API 前即上报失效，
+		// 避免早退导致永不告警（token 文件缺失等未配置形态不在此告警，防止误报）；
+		// 刷新成功/未过期则继续轮询，恢复上报由 GetTaskList 成功点负责，此处不误报 OK
+		if expired, _ := auth["token_expired"].(bool); expired {
+			reason := "115 授权已失效（刷新被拒）"
+			if refreshErr := anyStrValue(auth["refresh_error"]); refreshErr != "" {
+				reason += "：" + refreshErr
+			}
+			NotifyServiceHealth("115", false, reason)
+		}
 		return
 	}
 	offline := offlineClient()
@@ -118,6 +129,7 @@ func pollU115AutoOrganizeOnce() {
 		recordU115PollError(err)
 		return
 	}
+	NotifyServiceHealth("115", true, "")
 	stableSeconds := cfg.U115.AutoOrganizeStableSeconds
 	if stableSeconds < 0 {
 		stableSeconds = 0
@@ -186,6 +198,10 @@ func recordU115PollError(err error) {
 	} else {
 		msg = fmt.Sprintf("[%T] %v", err, err)
 	}
+	// 仅授权失效属于配置问题（需重新授权）；限流/网络抖动等瞬时错误不告警
+	if u115.IsAuth(err) {
+		NotifyServiceHealth("115", false, "自动整理轮询认证失败："+err.Error())
+	}
 	u115AutoWatcher.mu.Lock()
 	u115AutoWatcher.lastPollError = &msg
 	u115AutoWatcher.mu.Unlock()
@@ -241,12 +257,33 @@ func ensureU115AutoOrganizeLoop() {
 	})
 }
 
+// rssHealthState RSS 轮询健康判定：连续 2 次 summary.errors（抓取错误数）> 0 才视为
+// 订阅源失效（推送类错误单列 push_errors，不计入；窗口状态仅存于 watcher 循环局部，
+// 进程重启即清零），任一次干净轮询即恢复。
+type rssHealthState struct{ consecutiveErrors int }
+
+// update 依据本轮轮询 summary 更新计数，返回是否需要上报（report）、结论（ok）与失效原因。
+func (s *rssHealthState) update(summary map[string]any) (report, ok bool, reason string) {
+	errCount, _ := summary["errors"].(int)
+	if errCount <= 0 {
+		s.consecutiveErrors = 0
+		return true, true, ""
+	}
+	s.consecutiveErrors++
+	if s.consecutiveErrors < 2 {
+		return false, false, ""
+	}
+	reason, _ = summary["first_error"].(string)
+	return true, false, reason
+}
+
 // ensureRSSSubscriptionLoop 启动 RSS 订阅轮询（幂等；按 rss.poll_cron 计划轮询）。
 func ensureRSSSubscriptionLoop() {
 	rssOnce.Do(func() {
 		go func() {
 			log.Printf("RSS 订阅监听线程已启动（按 rss.poll_cron 计划轮询；未配置 cron 时不定时）")
-			cronWarned := "" // 已告警过的非法 cron：仅状态变化时告警，避免每 60s 重复刷日志
+			cronWarned := ""             // 已告警过的非法 cron：仅状态变化时告警，避免每 60s 重复刷日志
+			var rssHealth rssHealthState // 连续失败计数（循环局部）
 			for {
 				spec := getSubscriptionPollCron()
 				d, ok, err := cronNextDelay(spec, time.Now())
@@ -291,6 +328,10 @@ func ensureRSSSubscriptionLoop() {
 					rssWatcher.mu.Lock()
 					rssWatcher.lastSummary = summary
 					rssWatcher.mu.Unlock()
+					// 连续 2 次轮询出错才判定订阅源失效（单次抖动不告警）；任一次干净轮询即恢复
+					if report, ok, reason := rssHealth.update(summary); report {
+						NotifyServiceHealth("订阅源", ok, reason)
+					}
 				}()
 			}
 		}()

@@ -2,6 +2,7 @@ package u115
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -371,5 +372,17 @@ func TestFetchBytesUsesClientUA(t *testing.T) {
 	}
 	if fileUA != downUA {
 		t.Errorf("拉取内容 UA 应与申请直链一致：downurl=%q file=%q", downUA, fileUA)
+	}
+}
+
+// TestIsAuthWrapped 授权错误被 %w 层层包装后仍应被 IsAuth 识别（调用方会包装 provider 错误）。
+func TestIsAuthWrapped(t *testing.T) {
+	base := &APIError{Kind: KindAuth, Message: "token 失效"}
+	wrapped := fmt.Errorf("列举网盘目录失败：%w", fmt.Errorf("映射同步失败：%w", base))
+	if !IsAuth(wrapped) {
+		t.Error("包装后的授权错误应仍被 IsAuth 识别")
+	}
+	if IsAuth(fmt.Errorf("普通网络错误")) || IsAuth(nil) {
+		t.Error("普通错误/nil 不应被识别为授权错误")
 	}
 }

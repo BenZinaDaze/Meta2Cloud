@@ -645,8 +645,18 @@ func runTraktSync(trigger string) {
 	took := time.Since(started).Round(time.Millisecond)
 	if err != nil {
 		appLog("trakt", "sync_failed", "ERROR", fmt.Sprintf("观看同步失败（耗时 %s）：%v", took, err), nil)
+		// 仅授权失效上报健康状态；瞬时网络错误不告警
+		switch {
+		case errors.Is(err, trakt.ErrUnauthorized):
+			NotifyServiceHealth("Trakt", false, "观看同步："+err.Error())
+		case errors.Is(err, plexserver.ErrUnauthorized):
+			NotifyServiceHealth("Plex", false, "观看同步："+err.Error())
+		}
 		return
 	}
+	// 全量成功即双向接口可达且授权有效：同时上报 Trakt 与 Plex 恢复
+	NotifyServiceHealth("Trakt", true, "")
+	NotifyServiceHealth("Plex", true, "")
 	appLog("trakt", "sync_done", "SUCCESS",
 		fmt.Sprintf("观看同步完成（耗时 %s）：→Trakt %d 条，→Plex %d 条，冲突 %d，未识别 %d，跳过 %d",
 			took, summary.ToTrakt, summary.ToPlex, summary.Conflicts, summary.Unresolved, summary.Skipped),
@@ -968,8 +978,13 @@ func pollPlexSessionsOnce() {
 		traktSessionWatcher.mu.Lock()
 		traktSessionWatcher.lastPollError = &msg
 		traktSessionWatcher.mu.Unlock()
+		if errors.Is(err, plexserver.ErrUnauthorized) {
+			NotifyServiceHealth("Plex", false, err.Error())
+		}
 		return
 	}
+	// 会话查询成功即 Plex 可达且授权有效：SSE 关闭（默认）时这里是唯一的 Plex 恢复上报点
+	NotifyServiceHealth("Plex", true, "")
 
 	seen := map[string]bool{}
 	source := plexserver.NewSource(plexClient, buildTitleIndex())
@@ -1065,6 +1080,9 @@ func tryPushWatchedSession(syncStore *store.TraktSyncStore, traktClient *trakt.C
 		record(false, fmt.Sprintf("Trakt 写入失败：%v", err))
 		appLog("trakt", "session_push_failed", "WARNING",
 			fmt.Sprintf("播放进度推送 Trakt 失败（%s）：%v", key, err), nil)
+		if errors.Is(err, trakt.ErrUnauthorized) {
+			NotifyServiceHealth("Trakt", false, "播放进度推送认证失败："+err.Error())
+		}
 		return false
 	}
 	if result.NotFoundCount > 0 {
@@ -1078,6 +1096,8 @@ func tryPushWatchedSession(syncStore *store.TraktSyncStore, traktClient *trakt.C
 	record(true, "")
 	appLog("trakt", "session_pushed", "SUCCESS",
 		fmt.Sprintf("播放进度已记录到 Trakt：%s（进度 %.0f%%）", key, progress*100), nil)
+	// 推送成功即 Trakt 授权有效：会话推送是独立于全量同步的恢复上报点
+	NotifyServiceHealth("Trakt", true, "")
 	return true
 }
 
@@ -1229,6 +1249,7 @@ func ensureTraktSSELoop() {
 					openedAt = time.Now()
 					log.Printf("Plex 实时通知已连接：%s", plexClient.BaseURL)
 					setSSEConnected(true)
+					NotifyServiceHealth("Plex", true, "")
 					appLog("trakt", "sse_connected", "INFO",
 						fmt.Sprintf("Plex 实时通知已连接（%s）", plexClient.BaseURL), nil)
 				}, func(n plexserver.PlaybackNotification) {
@@ -1249,6 +1270,9 @@ func ensureTraktSSELoop() {
 				cancel()
 				close(events)
 				setSSEConnected(false)
+				if errors.Is(err, plexserver.ErrUnauthorized) {
+					NotifyServiceHealth("Plex", false, err.Error())
+				}
 				msg := "连接结束"
 				if err != nil {
 					msg = err.Error()

@@ -222,6 +222,10 @@ func (c *Client) plexTV(method, path string, out any) error {
 	if err != nil {
 		return err
 	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		// 与服务端/SSE 分支一致：401 归类为授权失效（errors.Is 可识别）
+		return ErrUnauthorized
+	}
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("plex.tv %s 失败：HTTP %d", path, resp.StatusCode)
 	}
@@ -238,6 +242,10 @@ func (c *Client) setClientHeaders(req *http.Request) {
 }
 
 // ── 服务端接口 ──────────────────────────────────────────────
+
+// ErrUnauthorized Plex token 失效（服务端返回 401）。
+// 调用方用 errors.Is 识别授权失效，与健康监测等上层逻辑解耦。
+var ErrUnauthorized = errors.New("Plex 认证失败（401），请重新授权")
 
 // get 调用 Plex 服务器（自动携带 X-Plex-Token）。
 func (c *Client) get(path string, query url.Values) ([]byte, http.Header, error) {
@@ -273,7 +281,7 @@ func (c *Client) do(method, path string, query url.Values) ([]byte, http.Header,
 		return nil, nil, err
 	}
 	if resp.StatusCode == 401 {
-		return nil, nil, fmt.Errorf("Plex 认证失败（401），请重新授权")
+		return nil, nil, ErrUnauthorized
 	}
 	if resp.StatusCode >= 400 {
 		return nil, nil, fmt.Errorf("Plex %s 失败：HTTP %d", path, resp.StatusCode)
@@ -447,6 +455,9 @@ func (c *Client) StreamNotifications(ctx context.Context, onOpen func(), onEvent
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
 		return ErrNotificationsUnsupported
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		return ErrUnauthorized
 	}
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("Plex 通知流订阅失败：HTTP %d", resp.StatusCode)

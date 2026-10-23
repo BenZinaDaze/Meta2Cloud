@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -17,6 +18,7 @@ import (
 	"meta2cloud/internal/mediaparser"
 	"meta2cloud/internal/scraper"
 	"meta2cloud/internal/tmdb"
+	"meta2cloud/internal/u115"
 	"meta2cloud/internal/webui/store"
 )
 
@@ -325,6 +327,9 @@ func withRecentHits(rssStore *store.RSSStore, payload map[string]any) map[string
 
 // ── 推送 ────────────────────────────────────────────────────
 
+// errPush115Unauthorized 115 未授权时的推送失败（可 errors.Is 识别）。
+var errPush115Unauthorized = errors.New("115 未授权，无法推送云下载")
+
 func pushItem(pushTarget string, item map[string]any) error {
 	magnetURL := anyStrValue(item["magnet_url"])
 	torrentURL := anyStrValue(item["torrent_url"])
@@ -332,7 +337,7 @@ func pushItem(pushTarget string, item map[string]any) error {
 	case "u115":
 		auth := u115OauthStatusPayload()
 		if authorized, _ := auth["authorized"].(bool); !authorized {
-			return fmt.Errorf("115 未授权，无法推送云下载")
+			return errPush115Unauthorized
 		}
 		if magnetURL == "" && torrentURL == "" {
 			return fmt.Errorf("RSS 条目缺少下载地址")
@@ -343,7 +348,20 @@ func pushItem(pushTarget string, item map[string]any) error {
 	return fmt.Errorf("未知推送目标：%s", pushTarget)
 }
 
+// reportSubscriptionPushHealth 推送失败的健康归因（推送错误一律不参与订阅源健康判定，
+// 订阅源失效只看抓取错误）：115 授权失效改路报到 115 服务健康，
+// 限流（115 429）/网络抖动等瞬时错误按既有规则静默不告警。
+func reportSubscriptionPushHealth(err error) {
+	switch {
+	case errors.Is(err, errPush115Unauthorized):
+		NotifyServiceHealth("115", false, "订阅推送：115 未授权")
+	case u115.IsAuth(err):
+		NotifyServiceHealth("115", false, "订阅推送：115 授权失效："+err.Error())
+	}
+}
+
 // checkSubscriptionRecord 检查一条订阅（抓取→匹配→推送→记录）。
+// 返回的 errors 只含订阅源抓取错误（健康判定依据），推送类错误单列 push_errors。
 func checkSubscriptionRecord(rssStore *store.RSSStore, record *store.SubscriptionRecord, manual bool) map[string]any {
 	items, err := fetchFeedItems(record.Site, record.RssURL)
 	if err != nil {
@@ -354,7 +372,7 @@ func checkSubscriptionRecord(rssStore *store.RSSStore, record *store.Subscriptio
 	result := filterMatchItems(items, record.SeasonNumber, record.StartEpisode, decodeKeywordAll(record.KeywordAll))
 
 	pushed, skipped := 0, 0
-	errors := []string{}
+	pushErrors := []string{} // 抓取已成功，推送失败不代表订阅源失效（115 未授权已改路上报 115 服务）
 	effective, _ := result["effective_matches"].([]map[string]any)
 	for _, item := range effective {
 		dedupe := item["dedupe_key"].(string)
@@ -374,7 +392,8 @@ func checkSubscriptionRecord(rssStore *store.RSSStore, record *store.Subscriptio
 			hitPayload["push_status"] = "failed"
 			hitPayload["push_error"] = err.Error()
 			_, _ = rssStore.RecordHit(hitPayload)
-			errors = append(errors, err.Error())
+			pushErrors = append(pushErrors, err.Error())
+			reportSubscriptionPushHealth(err)
 			continue
 		}
 		hitPayload["push_status"] = "success"
@@ -391,38 +410,42 @@ func checkSubscriptionRecord(rssStore *store.RSSStore, record *store.Subscriptio
 		}
 	}
 	errorStr := ""
-	if len(errors) > 0 {
-		errorStr = strings.Join(errors, "; ")
+	if len(pushErrors) > 0 {
+		errorStr = strings.Join(pushErrors, "; ")
 	}
 	rssStore.MarkChecked(record.ID, "", errorStr)
 
 	if pushed > 0 || manual {
 		level := "SUCCESS"
-		if len(errors) > 0 {
+		if len(pushErrors) > 0 {
 			level = "WARNING"
 		}
 		summary := result["summary"].(map[string]any)
 		appLog("subscription", "checked", level, "RSS 订阅检查完成："+record.Name, map[string]any{
 			"subscription_id": record.ID,
 			"matched":         summary["matched_items"],
-			"pushed":          pushed, "skipped": skipped, "errors": errors,
+			"pushed":          pushed, "skipped": skipped, "push_errors": pushErrors,
 		})
 	}
 	return map[string]any{
 		"summary": result["summary"], "matched": result["summary"].(map[string]any)["matched_items"],
-		"pushed": pushed, "skipped": skipped, "errors": errors,
+		"pushed": pushed, "skipped": skipped,
+		"errors": []string{}, "push_errors": pushErrors,
 		"last_matched_at": lastMatchedAt,
 	}
 }
 
 // PollSubscriptionsOnce 轮询全部启用订阅（watcher 调用）。
+// 返回的 summary 携带健康监测判定输入：errors 只统计抓取错误（连续 2 轮 >0 判订阅源失效），
+// first_error 取首条抓取错误；推送类错误单列 push_errors，不参与订阅源健康判定。
 func PollSubscriptionsOnce() map[string]any {
 	rssStore := RT().GetRSSStore()
 	if rssStore == nil {
-		return map[string]any{"checked": 0, "pushed": 0, "errors": 1}
+		return map[string]any{"checked": 0, "pushed": 0, "errors": 1, "push_errors": 0, "first_error": "订阅存储不可用"}
 	}
 	records := rssStore.ListEnabledSubscriptions()
-	checked, pushed, errCount := 0, 0, 0
+	checked, pushed, errCount, pushErrCount := 0, 0, 0, 0
+	firstError := ""
 	for i, record := range records {
 		if i > 0 {
 			time.Sleep(3 * time.Second) // 防止触发 mikan 阈值
@@ -434,9 +457,18 @@ func PollSubscriptionsOnce() map[string]any {
 		}
 		if errs, ok := result["errors"].([]string); ok && len(errs) > 0 {
 			errCount++
+			if firstError == "" {
+				firstError = errs[0]
+			}
+		}
+		if perrs, ok := result["push_errors"].([]string); ok && len(perrs) > 0 {
+			pushErrCount++
 		}
 	}
-	return map[string]any{"checked": checked, "pushed": pushed, "errors": errCount}
+	return map[string]any{
+		"checked": checked, "pushed": pushed,
+		"errors": errCount, "push_errors": pushErrCount, "first_error": firstError,
+	}
 }
 
 // SubscriptionsStatusPayload 订阅状态。

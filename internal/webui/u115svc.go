@@ -83,6 +83,7 @@ func u115OauthStatusPayload() map[string]any {
 
 	tokenValid, tokenExpired, authorized, refreshed := false, false, false, false
 	var expiresAt, refreshTime any
+	var refreshErr string
 	if tokenExists {
 		if token, ok, _ := u115.LoadToken(tokenPath); ok {
 			refreshTime = token.RefreshTime
@@ -99,6 +100,8 @@ func u115OauthStatusPayload() map[string]any {
 						tokenExpired = false
 						tokenValid = true
 						authorized = true
+					} else {
+						refreshErr = err.Error() // 刷新被拒：后台轮询凭此区分「刷新被拒」与「未配置」
 					}
 				}
 			} else {
@@ -114,7 +117,7 @@ func u115OauthStatusPayload() map[string]any {
 		"token_exists":      tokenExists, "session_exists": sessionExists,
 		"authorized": authorized, "token_valid": tokenValid,
 		"token_expired": tokenExpired, "refresh_time": refreshTime,
-		"expires_at": expiresAt, "refreshed": refreshed,
+		"expires_at": expiresAt, "refreshed": refreshed, "refresh_error": refreshErr,
 	}
 }
 
