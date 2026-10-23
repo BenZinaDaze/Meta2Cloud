@@ -25,7 +25,8 @@ import (
 const traktSyncDDL = `
 CREATE TABLE IF NOT EXISTS sync_items (
 	media_type   TEXT    NOT NULL,              -- 'movie' | 'tv'
-	tmdb_id      INTEGER NOT NULL,
+	anchor       TEXT    NOT NULL DEFAULT 'tmdb', -- 身份锚：'tmdb' | 'tvdb'（剧集缺 tmdb 时）
+	tmdb_id      INTEGER NOT NULL,              -- 锚 ID（列名沿用；anchor='tvdb' 时存 tvdb id）
 	season       INTEGER NOT NULL DEFAULT 0,    -- 电影为 0
 	episode      INTEGER NOT NULL DEFAULT 0,    -- 电影为 0
 	plex_ref             TEXT,                  -- ratingKey 缓存（会话轮询/日志用，不承担索引职责）
@@ -37,12 +38,26 @@ CREATE TABLE IF NOT EXISTS sync_items (
 	trakt_watched         INTEGER,               -- NULL=未知；1=已看
 	trakt_plays           INTEGER NOT NULL DEFAULT 0,
 	trakt_last_watched_at INTEGER NOT NULL DEFAULT 0,  -- unix 秒
-	session_pushed_at     INTEGER NOT NULL DEFAULT 0,  -- 会话轮询最近推送时刻（防重）
+	session_pushed_at     INTEGER NOT NULL DEFAULT 0,  -- 会话路径最近一次推送尝试时刻
 	updated_at    TEXT NOT NULL,
-	PRIMARY KEY (media_type, tmdb_id, season, episode)
+	PRIMARY KEY (media_type, anchor, tmdb_id, season, episode)
 );
 
 CREATE INDEX IF NOT EXISTS idx_sync_items_plex_ref ON sync_items(plex_ref);
+
+-- 外部 ID 映射表（1b 身份归一化）：把 tmdb/tvdb/imdb 三系 ID 归并到同一媒体，
+-- 键规范为 tmdb 优先、剧集缺 tmdb 时回退 tvdb。
+CREATE TABLE IF NOT EXISTS sync_id_map (
+	sid        INTEGER PRIMARY KEY AUTOINCREMENT,
+	media_type TEXT    NOT NULL,
+	tmdb_id    INTEGER NOT NULL DEFAULT 0,
+	tvdb_id    INTEGER NOT NULL DEFAULT 0,
+	imdb_id    TEXT    NOT NULL DEFAULT ''
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_id_map_tmdb ON sync_id_map(media_type, tmdb_id) WHERE tmdb_id > 0;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_id_map_tvdb ON sync_id_map(media_type, tvdb_id) WHERE tvdb_id > 0;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_id_map_imdb ON sync_id_map(media_type, imdb_id) WHERE imdb_id <> '';
 
 CREATE TABLE IF NOT EXISTS sync_runs (
 	id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,6 +90,7 @@ CREATE TABLE IF NOT EXISTS sync_sessions (
 	session_key    TEXT PRIMARY KEY,
 	plex_ref       TEXT NOT NULL,
 	media_type     TEXT NOT NULL,
+	anchor         TEXT NOT NULL DEFAULT 'tmdb',
 	tmdb_id        INTEGER NOT NULL,
 	season         INTEGER NOT NULL DEFAULT 0,
 	episode        INTEGER NOT NULL DEFAULT 0,
@@ -93,11 +109,12 @@ CREATE TABLE IF NOT EXISTS sync_meta (
 
 CREATE TABLE IF NOT EXISTS sync_ignores (
 	media_type TEXT NOT NULL,             -- movie | tv（媒体级：整部电影/整部剧）
-	tmdb_id    INTEGER NOT NULL,
-	title      TEXT,                      -- 忽略时快照，列表展示用
-	reason     TEXT,                      -- 触发忽略的错误（如 Trakt 无法识别 tmdb id）
+	anchor     TEXT NOT NULL DEFAULT 'tmdb',
+	tmdb_id    INTEGER NOT NULL,           -- 锚 ID（anchor='tvdb' 时存 tvdb id）
+	title      TEXT,                       -- 忽略时快照，列表展示用
+	reason     TEXT,                       -- 触发忽略的错误（如 Trakt 无法识别 tmdb id）
 	created_at TEXT NOT NULL,
-	PRIMARY KEY (media_type, tmdb_id)
+	PRIMARY KEY (media_type, anchor, tmdb_id)
 );
 `
 
@@ -133,6 +150,75 @@ func OpenTraktSyncStore(dbPath string) (*TraktSyncStore, error) {
 			return nil, err
 		}
 	}
+	// 1b 身份锚迁移：sync_items/sync_ignores 主键加入 anchor，sync_sessions/
+	// sync_run_items 补 anchor 列。SQLite 不能改主键，涉及主键的表整表重建。
+	migrate := func(table string) error {
+		hasAnchor, err := columnExists(db, table, "anchor")
+		if err != nil {
+			return err
+		}
+		if hasAnchor {
+			return nil
+		}
+		switch table {
+		case "sync_items":
+			_, err = db.Exec(`ALTER TABLE sync_items RENAME TO sync_items_old;
+CREATE TABLE sync_items (
+	media_type   TEXT    NOT NULL,
+	anchor       TEXT    NOT NULL DEFAULT 'tmdb',
+	tmdb_id      INTEGER NOT NULL,
+	season       INTEGER NOT NULL DEFAULT 0,
+	episode      INTEGER NOT NULL DEFAULT 0,
+	plex_ref             TEXT,
+	plex_seen            INTEGER NOT NULL DEFAULT 0,
+	plex_watched         INTEGER,
+	plex_plays           INTEGER NOT NULL DEFAULT 0,
+	plex_last_watched_at INTEGER NOT NULL DEFAULT 0,
+	trakt_seen            INTEGER NOT NULL DEFAULT 0,
+	trakt_watched         INTEGER,
+	trakt_plays           INTEGER NOT NULL DEFAULT 0,
+	trakt_last_watched_at INTEGER NOT NULL DEFAULT 0,
+	session_pushed_at     INTEGER NOT NULL DEFAULT 0,
+	updated_at    TEXT NOT NULL,
+	PRIMARY KEY (media_type, anchor, tmdb_id, season, episode)
+);
+INSERT INTO sync_items SELECT media_type, 'tmdb', tmdb_id, season, episode, plex_ref,
+	plex_seen, plex_watched, plex_plays, plex_last_watched_at,
+	trakt_seen, trakt_watched, trakt_plays, trakt_last_watched_at, session_pushed_at, updated_at
+	FROM sync_items_old;
+DROP TABLE sync_items_old;
+CREATE INDEX IF NOT EXISTS idx_sync_items_plex_ref ON sync_items(plex_ref);`)
+		case "sync_ignores":
+			_, err = db.Exec(`ALTER TABLE sync_ignores RENAME TO sync_ignores_old;
+CREATE TABLE sync_ignores (
+	media_type TEXT NOT NULL,
+	anchor     TEXT NOT NULL DEFAULT 'tmdb',
+	tmdb_id    INTEGER NOT NULL,
+	title      TEXT,
+	reason     TEXT,
+	created_at TEXT NOT NULL,
+	PRIMARY KEY (media_type, anchor, tmdb_id)
+);
+INSERT INTO sync_ignores SELECT media_type, 'tmdb', tmdb_id, title, reason, created_at FROM sync_ignores_old;
+DROP TABLE sync_ignores_old;`)
+		}
+		return err
+	}
+	for _, table := range []string{"sync_items", "sync_ignores"} {
+		if err := migrate(table); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	for _, col := range []string{"sync_sessions", "sync_run_items"} {
+		if has, err := columnExists(db, col, "anchor"); err == nil && !has {
+			if _, err := db.Exec("ALTER TABLE " + col + " ADD COLUMN anchor TEXT NOT NULL DEFAULT 'tmdb'"); err != nil &&
+				!strings.Contains(err.Error(), "duplicate column") {
+				db.Close()
+				return nil, err
+			}
+		}
+	}
 	s := &TraktSyncStore{db: db}
 	s.failStaleRunningRuns()
 	s.purgeLegacySentinelRuns()
@@ -145,13 +231,40 @@ func (s *TraktSyncStore) Close() error { return s.db.Close() }
 
 func traktSyncNow() string { return time.Now().UTC().Format("2006-01-02T15:04:05.000000-07:00") }
 
-func itemKeyValues(k watched.MediaKey) (string, int64, int, int) {
-	return k.Type, k.TMDBID, k.Season, k.Episode
+// columnExists 表列是否存在（迁移探测用）。
+func columnExists(db *sql.DB, table, column string) (bool, error) {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notNull int
+		var dfltValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dfltValue, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
+// mediaKeyValues 键 → 存储四元组（锚类型 + 锚 ID）。
+func mediaKeyValues(k watched.MediaKey) (string, string, int64, int, int) {
+	if k.TVDBID > 0 {
+		return k.Type, "tvdb", k.TVDBID, k.Season, k.Episode
+	}
+	return k.Type, "tmdb", k.TMDBID, k.Season, k.Episode
 }
 
 // ── sync_items（syncengine.ShadowStore）─────────────────────
 
-const syncItemSelect = `SELECT media_type, tmdb_id, season, episode, plex_ref,
+const syncItemSelect = `SELECT media_type, anchor, tmdb_id, season, episode, plex_ref,
 	plex_seen, plex_watched, plex_plays, plex_last_watched_at,
 	trakt_seen, trakt_watched, trakt_plays, trakt_last_watched_at, session_pushed_at
 	FROM sync_items`
@@ -159,16 +272,23 @@ const syncItemSelect = `SELECT media_type, tmdb_id, season, episode, plex_ref,
 func scanShadowItem(row interface{ Scan(...any) error }) (watched.MediaKey, syncengine.Shadow, error) {
 	var (
 		key        watched.MediaKey
+		anchor     string
+		anchorID   int64
 		sh         syncengine.Shadow
 		plexRef    sql.NullString
 		plexWatch  sql.NullBool
 		traktWatch sql.NullBool
 	)
-	err := row.Scan(&key.Type, &key.TMDBID, &key.Season, &key.Episode, &plexRef,
+	err := row.Scan(&key.Type, &anchor, &anchorID, &key.Season, &key.Episode, &plexRef,
 		&sh.PlexSeen, &plexWatch, &sh.PlexPlays, &sh.PlexLastAt,
 		&sh.TraktSeen, &traktWatch, &sh.TraktPlays, &sh.TraktLastAt, &sh.SessionPushedAt)
 	if err != nil {
 		return key, sh, err
+	}
+	if anchor == "tvdb" {
+		key.TVDBID = anchorID
+	} else {
+		key.TMDBID = anchorID
 	}
 	if plexRef.Valid {
 		sh.PlexRef = plexRef.String
@@ -203,9 +323,9 @@ func (s *TraktSyncStore) AllShadow() (map[watched.MediaKey]syncengine.Shadow, er
 
 // GetShadow 按键读取状态记录。
 func (s *TraktSyncStore) GetShadow(key watched.MediaKey) (syncengine.Shadow, bool, error) {
-	mediaType, tmdbID, season, episode := itemKeyValues(key)
-	row := s.db.QueryRow(syncItemSelect+" WHERE media_type = ? AND tmdb_id = ? AND season = ? AND episode = ?",
-		mediaType, tmdbID, season, episode)
+	mediaType, anchor, anchorID, season, episode := mediaKeyValues(key)
+	row := s.db.QueryRow(syncItemSelect+" WHERE media_type = ? AND anchor = ? AND tmdb_id = ? AND season = ? AND episode = ?",
+		mediaType, anchor, anchorID, season, episode)
 	_, sh, err := scanShadowItem(row)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -225,7 +345,7 @@ func (s *TraktSyncStore) SaveShadow(items []syncengine.Shadow) error {
 	defer func() { _ = tx.Rollback() }()
 	now := traktSyncNow()
 	for _, sh := range items {
-		mediaType, tmdbID, season, episode := itemKeyValues(sh.Key)
+		mediaType, anchor, anchorID, season, episode := mediaKeyValues(sh.Key)
 		var plexRef any
 		if sh.PlexRef != "" {
 			plexRef = sh.PlexRef
@@ -244,12 +364,12 @@ func (s *TraktSyncStore) SaveShadow(items []syncengine.Shadow) error {
 			return 0
 		}
 		if _, err := tx.Exec(`INSERT INTO sync_items(
-				media_type, tmdb_id, season, episode, plex_ref,
+				media_type, anchor, tmdb_id, season, episode, plex_ref,
 				plex_seen, plex_watched, plex_plays, plex_last_watched_at,
 				trakt_seen, trakt_watched, trakt_plays, trakt_last_watched_at,
 				session_pushed_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(media_type, tmdb_id, season, episode) DO UPDATE SET
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(media_type, anchor, tmdb_id, season, episode) DO UPDATE SET
 				plex_ref = excluded.plex_ref,
 				plex_seen = excluded.plex_seen,
 				plex_watched = excluded.plex_watched,
@@ -261,7 +381,7 @@ func (s *TraktSyncStore) SaveShadow(items []syncengine.Shadow) error {
 				trakt_last_watched_at = excluded.trakt_last_watched_at,
 				session_pushed_at = excluded.session_pushed_at,
 				updated_at = excluded.updated_at`,
-			mediaType, tmdbID, season, episode, plexRef,
+			mediaType, anchor, anchorID, season, episode, plexRef,
 			seenInt(sh.PlexSeen), plexWatch, sh.PlexPlays, sh.PlexLastAt,
 			seenInt(sh.TraktSeen), traktWatch, sh.TraktPlays, sh.TraktLastAt,
 			sh.SessionPushedAt, now); err != nil {
@@ -494,6 +614,7 @@ func (s *TraktSyncStore) InsertRunItem(runID int64, item syncengine.RunItem) err
 	}
 	var (
 		mediaType any
+		anchor    any
 		tmdbID    any
 		season    any
 		episode   any
@@ -502,7 +623,9 @@ func (s *TraktSyncStore) InsertRunItem(runID int64, item syncengine.RunItem) err
 	)
 	if item.Key.Type != "" {
 		mediaType = item.Key.Type
-		tmdbID = item.Key.TMDBID
+		_, a, id, _, _ := mediaKeyValues(item.Key)
+		anchor = a
+		tmdbID = id
 		season = item.Key.Season
 		episode = item.Key.Episode
 	}
@@ -516,9 +639,9 @@ func (s *TraktSyncStore) InsertRunItem(runID int64, item syncengine.RunItem) err
 	if item.Success {
 		successInt = 1
 	}
-	_, err := s.db.Exec(`INSERT INTO sync_run_items(run_id, media_type, tmdb_id, season, episode, title, direction, action, success, error)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		runID, mediaType, tmdbID, season, episode, title, item.Direction, item.Action, successInt, errArg)
+	_, err := s.db.Exec(`INSERT INTO sync_run_items(run_id, media_type, anchor, tmdb_id, season, episode, title, direction, action, success, error)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		runID, mediaType, anchor, tmdbID, season, episode, title, item.Direction, item.Action, successInt, errArg)
 	return err
 }
 
@@ -566,7 +689,8 @@ type TraktSyncSession struct {
 	SessionKey   string
 	PlexRef      string
 	MediaType    string
-	TmdbID       int64
+	Anchor       string // 'tmdb' | 'tvdb'
+	TmdbID       int64  // 锚 ID（Anchor='tvdb' 时为 tvdb id）
 	Season       int
 	Episode      int
 	Title        *string
@@ -577,12 +701,20 @@ type TraktSyncSession struct {
 	UpdatedAt    string
 }
 
-const syncSessionSelect = `SELECT session_key, plex_ref, media_type, tmdb_id, season, episode,
+// Key 会话的媒体键（无身份时 TMDBID/TVDBID 均为 0）。
+func (s TraktSyncSession) Key() watched.MediaKey {
+	if s.Anchor == "tvdb" {
+		return watched.MediaKey{Type: s.MediaType, TVDBID: s.TmdbID, Season: s.Season, Episode: s.Episode}
+	}
+	return watched.MediaKey{Type: s.MediaType, TMDBID: s.TmdbID, Season: s.Season, Episode: s.Episode}
+}
+
+const syncSessionSelect = `SELECT session_key, plex_ref, media_type, anchor, tmdb_id, season, episode,
 	title, view_offset_ms, duration_ms, max_progress, misses, updated_at FROM sync_sessions`
 
 func scanSyncSession(row interface{ Scan(...any) error }) *TraktSyncSession {
 	var sess TraktSyncSession
-	if err := row.Scan(&sess.SessionKey, &sess.PlexRef, &sess.MediaType, &sess.TmdbID, &sess.Season,
+	if err := row.Scan(&sess.SessionKey, &sess.PlexRef, &sess.MediaType, &sess.Anchor, &sess.TmdbID, &sess.Season,
 		&sess.Episode, &sess.Title, &sess.ViewOffsetMS, &sess.DurationMS, &sess.MaxProgress,
 		&sess.Misses, &sess.UpdatedAt); err != nil {
 		return nil
@@ -622,20 +754,23 @@ func (s *TraktSyncStore) UpsertSyncSession(sess TraktSyncSession) {
 	if sess.Title != nil {
 		titleArg = *sess.Title
 	}
+	if sess.Anchor == "" {
+		sess.Anchor = "tmdb"
+	}
 	if current == nil {
 		_, _ = s.db.Exec(`INSERT INTO sync_sessions(
-				session_key, plex_ref, media_type, tmdb_id, season, episode, title,
+				session_key, plex_ref, media_type, anchor, tmdb_id, season, episode, title,
 				view_offset_ms, duration_ms, max_progress, misses, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-			sess.SessionKey, sess.PlexRef, sess.MediaType, sess.TmdbID, sess.Season, sess.Episode, titleArg,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+			sess.SessionKey, sess.PlexRef, sess.MediaType, sess.Anchor, sess.TmdbID, sess.Season, sess.Episode, titleArg,
 			sess.ViewOffsetMS, sess.DurationMS, sess.MaxProgress, now)
 		return
 	}
 	_, _ = s.db.Exec(`UPDATE sync_sessions
-		SET plex_ref = ?, media_type = ?, tmdb_id = ?, season = ?, episode = ?, title = ?,
+		SET plex_ref = ?, media_type = ?, anchor = ?, tmdb_id = ?, season = ?, episode = ?, title = ?,
 		    view_offset_ms = ?, duration_ms = ?, max_progress = ?, misses = 0, updated_at = ?
 		WHERE session_key = ?`,
-		sess.PlexRef, sess.MediaType, sess.TmdbID, sess.Season, sess.Episode, titleArg,
+		sess.PlexRef, sess.MediaType, sess.Anchor, sess.TmdbID, sess.Season, sess.Episode, titleArg,
 		sess.ViewOffsetMS, sess.DurationMS, sess.MaxProgress, now, sess.SessionKey)
 }
 
@@ -688,19 +823,107 @@ func (s *TraktSyncStore) TraktPushedAt() (int64, error) {
 	return strconv.ParseInt(v, 10, 64)
 }
 
+// ── sync_id_map（外部 ID 归一化，实现 watched.IDMapper）─────
+
+// ResolveKey 把一组外部 ID 归并为规范键（tmdb 锚优先；剧集缺 tmdb 回退 tvdb），
+// 并把新见 ID 并入映射。同一媒体的多条映射行（如一侧只见 tvdb、另一侧见
+// tmdb+tvdb）会被合并为一行，保证两侧归并出同一个键。
+// 实现 watched.IDMapper。
+func (s *TraktSyncStore) ResolveKey(mediaType string, ids watched.MediaIDs, season, episode int) (watched.MediaKey, bool) {
+	if ids.TMDB <= 0 && ids.TVDB <= 0 && ids.IMDB == "" {
+		return watched.MediaKey{}, false
+	}
+	type row struct {
+		sid    int64
+		tmdbID int64
+		tvdbID int64
+		imdbID string
+	}
+	var matched []row
+	rows, err := s.db.Query(`SELECT sid, tmdb_id, tvdb_id, imdb_id FROM sync_id_map WHERE media_type = ?
+		AND (tmdb_id = ? OR tvdb_id = ? OR imdb_id = ?)`,
+		mediaType, ids.TMDB, ids.TVDB, ids.IMDB)
+	if err == nil {
+		for rows.Next() {
+			var r row
+			if err := rows.Scan(&r.sid, &r.tmdbID, &r.tvdbID, &r.imdbID); err == nil {
+				matched = append(matched, r)
+			}
+		}
+		rows.Close()
+	}
+	if err != nil || len(matched) > 1 {
+		// 多行同指一媒体（历史数据分叉）：保留第一行，删除其余后合并
+		for _, r := range matched[1:] {
+			_, _ = s.db.Exec("DELETE FROM sync_id_map WHERE sid = ?", r.sid)
+		}
+	}
+	if len(matched) == 0 {
+		res, ierr := s.db.Exec(`INSERT INTO sync_id_map(media_type, tmdb_id, tvdb_id, imdb_id) VALUES (?, ?, ?, ?)`,
+			mediaType, ids.TMDB, ids.TVDB, ids.IMDB)
+		if ierr != nil {
+			return watched.MediaKey{}, false
+		}
+		_ = res
+	} else {
+		_, _ = s.db.Exec(`UPDATE sync_id_map SET
+			tmdb_id = CASE WHEN tmdb_id = 0 THEN ? ELSE tmdb_id END,
+			tvdb_id = CASE WHEN tvdb_id = 0 THEN ? ELSE tvdb_id END,
+			imdb_id = CASE WHEN imdb_id = '' THEN ? ELSE imdb_id END
+			WHERE sid = ?`,
+			ids.TMDB, ids.TVDB, ids.IMDB, matched[0].sid)
+	}
+	// 以合并后的完整 ID 集规范成键
+	var merged watched.MediaIDs
+	if len(matched) > 0 {
+		merged = watched.MediaIDs{TMDB: matched[0].tmdbID, TVDB: matched[0].tvdbID, IMDB: matched[0].imdbID}
+	}
+	if merged.TMDB == 0 {
+		merged.TMDB = ids.TMDB
+	}
+	if merged.TVDB == 0 {
+		merged.TVDB = ids.TVDB
+	}
+	if merged.IMDB == "" {
+		merged.IMDB = ids.IMDB
+	}
+	return watched.CanonicalKey(mediaType, merged, season, episode)
+}
+
+// IDsOf 返回键对应的全部已知 ID（组多 ID 推送载荷用）。实现 watched.IDMapper。
+func (s *TraktSyncStore) IDsOf(key watched.MediaKey) watched.MediaIDs {
+	var ids watched.MediaIDs
+	if key.TVDBID > 0 {
+		if err := s.db.QueryRow("SELECT tmdb_id, tvdb_id, imdb_id FROM sync_id_map WHERE media_type = ? AND tvdb_id = ?",
+			key.Type, key.TVDBID).Scan(&ids.TMDB, &ids.TVDB, &ids.IMDB); err != nil {
+			return watched.MediaIDs{TVDB: key.TVDBID}
+		}
+		return ids
+	}
+	if err := s.db.QueryRow("SELECT tmdb_id, tvdb_id, imdb_id FROM sync_id_map WHERE media_type = ? AND tmdb_id = ?",
+		key.Type, key.TMDBID).Scan(&ids.TMDB, &ids.TVDB, &ids.IMDB); err != nil {
+		return watched.MediaIDs{TMDB: key.TMDBID}
+	}
+	return ids
+}
+
 // ── sync_ignores（手动忽略清单）──────────────────────────────
 
 // TraktSyncIgnore 一条忽略记录（媒体级：整部电影/整部剧）。
 type TraktSyncIgnore struct {
 	MediaType string
-	TmdbID    int64
+	Anchor    string // 'tmdb' | 'tvdb'
+	TmdbID    int64  // 锚 ID
 	Title     *string
 	Reason    *string
 	CreatedAt string
 }
 
 // AddSyncIgnore 添加/更新媒体级忽略（upsert，重复添加仅刷新标题与原因）。
-func (s *TraktSyncStore) AddSyncIgnore(mediaType string, tmdbID int64, title, reason string) error {
+func (s *TraktSyncStore) AddSyncIgnore(mediaType, anchor string, tmdbID int64, title, reason string) error {
+	if anchor != "tvdb" {
+		anchor = "tmdb"
+	}
 	var titleArg, reasonArg any
 	if title != "" {
 		titleArg = title
@@ -708,22 +931,25 @@ func (s *TraktSyncStore) AddSyncIgnore(mediaType string, tmdbID int64, title, re
 	if reason != "" {
 		reasonArg = reason
 	}
-	_, err := s.db.Exec(`INSERT INTO sync_ignores(media_type, tmdb_id, title, reason, created_at)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(media_type, tmdb_id) DO UPDATE SET title = excluded.title, reason = excluded.reason`,
-		mediaType, tmdbID, titleArg, reasonArg, traktSyncNow())
+	_, err := s.db.Exec(`INSERT INTO sync_ignores(media_type, anchor, tmdb_id, title, reason, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(media_type, anchor, tmdb_id) DO UPDATE SET title = excluded.title, reason = excluded.reason`,
+		mediaType, anchor, tmdbID, titleArg, reasonArg, traktSyncNow())
 	return err
 }
 
 // RemoveSyncIgnore 解除忽略，媒体重新参与同步。
-func (s *TraktSyncStore) RemoveSyncIgnore(mediaType string, tmdbID int64) error {
-	_, err := s.db.Exec("DELETE FROM sync_ignores WHERE media_type = ? AND tmdb_id = ?", mediaType, tmdbID)
+func (s *TraktSyncStore) RemoveSyncIgnore(mediaType, anchor string, tmdbID int64) error {
+	if anchor != "tvdb" {
+		anchor = "tmdb"
+	}
+	_, err := s.db.Exec("DELETE FROM sync_ignores WHERE media_type = ? AND anchor = ? AND tmdb_id = ?", mediaType, anchor, tmdbID)
 	return err
 }
 
 // ListSyncIgnores 全部忽略记录（新→旧）。
 func (s *TraktSyncStore) ListSyncIgnores() []TraktSyncIgnore {
-	rows, err := s.db.Query("SELECT media_type, tmdb_id, title, reason, created_at FROM sync_ignores ORDER BY created_at DESC")
+	rows, err := s.db.Query("SELECT media_type, anchor, tmdb_id, title, reason, created_at FROM sync_ignores ORDER BY created_at DESC")
 	if err != nil {
 		return nil
 	}
@@ -731,7 +957,7 @@ func (s *TraktSyncStore) ListSyncIgnores() []TraktSyncIgnore {
 	out := []TraktSyncIgnore{}
 	for rows.Next() {
 		var it TraktSyncIgnore
-		if err := rows.Scan(&it.MediaType, &it.TmdbID, &it.Title, &it.Reason, &it.CreatedAt); err != nil {
+		if err := rows.Scan(&it.MediaType, &it.Anchor, &it.TmdbID, &it.Title, &it.Reason, &it.CreatedAt); err != nil {
 			return nil
 		}
 		out = append(out, it)
@@ -742,31 +968,43 @@ func (s *TraktSyncStore) ListSyncIgnores() []TraktSyncIgnore {
 // AllIgnores 忽略清单的引擎视图：媒体级 MediaKey（Season/Episode 为零）集合。
 // 实现 syncengine.IgnoreProvider。
 func (s *TraktSyncStore) AllIgnores() (map[watched.MediaKey]bool, error) {
-	rows, err := s.db.Query("SELECT media_type, tmdb_id FROM sync_ignores")
+	rows, err := s.db.Query("SELECT media_type, anchor, tmdb_id FROM sync_ignores")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := map[watched.MediaKey]bool{}
 	for rows.Next() {
-		var k watched.MediaKey
-		if err := rows.Scan(&k.Type, &k.TMDBID); err != nil {
+		var (
+			k      watched.MediaKey
+			anchor string
+			id     int64
+		)
+		if err := rows.Scan(&k.Type, &anchor, &id); err != nil {
 			return nil, err
+		}
+		if anchor == "tvdb" {
+			k.TVDBID = id
+		} else {
+			k.TMDBID = id
 		}
 		out[k] = true
 	}
 	return out, rows.Err()
 }
 
-// IsIgnoredMedia 媒体是否被忽略（实时推送等非引擎路径使用）。
-func (s *TraktSyncStore) IsIgnoredMedia(mediaType string, tmdbID int64) bool {
+// IsIgnoredKey 媒体是否被忽略（实时推送等非引擎路径使用）。
+func (s *TraktSyncStore) IsIgnoredKey(key watched.MediaKey) bool {
+	mediaType, anchor, anchorID, _, _ := mediaKeyValues(key)
 	var one int
-	return s.db.QueryRow("SELECT 1 FROM sync_ignores WHERE media_type = ? AND tmdb_id = ?", mediaType, tmdbID).Scan(&one) == nil
+	return s.db.QueryRow("SELECT 1 FROM sync_ignores WHERE media_type = ? AND anchor = ? AND tmdb_id = ?",
+		mediaType, anchor, anchorID).Scan(&one) == nil
 }
 
 // TraktFailingMedia 反复同步失败的媒体聚合（忽略候选）。
 type TraktFailingMedia struct {
 	MediaType string
+	Anchor    string
 	TmdbID    int64
 	Title     *string
 	Fails     int
@@ -775,18 +1013,18 @@ type TraktFailingMedia struct {
 }
 
 // FailingMediaCandidates 近 days 天失败 ≥2 次且未被忽略的媒体，按失败次数降序——
-// 持续失败多为 Trakt 侧数据缺映射（tmdb id 无法识别），建议用户手动忽略。
+// 持续失败多为 Trakt 侧数据缺映射（id 无法识别），建议用户手动忽略。
 func (s *TraktSyncStore) FailingMediaCandidates(days int) []TraktFailingMedia {
 	cutoff := time.Now().AddDate(0, 0, -days).UTC().Format("2006-01-02T15:04:05.000000-07:00")
 	rows, err := s.db.Query(`
-		SELECT ri.media_type, ri.tmdb_id, MAX(ri.title), COUNT(*), MAX(ri.error), MAX(r.started_at)
+		SELECT ri.media_type, COALESCE(ri.anchor, 'tmdb'), ri.tmdb_id, MAX(ri.title), COUNT(*), MAX(ri.error), MAX(r.started_at)
 		FROM sync_run_items ri
 		JOIN sync_runs r ON r.id = ri.run_id
 		WHERE ri.success = 0 AND ri.media_type IS NOT NULL AND ri.tmdb_id IS NOT NULL
 			AND r.started_at >= ?
 			AND NOT EXISTS (SELECT 1 FROM sync_ignores ig
-				WHERE ig.media_type = ri.media_type AND ig.tmdb_id = ri.tmdb_id)
-		GROUP BY ri.media_type, ri.tmdb_id
+				WHERE ig.media_type = ri.media_type AND ig.anchor = COALESCE(ri.anchor, 'tmdb') AND ig.tmdb_id = ri.tmdb_id)
+		GROUP BY ri.media_type, COALESCE(ri.anchor, 'tmdb'), ri.tmdb_id
 		HAVING COUNT(*) >= 2
 		ORDER BY COUNT(*) DESC
 		LIMIT 50`, cutoff)
@@ -797,7 +1035,7 @@ func (s *TraktSyncStore) FailingMediaCandidates(days int) []TraktFailingMedia {
 	out := []TraktFailingMedia{}
 	for rows.Next() {
 		var c TraktFailingMedia
-		if err := rows.Scan(&c.MediaType, &c.TmdbID, &c.Title, &c.Fails, &c.LastError, &c.LastAt); err != nil {
+		if err := rows.Scan(&c.MediaType, &c.Anchor, &c.TmdbID, &c.Title, &c.Fails, &c.LastError, &c.LastAt); err != nil {
 			return nil
 		}
 		out = append(out, c)

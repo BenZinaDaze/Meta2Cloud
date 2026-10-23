@@ -97,19 +97,19 @@ type PartInfo struct {
 
 // Metadata Plex 条目（电影/集/会话共用；字段缺席=零值）。
 type Metadata struct {
-	RatingKey        string      `json:"ratingKey"`
-	Key              string      `json:"key"`  // 如 /library/metadata/{show}/children/...（集条目）
-	Type             string      `json:"type"` // movie | episode | show ...
-	Title            string      `json:"title"`
-	Year             int         `json:"year"`
-	Index            int         `json:"index"`            // 集号（episode）
-	ParentIndex      int         `json:"parentIndex"`      // 季号（episode 的上级季）
-	GrandparentTitle string      `json:"grandparentTitle"` // 剧名（episode）
+	RatingKey        string `json:"ratingKey"`
+	Key              string `json:"key"`  // 如 /library/metadata/{show}/children/...（集条目）
+	Type             string `json:"type"` // movie | episode | show ...
+	Title            string `json:"title"`
+	Year             int    `json:"year"`
+	Index            int    `json:"index"`            // 集号（episode）
+	ParentIndex      int    `json:"parentIndex"`      // 季号（episode 的上级季）
+	GrandparentTitle string `json:"grandparentTitle"` // 剧名（episode）
 	// 上级剧集 ratingKey（episode 详情接口带；枚举视图可能缺，缺时从 Key 路径推导）
-	GrandparentRatingKey string `json:"grandparentRatingKey"`
-	Guid             string      `json:"guid"`
-	GuidList         []GuidEntry `json:"Guid"`
-	Media            []MediaInfo `json:"Media"`
+	GrandparentRatingKey string      `json:"grandparentRatingKey"`
+	Guid                 string      `json:"guid"`
+	GuidList             []GuidEntry `json:"Guid"`
+	Media                []MediaInfo `json:"Media"`
 
 	ViewCount    int `json:"viewCount"`
 	LastViewedAt int `json:"lastViewedAt"`
@@ -122,24 +122,50 @@ type Metadata struct {
 
 // TMDBGuid 从 Guid 列表提取 tmdb://id；无则返回 0。
 func (m *Metadata) TMDBGuid() int64 {
-	for _, g := range m.GuidList {
-		if id, ok := parseTMDBGuid(g.ID); ok {
-			return id
-		}
-	}
-	// 旧代理把外部 id 拼进主 guid（如 "com.plexapp.agents.imdb://tt1375666?lang=en" 亦可能是 tmdb://）
-	if id, ok := parseTMDBGuid(m.Guid); ok {
+	if id, ok := m.schemeID("tmdb://"); ok {
 		return id
 	}
 	return 0
 }
 
-func parseTMDBGuid(guid string) (int64, bool) {
-	idx := strings.Index(guid, "tmdb://")
+// TVDBGuid 从 Guid 列表提取 tvdb://id；无则返回 0。
+func (m *Metadata) TVDBGuid() int64 {
+	if id, ok := m.schemeID("tvdb://"); ok {
+		return id
+	}
+	return 0
+}
+
+// IMDBGuid 从 Guid 列表提取 imdb://id；无则返回空串。
+func (m *Metadata) IMDBGuid() string {
+	for _, g := range m.GuidList {
+		if v, ok := schemeString(g.ID, "imdb://"); ok {
+			return v
+		}
+	}
+	if v, ok := schemeString(m.Guid, "imdb://"); ok {
+		return v
+	}
+	return ""
+}
+
+// schemeID 在条目的 Guid 列表（兜底主 guid）中找指定 scheme 的数字 ID。
+// 旧代理把外部 id 拼进主 guid（如 "com.plexapp.agents.tmdb://278?lang=zh"）。
+func (m *Metadata) schemeID(scheme string) (int64, bool) {
+	for _, g := range m.GuidList {
+		if id, ok := parseSchemeInt(g.ID, scheme); ok {
+			return id, true
+		}
+	}
+	return parseSchemeInt(m.Guid, scheme)
+}
+
+func parseSchemeInt(guid, scheme string) (int64, bool) {
+	idx := strings.Index(guid, scheme)
 	if idx < 0 {
 		return 0, false
 	}
-	rest := guid[idx+len("tmdb://"):]
+	rest := guid[idx+len(scheme):]
 	if end := strings.IndexAny(rest, "?/"); end >= 0 {
 		rest = rest[:end]
 	}
@@ -148,6 +174,21 @@ func parseTMDBGuid(guid string) (int64, bool) {
 		return 0, false
 	}
 	return id, true
+}
+
+func schemeString(guid, scheme string) (string, bool) {
+	idx := strings.Index(guid, scheme)
+	if idx < 0 {
+		return "", false
+	}
+	rest := guid[idx+len(scheme):]
+	if end := strings.IndexAny(rest, "?/"); end >= 0 {
+		rest = rest[:end]
+	}
+	if rest == "" {
+		return "", false
+	}
+	return rest, true
 }
 
 // FilePath 首个媒体文件路径。
@@ -505,6 +546,7 @@ func (c *Client) StreamNotifications(ctx context.Context, onOpen func(), onEvent
 //   - {"type":"playing","PlaySessionStateNotification":[{...}]}：部分版本，数组 + 内嵌 type；
 //   - {"PlaySessionStateNotification":{...}}：另一些版本，单对象且 data 里无 type 字段，
 //     事件类型只在 SSE event: 行上（由 eventType 参数传入）。
+//
 // 两处任一命中即视为播放事件；其余（ping/activity 等）一律丢弃。
 func parsePlaybackNotification(payload, eventType string) []PlaybackNotification {
 	dec := json.NewDecoder(strings.NewReader(payload))

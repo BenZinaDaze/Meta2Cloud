@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
 
@@ -343,13 +344,13 @@ func TestSyncIgnoresRoundTrip(t *testing.T) {
 	}
 
 	// 忽略后：候选排除、引擎视图命中、单集键被媒体级覆盖
-	if err := s.AddSyncIgnore("tv", 329623, "剧 A", "tmdb id 无法识别"); err != nil {
+	if err := s.AddSyncIgnore("tv", "tmdb", 329623, "剧 A", "tmdb id 无法识别"); err != nil {
 		t.Fatalf("AddSyncIgnore：%v", err)
 	}
 	if cands := s.FailingMediaCandidates(7); len(cands) != 0 {
 		t.Fatalf("已忽略媒体不应再出现在候选：%+v", cands)
 	}
-	if !s.IsIgnoredMedia("tv", 329623) {
+	if !s.IsIgnoredKey(watched.MediaKey{Type: "tv", TMDBID: 329623}) {
 		t.Fatal("IsIgnoredMedia 应命中")
 	}
 	set, err := s.AllIgnores()
@@ -364,10 +365,10 @@ func TestSyncIgnoresRoundTrip(t *testing.T) {
 	}
 
 	// 解除忽略
-	if err := s.RemoveSyncIgnore("tv", 329623); err != nil {
+	if err := s.RemoveSyncIgnore("tv", "tmdb", 329623); err != nil {
 		t.Fatalf("RemoveSyncIgnore：%v", err)
 	}
-	if s.IsIgnoredMedia("tv", 329623) || len(s.ListSyncIgnores()) != 0 {
+	if s.IsIgnoredKey(watched.MediaKey{Type: "tv", TMDBID: 329623}) || len(s.ListSyncIgnores()) != 0 {
 		t.Fatal("解除后应为空")
 	}
 	if cands := s.FailingMediaCandidates(7); len(cands) != 1 {
@@ -404,5 +405,129 @@ func TestMarkSessionPushFailure(t *testing.T) {
 	sh, _, _ = s.GetShadow(key)
 	if sh.SessionPushedAt != 2000 {
 		t.Fatalf("SessionPushedAt 应保持 2000，实际 %d", sh.SessionPushedAt)
+	}
+}
+
+// TestLegacySchemaMigration 旧库（无 anchor 列）打开后自动重建：
+// 既有 tmdb 锚行可读，新行带锚写入正常。
+func TestLegacySchemaMigration(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "traktsync.db")
+	// 手工建旧结构并写入一行旧格式数据
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE sync_items (
+		media_type TEXT NOT NULL, tmdb_id INTEGER NOT NULL,
+		season INTEGER NOT NULL DEFAULT 0, episode INTEGER NOT NULL DEFAULT 0,
+		plex_ref TEXT, plex_seen INTEGER NOT NULL DEFAULT 0, plex_watched INTEGER,
+		plex_plays INTEGER NOT NULL DEFAULT 0, plex_last_watched_at INTEGER NOT NULL DEFAULT 0,
+		trakt_seen INTEGER NOT NULL DEFAULT 0, trakt_watched INTEGER,
+		trakt_plays INTEGER NOT NULL DEFAULT 0, trakt_last_watched_at INTEGER NOT NULL DEFAULT 0,
+		session_pushed_at INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL,
+		PRIMARY KEY (media_type, tmdb_id, season, episode));
+	CREATE TABLE sync_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, started_at TEXT NOT NULL);
+	INSERT INTO sync_items(media_type, tmdb_id, season, episode, plex_seen, trakt_seen, updated_at)
+		VALUES ('tv', 335790, 1, 2, 1, 1, '2026-10-20T00:00:00.000000+00:00');`)
+	db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := openTestTraktSyncStoreAt(t, dbPath)
+	sh, ok, err := s.GetShadow(watched.MediaKey{Type: "tv", TMDBID: 335790, Season: 1, Episode: 2})
+	if err != nil || !ok {
+		t.Fatalf("旧行应可读：ok=%v err=%v", ok, err)
+	}
+	if !sh.PlexSeen || !sh.TraktSeen {
+		t.Fatalf("旧行字段应保留：%+v", sh)
+	}
+	// 迁移后可写入 tvdb 锚定键
+	tvdbKey := watched.MediaKey{Type: "tv", TVDBID: 474294, Season: 1, Episode: 1}
+	if err := s.SaveShadow([]syncengine.Shadow{{Key: tvdbKey, PlexSeen: true}}); err != nil {
+		t.Fatalf("tvdb 锚写入失败：%v", err)
+	}
+	if _, ok, _ := s.GetShadow(tvdbKey); !ok {
+		t.Fatal("tvdb 锚行应可读")
+	}
+}
+
+func openTestTraktSyncStoreAt(t *testing.T, path string) *TraktSyncStore {
+	t.Helper()
+	s, err := OpenTraktSyncStore(path)
+	if err != nil {
+		t.Fatalf("打开存储失败：%v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
+
+// TestIDMapResolveAndMerge ID 归一化：tmdb 锚优先、tvdb 回退、跨侧行合并翻转。
+func TestIDMapResolveAndMerge(t *testing.T) {
+	s := openTestTraktSyncStore(t)
+
+	// 剧集只有 tvdb：tvdb 锚成键
+	key, ok := s.ResolveKey("tv", watched.MediaIDs{TVDB: 474294, IMDB: "tt43"}, 1, 2)
+	if !ok || key.TVDBID != 474294 || key.TMDBID != 0 || key.Season != 1 || key.Episode != 2 {
+		t.Fatalf("tvdb 锚键不符：%+v ok=%v", key, ok)
+	}
+	// 另一侧带着 tmdb+tvdb 到达：归并后规范键翻转为 tmdb 锚
+	key2, ok := s.ResolveKey("tv", watched.MediaIDs{TMDB: 335790, TVDB: 474294}, 0, 0)
+	if !ok || key2.TMDBID != 335790 || key2.TVDBID != 0 {
+		t.Fatalf("归并后应翻转为 tmdb 锚：%+v ok=%v", key2, ok)
+	}
+	// 原初 tvdb 形态的 ID 集（无 tmdb 输入）经映射表也应得到 tmdb 锚
+	key3, ok := s.ResolveKey("tv", watched.MediaIDs{TVDB: 474294}, 1, 3)
+	if !ok || key3.TMDBID != 335790 {
+		t.Fatalf("翻转后 tvdb 输入应得 tmdb 锚：%+v ok=%v", key3, ok)
+	}
+	// IDsOf 按锚查询返回全集
+	if ids := s.IDsOf(key2); ids.TMDB != 335790 || ids.TVDB != 474294 {
+		t.Fatalf("IDsOf 应返回全集：%+v", ids)
+	}
+	// 电影缺 tmdb（仅 imdb）不成键
+	if _, ok := s.ResolveKey("movie", watched.MediaIDs{IMDB: "tt100"}, 0, 0); ok {
+		t.Fatal("电影缺 tmdb 不应成键")
+	}
+	// 未收录的键 IDsOf 回带自身锚
+	if ids := s.IDsOf(watched.MediaKey{Type: "movie", TMDBID: 999}); ids.TMDB != 999 {
+		t.Fatalf("未知键应回带锚：%+v", ids)
+	}
+}
+
+// TestShadowTVDBKeyRoundTrip tvdb 锚定键的完整存取往返。
+func TestShadowTVDBKeyRoundTrip(t *testing.T) {
+	s := openTestTraktSyncStore(t)
+	watchedTrue := true
+	key := watched.MediaKey{Type: "tv", TVDBID: 474294, Season: 1, Episode: 2}
+	if err := s.SaveShadow([]syncengine.Shadow{{
+		Key: key, PlexRef: "856", PlexSeen: true, PlexWatched: &watchedTrue,
+		TraktSeen: true, TraktWatched: &watchedTrue, SessionPushedAt: 500,
+	}}); err != nil {
+		t.Fatalf("保存失败：%v", err)
+	}
+	sh, ok, err := s.GetShadow(key)
+	if err != nil || !ok {
+		t.Fatalf("读取失败：ok=%v err=%v", ok, err)
+	}
+	if sh.Key != key || sh.PlexRef != "856" || sh.SessionPushedAt != 500 {
+		t.Fatalf("往返不符：%+v", sh)
+	}
+	// plex_ref 快路径也应还原 tvdb 锚
+	byRef, ok, _ := s.GetShadowByPlexRef("856")
+	if !ok || byRef.Key != key {
+		t.Fatalf("plex_ref 快路径不符：%+v ok=%v", byRef.Key, ok)
+	}
+	// 忽略清单 tvdb 锚
+	if err := s.AddSyncIgnore("tv", "tvdb", 474294, "剧", "无法匹配"); err != nil {
+		t.Fatalf("AddSyncIgnore：%v", err)
+	}
+	if !s.IsIgnoredKey(key) {
+		t.Fatal("tvdb 锚忽略应命中")
+	}
+	ignores, _ := s.AllIgnores()
+	if !ignores[watched.MediaKey{Type: "tv", TVDBID: 474294}] {
+		t.Fatalf("引擎视图应含 tvdb 锚键：%+v", ignores)
 	}
 }

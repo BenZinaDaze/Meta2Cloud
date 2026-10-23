@@ -175,6 +175,9 @@ func WithTimeout(seconds int) Option {
 // WithHTTPClient 注入自定义 http.Client（测试用）。
 func WithHTTPClient(hc *http.Client) Option { return func(c *Client) { c.HTTP = hc } }
 
+// WithAPIBase 覆盖 API 基础地址（自建反代 / 测试注入用）。
+func WithAPIBase(u string) Option { return func(c *Client) { c.testingAPIBase = u } }
+
 // NewClient 构造客户端。
 func NewClient(clientID string, opts ...Option) *Client {
 	c := &Client{
@@ -462,25 +465,47 @@ func (c *Client) ShowWatchedProgress(traktID int64) (*ShowWatchedProgress, error
 
 // ── 已看记录写入 ────────────────────────────────────────────
 
-// HistoryMovie 批量历史条目（电影）。
+// HistoryMovie 批量历史条目（电影）。载荷携带全部已知 ID：Trakt 任一命中
+// 即匹配，缓解「Trakt 词条缺某系映射」导致的 not_found。
 type HistoryMovie struct {
 	TMDBID    int64
+	TVDBID    int64 // 电影无 tvdb，保留 0
+	IMDBID    string
 	WatchedAt time.Time // 零值则不携带 watched_at
 }
 
-// HistoryEpisode 批量历史条目（剧集单集）。
+// HistoryEpisode 批量历史条目（剧集单集）。show 级携带全部已知 ID。
 type HistoryEpisode struct {
 	ShowTMDBID int64
+	ShowTVDBID int64
+	ShowIMDBID string
 	Season     int
 	Episode    int
 	WatchedAt  time.Time
+}
+
+// historyIDs 组 ids 载荷（跳过零值）。
+func historyIDs(tmdb int64, tvdb int64, imdb string) map[string]any {
+	ids := map[string]any{}
+	if tmdb > 0 {
+		ids["tmdb"] = tmdb
+	}
+	if tvdb > 0 {
+		ids["tvdb"] = tvdb
+	}
+	if imdb != "" {
+		ids["imdb"] = imdb
+	}
+	return ids
 }
 
 // NotFoundEntry not_found 中一条未匹配条目，归一化到本地键语义。
 // Season/Episode 为 -1 表示整部媒体（或整季）缺失。
 type NotFoundEntry struct {
 	MediaType string // "movie" | "tv"
-	TmdbID    int64  // 电影自身 / 剧集所属剧的 tmdb id；0=响应未回带（仅块内单一剧时可归因）
+	TmdbID    int64  // 响应回带的外部 ID（哪个系回带用哪个，均可能为 0）
+	TvdbID    int64
+	ImdbID    string
 	Season    int
 	Episode   int
 }
@@ -509,7 +534,7 @@ func (c *Client) postHistory(path string, movies []HistoryMovie, episodes []Hist
 	if len(movies) > 0 {
 		list := make([]map[string]any, 0, len(movies))
 		for _, m := range movies {
-			entry := map[string]any{"ids": map[string]any{"tmdb": m.TMDBID}}
+			entry := map[string]any{"ids": historyIDs(m.TMDBID, m.TVDBID, m.IMDBID)}
 			if !m.WatchedAt.IsZero() {
 				entry["watched_at"] = m.WatchedAt.UTC().Format("2006-01-02T15:04:05.000Z")
 			}
@@ -565,7 +590,9 @@ func parseNotFound(raw json.RawMessage) []NotFoundEntry {
 		for _, item := range list {
 			var e struct {
 				IDs struct {
-					TMDB int64 `json:"tmdb"`
+					TMDB int64  `json:"tmdb"`
+					TVDB int64  `json:"tvdb"`
+					IMDB string `json:"imdb"`
 				} `json:"ids"`
 				Number *int `json:"number"`
 				Season *int `json:"season"`
@@ -573,17 +600,14 @@ func parseNotFound(raw json.RawMessage) []NotFoundEntry {
 			if err := json.Unmarshal(item, &e); err != nil {
 				return nil
 			}
-			entry := NotFoundEntry{Season: -1, Episode: -1}
+			entry := NotFoundEntry{Season: -1, Episode: -1, TmdbID: e.IDs.TMDB, TvdbID: e.IDs.TVDB, ImdbID: e.IDs.IMDB}
 			switch kind {
 			case "movies":
 				entry.MediaType = "movie"
-				entry.TmdbID = e.IDs.TMDB
 			case "shows":
 				entry.MediaType = "tv"
-				entry.TmdbID = e.IDs.TMDB
 			case "seasons":
 				entry.MediaType = "tv"
-				entry.TmdbID = e.IDs.TMDB
 				if e.Number != nil {
 					entry.Season = *e.Number
 				} else if e.Season != nil {
@@ -594,7 +618,7 @@ func parseNotFound(raw json.RawMessage) []NotFoundEntry {
 				}
 			case "episodes":
 				entry.MediaType = "tv"
-				entry.TmdbID = e.IDs.TMDB // 嵌套载荷可能不回带：留 0 待调用方按单一剧归因
+				// 嵌套载荷可能不回带剧级 ID：留 0 待调用方按单一剧归因
 				if e.Season == nil || e.Number == nil {
 					return nil
 				}
@@ -632,27 +656,31 @@ func countNotFound(raw json.RawMessage) int {
 	return 1
 }
 
-// groupEpisodesByShow 按剧集分组为 Trakt 嵌套结构。
+// groupEpisodesByShow 按剧集分组为 Trakt 嵌套结构（show 级 ID 三元组为分组键）。
 func groupEpisodesByShow(episodes []HistoryEpisode) []map[string]any {
-	showOrder := []int64{}
-	byShow := map[int64]map[int][]HistoryEpisode{}
+	showOrder := []string{}
+	byShow := map[string]map[int][]HistoryEpisode{}
+	showIDs := map[string]HistoryEpisode{}
 	for _, ep := range episodes {
-		if _, ok := byShow[ep.ShowTMDBID]; !ok {
-			showOrder = append(showOrder, ep.ShowTMDBID)
-			byShow[ep.ShowTMDBID] = map[int][]HistoryEpisode{}
+		showKey := fmt.Sprintf("%d|%d|%s", ep.ShowTMDBID, ep.ShowTVDBID, ep.ShowIMDBID)
+		if _, ok := byShow[showKey]; !ok {
+			showOrder = append(showOrder, showKey)
+			byShow[showKey] = map[int][]HistoryEpisode{}
+			showIDs[showKey] = ep
 		}
-		byShow[ep.ShowTMDBID][ep.Season] = append(byShow[ep.ShowTMDBID][ep.Season], ep)
+		byShow[showKey][ep.Season] = append(byShow[showKey][ep.Season], ep)
 	}
 	out := make([]map[string]any, 0, len(showOrder))
-	for _, showID := range showOrder {
+	for _, showKey := range showOrder {
+		ref := showIDs[showKey]
 		seasonNums := []int{}
-		for season := range byShow[showID] {
+		for season := range byShow[showKey] {
 			seasonNums = append(seasonNums, season)
 		}
 		sortInts(seasonNums)
 		seasons := make([]map[string]any, 0, len(seasonNums))
 		for _, season := range seasonNums {
-			eps := byShow[showID][season]
+			eps := byShow[showKey][season]
 			epList := make([]map[string]any, 0, len(eps))
 			for _, ep := range eps {
 				entry := map[string]any{"number": ep.Episode}
@@ -664,7 +692,7 @@ func groupEpisodesByShow(episodes []HistoryEpisode) []map[string]any {
 			seasons = append(seasons, map[string]any{"number": season, "episodes": epList})
 		}
 		out = append(out, map[string]any{
-			"ids":     map[string]any{"tmdb": showID},
+			"ids":     historyIDs(ref.ShowTMDBID, ref.ShowTVDBID, ref.ShowIMDBID),
 			"seasons": seasons,
 		})
 	}
@@ -677,6 +705,107 @@ func sortInts(nums []int) {
 			nums[j], nums[j-1] = nums[j-1], nums[j]
 		}
 	}
+}
+
+// ── 实时 scrobble（start/pause/stop 三段式）─────────────────
+
+// ScrobbleAction scrobble 动作。
+type ScrobbleAction string
+
+const (
+	ScrobbleStart ScrobbleAction = "start" // 开始播放/取消暂停（清除已有播放进度）
+	ScrobblePause ScrobbleAction = "pause" // 暂停（保存进度）
+	ScrobbleStop  ScrobbleAction = "stop"  // 停止（>80% 计一次播放，1%~79% 视为暂停）
+)
+
+// ScrobbleResult scrobble 成功响应（2xx；计不计次由 action 表达）。
+type ScrobbleResult struct {
+	Action   string  `json:"action"` // "scrobble"=已计入历史 | "pause"=仅存进度未计次
+	Progress float64 `json:"progress"`
+	ID       int64   `json:"id"` // action=scrobble 时返回的历史记录 id
+}
+
+// DuplicateScrobbleError 409：同一媒体刚被 scrobble，处于服务端去重窗口内。
+// 发生即说明媒体已在 Trakt 历史中（目的态已达成）；ExpiresAt 是允许再次
+// scrobble（重看计次）的权威时刻。时间未知时为零值。
+type DuplicateScrobbleError struct {
+	WatchedAt time.Time
+	ExpiresAt time.Time
+}
+
+func (e *DuplicateScrobbleError) Error() string {
+	last, window := "未知", "未知"
+	if !e.WatchedAt.IsZero() {
+		last = e.WatchedAt.Format("01-02 15:04")
+	}
+	if !e.ExpiresAt.IsZero() {
+		window = e.ExpiresAt.Format("01-02 15:04")
+	}
+	return fmt.Sprintf("同一媒体刚被 scrobble（上次 %s），%s 前处于去重窗口", last, window)
+}
+
+// ScrobbleIgnoredError 422：服务端忽略本次 scrobble（如 stop 时进度 <1%）。
+type ScrobbleIgnoredError struct {
+	Detail string
+}
+
+func (e *ScrobbleIgnoredError) Error() string { return "Trakt 忽略本次 scrobble：" + e.Detail }
+
+// Scrobble 上报播放状态（progress 为 0~100 百分比）。movie/episode 二选一。
+// 响应处理对照官方 spec（developer.trakt.tv/openapi.json）：
+//   - 2xx：按 action 区分——"scrobble" 已计一次播放；"pause" 仅存进度未计次；
+//   - 409：同媒体刚 scrobble 过 → *DuplicateScrobbleError（含 watched_at/expires_at）；
+//   - 422：进度不足等 → *ScrobbleIgnoredError；
+//   - 401 → ErrUnauthorized；429 → 冷却错误；其余按通用 HTTP 错误返回。
+func (c *Client) Scrobble(action ScrobbleAction, movie *HistoryMovie, episode *HistoryEpisode, progress float64) (ScrobbleResult, error) {
+	if progress < 0 {
+		progress = 0
+	}
+	if progress > 100 {
+		progress = 100
+	}
+	body := map[string]any{"progress": progress}
+	switch {
+	case movie != nil:
+		body["movie"] = map[string]any{"ids": historyIDs(movie.TMDBID, movie.TVDBID, movie.IMDBID)}
+	case episode != nil:
+		body["episode"] = map[string]any{"season": episode.Season, "number": episode.Episode}
+		body["show"] = map[string]any{"ids": historyIDs(episode.ShowTMDBID, episode.ShowTVDBID, episode.ShowIMDBID)}
+	default:
+		return ScrobbleResult{}, fmt.Errorf("scrobble 载荷为空：须提供 movie 或 episode")
+	}
+	path := "/scrobble/" + string(action)
+	data, status, _, err := c.do(http.MethodPost, c.base(), path, body, true)
+	if err != nil {
+		return ScrobbleResult{}, err
+	}
+	switch {
+	case status == http.StatusConflict:
+		var raw struct {
+			WatchedAt Zeit `json:"watched_at"`
+			ExpiresAt Zeit `json:"expires_at"`
+		}
+		_ = json.Unmarshal(data, &raw)
+		dup := &DuplicateScrobbleError{}
+		if t := raw.WatchedAt.Unix(); t > 0 {
+			dup.WatchedAt = time.Unix(t, 0)
+		}
+		if t := raw.ExpiresAt.Unix(); t > 0 {
+			dup.ExpiresAt = time.Unix(t, 0)
+		}
+		return ScrobbleResult{}, dup
+	case status == http.StatusUnprocessableEntity:
+		return ScrobbleResult{}, &ScrobbleIgnoredError{Detail: truncateBody(data)}
+	case status >= 400:
+		return ScrobbleResult{}, statusError(path, status, data)
+	}
+	var res ScrobbleResult
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &res); err != nil {
+			return ScrobbleResult{}, err
+		}
+	}
+	return res, nil
 }
 
 // ── 用户与连通性 ────────────────────────────────────────────
@@ -795,13 +924,32 @@ func (c *Client) do(method, base, path string, payload any, auth bool) ([]byte, 
 	return data, resp.StatusCode, resp.Header, nil
 }
 
+// statusNote Trakt 官方文档的常见状态码语义（写入错误信息便于排障）。
+var statusNote = map[int]string{
+	http.StatusBadRequest:          "请求无效",
+	http.StatusForbidden:           "权限不足（私有数据或需两步验证）",
+	http.StatusNotFound:            "资源不存在",
+	http.StatusMethodNotAllowed:    "方法不允许",
+	http.StatusConflict:            "冲突",
+	http.StatusUnprocessableEntity: "载荷校验失败",
+	http.StatusLocked:              "账号被锁定",
+	http.StatusGatewayTimeout:      "网关超时",
+	http.StatusInternalServerError: "Trakt 服务端错误（瞬时，可下轮重试）",
+	http.StatusBadGateway:          "上游网关错误（瞬时，可下轮重试）",
+	http.StatusServiceUnavailable:  "服务暂不可用（瞬时，可下轮重试）",
+}
+
 // statusError 构造 4xx/5xx 状态错误；401 归类为授权失效（ErrUnauthorized）。
 func statusError(path string, status int, data []byte) error {
-	err := fmt.Errorf("Trakt %s 失败：HTTP %d（%s）", path, status, truncateBody(data))
-	if status == http.StatusUnauthorized {
-		return fmt.Errorf("%w（%v）", ErrUnauthorized, err)
+	msg := fmt.Sprintf("Trakt %s 失败：HTTP %d", path, status)
+	if note := statusNote[status]; note != "" {
+		msg += "（" + note + "）"
 	}
-	return err
+	msg += "：" + truncateBody(data)
+	if status == http.StatusUnauthorized {
+		return fmt.Errorf("%w：%v", ErrUnauthorized, msg)
+	}
+	return errors.New(msg)
 }
 
 // postAuthBase 调用 OAuth 主机（auth.trakt.tv）接口并回传 HTTP 状态码

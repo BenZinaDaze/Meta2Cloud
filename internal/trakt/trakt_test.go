@@ -121,7 +121,7 @@ func TestAddHistoryChunkingAndBody(t *testing.T) {
 	c := newTestClient(t, handler)
 	c.token = testToken()
 
-	source := NewTraktSource(c)
+	source := NewTraktSource(c, watched.NewMemIDMapper())
 	// 250 集 → 3 个分块（100+100+50）
 	ops := make([]watched.WatchOp, 0, 250)
 	for i := 1; i <= 250; i++ {
@@ -175,7 +175,7 @@ func TestAddHistoryNotFoundFailsChunk(t *testing.T) {
 	c := newTestClient(t, handler)
 	c.token = testToken()
 
-	source := NewTraktSource(c)
+	source := NewTraktSource(c, watched.NewMemIDMapper())
 	results := source.MarkWatched(context.Background(), []watched.WatchOp{{Key: movieKey(999)}})
 	// not_found 非空 → 整块失败（状态记录不更新，下轮重试）
 	for _, res := range results {
@@ -285,7 +285,7 @@ func TestUnwatchedUsesRemoveEndpoint(t *testing.T) {
 	c := newTestClient(t, handler)
 	c.token = testToken()
 
-	source := NewTraktSource(c)
+	source := NewTraktSource(c, watched.NewMemIDMapper())
 	results := source.MarkUnwatched(context.Background(), []watched.MediaKey{movieKey(100)})
 	if len(results) != 1 || !results[0].OK {
 		t.Fatalf("期望成功：%+v", results)
@@ -355,7 +355,7 @@ func TestListAllShowLevelEntriesViaProgress(t *testing.T) {
 	c := newTestClient(t, mux)
 	c.token = testToken()
 
-	state, err := NewTraktSource(c).ListAll(context.Background())
+	state, err := NewTraktSource(c, watched.NewMemIDMapper()).ListAll(context.Background())
 	if err != nil {
 		t.Fatalf("ListAll 出错：%v", err)
 	}
@@ -400,7 +400,7 @@ func TestListAllRespectsResetAt(t *testing.T) {
 	c := newTestClient(t, mux)
 	c.token = testToken()
 
-	state, err := NewTraktSource(c).ListAll(context.Background())
+	state, err := NewTraktSource(c, watched.NewMemIDMapper()).ListAll(context.Background())
 	if err != nil {
 		t.Fatalf("ListAll 出错：%v", err)
 	}
@@ -423,7 +423,7 @@ func TestAddHistoryZeroAddedFails(t *testing.T) {
 	c := newTestClient(t, handler)
 	c.token = testToken()
 
-	source := NewTraktSource(c)
+	source := NewTraktSource(c, watched.NewMemIDMapper())
 	results := source.MarkWatched(context.Background(), []watched.WatchOp{{Key: movieKey(100)}})
 	for _, res := range results {
 		if res.OK {
@@ -439,7 +439,7 @@ func TestAddHistoryZeroAddedFails(t *testing.T) {
 	})
 	c2 := newTestClient(t, removeHandler)
 	c2.token = testToken()
-	results = NewTraktSource(c2).MarkUnwatched(context.Background(), []watched.MediaKey{movieKey(100)})
+	results = NewTraktSource(c2, watched.NewMemIDMapper()).MarkUnwatched(context.Background(), []watched.MediaKey{movieKey(100)})
 	if len(results) != 1 || !results[0].OK {
 		t.Fatalf("deleted=0 的取消应幂等成功：%+v", results)
 	}
@@ -496,7 +496,7 @@ func TestNotFoundShowLevelAttribution(t *testing.T) {
 	c := newTestClient(t, handler)
 	c.token = testToken()
 
-	source := NewTraktSource(c)
+	source := NewTraktSource(c, watched.NewMemIDMapper())
 	ops := []watched.WatchOp{}
 	for ep := 1; ep <= 12; ep++ {
 		ops = append(ops, watched.WatchOp{Key: watched.MediaKey{Type: "tv", TMDBID: 329623, Season: 1, Episode: ep}})
@@ -511,7 +511,7 @@ func TestNotFoundShowLevelAttribution(t *testing.T) {
 			if res.OK {
 				t.Fatalf("未收录剧的键应失败：%+v", res)
 			}
-			if want := "Trakt 未收录该剧（tmdb 329623 无映射）"; res.Err != want {
+			if want := "Trakt 未收录该剧（外部 ID 无映射）"; res.Err != want {
 				t.Fatalf("错误说明不符：%q", res.Err)
 			}
 			failed++
@@ -540,7 +540,7 @@ func TestNotFoundEpisodeLevelAttribution(t *testing.T) {
 	c := newTestClient(t, handler)
 	c.token = testToken()
 
-	source := NewTraktSource(c)
+	source := NewTraktSource(c, watched.NewMemIDMapper())
 	ops := []watched.WatchOp{
 		{Key: watched.MediaKey{Type: "tv", TMDBID: 500, Season: 1, Episode: 4}},
 		{Key: watched.MediaKey{Type: "tv", TMDBID: 500, Season: 1, Episode: 5}},
@@ -549,7 +549,7 @@ func TestNotFoundEpisodeLevelAttribution(t *testing.T) {
 	results := source.MarkWatched(context.Background(), ops)
 	for _, res := range results {
 		if res.Key.Episode == 5 {
-			if res.OK || res.Err != "Trakt 未收录该集 S01E05（tmdb 500）" {
+			if res.OK || res.Err != "Trakt 未收录该集 S01E05" {
 				t.Fatalf("未收录集应失败且说明带集号：%+v", res)
 			}
 		} else if !res.OK {
@@ -569,7 +569,7 @@ func TestNotFoundUnknownShapeFallsBackWholeChunk(t *testing.T) {
 	c := newTestClient(t, handler)
 	c.token = testToken()
 
-	source := NewTraktSource(c)
+	source := NewTraktSource(c, watched.NewMemIDMapper())
 	results := source.MarkWatched(context.Background(), []watched.WatchOp{
 		{Key: watched.MediaKey{Type: "tv", TMDBID: 500, Season: 1, Episode: 1}},
 		{Key: watched.MediaKey{Type: "tv", TMDBID: 501, Season: 1, Episode: 1}},

@@ -21,6 +21,8 @@ type Source struct {
 	Client *Client
 	// Titles 标题反查（meta2cloud 自有 media_title_pins/library_media 的只读视图），可为 nil。
 	Titles watched.TitleIndex
+	// Mapper 外部 ID 归一化（tmdb/tvdb/imdb → 规范键），由宿主注入持久化实现。
+	Mapper watched.IDMapper
 
 	mu          sync.Mutex
 	refIndex    map[watched.MediaKey][]string // MediaKey → ratingKeys（多版本全量保留）
@@ -29,10 +31,13 @@ type Source struct {
 	showCacheMu sync.Mutex
 }
 
-// NewSource 构造。
-func NewSource(client *Client, titles watched.TitleIndex) *Source {
+// NewSource 构造。mapper 为 nil 时使用内存映射（仅身份不可持久化，功能不受影响）。
+func NewSource(client *Client, titles watched.TitleIndex, mapper watched.IDMapper) *Source {
+	if mapper == nil {
+		mapper = watched.NewMemIDMapper()
+	}
 	return &Source{
-		Client: client, Titles: titles,
+		Client: client, Titles: titles, Mapper: mapper,
 		refIndex:  map[watched.MediaKey][]string{},
 		showCache: map[string]*Metadata{}, // 会话路径不经 ListAll，必须随构造初始化
 	}
@@ -142,7 +147,7 @@ var (
 )
 
 // resolveMetadata 身份解析链（媒体类型取自 Plex 分区/条目类型，不猜）：
-//  1. 条目 Guid 列表中的 tmdb://id（剧集条目常缺失 → 落空继续）
+//  1. 电影：条目自身 guid 集合（tmdb/tvdb/imdb）归一化成键
 //  2. 文件路径右向行走：跳过 Season NN 段后，取顶层 `Title (Year)` 目录名
 //     → TitleIndex 反查（对剧集即剧身份；季集号直接用 Plex 的 parentIndex/index）
 //  3. 剧集兜底：拉取上级剧集条目（grandparentRatingKey，单轮缓存）走 1/2
@@ -153,13 +158,13 @@ func (s *Source) resolveMetadata(item *Metadata, sectionType string) (watched.Me
 		mediaType = "tv"
 	}
 
-	// 集条目 Guid 里的 tmdb:// 是「这一集」在 TMDB 的 id（与剧集 id 不同号段，
-	// 真实案例：剧集本身 tmdb://335790，其 S01E02 集级却是 tmdb://7905973），
-	// 不能当剧集身份用；电影条目的 tmdb:// 即自身 id。故仅电影信自身 Guid，
-	// 剧集一律从上级剧集条目取权威身份。
+	// 集条目 Guid 里的 tmdb:// / tvdb:// 是「这一集」在 TMDB/TVDB 的 id
+	// （与剧集 id 不同号段，真实案例：剧集本身 tmdb://335790，其 S01E02
+	// 集级却是 tmdb://7905973），不能当剧集身份用；电影条目的 guids 即自身
+	// 身份。故电影直接归并自身 ID 集；剧集一律从上级剧集条目取权威身份。
 	if mediaType == "movie" {
-		if id := item.TMDBGuid(); id > 0 {
-			return s.buildKey(mediaType, id, item), true
+		if key, ok := s.Mapper.ResolveKey(mediaType, s.collectIDs(item), 0, 0); ok {
+			return key, true
 		}
 	}
 
@@ -183,6 +188,15 @@ func (s *Source) resolveMetadata(item *Metadata, sectionType string) (watched.Me
 		}
 	}
 	return watched.MediaKey{}, false
+}
+
+// collectIDs 采集条目 guid 列表中的全部已知外部 ID（tmdb/tvdb/imdb）。
+func (s *Source) collectIDs(item *Metadata) watched.MediaIDs {
+	return watched.MediaIDs{
+		TMDB: item.TMDBGuid(),
+		TVDB: item.TVDBGuid(),
+		IMDB: item.IMDBGuid(),
+	}
 }
 
 // buildKey 组装 MediaKey；剧集季集号直接取 Plex 字段（S00 特辑是普通键）。
@@ -246,8 +260,9 @@ func (s *Source) resolveShowByGrandparent(item *Metadata) (watched.MediaKey, boo
 	if err != nil || show == nil {
 		return watched.MediaKey{}, false
 	}
-	if id := show.TMDBGuid(); id > 0 {
-		return s.buildKey("tv", id, item), true
+	// 剧集条目 guids 为权威身份集（tmdb 优先，缺失时 tvdb 锚）
+	if key, ok := s.Mapper.ResolveKey("tv", s.collectIDs(show), item.ParentIndex, item.Index); ok {
+		return key, true
 	}
 	if path := show.FilePath(); path != "" {
 		return s.resolveByPath("tv", path, item)

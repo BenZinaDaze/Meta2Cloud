@@ -78,7 +78,7 @@ func TestResolveByPathFallback(t *testing.T) {
 		"tv|沙丘|2021":     418249,
 		"movie|阿凡达|2009": 19995,
 	}
-	s := NewSource(nil, idx)
+	s := NewSource(nil, idx, watched.NewMemIDMapper())
 
 	// 剧集：挂载前缀 + 分类目录 + Season 段
 	item := &Metadata{
@@ -99,7 +99,7 @@ func TestResolveByPathFallback(t *testing.T) {
 
 	// 反查未命中 → false
 	idx2 := fakeTitleIndex{}
-	s2 := NewSource(nil, idx2)
+	s2 := NewSource(nil, idx2, watched.NewMemIDMapper())
 	key, ok = s2.resolveByPath("tv", item.FilePath(), item)
 	if ok {
 		t.Fatalf("未命中应返回 false：key=%+v", key)
@@ -190,7 +190,7 @@ func newPlexTestServer(t *testing.T, sections []Section, itemsBySection map[stri
 
 	client := NewClient(srv.URL, "test-token", "test-identifier", WithHTTPClient(srv.Client()))
 	client.PlexTVBase = srv.URL
-	return client, NewSource(client, nil)
+	return client, NewSource(client, nil, watched.NewMemIDMapper())
 }
 
 func TestListAllGuidAndAggregation(t *testing.T) {
@@ -234,7 +234,7 @@ func TestListAllPathFallbackAndUnresolved(t *testing.T) {
 		{RatingKey: "11", Type: "movie", Title: "神秘影片"},
 	}
 	client, _ := newPlexTestServer(t, sections, map[string][]Metadata{"1": items}, nil)
-	source := NewSource(client, fakeTitleIndex{"movie|阿凡达|2009": 19995})
+	source := NewSource(client, fakeTitleIndex{"movie|阿凡达|2009": 19995}, watched.NewMemIDMapper())
 
 	state, err := source.ListAll(context.Background())
 	if err != nil {
@@ -262,7 +262,7 @@ func TestListAllEpisodeGrandparentFallback(t *testing.T) {
 			GuidList: []GuidEntry{{ID: "tmdb://418249"}}},
 	}
 	client, _ := newPlexTestServer(t, sections, map[string][]Metadata{"2": episodes}, shows)
-	source := NewSource(client, fakeTitleIndex{})
+	source := NewSource(client, fakeTitleIndex{}, watched.NewMemIDMapper())
 
 	state, err := source.ListAll(context.Background())
 	if err != nil {
@@ -521,5 +521,76 @@ func TestParsePlaybackNotificationRealWorldShapes(t *testing.T) {
 	got = parsePlaybackNotification(objectForm, "ping")
 	if len(got) != 0 {
 		t.Fatalf("ping 事件应忽略：%+v", got)
+	}
+}
+
+// TestResolveEpisodeTVDBAnchored 剧集条目只有 tvdb guid（无 tmdb）：
+// 上级剧集应以 tvdb 锚成键（1b：缺 tmdb 的剧不再不可见）。
+func TestResolveEpisodeTVDBAnchored(t *testing.T) {
+	sections := []Section{{Key: "3", Type: "show", Title: "动漫"}}
+	itemsByRef := map[string]Metadata{
+		"856": {
+			RatingKey: "856", Type: "episode", Key: "/library/metadata/856",
+			GrandparentTitle: "某番剧", GrandparentRatingKey: "853",
+			ParentIndex: 1, Index: 2,
+		},
+		"853": {
+			RatingKey: "853", Type: "show", Title: "某番剧",
+			GuidList: []GuidEntry{{ID: "tvdb://474294"}, {ID: "imdb://tt43"}},
+		},
+	}
+	_, source := newPlexTestServer(t, sections, nil, itemsByRef)
+
+	key, ok := source.ResolveMetadataRef("856")
+	if !ok {
+		t.Fatal("应通过上级剧集解析成功")
+	}
+	want := watched.MediaKey{Type: "tv", TVDBID: 474294, Season: 1, Episode: 2}
+	if key != want {
+		t.Fatalf("应为 tvdb 锚键 %+v，实际 %+v", want, key)
+	}
+}
+
+// TestResolveMovieMergesIMDB 电影条目带 tmdb+imdb：tmdb 锚成键，
+// imdb 并入映射（推送载荷可携带）。
+func TestResolveMovieMergesIMDB(t *testing.T) {
+	sections := []Section{{Key: "1", Type: "movie", Title: "电影"}}
+	items := []Metadata{{
+		RatingKey: "1", Type: "movie", Title: "A",
+		GuidList: []GuidEntry{{ID: "tmdb://603"}, {ID: "imdb://tt0120915"}},
+	}}
+	client, source := newPlexTestServer(t, sections, map[string][]Metadata{"1": items}, nil)
+
+	state, err := source.ListAll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := watched.MediaKey{Type: "movie", TMDBID: 603}
+	if _, ok := state[key]; !ok {
+		t.Fatalf("应为 tmdb 键：%+v", state)
+	}
+	ids := source.Mapper.IDsOf(key)
+	if ids.IMDB != "tt0120915" {
+		t.Fatalf("imdb 应并入映射：%+v", ids)
+	}
+	_ = client
+}
+
+// TestParseTVDBAndIMDBGuids tvdb/imdb guid 解析（含旧代理拼接形态）。
+func TestParseTVDBAndIMDBGuids(t *testing.T) {
+	m := &Metadata{GuidList: []GuidEntry{
+		{ID: "imdb://tt43650323"},
+		{ID: "tvdb://474294"},
+		{ID: "com.plexapp.agents.tvdb://123?lang=zh"},
+	}}
+	if got := m.TVDBGuid(); got != 474294 {
+		t.Fatalf("TVDBGuid 应为 474294，实际 %d", got)
+	}
+	if got := m.IMDBGuid(); got != "tt43650323" {
+		t.Fatalf("IMDBGuid 应为 tt43650323，实际 %q", got)
+	}
+	m2 := &Metadata{Guid: "com.plexapp.agents.tvdb://999"}
+	if got := m2.TVDBGuid(); got != 999 {
+		t.Fatalf("主 guid 兜底应为 999，实际 %d", got)
 	}
 }

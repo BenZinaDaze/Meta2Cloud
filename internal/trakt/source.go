@@ -1,5 +1,6 @@
 // source.go —— TraktSource：把 Trakt 客户端适配成 watched.Provider。
-// 身份天然以 tmdb id 为锚，无需额外解析；批量写入按 ≤100 条/请求分块。
+// 身份经 IDMapper 归一（tmdb 锚优先，剧集缺 tmdb 时 tvdb 锚）；批量写入按
+// ≤100 条/请求分块，载荷携带全部已知 ID。
 package trakt
 
 import (
@@ -16,10 +17,16 @@ const historyChunkSize = 100
 // TraktSource watched.Provider 的 Trakt 实现。
 type TraktSource struct {
 	Client *Client
+	Mapper watched.IDMapper
 }
 
-// NewTraktSource 构造。
-func NewTraktSource(client *Client) *TraktSource { return &TraktSource{Client: client} }
+// NewTraktSource 构造。mapper 为 nil 时使用内存映射。
+func NewTraktSource(client *Client, mapper watched.IDMapper) *TraktSource {
+	if mapper == nil {
+		mapper = watched.NewMemIDMapper()
+	}
+	return &TraktSource{Client: client, Mapper: mapper}
+}
 
 // Name 实现 watched.Provider。
 func (s *TraktSource) Name() string { return "trakt" }
@@ -30,6 +37,7 @@ func (s *TraktSource) Name() string { return "trakt" }
 // 剧集：/sync/watched/shows 只能列出「有记录的剧」，但记录可能是剧级聚合
 // （如 Trakt 官方 Plex 集成写入的条目，无 seasons 明细）；逐集的权威状态
 // 以 /shows/{id}/progress/watched 为准——每剧一调，枚举 completed 集。
+// 身份经 IDMapper 归一：tmdb 缺失的剧以 tvdb 锚成键（不再直接跳过）。
 func (s *TraktSource) ListAll(ctx context.Context) (map[watched.MediaKey]watched.ItemState, error) {
 	out := map[watched.MediaKey]watched.ItemState{}
 
@@ -38,10 +46,12 @@ func (s *TraktSource) ListAll(ctx context.Context) (map[watched.MediaKey]watched
 		return nil, fmt.Errorf("拉取 Trakt 电影已看失败：%w", err)
 	}
 	for _, m := range movies {
-		if m.Movie.IDs.TMDB <= 0 {
+		key, ok := s.Mapper.ResolveKey("movie", watched.MediaIDs{
+			TMDB: m.Movie.IDs.TMDB, TVDB: m.Movie.IDs.TVDB, IMDB: m.Movie.IDs.IMDB,
+		}, 0, 0)
+		if !ok {
 			continue
 		}
-		key := watched.MediaKey{Type: "movie", TMDBID: m.Movie.IDs.TMDB}
 		out[key] = watched.ItemState{
 			Present: true, Watched: true,
 			LastAt: m.LastWatchedAt.Unix(), Plays: m.Plays,
@@ -53,7 +63,13 @@ func (s *TraktSource) ListAll(ctx context.Context) (map[watched.MediaKey]watched
 		return nil, fmt.Errorf("拉取 Trakt 剧集已看失败：%w", err)
 	}
 	for _, show := range shows {
-		if show.Show.IDs.TMDB <= 0 || show.Show.IDs.Trakt <= 0 {
+		if show.Show.IDs.Trakt <= 0 {
+			continue
+		}
+		showKey, ok := s.Mapper.ResolveKey("tv", watched.MediaIDs{
+			TMDB: show.Show.IDs.TMDB, TVDB: show.Show.IDs.TVDB, IMDB: show.Show.IDs.IMDB,
+		}, 0, 0)
+		if !ok {
 			continue
 		}
 		progress, err := s.Client.ShowWatchedProgress(show.Show.IDs.Trakt)
@@ -75,7 +91,8 @@ func (s *TraktSource) ListAll(ctx context.Context) (map[watched.MediaKey]watched
 				if resetAt > 0 && lastAt > 0 && lastAt < resetAt {
 					continue
 				}
-				key := watched.MediaKey{Type: "tv", TMDBID: show.Show.IDs.TMDB, Season: season.Number, Episode: ep.Number}
+				key := showKey
+				key.Season, key.Episode = season.Number, ep.Number
 				out[key] = watched.ItemState{
 					Present: true, Watched: true,
 					LastAt: lastAt, Plays: 1,
@@ -100,6 +117,18 @@ func (s *TraktSource) MarkUnwatched(ctx context.Context, keys []watched.MediaKey
 	return s.apply(s.Client.RemoveHistory, ops, false)
 }
 
+// entryMatchesKey not_found 回带 ID 与本地键是否同指一媒体（任一系 ID 命中即算；
+// imdb 不参与——本地键不含 imdb 锚，能构造出的载荷必带 tmdb 或 tvdb）。
+func entryMatchesKey(e NotFoundEntry, k watched.MediaKey) bool {
+	if k.TMDBID > 0 && e.TmdbID > 0 && k.TMDBID == e.TmdbID {
+		return true
+	}
+	if k.TVDBID > 0 && e.TvdbID > 0 && k.TVDBID == e.TvdbID {
+		return true
+	}
+	return false
+}
+
 // notFoundFailedKeys 把 not_found 清单归因到块内的具体键，返回 键→错误说明。
 // entries 为 nil、存在无法归因的条目（未回带 id 且块内不止一部剧、或对不上
 // 任何键）时返回 ok=false，调用方回退整批失败的保守策略。
@@ -108,48 +137,63 @@ func notFoundFailedKeys(chunk []watched.WatchOp, entries []NotFoundEntry) (map[w
 		return nil, false
 	}
 	inChunk := map[watched.MediaKey]bool{}
-	showIDs := map[int64]bool{}
+	anchorIDs := map[int64]bool{} // 块内剧集的锚 ID（tmdb 或 tvdb）
 	for _, op := range chunk {
 		inChunk[op.Key] = true
 		if op.Key.Type == "tv" {
-			showIDs[op.Key.TMDBID] = true
+			if op.Key.TVDBID > 0 {
+				anchorIDs[op.Key.TVDBID] = true
+			} else {
+				anchorIDs[op.Key.TMDBID] = true
+			}
 		}
 	}
 	var loneShow int64
-	if len(showIDs) == 1 {
-		for id := range showIDs {
+	if len(anchorIDs) == 1 {
+		for id := range anchorIDs {
 			loneShow = id
 		}
 	}
 	failed := map[watched.MediaKey]string{}
 	for _, e := range entries {
-		if e.TmdbID == 0 {
-			if loneShow == 0 {
+		if e.TmdbID == 0 && e.TvdbID == 0 && e.ImdbID == "" {
+			// 响应未回带任何 ID：仅块内单一媒体时可归因
+			switch {
+			case e.MediaType == "movie" && len(inChunk) == 1:
+				for k := range inChunk {
+					e.TmdbID = k.TMDBID
+				}
+			case e.MediaType != "movie" && loneShow != 0:
+				if loneShowIsTVDB(chunk, loneShow) {
+					e.TvdbID = loneShow
+				} else {
+					e.TmdbID = loneShow
+				}
+			default:
 				return nil, false
 			}
-			e.TmdbID = loneShow
 		}
 		hit := false
 		for k := range inChunk {
-			if k.Type != e.MediaType || k.TMDBID != e.TmdbID {
+			if k.Type != e.MediaType || !entryMatchesKey(e, k) {
 				continue
 			}
 			switch {
 			case e.Season < 0:
 				if e.MediaType == "movie" {
-					failed[k] = fmt.Sprintf("Trakt 未收录该电影（tmdb %d 无映射）", e.TmdbID)
+					failed[k] = "Trakt 未收录该电影（外部 ID 无映射）"
 				} else {
-					failed[k] = fmt.Sprintf("Trakt 未收录该剧（tmdb %d 无映射）", e.TmdbID)
+					failed[k] = "Trakt 未收录该剧（外部 ID 无映射）"
 				}
 				hit = true
 			case e.Episode < 0:
 				if k.Season == e.Season {
-					failed[k] = fmt.Sprintf("Trakt 未收录该剧第 %d 季（tmdb %d）", e.Season, e.TmdbID)
+					failed[k] = fmt.Sprintf("Trakt 未收录该剧第 %d 季", e.Season)
 					hit = true
 				}
 			default:
 				if k.Season == e.Season && k.Episode == e.Episode {
-					failed[k] = fmt.Sprintf("Trakt 未收录该集 S%02dE%02d（tmdb %d）", e.Season, e.Episode, e.TmdbID)
+					failed[k] = fmt.Sprintf("Trakt 未收录该集 S%02dE%02d", e.Season, e.Episode)
 					hit = true
 				}
 			}
@@ -159,6 +203,16 @@ func notFoundFailedKeys(chunk []watched.WatchOp, entries []NotFoundEntry) (map[w
 		}
 	}
 	return failed, true
+}
+
+// loneShowIsTVDB 判断块内唯一的剧集锚是否为 tvdb 锚。
+func loneShowIsTVDB(chunk []watched.WatchOp, anchorID int64) bool {
+	for _, op := range chunk {
+		if op.Key.Type == "tv" && (op.Key.TVDBID == anchorID || op.Key.TMDBID == anchorID) {
+			return op.Key.TVDBID > 0
+		}
+	}
+	return false
 }
 
 type historyFunc func(movies []HistoryMovie, episodes []HistoryEpisode) (*HistoryResult, error)
@@ -175,15 +229,29 @@ func (s *TraktSource) apply(fn historyFunc, ops []watched.WatchOp, requireAdded 
 		var movies []HistoryMovie
 		episodes := make([]HistoryEpisode, 0, len(chunk))
 		for _, op := range chunk {
+			ids := s.Mapper.IDsOf(op.Key)
 			switch op.Key.Type {
 			case "movie":
-				m := HistoryMovie{TMDBID: op.Key.TMDBID}
+				m := HistoryMovie{TMDBID: ids.TMDB, TVDBID: ids.TVDB, IMDBID: ids.IMDB}
+				if m.TMDBID == 0 && m.TVDBID == 0 && m.IMDBID == "" {
+					m.TMDBID = op.Key.TMDBID
+				}
 				if op.At > 0 {
 					m.WatchedAt = time.Unix(op.At, 0)
 				}
 				movies = append(movies, m)
 			case "tv":
-				ep := HistoryEpisode{ShowTMDBID: op.Key.TMDBID, Season: op.Key.Season, Episode: op.Key.Episode}
+				ep := HistoryEpisode{
+					ShowTMDBID: ids.TMDB, ShowTVDBID: ids.TVDB, ShowIMDBID: ids.IMDB,
+					Season: op.Key.Season, Episode: op.Key.Episode,
+				}
+				if ep.ShowTMDBID == 0 && ep.ShowTVDBID == 0 && ep.ShowIMDBID == "" {
+					if op.Key.TVDBID > 0 {
+						ep.ShowTVDBID = op.Key.TVDBID
+					} else {
+						ep.ShowTMDBID = op.Key.TMDBID
+					}
+				}
 				if op.At > 0 {
 					ep.WatchedAt = time.Unix(op.At, 0)
 				}

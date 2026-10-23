@@ -650,3 +650,21 @@ func TestIgnoredMediaSkipped(t *testing.T) {
 		t.Fatalf("恢复忽略后应重新同步：%+v", summary)
 	}
 }
+
+// TestIgnoredMediaTVDBAnchorSkipped 媒体级忽略对 tvdb 锚定的剧集键同样生效。
+func TestIgnoredMediaTVDBAnchorSkipped(t *testing.T) {
+	plex, trakt := newFakeProvider("plex"), newFakeProvider("trakt")
+	store := newFakeStore()
+	ep := watched.MediaKey{Type: "tv", TVDBID: 474294, Season: 1, Episode: 1}
+	plex.setWatched(ep, 1700000000, 1)
+
+	store.ignores = map[watched.MediaKey]bool{{Type: "tv", TVDBID: 474294}: true}
+	e := newEngine(plex, trakt, store, true, true)
+	summary, err := e.Run(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("Run 出错：%v", err)
+	}
+	if summary.Skipped != 1 || summary.ToTrakt != 0 {
+		t.Fatalf("tvdb 锚媒体级忽略应整键跳过：%+v", summary)
+	}
+}

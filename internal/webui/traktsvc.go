@@ -633,8 +633,8 @@ func runTraktSync(trigger string) {
 		return
 	}
 	engine := &syncengine.Engine{
-		Playback: plexserver.NewSource(plexClient, buildTitleIndex()),
-		Trakt:    trakt.NewTraktSource(traktClient),
+		Playback: plexserver.NewSource(plexClient, buildTitleIndex(), syncStore),
+		Trakt:    trakt.NewTraktSource(traktClient, syncStore),
 		Store:    syncStore,
 		ToPlex:   cfg.Trakt.SyncToPlex,
 		ToTrakt:  cfg.Trakt.SyncToTrakt,
@@ -817,7 +817,7 @@ func handleTraktSyncIgnores(w http.ResponseWriter, _ *http.Request) {
 	ignores := make([]map[string]any, 0)
 	for _, it := range syncStore.ListSyncIgnores() {
 		ignores = append(ignores, map[string]any{
-			"media_type": it.MediaType, "tmdb_id": it.TmdbID,
+			"media_type": it.MediaType, "anchor": it.Anchor, "tmdb_id": it.TmdbID,
 			"title": it.Title, "reason": it.Reason, "created_at": it.CreatedAt,
 		})
 	}
@@ -831,7 +831,7 @@ func handleTraktSyncIgnores(w http.ResponseWriter, _ *http.Request) {
 			title = traktMediaTitle(c.MediaType, c.TmdbID)
 		}
 		candidates = append(candidates, map[string]any{
-			"media_type": c.MediaType, "tmdb_id": c.TmdbID, "title": title,
+			"media_type": c.MediaType, "anchor": c.Anchor, "tmdb_id": c.TmdbID, "title": title,
 			"fails": c.Fails, "last_error": c.LastError, "last_at": c.LastAt,
 		})
 	}
@@ -839,7 +839,8 @@ func handleTraktSyncIgnores(w http.ResponseWriter, _ *http.Request) {
 }
 
 // handleTraktSyncIgnoreSet POST /api/trakt/sync/ignore
-// {action: "add"|"remove", media_type, tmdb_id, reason?}。
+// {action: "add"|"remove", media_type, tmdb_id, reason?, anchor?}。
+// anchor 可选："tmdb"（默认）| "tvdb"（tvdb 锚定的剧集键）。
 func handleTraktSyncIgnoreSet(w http.ResponseWriter, r *http.Request) {
 	syncStore := RT().GetTraktSyncStore()
 	if syncStore == nil {
@@ -849,12 +850,16 @@ func handleTraktSyncIgnoreSet(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Action    string `json:"action"`
 		MediaType string `json:"media_type"`
+		Anchor    string `json:"anchor"`
 		TmdbID    int64  `json:"tmdb_id"`
 		Reason    string `json:"reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "请求体格式错误")
 		return
+	}
+	if req.Anchor != "tvdb" {
+		req.Anchor = "tmdb"
 	}
 	if (req.MediaType != "movie" && req.MediaType != "tv") || req.TmdbID <= 0 {
 		writeJSONError(w, http.StatusBadRequest, "media_type 须为 movie/tv 且 tmdb_id 有效")
@@ -863,7 +868,7 @@ func handleTraktSyncIgnoreSet(w http.ResponseWriter, r *http.Request) {
 	switch req.Action {
 	case "add":
 		title := traktMediaTitle(req.MediaType, req.TmdbID)
-		if err := syncStore.AddSyncIgnore(req.MediaType, req.TmdbID, title, req.Reason); err != nil {
+		if err := syncStore.AddSyncIgnore(req.MediaType, req.Anchor, req.TmdbID, title, req.Reason); err != nil {
 			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("保存忽略失败：%v", err))
 			return
 		}
@@ -871,7 +876,7 @@ func handleTraktSyncIgnoreSet(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("已忽略媒体 %s:%d（两侧均不再同步）", req.MediaType, req.TmdbID), nil)
 		writeJSON(w, http.StatusOK, map[string]any{"message": "已忽略，该媒体将不再参与同步"})
 	case "remove":
-		if err := syncStore.RemoveSyncIgnore(req.MediaType, req.TmdbID); err != nil {
+		if err := syncStore.RemoveSyncIgnore(req.MediaType, req.Anchor, req.TmdbID); err != nil {
 			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("解除忽略失败：%v", err))
 			return
 		}
@@ -914,18 +919,9 @@ func enrichRunItemTitles(items []store.TraktSyncRunItem) {
 	}
 }
 
-// ── 会话轮询（正在看 → Trakt）───────────────────────────────
+// ── 会话推送（正在看 → Trakt scrobble 三段式）──────────────
 
-// sessionPushThreshold 视为「已看」的进度阈值（与 Trakt scrobble 规则一致）。
-const sessionPushThreshold = 0.8
-
-// sessionPushCooldown 同一观看推送后的最小间隔（防重复推送）。
-const sessionPushCooldown = int64(3600)
-
-// sessionEchoSkew trakt 同步状态已是新看时视为回声的时间窗口（与引擎 echoSkew 对齐）。
-const sessionEchoSkew = int64(600)
-
-// sessionMaxMisses 连续缺席轮询若干次后移除会话观察行。
+// sessionMaxMisses 连续缺席轮询若干次后收尾（stop）并移除会话观察行。
 const sessionMaxMisses = 2
 
 // sessionDisplayTitle 会话条目的可读标题。
@@ -936,7 +932,177 @@ func sessionDisplayTitle(item *plexserver.Metadata) string {
 	return item.Title
 }
 
-// pollPlexSessionsOnce 单次会话轮询：≥80% 进度的会话推送到 Trakt。
+// sessionScrobbleGate 会话 scrobble 的公共门控：→Trakt 方向开关 + 媒体忽略。
+func sessionScrobbleGate(syncStore *store.TraktSyncStore, key watched.MediaKey) bool {
+	if !RT().GetConfig().Trakt.SyncToTrakt {
+		return false
+	}
+	return !syncStore.IsIgnoredKey(key)
+}
+
+// scrobbleIDs 组 scrobble 载荷 ID（映射表补全多 ID；无记录时回带键自身锚）。
+func scrobbleIDs(mapper watched.IDMapper, key watched.MediaKey) watched.MediaIDs {
+	ids := mapper.IDsOf(key)
+	if ids.TMDB == 0 && ids.TVDB == 0 && ids.IMDB == "" {
+		if key.TVDBID > 0 {
+			ids.TVDB = key.TVDBID
+		} else {
+			ids.TMDB = key.TMDBID
+		}
+	}
+	return ids
+}
+
+// scrobbleProgress 播放进度百分比（0~100）；时长未知返回 false（无法上报）。
+func scrobbleProgress(offsetMS, durationMS int64) (float64, bool) {
+	if durationMS <= 0 {
+		return 0, false
+	}
+	p := float64(offsetMS) / float64(durationMS) * 100
+	if p < 0 {
+		p = 0
+	}
+	if p > 100 {
+		p = 100
+	}
+	return p, true
+}
+
+// sessionScrobble 每会话的上报状态（内存态；进程重启即重建，start 幂等无碍）。
+// lastSent: "" | "playing" | "paused" —— 仅在状态跃迁时调 API，播放中的
+// 周期性 progress 事件不重复上报（Trakt watching 状态按剩余时长自动过期）。
+type sessionScrobble struct {
+	lastSent string
+}
+
+var (
+	sessionScrobbleMu   sync.Mutex
+	sessionScrobbleByID = map[string]*sessionScrobble{}
+)
+
+func scrobbleStateFor(sessionKey string) *sessionScrobble {
+	sessionScrobbleMu.Lock()
+	defer sessionScrobbleMu.Unlock()
+	st := sessionScrobbleByID[sessionKey]
+	if st == nil {
+		st = &sessionScrobble{}
+		sessionScrobbleByID[sessionKey] = st
+	}
+	return st
+}
+
+func dropScrobbleState(sessionKey string) {
+	sessionScrobbleMu.Lock()
+	delete(sessionScrobbleByID, sessionKey)
+	sessionScrobbleMu.Unlock()
+}
+
+// scrobbleTransition 按状态跃迁上报 start/pause（均不计次）。仅 stop 收尾
+// 由 finishSession 负责（计次与否由 Trakt 服务端裁定）。
+func scrobbleTransition(source string, traktClient *trakt.Client, mapper watched.IDMapper, key watched.MediaKey, state string, progress float64, sessionKey string) {
+	st := scrobbleStateFor(sessionKey)
+	switch state {
+	case "playing":
+		if st.lastSent == "playing" {
+			return
+		}
+		if scrobbleCall(mapper, traktClient, trakt.ScrobbleStart, key, progress) {
+			st.lastSent = "playing"
+		}
+	case "paused":
+		if st.lastSent != "playing" {
+			return
+		}
+		if scrobbleCall(mapper, traktClient, trakt.ScrobblePause, key, progress) {
+			st.lastSent = "paused"
+		}
+	}
+}
+
+// scrobbleCall 单次 start/pause 上报；失败仅记日志（下个事件自然重试）。
+func scrobbleCall(mapper watched.IDMapper, traktClient *trakt.Client, action trakt.ScrobbleAction, key watched.MediaKey, progress float64) bool {
+	if _, err := scrobbleDoWith(mapper, traktClient, action, key, progress); err != nil {
+		appLog("trakt", "session_scrobble_failed", "WARNING",
+			fmt.Sprintf("播放状态上报 Trakt 失败（%s %s）：%v", action, key, err), nil)
+		return false
+	}
+	return true
+}
+
+// scrobbleDoWith 组多 ID 载荷并执行 scrobble（mapper 为 nil 时用键自身锚）。
+func scrobbleDoWith(mapper watched.IDMapper, traktClient *trakt.Client, action trakt.ScrobbleAction, key watched.MediaKey, progress float64) (trakt.ScrobbleResult, error) {
+	var ids watched.MediaIDs
+	if mapper != nil {
+		ids = scrobbleIDs(mapper, key)
+	} else if key.TVDBID > 0 {
+		ids = watched.MediaIDs{TVDB: key.TVDBID}
+	} else {
+		ids = watched.MediaIDs{TMDB: key.TMDBID}
+	}
+	if key.Type == "movie" {
+		return traktClient.Scrobble(action,
+			&trakt.HistoryMovie{TMDBID: ids.TMDB, TVDBID: ids.TVDB, IMDBID: ids.IMDB}, nil, progress)
+	}
+	return traktClient.Scrobble(action, nil,
+		&trakt.HistoryEpisode{
+			ShowTMDBID: ids.TMDB, ShowTVDBID: ids.TVDB, ShowIMDBID: ids.IMDB,
+			Season: key.Season, Episode: key.Episode,
+		}, progress)
+}
+
+// finishSession 会话收尾：以最后已知进度上报 stop，计次与否由 Trakt 服务端裁定
+// （action=scrobble 计一次；pause 未达阈值；409 处于去重窗口即媒体已在历史中；
+// 422 进度不足被忽略）。失败落退避标记与失败记录，观看状态最终由定时全量同步兜底。
+func finishSession(syncStore *store.TraktSyncStore, traktClient *trakt.Client, mapper watched.IDMapper, key watched.MediaKey, title, source string, progress float64, sessionKey string) {
+	dropScrobbleState(sessionKey)
+	if (key.TMDBID == 0 && key.TVDBID == 0) || !sessionScrobbleGate(syncStore, key) {
+		return
+	}
+	item := syncengine.RunItem{Key: key, Title: title, Direction: "to_trakt", Action: "watched"}
+	record := func(success bool, errMsg string) {
+		_ = syncStore.RecordSessionPushRun(source, item, progress, success, errMsg)
+	}
+	now := time.Now().Unix()
+	// 记录层沿用 0~1 进度分数；scrobble API 要求 0~100 百分比
+	res, err := scrobbleDoWith(mapper, traktClient, trakt.ScrobbleStop, key, progress*100)
+	switch {
+	case err == nil && res.Action == "scrobble":
+		_ = syncStore.UpdateTraktWatched(key, now, now)
+		_ = syncStore.SetTraktPushedAt(now) // 供下轮全量同步的过期读取防护
+		record(true, "")
+		appLog("trakt", "session_pushed", "SUCCESS",
+			fmt.Sprintf("播放已记录到 Trakt：%s（进度 %.0f%%）", key, progress*100), nil)
+		// 推送成功即 Trakt 授权有效：会话推送是独立于全量同步的恢复上报点
+		NotifyServiceHealth("Trakt", true, "")
+	case err == nil:
+		// action=pause：进度未达阈值，服务端未计次——不落记录
+	case errors.As(err, new(*trakt.DuplicateScrobbleError)):
+		// 服务端去重（409）：媒体已在 Trakt 历史中，目的态达成，按成功记录
+		watchedAt := now
+		var dup *trakt.DuplicateScrobbleError
+		if errors.As(err, &dup) && !dup.WatchedAt.IsZero() {
+			watchedAt = dup.WatchedAt.Unix()
+		}
+		_ = syncStore.UpdateTraktWatched(key, watchedAt, now)
+		_ = syncStore.SetTraktPushedAt(now)
+		record(true, "")
+		appLog("trakt", "session_pushed", "INFO",
+			fmt.Sprintf("Trakt 已有该观看记录（去重窗口内未重复计次）：%s", key), nil)
+	case errors.As(err, new(*trakt.ScrobbleIgnoredError)):
+		// 422：进度不足等被服务端忽略（如刚开播即停）——静默
+	default:
+		_ = syncStore.MarkSessionPushFailure(key, now)
+		record(false, err.Error())
+		appLog("trakt", "session_push_failed", "WARNING",
+			fmt.Sprintf("播放上报 Trakt 失败（%s）：%v", key, err), nil)
+		if errors.Is(err, trakt.ErrUnauthorized) {
+			NotifyServiceHealth("Trakt", false, "播放上报认证失败："+err.Error())
+		}
+	}
+}
+
+// pollPlexSessionsOnce 单次会话轮询（SSE 离线时的兜底）：
+// 首见会话上报 start；连续缺席的会话以最后已知进度 stop 收尾。
 func pollPlexSessionsOnce() {
 	cfg := RT().GetConfig()
 	nowStr := utcNowISO()
@@ -945,7 +1111,7 @@ func pollPlexSessionsOnce() {
 	traktSessionWatcher.lastPollError = nil
 	traktSessionWatcher.mu.Unlock()
 
-	// 纯兜底策略：SSE 在线时不并行轮询——实时事件已覆盖会话观察与推送，
+	// 纯兜底策略：SSE 在线时不并行轮询——实时事件已覆盖会话观察与上报，
 	// 仅在 SSE 未连接（开关关闭/断线窗口/旧版 PMS 无端点）时才主动轮询。
 	// 心跳簿记已在上方更新，watcher 存活状态不受影响。
 	if sseConnected() {
@@ -983,125 +1149,64 @@ func pollPlexSessionsOnce() {
 		}
 		return
 	}
-	// 会话查询成功即 Plex 可达且授权有效：SSE 关闭（默认）时这里是唯一的 Plex 恢复上报点
+	// 会话查询成功即 Plex 可达且授权有效：SSE 关闭时这里是唯一的 Plex 恢复上报点
 	NotifyServiceHealth("Plex", true, "")
 
 	seen := map[string]bool{}
-	source := plexserver.NewSource(plexClient, buildTitleIndex())
+	source := plexserver.NewSource(plexClient, buildTitleIndex(), syncStore)
 	for i := range sessions {
 		sess := &sessions[i]
 		seen[sess.SessionKey] = true
 
 		key, keyOK := resolveSessionKey(syncStore, source, sess)
-		progress := 0.0
-		if sess.Duration > 0 {
-			progress = float64(sess.ViewOffset) / float64(sess.Duration)
-		}
+		pct, progressOK := scrobbleProgress(int64(sess.ViewOffset), int64(sess.Duration))
 		title := sessionDisplayTitle(sess)
 		row := store.TraktSyncSession{
 			SessionKey: sess.SessionKey, PlexRef: sess.RatingKey,
 			ViewOffsetMS: int64(sess.ViewOffset), DurationMS: int64(sess.Duration),
-			MaxProgress: progress, Title: &title,
+			MaxProgress: func() float64 {
+				f, _ := scrobbleProgress(int64(sess.ViewOffset), int64(sess.Duration))
+				return f / 100
+			}(), Title: &title,
 		}
 		if keyOK {
 			row.MediaType = key.Type
-			row.TmdbID = key.TMDBID
+			if key.TVDBID > 0 {
+				row.Anchor = "tvdb"
+				row.TmdbID = key.TVDBID
+			} else {
+				row.TmdbID = key.TMDBID
+			}
 			row.Season = key.Season
 			row.Episode = key.Episode
 		}
 		syncStore.UpsertSyncSession(row)
-		if keyOK {
-			tryPushWatchedSession(syncStore, traktClient, key, title, progress, "poll")
+		if keyOK && progressOK && sessionScrobbleGate(syncStore, key) {
+			scrobbleTransition("poll", traktClient, syncStore, key, "playing", pct, sess.SessionKey)
 		}
 	}
 
-	// 缺席检测：连续 2 次未见移除
+	// 缺席检测：连续 2 次未见 → 以最后已知进度 stop 收尾并移除
 	for _, row := range syncStore.ListSyncSessions() {
 		if seen[row.SessionKey] {
 			continue
 		}
 		if misses := syncStore.IncrementSessionMiss(row.SessionKey); misses >= sessionMaxMisses {
+			finishSession(syncStore, traktClient, syncStore, row.Key(), derefString(row.Title), "poll", row.MaxProgress, row.SessionKey)
 			syncStore.DeleteSyncSession(row.SessionKey)
 		}
 	}
 }
 
-// tryPushWatchedSession 会话进度达标（≥80%）时把该集推送到 Trakt。
-// 内置防重门控（近期推送过 / trakt 同步状态已是新看则跳过），
-// 轮询与 SSE 实时推送两条路径共用，保证不会重复计 plays。
-// source 标记来源（"sse" / "poll"），title 为展示用媒体标题；
-// 每次实际尝试（无论成败）都经 RecordSessionPushRun 落一条 run 记录，
-// 防重闸静默跳过的不记录。
-// traktSessionPushMu 串行化单媒体推送：SSE worker 与会话轮询并发调用本核心，
-// 防重闸（session_pushed_at/echo）的检查与写入须原子完成，避免同瞬双推重复 play。
-var traktSessionPushMu sync.Mutex
-
-func tryPushWatchedSession(syncStore *store.TraktSyncStore, traktClient *trakt.Client, key watched.MediaKey, title string, progress float64, source string) bool {
-	traktSessionPushMu.Lock()
-	defer traktSessionPushMu.Unlock()
-	if progress < sessionPushThreshold {
-		return false
+func derefString(s *string) string {
+	if s == nil {
+		return ""
 	}
-	if !RT().GetConfig().Trakt.SyncToTrakt {
-		return false
-	}
-	// 已忽略的媒体不参与同步（含实时推送），静默跳过不落记录
-	if syncStore.IsIgnoredMedia(key.Type, key.TMDBID) {
-		return false
-	}
-	shadow, hasShadow, _ := syncStore.GetShadow(key)
-	now := time.Now().Unix()
-	if hasShadow {
-		if shadow.SessionPushedAt > 0 && now-shadow.SessionPushedAt < sessionPushCooldown {
-			return false
-		}
-		if shadow.TraktWatched != nil && *shadow.TraktWatched && now-shadow.TraktLastAt < sessionEchoSkew {
-			return false
-		}
-	}
-	item := syncengine.RunItem{
-		Key: key, Title: title, Direction: "to_trakt", Action: "watched",
-	}
-	record := func(success bool, errMsg string) {
-		_ = syncStore.RecordSessionPushRun(source, item, progress, success, errMsg)
-	}
-	movies := []trakt.HistoryMovie{}
-	episodes := []trakt.HistoryEpisode{}
-	if key.Type == "movie" {
-		movies = append(movies, trakt.HistoryMovie{TMDBID: key.TMDBID, WatchedAt: time.Unix(now, 0)})
-	} else {
-		episodes = append(episodes, trakt.HistoryEpisode{
-			ShowTMDBID: key.TMDBID, Season: key.Season, Episode: key.Episode,
-			WatchedAt: time.Unix(now, 0),
-		})
-	}
-	result, err := traktClient.AddHistory(movies, episodes)
-	if err != nil {
-		_ = syncStore.MarkSessionPushFailure(key, now)
-		record(false, fmt.Sprintf("Trakt 写入失败：%v", err))
-		appLog("trakt", "session_push_failed", "WARNING",
-			fmt.Sprintf("播放进度推送 Trakt 失败（%s）：%v", key, err), nil)
-		if errors.Is(err, trakt.ErrUnauthorized) {
-			NotifyServiceHealth("Trakt", false, "播放进度推送认证失败："+err.Error())
-		}
-		return false
-	}
-	if result.NotFoundCount > 0 {
-		_ = syncStore.MarkSessionPushFailure(key, now)
-		record(false, "Trakt 未匹配到该媒体（not_found），已退避，1 小时后自动重试")
-		appLog("trakt", "session_push_failed", "WARNING",
-			fmt.Sprintf("播放进度推送 Trakt 未匹配（%s）：not_found，已退避，1 小时后自动重试；若为 Trakt 缺 tmdb 映射的媒体，可在同步页忽略清单止损", key), nil)
-		return false
-	}
-	_ = syncStore.UpdateTraktWatched(key, now, now)
-	_ = syncStore.SetTraktPushedAt(now) // 供下轮全量同步的过期读取防护
-	record(true, "")
-	appLog("trakt", "session_pushed", "SUCCESS",
-		fmt.Sprintf("播放进度已记录到 Trakt：%s（进度 %.0f%%）", key, progress*100), nil)
-	// 推送成功即 Trakt 授权有效：会话推送是独立于全量同步的恢复上报点
-	NotifyServiceHealth("Trakt", true, "")
-	return true
+	return *s
 }
+
+// （实时推送的实现见下方 handlePlexPlaybackNotification：scrobble 三段式，
+// start/pause 不计次，stop 由 Trakt 服务端裁定是否计次与去重。）
 
 // ── 实时推送（Plex SSE）─────────────────────────────────────
 
@@ -1129,7 +1234,9 @@ func sseConnected() bool {
 const sseEventQueueSize = 64
 
 // handlePlexPlaybackNotification 处理一条实时播放通知：
-// 更新会话观察行，进度达标即推送 Trakt（与轮询共用门控）。
+// 更新会话观察行，按状态跃迁上报 scrobble（start/pause 不计次），
+// stopped 事件以最终进度上报 stop（计次与去重由 Trakt 服务端裁定），
+// 随后清理会话观察行（轮询不与 SSE 并行运行，收尾由 stopped 事件承担）。
 func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *trakt.Client, syncStore *store.TraktSyncStore, notif plexserver.PlaybackNotification) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -1151,7 +1258,7 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 			duration = int64(md.Duration)
 		}
 	}
-	source := plexserver.NewSource(plexClient, buildTitleIndex())
+	source := plexserver.NewSource(plexClient, buildTitleIndex(), syncStore)
 	sess := &plexserver.Metadata{
 		SessionKey: notif.SessionKey, RatingKey: notif.RatingKey,
 		ViewOffset: int(notif.ViewOffsetMS), Duration: int(duration),
@@ -1170,18 +1277,37 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 	}
 	if keyOK {
 		row.MediaType = key.Type
-		row.TmdbID = key.TMDBID
+		if key.TVDBID > 0 {
+			row.Anchor = "tvdb"
+			row.TmdbID = key.TVDBID
+		} else {
+			row.TmdbID = key.TMDBID
+		}
 		row.Season = key.Season
 		row.Episode = key.Episode
 	}
 	syncStore.UpsertSyncSession(row)
-	if keyOK {
-		tryPushWatchedSession(syncStore, traktClient, key, title, progress, "sse")
-	}
-	// 播放结束即清理会话观察行：轮询不与 SSE 并行运行后，
-	// 缺席检测不再触发，收尾改由 stopped 事件承担
+
+	// 播放结束：以上下文内的最大进度收尾 stop，然后清理会话观察行与上报状态
 	if notif.State == "stopped" {
+		finalProgress := progress
+		if merged := syncStore.GetSyncSession(notif.SessionKey); merged != nil && merged.MaxProgress > finalProgress {
+			finalProgress = merged.MaxProgress
+		}
+		if keyOK {
+			finishSession(syncStore, traktClient, syncStore, key, title, "sse", finalProgress, notif.SessionKey)
+		}
+		dropScrobbleState(notif.SessionKey)
 		syncStore.DeleteSyncSession(notif.SessionKey)
+		return
+	}
+
+	if !keyOK || duration <= 0 {
+		return
+	}
+	pct, _ := scrobbleProgress(notif.ViewOffsetMS, duration)
+	if sessionScrobbleGate(syncStore, key) {
+		scrobbleTransition("sse", traktClient, syncStore, key, notif.State, pct, notif.SessionKey)
 	}
 }
 
@@ -1315,9 +1441,7 @@ func resolveSessionKey(store *store.TraktSyncStore, source *plexserver.Source, s
 		return shadow.Key, true
 	}
 	if row := store.GetSyncSession(sess.SessionKey); row != nil && row.TmdbID > 0 {
-		return watched.MediaKey{
-			Type: row.MediaType, TMDBID: row.TmdbID, Season: row.Season, Episode: row.Episode,
-		}, true
+		return row.Key(), true
 	}
 	return source.ResolveMetadataRef(sess.RatingKey)
 }
@@ -1476,6 +1600,7 @@ func TraktSyncStatusPayload() map[string]any { return traktSyncStatusPayload() }
 // 编译期接口检查
 var (
 	_ syncengine.ShadowStore = (*store.TraktSyncStore)(nil)
+	_ watched.IDMapper       = (*store.TraktSyncStore)(nil)
 	_ watched.Provider       = (*plexserver.Source)(nil)
 	_ watched.Provider       = (*trakt.TraktSource)(nil)
 	_ watched.TitleIndex     = (*titleIndex)(nil)

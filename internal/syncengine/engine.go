@@ -241,11 +241,12 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 
 	// 媒体级忽略清单：被忽略的媒体本轮完全跳过（不比对、不写入、状态记录
 	// 保持原值），恢复忽略后按原状态记录重新检测变化。典型场景：Trakt 侧
-	// 缺该媒体的 tmdb 映射，写入永远 not_found，用户手动忽略止损。
+	// 缺该媒体的映射，写入永远 not_found，用户手动忽略止损。
+	// 匹配键归一到媒体级（去季集、保留锚类型）。
 	if ip, ok := e.Store.(IgnoreProvider); ok {
 		if set, err := ip.AllIgnores(); err == nil && len(set) > 0 {
 			for k := range keys {
-				if set[watched.MediaKey{Type: k.Type, TMDBID: k.TMDBID}] {
+				if set[watched.MediaKey{Type: k.Type, TMDBID: k.TMDBID, TVDBID: k.TVDBID}] {
 					delete(keys, k)
 					summary.Skipped++
 				}
