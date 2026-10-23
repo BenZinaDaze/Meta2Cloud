@@ -105,6 +105,8 @@ type Metadata struct {
 	Index            int         `json:"index"`            // 集号（episode）
 	ParentIndex      int         `json:"parentIndex"`      // 季号（episode 的上级季）
 	GrandparentTitle string      `json:"grandparentTitle"` // 剧名（episode）
+	// 上级剧集 ratingKey（episode 详情接口带；枚举视图可能缺，缺时从 Key 路径推导）
+	GrandparentRatingKey string `json:"grandparentRatingKey"`
 	Guid             string      `json:"guid"`
 	GuidList         []GuidEntry `json:"Guid"`
 	Media            []MediaInfo `json:"Media"`
@@ -469,13 +471,16 @@ func (c *Client) StreamNotifications(ctx context.Context, onOpen func(), onEvent
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	var dataLines []string
+	var eventName string
 	dispatch := func() {
 		if len(dataLines) == 0 {
 			return
 		}
 		payload := strings.Join(dataLines, "\n")
+		eventType := eventName
 		dataLines = nil
-		for _, n := range parsePlaybackNotification(payload) {
+		eventName = ""
+		for _, n := range parsePlaybackNotification(payload, eventType) {
 			onEvent(n)
 		}
 	}
@@ -484,6 +489,8 @@ func (c *Client) StreamNotifications(ctx context.Context, onOpen func(), onEvent
 		switch {
 		case strings.HasPrefix(line, "data:"):
 			dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
+		case strings.HasPrefix(line, "event:"):
+			eventName = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
 		case line == "":
 			dispatch()
 		}
@@ -493,19 +500,38 @@ func (c *Client) StreamNotifications(ctx context.Context, onOpen func(), onEvent
 }
 
 // parsePlaybackNotification 解析一条 SSE data（Plex 通知容器），
-// 仅提取播放会话状态（type == "playing"；stopped 等状态也在此类型下）。
-func parsePlaybackNotification(payload string) []PlaybackNotification {
+// 仅提取播放会话状态（state 含 playing/paused/stopped 等）。
+// 真实 PMS 存在两种报文形态，须同时兼容：
+//   - {"type":"playing","PlaySessionStateNotification":[{...}]}：部分版本，数组 + 内嵌 type；
+//   - {"PlaySessionStateNotification":{...}}：另一些版本，单对象且 data 里无 type 字段，
+//     事件类型只在 SSE event: 行上（由 eventType 参数传入）。
+// 两处任一命中即视为播放事件；其余（ping/activity 等）一律丢弃。
+func parsePlaybackNotification(payload, eventType string) []PlaybackNotification {
 	dec := json.NewDecoder(strings.NewReader(payload))
 	dec.UseNumber()
 	var raw struct {
-		Type                         string           `json:"type"`
-		PlaySessionStateNotification []map[string]any `json:"PlaySessionStateNotification"`
+		Type                         string          `json:"type"`
+		PlaySessionStateNotification json.RawMessage `json:"PlaySessionStateNotification"`
 	}
-	if err := dec.Decode(&raw); err != nil || raw.Type != "playing" {
+	if err := dec.Decode(&raw); err != nil {
 		return nil
 	}
-	out := make([]PlaybackNotification, 0, len(raw.PlaySessionStateNotification))
-	for _, item := range raw.PlaySessionStateNotification {
+	if raw.Type != "playing" && eventType != "playing" {
+		return nil
+	}
+	if len(raw.PlaySessionStateNotification) == 0 {
+		return nil
+	}
+	var items []map[string]any
+	if err := json.Unmarshal(raw.PlaySessionStateNotification, &items); err != nil {
+		single := map[string]any{}
+		if err := json.Unmarshal(raw.PlaySessionStateNotification, &single); err != nil {
+			return nil
+		}
+		items = []map[string]any{single}
+	}
+	out := make([]PlaybackNotification, 0, len(items))
+	for _, item := range items {
 		n := PlaybackNotification{
 			State:        jsonStr(item["state"]),
 			SessionKey:   jsonStr(item["sessionKey"]),

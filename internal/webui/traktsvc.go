@@ -1077,6 +1077,7 @@ func tryPushWatchedSession(syncStore *store.TraktSyncStore, traktClient *trakt.C
 	}
 	result, err := traktClient.AddHistory(movies, episodes)
 	if err != nil {
+		_ = syncStore.MarkSessionPushFailure(key, now)
 		record(false, fmt.Sprintf("Trakt 写入失败：%v", err))
 		appLog("trakt", "session_push_failed", "WARNING",
 			fmt.Sprintf("播放进度推送 Trakt 失败（%s）：%v", key, err), nil)
@@ -1086,9 +1087,10 @@ func tryPushWatchedSession(syncStore *store.TraktSyncStore, traktClient *trakt.C
 		return false
 	}
 	if result.NotFoundCount > 0 {
-		record(false, "Trakt 未匹配到该媒体（not_found），稍后自动重试")
+		_ = syncStore.MarkSessionPushFailure(key, now)
+		record(false, "Trakt 未匹配到该媒体（not_found），已退避，1 小时后自动重试")
 		appLog("trakt", "session_push_failed", "WARNING",
-			fmt.Sprintf("播放进度推送 Trakt 未匹配（%s）：not_found，稍后自动重试", key), nil)
+			fmt.Sprintf("播放进度推送 Trakt 未匹配（%s）：not_found，已退避，1 小时后自动重试；若为 Trakt 缺 tmdb 映射的媒体，可在同步页忽略清单止损", key), nil)
 		return false
 	}
 	_ = syncStore.UpdateTraktWatched(key, now, now)

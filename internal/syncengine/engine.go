@@ -42,7 +42,7 @@ type Shadow struct {
 	TraktPlays   int
 	TraktLastAt  int64
 
-	SessionPushedAt int64 // 会话轮询最近一次推送时刻（防重）
+	SessionPushedAt int64 // 会话路径最近一次推送尝试时刻（成功或失败；失败退避 + 防重复推送）
 }
 
 // RunSummary 一次同步的统计。

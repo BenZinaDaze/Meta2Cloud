@@ -292,6 +292,23 @@ func (s *TraktSyncStore) UpdateTraktWatched(key watched.MediaKey, at int64, sess
 	return s.SaveShadow([]syncengine.Shadow{sh})
 }
 
+// MarkSessionPushFailure 记录一次失败的会话推送尝试（防重闸退避用）：
+// 会话推送的失败不做即时重试——SSE 每 ~10s 一条事件，无闸会无限重试刷屏。
+// 只推进 SessionPushedAt，不改动观看状态与观察值；无行时新建。
+func (s *TraktSyncStore) MarkSessionPushFailure(key watched.MediaKey, at int64) error {
+	sh, ok, err := s.GetShadow(key)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		sh = syncengine.Shadow{Key: key}
+	}
+	if at > sh.SessionPushedAt {
+		sh.SessionPushedAt = at
+	}
+	return s.SaveShadow([]syncengine.Shadow{sh})
+}
+
 // GetShadowByPlexRef 按 ratingKey 查状态记录（会话轮询的身份快路径）。
 func (s *TraktSyncStore) GetShadowByPlexRef(ref string) (syncengine.Shadow, bool, error) {
 	row := s.db.QueryRow(syncItemSelect+" WHERE plex_ref = ? LIMIT 1", ref)

@@ -106,6 +106,35 @@ func TestResolveByPathFallback(t *testing.T) {
 	}
 }
 
+// TestResolveSessionRefEpisodeGuidIsEpisodeId 集详情的 tmdb:// 是「集」级 id，
+// 不得当剧集身份；身份应取自上级剧集条目的权威 Guid。
+// 真实案例：剧集本身 tmdb://335790，其 S01E02 集级却是 tmdb://7905973。
+func TestResolveSessionRefEpisodeGuidIsEpisodeId(t *testing.T) {
+	sections := []Section{{Key: "3", Type: "show", Title: "动漫"}}
+	itemsByRef := map[string]Metadata{
+		"856": {
+			RatingKey: "856", Type: "episode", Key: "/library/metadata/856",
+			GrandparentTitle: "黑暗召唤师在地下恋爱中", GrandparentRatingKey: "853",
+			ParentIndex: 1, Index: 2,
+			GuidList: []GuidEntry{{ID: "tmdb://7905973"}, {ID: "tvdb://12018489"}},
+		},
+		"853": {
+			RatingKey: "853", Type: "show", Title: "黑暗召唤师在地下恋爱中",
+			GuidList: []GuidEntry{{ID: "tmdb://335790"}},
+		},
+	}
+	_, source := newPlexTestServer(t, sections, nil, itemsByRef)
+
+	key, ok := source.ResolveMetadataRef("856")
+	if !ok {
+		t.Fatal("应通过上级剧集解析成功")
+	}
+	want := watched.MediaKey{Type: "tv", TMDBID: 335790, Season: 1, Episode: 2}
+	if key != want {
+		t.Fatalf("身份应取上级剧集 guid %+v，实际 %+v", want, key)
+	}
+}
+
 // newPlexTestServer 构造带常用接口的 Plex httptest 服务器。
 func newPlexTestServer(t *testing.T, sections []Section, itemsBySection map[string][]Metadata, itemsByRef map[string]Metadata) (*Client, *Source) {
 	t.Helper()
@@ -416,6 +445,38 @@ func TestStreamNotifications(t *testing.T) {
 	}
 }
 
+// TestStreamNotificationsObjectForm 真实 PMS 形态走完整订阅管道：
+// 单对象、data 无 type 字段，事件类型来自 event: 行。
+func TestStreamNotificationsObjectForm(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /:/eventsource/notifications", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		f := w.(http.Flusher)
+		fmt.Fprint(w, "event: playing\n")
+		fmt.Fprint(w, `data: {"PlaySessionStateNotification":{"sessionKey":"23","ratingKey":"856","viewOffset":103166,"state":"playing"}}`+"\n\n")
+		f.Flush()
+		<-r.Context().Done()
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	client := NewClient(srv.URL, "tok", "cid", WithHTTPClient(srv.Client()))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	got := make(chan PlaybackNotification, 4)
+	go func() {
+		_ = client.StreamNotifications(ctx, nil, func(n PlaybackNotification) { got <- n })
+	}()
+	select {
+	case n := <-got:
+		if n.State != "playing" || n.SessionKey != "23" || n.RatingKey != "856" || n.ViewOffsetMS != 103166 {
+			t.Fatalf("事件解析不符：%+v", n)
+		}
+	case <-ctx.Done():
+		t.Fatal("超时未收到事件")
+	}
+}
+
 // TestStreamNotificationsNotSupported 旧版 PMS 无 SSE 端点时应返回可识别的哨兵错误。
 func TestStreamNotificationsNotSupported(t *testing.T) {
 	mux := http.NewServeMux()
@@ -433,10 +494,32 @@ func TestStreamNotificationsNotSupported(t *testing.T) {
 }
 
 func TestParsePlaybackNotificationIgnoresNonPlaying(t *testing.T) {
-	if got := parsePlaybackNotification(`{"type":"activity","ActivityNotification":[{"event":"updated"}]}`); len(got) != 0 {
+	if got := parsePlaybackNotification(`{"type":"activity","ActivityNotification":[{"event":"updated"}]}`, "activity"); len(got) != 0 {
 		t.Fatalf("非 playing 类型应忽略：%+v", got)
 	}
-	if got := parsePlaybackNotification(`not-json`); len(got) != 0 {
+	if got := parsePlaybackNotification(`not-json`, "playing"); len(got) != 0 {
 		t.Fatalf("坏载荷应返回空：%+v", got)
+	}
+}
+
+// TestParsePlaybackNotificationRealWorldShapes 真实 PMS 两种报文形态：
+// 数组+内嵌 type，以及单对象、data 无 type 字段（类型只在 SSE event: 行）。
+func TestParsePlaybackNotificationRealWorldShapes(t *testing.T) {
+	arrayForm := `{"type":"playing","PlaySessionStateNotification":[{"state":"playing","sessionKey":"s1","ratingKey":"9","viewOffset":"480000","duration":600000}]}`
+	got := parsePlaybackNotification(arrayForm, "notification")
+	if len(got) != 1 || got[0].RatingKey != "9" || got[0].ViewOffsetMS != 480000 {
+		t.Fatalf("数组形态应解析：%+v", got)
+	}
+
+	objectForm := `{"PlaySessionStateNotification":{"sessionKey":"23","clientIdentifier":"c1","guid":"","ratingKey":"856","url":"","key":"/library/metadata/856","viewOffset":103166,"state":"playing"}}`
+	got = parsePlaybackNotification(objectForm, "playing")
+	if len(got) != 1 || got[0].RatingKey != "856" || got[0].SessionKey != "23" || got[0].ViewOffsetMS != 103166 {
+		t.Fatalf("单对象形态应解析：%+v", got)
+	}
+
+	// event: 行不是 playing 且 data 无 type：不视为播放事件
+	got = parsePlaybackNotification(objectForm, "ping")
+	if len(got) != 0 {
+		t.Fatalf("ping 事件应忽略：%+v", got)
 	}
 }

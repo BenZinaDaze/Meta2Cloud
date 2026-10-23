@@ -374,3 +374,35 @@ func TestSyncIgnoresRoundTrip(t *testing.T) {
 		t.Fatalf("解除后候选应恢复：%+v", cands)
 	}
 }
+
+func TestMarkSessionPushFailure(t *testing.T) {
+	s := openTestTraktSyncStore(t)
+	key := watched.MediaKey{Type: "tv", TMDBID: 335790, Season: 1, Episode: 2}
+
+	// 无行时新建，只推进 SessionPushedAt，不造出观看状态
+	if err := s.MarkSessionPushFailure(key, 1000); err != nil {
+		t.Fatalf("记录失败退避出错：%v", err)
+	}
+	sh, ok, err := s.GetShadow(key)
+	if err != nil || !ok {
+		t.Fatalf("应创建状态记录：ok=%v err=%v", ok, err)
+	}
+	if sh.SessionPushedAt != 1000 {
+		t.Fatalf("SessionPushedAt 应为 1000，实际 %d", sh.SessionPushedAt)
+	}
+	if sh.TraktWatched != nil || sh.PlexWatched != nil || sh.PlexSeen || sh.TraktSeen {
+		t.Fatalf("失败退避不得改动观看/观察状态：%+v", sh)
+	}
+
+	// 已有行时只前进不回退，既有字段保留
+	if err := s.MarkSessionPushFailure(key, 2000); err != nil {
+		t.Fatalf("记录失败退避出错：%v", err)
+	}
+	if err := s.MarkSessionPushFailure(key, 500); err != nil {
+		t.Fatalf("记录失败退避出错：%v", err)
+	}
+	sh, _, _ = s.GetShadow(key)
+	if sh.SessionPushedAt != 2000 {
+		t.Fatalf("SessionPushedAt 应保持 2000，实际 %d", sh.SessionPushedAt)
+	}
+}

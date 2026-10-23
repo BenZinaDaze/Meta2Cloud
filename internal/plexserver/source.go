@@ -31,7 +31,11 @@ type Source struct {
 
 // NewSource 构造。
 func NewSource(client *Client, titles watched.TitleIndex) *Source {
-	return &Source{Client: client, Titles: titles, refIndex: map[watched.MediaKey][]string{}}
+	return &Source{
+		Client: client, Titles: titles,
+		refIndex:  map[watched.MediaKey][]string{},
+		showCache: map[string]*Metadata{}, // 会话路径不经 ListAll，必须随构造初始化
+	}
 }
 
 // Name 实现 watched.Provider。
@@ -149,18 +153,26 @@ func (s *Source) resolveMetadata(item *Metadata, sectionType string) (watched.Me
 		mediaType = "tv"
 	}
 
-	if id := item.TMDBGuid(); id > 0 {
-		return s.buildKey(mediaType, id, item), true
+	// 集条目 Guid 里的 tmdb:// 是「这一集」在 TMDB 的 id（与剧集 id 不同号段，
+	// 真实案例：剧集本身 tmdb://335790，其 S01E02 集级却是 tmdb://7905973），
+	// 不能当剧集身份用；电影条目的 tmdb:// 即自身 id。故仅电影信自身 Guid，
+	// 剧集一律从上级剧集条目取权威身份。
+	if mediaType == "movie" {
+		if id := item.TMDBGuid(); id > 0 {
+			return s.buildKey(mediaType, id, item), true
+		}
 	}
 
-	if path := item.FilePath(); path != "" {
-		if key, ok := s.resolveByPath(mediaType, path, item); ok {
+	// 剧集：上级剧集的权威 Guid（Plex 自身匹配）先于本地路径/标题反查——
+	// 自建索引若有脏 id，路径反查会把它当命中并短路后面的正确链路。
+	if mediaType == "tv" && item.GrandparentTitle != "" {
+		if key, ok := s.resolveShowByGrandparent(item); ok {
 			return key, true
 		}
 	}
 
-	if mediaType == "tv" && item.GrandparentTitle != "" {
-		if key, ok := s.resolveShowByGrandparent(item); ok {
+	if path := item.FilePath(); path != "" {
+		if key, ok := s.resolveByPath(mediaType, path, item); ok {
 			return key, true
 		}
 	}
@@ -244,15 +256,22 @@ func (s *Source) resolveShowByGrandparent(item *Metadata) (watched.MediaKey, boo
 }
 
 func (s *Source) cachedShow(item *Metadata) (*Metadata, error) {
-	// 集的上级剧集 ratingKey 需从条目 Key 路径（/library/metadata/{show}/children）推导，
-	// Plex 元数据里 episodes 不带 grandparentRatingKey；这里从父级 Key 结构兜底。
-	// Key 形如 /library/metadata/{showRatingKey}/children/{seasonRatingKey}/{episodeRatingKey}
-	showRef := grandparentRef(item.Key)
+	// 上级剧集定位：详情接口（会话轮询/SSE 路径）的集条目自带 grandparentRatingKey，
+	// 直接使用；枚举视图缺失该字段时从 Key 路径推导兜底——
+	// Key 形如 /library/metadata/{showRatingKey}/children/{seasonRatingKey}/{episodeRatingKey}。
+	// 注意详情接口的 Key 是集自身（/library/metadata/{ep}），不能参与推导。
+	showRef := item.GrandparentRatingKey
+	if showRef == "" {
+		showRef = grandparentRef(item.Key)
+	}
 	if showRef == "" {
 		return nil, fmt.Errorf("无法确定上级剧集 ratingKey")
 	}
 	s.showCacheMu.Lock()
 	defer s.showCacheMu.Unlock()
+	if s.showCache == nil {
+		s.showCache = map[string]*Metadata{}
+	}
 	if show, ok := s.showCache[showRef]; ok {
 		return show, nil
 	}
