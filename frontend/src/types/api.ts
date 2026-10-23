@@ -144,7 +144,7 @@ export interface IngestRecord {
   poster_url?: string
   drive_folder_id: string
   original_name: string
-  status: 'success' | 'failed' | 'no_tmdb'
+  status: 'success' | 'failed' | 'no_tmdb' | 'deleted'
   error_message: string
   ingested_at: string
 }
@@ -169,6 +169,7 @@ export interface IngestStatsResponse {
   success: number
   failed: number
   no_tmdb: number
+  deleted: number
 }
 
 // 文件管理

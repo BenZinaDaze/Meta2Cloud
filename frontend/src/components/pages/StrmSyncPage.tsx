@@ -57,6 +57,7 @@ const TRIGGER_LABELS: Record<string, string> = {
   reclassify: '重新归类',
   'title-pin-adopt': '更新译名',
   reidentify: '重新识别',
+  'after-delete': '删除后同步',
 }
 
 const ACTION_LABELS: Record<string, { label: string; className: string }> = {

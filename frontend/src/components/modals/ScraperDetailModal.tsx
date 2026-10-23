@@ -1,20 +1,10 @@
 import { useEffect, useState } from 'react'
-import { tmdbGetDetail, refreshMediaItem, removeLibraryItem } from '@/api'
+import { tmdbGetDetail, refreshMediaItem } from '@/api'
 import { toast } from 'sonner'
 import DetailModal from './DetailModal'
 import ReidentifyModal from './ReidentifyModal'
 import { PencilLine, RefreshCw, Search, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import type { MediaItem } from '@/types/api'
 
 interface ScraperDetailModalProps {
@@ -22,8 +12,8 @@ interface ScraperDetailModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSearchResources?: (item: MediaItem) => void
-  onRemoved?: (item: MediaItem) => void
   onUpdated?: (item: MediaItem) => void
+  onDeleteRequest?: (item: MediaItem) => void
 }
 
 export default function ScraperDetailModal({
@@ -31,14 +21,12 @@ export default function ScraperDetailModal({
   open,
   onOpenChange,
   onSearchResources,
-  onRemoved,
   onUpdated,
+  onDeleteRequest,
 }: ScraperDetailModalProps) {
   const [item, setItem] = useState<MediaItem | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [confirmRemove, setConfirmRemove] = useState(false)
-  const [removing, setRemoving] = useState(false)
   const [reidentifyOpen, setReidentifyOpen] = useState(false)
 
   useEffect(() => {
@@ -113,30 +101,6 @@ export default function ScraperDetailModal({
     }
   }
 
-  async function handleRemoveFromLibrary() {
-    if (!item?.drive_folder_id) {
-      toast.error('该媒体项缺少网盘文件夹 ID，无法移出媒体库')
-      return
-    }
-    setRemoving(true)
-    try {
-      await removeLibraryItem(item.drive_folder_id)
-      toast.success('已移出媒体库', { description: item.title })
-      setConfirmRemove(false)
-      onOpenChange(false)
-      onRemoved?.(item)
-    } catch (e) {
-      toast.error('移出失败', {
-        description:
-          (e as { response?: { data?: { detail?: string } }; message?: string })?.response?.data?.detail ||
-          (e as { message?: string })?.message ||
-          '未知错误',
-      })
-    } finally {
-      setRemoving(false)
-    }
-  }
-
   if (!initialItem) return null
 
   const displayItem = item || initialItem
@@ -172,10 +136,14 @@ export default function ScraperDetailModal({
         <Button
           variant="outline"
           size="icon-lg"
-          onClick={() => setConfirmRemove(true)}
-          disabled={loadingDetail || removing}
+          onClick={() => {
+            // 先关详情弹窗再请求删除，避免删除确认 AlertDialog 叠成双层 Radix dialog
+            onOpenChange(false)
+            onDeleteRequest?.(displayItem)
+          }}
+          disabled={loadingDetail}
           className="rounded-full border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-          title="移出媒体库"
+          title="移出媒体库（联动删除网盘文件与 STRM）"
         >
           <Trash2 className="size-4" />
         </Button>
@@ -212,26 +180,6 @@ export default function ScraperDetailModal({
           onUpdated?.(updatedItem)
         }}
       />
-      <AlertDialog open={confirmRemove} onOpenChange={setConfirmRemove}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认移出媒体库</AlertDialogTitle>
-            <AlertDialogDescription>
-              这只会移除本地媒体库记录，不会删除网盘中的实际文件。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={removing}>取消</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleRemoveFromLibrary}
-              disabled={removing}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {removing ? '移出中…' : '确认移出'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   )
 }

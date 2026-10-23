@@ -59,7 +59,9 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("GET /api/library", handleGetLibrary)
 	m.HandleFunc("POST /api/library:refresh", handleRefreshLibrary)
 	m.HandleFunc("GET /api/stats", handleGetStats)
-	m.HandleFunc("DELETE /api/library/{driveFolderID}", handleDeleteLibraryItem)
+	// 联动删除：删除预览 + 删网盘目录及衍生数据（STRM/库条目/可选订阅）
+	m.HandleFunc("GET /api/library/media/{folderID}", handleLibraryMediaPreview)
+	m.HandleFunc("DELETE /api/library/media/{folderID}", handleLibraryMediaDelete)
 	m.HandleFunc("GET /api/movies", handleGetMovies)
 	m.HandleFunc("GET /api/movies/{tmdbID}", handleGetMovieDetail)
 	m.HandleFunc("GET /api/tv-shows", handleGetTVShows)
@@ -346,24 +348,6 @@ func handleGetStats(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, libStore.GetStats())
-}
-
-func handleDeleteLibraryItem(w http.ResponseWriter, r *http.Request) {
-	driveFolderID := r.PathValue("driveFolderID")
-	if driveFolderID == "" {
-		writeJSONError(w, http.StatusBadRequest, "缺少 drive_folder_id")
-		return
-	}
-	libStore := RT().GetLibraryStore()
-	if libStore == nil {
-		writeJSONError(w, http.StatusInternalServerError, "媒体库存储不可用")
-		return
-	}
-	if !libStore.DeleteLibraryItem(driveFolderID) {
-		writeJSONError(w, http.StatusNotFound, "媒体库条目不存在")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"success": true, "drive_folder_id": driveFolderID})
 }
 
 // 编译期引用检查（保持 import 干净）

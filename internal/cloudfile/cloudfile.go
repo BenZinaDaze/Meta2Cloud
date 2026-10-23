@@ -4,10 +4,17 @@
 package cloudfile
 
 import (
+	"errors"
 	"path"
 	"strconv"
 	"strings"
 )
+
+// ErrNotFound 目标条目在网盘不存在。
+// Provider 的 GetFile / DeleteFile 在「确认未找到」时返回包装此哨兵的错误，
+// 与网络失败、限流等瞬时错误相区分——调用方（如联动删除的幂等探测）只有
+// 在 errors.Is(err, ErrNotFound) 成立时才能把「探测失败」当作「条目已不存在」。
+var ErrNotFound = errors.New("cloudfile: 条目不存在")
 
 // FileType 通用文件类型。
 type FileType int

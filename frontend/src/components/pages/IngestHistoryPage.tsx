@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router'
-import { Film, Tv, Search, RefreshCw, ChevronLeft, ChevronRight, AlertCircle, CheckCircle, HelpCircle, Clock } from 'lucide-react'
+import { Film, Tv, Search, RefreshCw, ChevronLeft, ChevronRight, AlertCircle, CheckCircle, HelpCircle, Clock, Trash2 } from 'lucide-react'
 import { getIngestHistory, getIngestStats } from '@/api'
 import BackToTopButton from '@/components/BackToTopButton'
 import { StatePanel } from '@/components/StatePanel'
@@ -23,6 +23,7 @@ function StatusBadge({ status }: { status: string }) {
     success: { label: '成功', icon: CheckCircle, className: 'border-success/30 bg-success/10 text-success' },
     failed: { label: '失败', icon: AlertCircle, className: 'border-destructive/30 bg-destructive/10 text-destructive' },
     no_tmdb: { label: '无元数据', icon: HelpCircle, className: 'border-warning/30 bg-warning/10 text-warning' },
+    deleted: { label: '删除', icon: Trash2, className: 'border-destructive/30 bg-destructive/10 text-destructive' },
   }[status] || { label: status, icon: AlertCircle, className: 'border-border bg-muted text-muted-foreground' }
 
   const Icon = config.icon
@@ -235,6 +236,7 @@ export default function IngestHistoryPage(props: IngestHistoryPageProps) {
                 <SelectItem value="success">成功</SelectItem>
                 <SelectItem value="failed">失败</SelectItem>
                 <SelectItem value="no_tmdb">无元数据</SelectItem>
+                <SelectItem value="deleted">删除</SelectItem>
               </SelectContent>
             </Select>
             <Button
@@ -250,13 +252,14 @@ export default function IngestHistoryPage(props: IngestHistoryPageProps) {
       />
 
       {stats && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
           <StatCard label="近 7 天入库" value={stats.total} icon={<Clock className="size-3" />} />
           <StatCard label="电影" value={stats.movies} icon={<Film className="size-3" />} />
           <StatCard label="剧集集数" value={stats.tv_episodes} icon={<Tv className="size-3" />} />
           <StatCard label="成功" value={stats.success} icon={<CheckCircle className="size-3" />} />
           <StatCard label="失败" value={stats.failed} icon={<AlertCircle className="size-3" />} />
           <StatCard label="无元数据" value={stats.no_tmdb} icon={<HelpCircle className="size-3" />} />
+          <StatCard label="删除" value={stats.deleted} icon={<Trash2 className="size-3" />} />
         </div>
       )}
 

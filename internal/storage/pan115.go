@@ -146,7 +146,8 @@ func (p *Pan115Provider) GetFile(fileID string) (cloudfile.CloudFile, error) {
 		return cloudfile.CloudFile{}, err
 	}
 	if !ok {
-		return cloudfile.CloudFile{}, u115.NewAPIError("未找到文件：" + fileID)
+		// 确认不存在（非网络/限流等瞬时错误）：包装 ErrNotFound 哨兵供调用方幂等判断
+		return cloudfile.CloudFile{}, fmt.Errorf("未找到文件：%s: %w", fileID, cloudfile.ErrNotFound)
 	}
 	return ToCloudFile(found), nil
 }

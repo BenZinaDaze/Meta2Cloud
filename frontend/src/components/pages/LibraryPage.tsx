@@ -1,11 +1,22 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Search, RefreshCw, ChevronRight, ChevronLeft, ArrowUpDown, RefreshCw as RefreshIcon } from 'lucide-react'
-import { getLibrary, getMovieDetail, getTVShowDetail } from '@/api'
+import { getLibrary, getMovieDetail, getTVShowDetail, previewLibraryDelete, deleteLibraryMedia } from '@/api'
+import { toast } from 'sonner'
 import BackToTopButton from '@/components/BackToTopButton'
 import MediaCard from '@/components/MediaCard'
 import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import {
   Select,
   SelectContent,
@@ -115,6 +126,33 @@ function LoadingRow() {
   )
 }
 
+// 联动删除预览（GET /library/media/{id}）
+interface LibraryDeletePreviewSubscription {
+  id: number
+  name: string
+  media_title?: string
+  media_type?: string
+  tmdb_id?: number
+  site?: string
+  subgroup_name?: string
+  season_number?: number
+}
+
+interface LibraryDeletePreview {
+  drive_folder_id: string
+  title: string
+  media_type: string
+  tmdb_id: number
+  /** Provider 不可用或目录无法遍历（含已被外部删除）时省略——此时无法准确统计 */
+  strm_count?: number
+  subscriptions: LibraryDeletePreviewSubscription[]
+}
+
+function apiErrorMessage(e: unknown): string {
+  const err = e as { response?: { data?: { detail?: string; message?: string } }; message?: string }
+  return err?.response?.data?.detail || err?.response?.data?.message || err?.message || '未知错误'
+}
+
 interface LibraryPageProps {
   filter: string
   onChangeFilter?: (filter: string) => void
@@ -149,6 +187,13 @@ export default function LibraryPage({
   const [sortBy, setSortBy] = useState('folder_modified_time')
   const [sortOrder, setSortOrder] = useState('desc')
   const [, setTick] = useState(0)
+
+  // 联动删除：条目 → 预览 → 确认删除（网盘文件 + 本地记录）
+  const [deleteTarget, setDeleteTarget] = useState<MediaItem | null>(null)
+  const [deletePreview, setDeletePreview] = useState<LibraryDeletePreview | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [cancelSubscription, setCancelSubscription] = useState(true)
 
   const PAGE_SIZE = 60
 
@@ -296,6 +341,47 @@ export default function LibraryPage({
       }
     })
     setSelected(item)
+  }
+
+  // 联动删除入口：先取预览（受影响 strm 数 + 匹配订阅），再弹确认框
+  function handleDeleteStart(item: MediaItem) {
+    if (!item.drive_folder_id) {
+      toast.error('该媒体项缺少网盘文件夹 ID，无法删除')
+      return
+    }
+    setDeleteTarget(item)
+    setDeletePreview(null)
+    setCancelSubscription(true)
+    setPreviewLoading(true)
+    previewLibraryDelete(item.drive_folder_id)
+      .then((res) => setDeletePreview(res.data))
+      .catch((err) => {
+        toast.error('获取删除预览失败', { description: apiErrorMessage(err) })
+        setDeleteTarget(null)
+      })
+      .finally(() => setPreviewLoading(false))
+  }
+
+  async function handleDeleteConfirm() {
+    if (!deleteTarget?.drive_folder_id) return
+    setDeleting(true)
+    try {
+      const res = await deleteLibraryMedia(deleteTarget.drive_folder_id, cancelSubscription)
+      const removedStrm = res.data?.removed_strm ?? 0
+      const cancelledSubs = res.data?.cancelled_subscriptions ?? 0
+      toast.success(`已删除「${deleteTarget.title}」`, {
+        description: `已删除 ${removedStrm} 个 STRM 文件${
+          cancelledSubs > 0 ? `，已取消 ${cancelledSubs} 个对应订阅` : ''
+        }`,
+      })
+      setDeleteTarget(null)
+      setDeletePreview(null)
+      handleRemoved()
+    } catch (err) {
+      toast.error('删除失败', { description: apiErrorMessage(err) })
+    } finally {
+      setDeleting(false)
+    }
   }
 
   return (
@@ -455,13 +541,76 @@ export default function LibraryPage({
             onDetailClose?.()
           }
         }}
-        onRemoved={handleRemoved}
         onUpdated={handleUpdated}
+        onDeleteRequest={handleDeleteStart}
         onSearchResources={(item) => {
           onGlobalSearch?.(item)
           setSelected(null)
         }}
       />
+
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null)
+            setDeletePreview(null)
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除该媒体？</AlertDialogTitle>
+            <AlertDialogDescription>
+              将删除网盘目录下的全部文件，并移除本地 STRM 与媒体库记录，操作不可恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {previewLoading && (
+            <p className="text-sm text-muted-foreground">正在获取删除预览…</p>
+          )}
+          {deletePreview && (
+            <>
+              <div className="space-y-1.5 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm">
+                <p className="font-semibold text-destructive">{deletePreview.title}</p>
+                <p className="text-muted-foreground">
+                  网盘目录：<span className="break-all font-mono text-xs">{deletePreview.drive_folder_id}</span>
+                </p>
+                <p className="text-muted-foreground">
+                  受影响 STRM 文件：
+                  <span className="font-semibold text-destructive">{deletePreview.strm_count ?? '未知'}</span> 个
+                </p>
+              </div>
+              {deletePreview.subscriptions.length > 0 && (
+                <label className="flex cursor-pointer items-start gap-2.5 text-sm text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={cancelSubscription}
+                    onChange={(e) => setCancelSubscription(e.target.checked)}
+                    className="mt-0.5 size-4 shrink-0 rounded border-input accent-[oklch(76%_0.19_150)]"
+                  />
+                  <span>
+                    同时取消对应订阅（{deletePreview.subscriptions.length} 个）：
+                    {deletePreview.subscriptions.map((s) => `「${s.name}」`).join('、')}
+                  </span>
+                </label>
+              )}
+            </>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                handleDeleteConfirm()
+              }}
+              disabled={previewLoading || deleting || !deletePreview}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? '删除中…' : '确认删除'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <BackToTopButton />
     </div>
   )

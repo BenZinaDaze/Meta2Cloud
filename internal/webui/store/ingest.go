@@ -301,16 +301,17 @@ func (s *IngestStore) Stats(days int) map[string]any {
 		days = 7
 	}
 	cutoff := time.Now().UTC().AddDate(0, 0, -days).Format("2006-01-02T15:04:05")
-	var total, movies, tvEpisodes, success, failed, noTmdb sql.NullInt64
+	var total, movies, tvEpisodes, success, failed, noTmdb, deleted sql.NullInt64
 	err := s.db.QueryRow(`SELECT
 		COUNT(*),
 		COUNT(CASE WHEN media_type = 'movie' THEN 1 END),
 		COUNT(CASE WHEN media_type = 'tv' THEN 1 END),
 		COUNT(CASE WHEN status = 'success' THEN 1 END),
 		COUNT(CASE WHEN status = 'failed' THEN 1 END),
-		COUNT(CASE WHEN status = 'no_tmdb' THEN 1 END)
+		COUNT(CASE WHEN status = 'no_tmdb' THEN 1 END),
+		COUNT(CASE WHEN status = 'deleted' THEN 1 END)
 		FROM ingest_history WHERE ingested_at >= ?`, cutoff).Scan(
-		&total, &movies, &tvEpisodes, &success, &failed, &noTmdb)
+		&total, &movies, &tvEpisodes, &success, &failed, &noTmdb, &deleted)
 	if err != nil {
 		return map[string]any{"days": days, "total": 0}
 	}
@@ -318,6 +319,7 @@ func (s *IngestStore) Stats(days int) map[string]any {
 		"days": days, "total": total.Int64, "movies": movies.Int64,
 		"tv_episodes": tvEpisodes.Int64, "success": success.Int64,
 		"failed": failed.Int64, "no_tmdb": noTmdb.Int64,
+		"deleted": deleted.Int64,
 	}
 }
 

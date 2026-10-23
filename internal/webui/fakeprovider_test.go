@@ -10,10 +10,11 @@ import (
 
 // fakeWebProvider 内存版网盘（webui 测试用）。
 type fakeWebProvider struct {
-	mu       sync.Mutex
-	children map[string][]cloudfile.CloudFile
-	byID     map[string]cloudfile.CloudFile
-	nextID   int
+	mu            sync.Mutex
+	children      map[string][]cloudfile.CloudFile
+	byID          map[string]cloudfile.CloudFile
+	nextID        int
+	failDeleteIDs map[string]bool // 置位的条目 DeleteFile 报错（模拟网盘删除失败）
 }
 
 func newFakeWebProvider() *fakeWebProvider {
@@ -69,6 +70,12 @@ func (f *fakeWebProvider) ProviderName() string { return "fake-web" }
 func (f *fakeWebProvider) ListFiles(folderID string, pageSize int) ([]cloudfile.CloudFile, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	// 已删除/不存在的目录报「未找到」（对齐真实网盘语义），不再返回孤儿子项
+	if folderID != "0" {
+		if _, ok := f.byID[folderID]; !ok {
+			return nil, fmt.Errorf("未找到目录：%s: %w", folderID, cloudfile.ErrNotFound)
+		}
+	}
 	out := []cloudfile.CloudFile{}
 	return append(out, f.children[folderID]...), nil
 }
@@ -83,7 +90,7 @@ func (f *fakeWebProvider) GetFile(fileID string) (cloudfile.CloudFile, error) {
 	if cf, ok := f.byID[fileID]; ok {
 		return cf, nil
 	}
-	return cloudfile.CloudFile{}, fmt.Errorf("未找到：%s", fileID)
+	return cloudfile.CloudFile{}, fmt.Errorf("未找到：%s: %w", fileID, cloudfile.ErrNotFound)
 }
 
 func (f *fakeWebProvider) ReadText(cloudfile.CloudFile) (string, error) { return "", nil }
@@ -153,7 +160,39 @@ func (f *fakeWebProvider) TrashFile(fileID string) (cloudfile.CloudFile, error) 
 	return f.GetFile(fileID)
 }
 
-func (f *fakeWebProvider) DeleteFile(fileID string) error { return nil }
+// failDelete 让指定条目的 DeleteFile 报错（模拟网盘删除失败）。
+func (f *fakeWebProvider) failDelete(fileID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failDeleteIDs == nil {
+		f.failDeleteIDs = map[string]bool{}
+	}
+	f.failDeleteIDs[fileID] = true
+}
+
+// DeleteFile 删除条目：从父目录 children 与 byID 移除。
+// 已删条目再列举/反查即报「未找到」（ErrNotFound），对齐真实网盘语义；
+// 子项 map 残留不可达（其所在目录已无法列举），仅供直接 map 操作的测试使用。
+func (f *fakeWebProvider) DeleteFile(fileID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	cf, ok := f.byID[fileID]
+	if !ok {
+		return fmt.Errorf("未找到：%s: %w", fileID, cloudfile.ErrNotFound)
+	}
+	if f.failDeleteIDs[fileID] {
+		return fmt.Errorf("模拟删除失败：%s", fileID)
+	}
+	old := f.children[cf.ParentID]
+	for i, c := range old {
+		if c.ID == fileID {
+			f.children[cf.ParentID] = append(old[:i], old[i+1:]...)
+			break
+		}
+	}
+	delete(f.byID, fileID)
+	return nil
+}
 
 func (f *fakeWebProvider) CreateFolder(name, parentID string) (cloudfile.CloudFile, error) {
 	return f.addFolder(name, parentID), nil

@@ -59,8 +59,12 @@ export const reidentifyMediaItem = (
 // 单媒体分类核对：当前分类（库中位置记录 → 分类树标签）与按 TMDB 最新流派/规则应属分类
 export const getMediaClassification = (driveFolderId: string) =>
   api.get('/library:classification', { params: { folder_id: driveFolderId } })
-export const removeLibraryItem = (driveFolderId: string) =>
-  api.delete(`/library/${driveFolderId}`)
+// 联动删除预览：标题/网盘目录/受影响 strm 数/匹配到的订阅
+export const previewLibraryDelete = (driveFolderId: string) =>
+  api.get(`/library/media/${driveFolderId}`)
+// 联动删除：删除网盘目录、本地 strm 与媒体库记录，可选同时取消匹配订阅
+export const deleteLibraryMedia = (driveFolderId: string, cancelSubscription: boolean = true) =>
+  api.delete(`/library/media/${driveFolderId}`, { params: { cancel_subscription: cancelSubscription } })
 
 // ── TMDB/刮削 ──
 export const tmdbSearchMulti = (keyword: string, config?: { signal?: AbortSignal }) =>

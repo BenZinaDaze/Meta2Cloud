@@ -574,6 +574,24 @@ func (s *RSSStore) ListEnabledSubscriptions() []*SubscriptionRecord {
 	return out
 }
 
+// ListSubscriptionsByTmdb 按 media_type+tmdb_id 查全部匹配订阅（含已停用）。
+// 联动删除用：停用订阅也须一并取消，否则指向已删媒体的停用订阅会永久残留；
+// 同一媒体可命中多条，须遍历全部。
+func (s *RSSStore) ListSubscriptionsByTmdb(mediaType string, tmdbID int64) []*SubscriptionRecord {
+	rows, err := s.db.Query(subscriptionSelect+" WHERE media_type = ? AND tmdb_id = ? ORDER BY id", mediaType, tmdbID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []*SubscriptionRecord
+	for rows.Next() {
+		if r := scanSubscription(rows); r != nil {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // GetSubscription 按 ID 取订阅。
 func (s *RSSStore) GetSubscription(id int64) (*SubscriptionRecord, error) {
 	return scanSubscription(s.db.QueryRow(subscriptionSelect+" WHERE id = ?", id)), nil
