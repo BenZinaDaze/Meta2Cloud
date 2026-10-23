@@ -20,20 +20,9 @@ import (
 	"meta2cloud/internal/webui/store"
 )
 
-const defaultSubscriptionPollSeconds = 300
-
-// getSubscriptionPollSeconds 轮询间隔（配置 rss.poll_seconds，下限 10）。
-func getSubscriptionPollSeconds() int {
-	raw := readMergedConfigDict()
-	rss := jsonx.Map(raw, "rss")
-	value := jsonx.Int(rss, "poll_seconds", 0)
-	if value == 0 {
-		return defaultSubscriptionPollSeconds
-	}
-	if value < 10 {
-		return 10
-	}
-	return int(value)
+// getSubscriptionPollCron 订阅轮询 cron（配置 rss.poll_cron；空串表示不定时）。
+func getSubscriptionPollCron() string {
+	return RT().GetConfig().Rss.PollCron
 }
 
 func normalizeKeywords(keywordAll []string) []string {
@@ -452,14 +441,15 @@ func PollSubscriptionsOnce() map[string]any {
 
 // SubscriptionsStatusPayload 订阅状态。
 func SubscriptionsStatusPayload() map[string]any {
+	pollCron := RT().GetConfig().Rss.PollCron
 	rssStore := RT().GetRSSStore()
 	if rssStore == nil {
-		return map[string]any{"enabled_count": 0, "total_count": 0, "poll_seconds": defaultSubscriptionPollSeconds}
+		return map[string]any{"enabled_count": 0, "total_count": 0, "poll_cron": pollCron}
 	}
 	return map[string]any{
 		"enabled_count": len(rssStore.ListEnabledSubscriptions()),
 		"total_count":   len(rssStore.ListSubscriptions()),
-		"poll_seconds":  getSubscriptionPollSeconds(),
+		"poll_cron":     pollCron,
 	}
 }
 

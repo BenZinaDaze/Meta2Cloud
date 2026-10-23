@@ -10,8 +10,8 @@ func TestParseTraktDefaults(t *testing.T) {
 	if got.TokenJSON != "config/trakt-token.json" {
 		t.Errorf("TokenJSON = %q", got.TokenJSON)
 	}
-	if got.SyncIntervalSeconds != 900 {
-		t.Errorf("SyncIntervalSeconds = %d", got.SyncIntervalSeconds)
+	if got.SyncCron != "*/15 * * * *" {
+		t.Errorf("SyncCron = %q", got.SyncCron)
 	}
 	if got.SessionPollSeconds != 45 {
 		t.Errorf("SessionPollSeconds = %d", got.SessionPollSeconds)
@@ -26,13 +26,13 @@ func TestParseTraktDefaults(t *testing.T) {
 
 func TestParseTraktFloors(t *testing.T) {
 	got := parseTrakt(map[string]any{
-		"sync_interval_seconds": 10, // 低于下限 60
-		"session_poll_seconds":  5,  // 低于下限 15
-		"sync_to_plex":          false,
-		"client_id":             "  abc  ",
+		"sync_cron":            "  */15 * * * *  ", // 去空白
+		"session_poll_seconds": 5,                  // 低于下限 15
+		"sync_to_plex":         false,
+		"client_id":            "  abc  ",
 	})
-	if got.SyncIntervalSeconds < 60 {
-		t.Errorf("SyncIntervalSeconds 应钳到 ≥60，实际 %d", got.SyncIntervalSeconds)
+	if got.SyncCron != "*/15 * * * *" {
+		t.Errorf("SyncCron 应去空白，实际 %q", got.SyncCron)
 	}
 	if got.SessionPollSeconds < 15 {
 		t.Errorf("SessionPollSeconds 应钳到 ≥15，实际 %d", got.SessionPollSeconds)

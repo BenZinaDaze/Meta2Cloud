@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -355,6 +356,28 @@ func validateIntField(section map[string]any, key, label string, minimum, maximu
 	return ""
 }
 
+// validateCronField cron 表达式校验（robfig 标准解析预检；空值放行＝不定时）。
+// 复用运行时的 cronNextDelay：除解析错误外，永不触发的表达式（如 0 0 30 2 *）
+// 与 @every 间隔 <1 分钟同样拒绝，保证保存校验与后台循环行为一致。
+func validateCronField(section map[string]any, key, label string) string {
+	v, ok := section[key]
+	if !ok || v == nil {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok {
+		return label + " 必须是 cron 表达式"
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	if _, _, err := cronNextDelay(s, time.Now()); err != nil {
+		return fmt.Sprintf("%s 无效：%v", label, err)
+	}
+	return ""
+}
+
 func validateBoolField(payload map[string]any, key string) string {
 	pipeline, _ := payload["pipeline"].(map[string]any)
 	if pipeline == nil {
@@ -402,6 +425,7 @@ func validateMainConfigPayload(payload map[string]any) string {
 	tmdbSec := getSection("tmdb")
 	u115Sec := getSection("u115")
 	rssSec := getSection("rss")
+	strmSec := getSection("strm")
 	telegramSec := getSection("telegram")
 	mediavaultSec := getSection("mediavault")
 	traktSec := getSection("trakt")
@@ -417,17 +441,29 @@ func validateMainConfigPayload(payload map[string]any) string {
 		{webuiSec, "token_expire_hours", "Token 有效期", 1, 8760},
 		{webuiSec, "log_retention_days", "日志保留天数", 1, 365},
 		{tmdbSec, "timeout", "TMDB 请求超时", 1, 120},
-		{u115Sec, "auto_organize_poll_seconds", "115 自动整理轮询间隔", 10, 600},
 		{u115Sec, "auto_organize_stable_seconds", "115 完成稳定等待", 0, 600},
 		{u115Sec, "qps", "115 共享请求 QPS", 1, 10},
-		{rssSec, "poll_seconds", "RSS 订阅轮询间隔", 10, 3600},
 		{telegramSec, "debounce_seconds", "Telegram 防抖延时", 0, 600},
 		{mediavaultSec, "timeout", "MediaVault 请求超时", 1, 120},
-		{traktSec, "sync_interval_seconds", "观看同步间隔", 60, 604800},
 		{traktSec, "session_poll_seconds", "正在看轮询间隔", 15, 600},
 		{plexSec, "timeout", "Plex 请求超时", 1, 120},
 	} {
 		if msg := validateIntField(check.section, check.key, check.label, check.min, check.max); msg != "" {
+			return msg
+		}
+	}
+	// 定时规则（cron）校验：非空值须能被标准解析器接受，空值放行（不定时）
+	for _, check := range []struct {
+		section map[string]any
+		key     string
+		label   string
+	}{
+		{u115Sec, "auto_organize_cron", "115 自动整理定时规则"},
+		{rssSec, "poll_cron", "RSS 订阅定时规则"},
+		{strmSec, "sync_cron", "STRM 定时同步规则"},
+		{traktSec, "sync_cron", "观看同步定时规则"},
+	} {
+		if msg := validateCronField(check.section, check.key, check.label); msg != "" {
 			return msg
 		}
 	}

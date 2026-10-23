@@ -63,9 +63,14 @@ type U115 struct {
 	DownloadFolderID          string `yaml:"download_folder_id"`
 	RootFolderID              string `yaml:"root_folder_id"`
 	AutoOrganizeEnabled       bool   `yaml:"auto_organize_enabled"`
-	AutoOrganizePollSeconds   int    `yaml:"auto_organize_poll_seconds"`
+	AutoOrganizeCron          string `yaml:"auto_organize_cron"`
 	AutoOrganizeStableSeconds int    `yaml:"auto_organize_stable_seconds"`
 	QPS                       int    `yaml:"qps"`
+}
+
+// Rss RSS 订阅轮询配置。
+type Rss struct {
+	PollCron string `yaml:"poll_cron"`
 }
 
 // Pipeline 整理流水线开关。
@@ -129,27 +134,27 @@ type StrmMapping struct {
 
 // Strm STRM 生成与 302 直链播放配置。
 type Strm struct {
-	Enabled             bool          `yaml:"enabled"`
-	URLBase             string        `yaml:"url_base"`
-	URLSecret           string        `yaml:"url_secret"`
-	SyncIntervalSeconds int           `yaml:"sync_interval_seconds"`
-	RefreshPlex         bool          `yaml:"refresh_plex"`
-	MediaExt            []string      `yaml:"media_ext"`
-	FetchSidecar        bool          `yaml:"fetch_sidecar"`
-	SidecarExt          []string      `yaml:"sidecar_ext"`
-	Mappings            []StrmMapping `yaml:"mappings"`
+	Enabled      bool          `yaml:"enabled"`
+	URLBase      string        `yaml:"url_base"`
+	URLSecret    string        `yaml:"url_secret"`
+	SyncCron     string        `yaml:"sync_cron"`
+	RefreshPlex  bool          `yaml:"refresh_plex"`
+	MediaExt     []string      `yaml:"media_ext"`
+	FetchSidecar bool          `yaml:"fetch_sidecar"`
+	SidecarExt   []string      `yaml:"sidecar_ext"`
+	Mappings     []StrmMapping `yaml:"mappings"`
 }
 
 // Trakt Trakt 观看同步配置（token 持久化在 TokenJSON 文件，设备码配对获取）。
 type Trakt struct {
-	Enabled             bool   `yaml:"enabled"`
-	ClientID            string `yaml:"client_id"`
-	TokenJSON           string `yaml:"token_json"`
-	SyncIntervalSeconds int    `yaml:"sync_interval_seconds"`
-	SessionPollSeconds  int    `yaml:"session_poll_seconds"`
-	SSEEnabled          bool   `yaml:"sse_enabled"`
-	SyncToPlex          bool   `yaml:"sync_to_plex"`
-	SyncToTrakt         bool   `yaml:"sync_to_trakt"`
+	Enabled            bool   `yaml:"enabled"`
+	ClientID           string `yaml:"client_id"`
+	TokenJSON          string `yaml:"token_json"`
+	SyncCron           string `yaml:"sync_cron"`
+	SessionPollSeconds int    `yaml:"session_poll_seconds"`
+	SSEEnabled         bool   `yaml:"sse_enabled"`
+	SyncToPlex         bool   `yaml:"sync_to_plex"`
+	SyncToTrakt        bool   `yaml:"sync_to_trakt"`
 }
 
 // Plex Plex Media Server 连接配置（authToken 与 client_identifier 等配对态
@@ -174,6 +179,7 @@ type Config struct {
 	Strm       Strm       `yaml:"strm"`
 	Trakt      Trakt      `yaml:"trakt"`
 	Plex       Plex       `yaml:"plex"`
+	Rss        Rss        `yaml:"rss"`
 }
 
 // Default 返回带默认值的配置。
@@ -182,10 +188,12 @@ func Default() *Config {
 		Tmdb:   Tmdb{Language: "zh-CN", Timeout: 10},
 		Parser: Parser{CustomWords: []string{}, CustomReleaseGroups: []string{}},
 		U115: U115{
-			ClientID:                  "100197847",
-			TokenJSON:                 "config/115-token.json",
-			SessionJSON:               "config/115-device-session.json",
-			AutoOrganizePollSeconds:   45,
+			ClientID:    "100197847",
+			TokenJSON:   "config/115-token.json",
+			SessionJSON: "config/115-device-session.json",
+			// 默认每分钟：cron 最小粒度 1 分钟，等价旧版默认 45s 轮询；
+			// 空串仍表示不定时。旧版 enabled 判定在轮询内部，此处保持一致。
+			AutoOrganizeCron:          "* * * * *",
 			AutoOrganizeStableSeconds: 30,
 			QPS:                       3,
 		},
@@ -199,16 +207,20 @@ func Default() *Config {
 			SidecarExt:   append([]string{}, DefaultStrmSidecarExt...),
 		},
 		Trakt: Trakt{
-			TokenJSON:           "config/trakt-token.json",
-			SyncIntervalSeconds: 900,
-			SessionPollSeconds:  45,
-			SSEEnabled:          true,
-			SyncToPlex:          true,
-			SyncToTrakt:         true,
+			TokenJSON: "config/trakt-token.json",
+			// 默认每 15 分钟：等价旧默认 900s；空串表示不定时（仅 SSE 实时/手动触发）
+			SyncCron:           "*/15 * * * *",
+			SessionPollSeconds: 45,
+			SSEEnabled:         true,
+			SyncToPlex:         true,
+			SyncToTrakt:        true,
 		},
 		Plex: Plex{
 			TokenJSON: "config/plex-auth.json",
 			Timeout:   10,
+		},
+		Rss: Rss{
+			PollCron: "*/5 * * * *",
 		},
 	}
 }
@@ -227,6 +239,7 @@ type rawConfig struct {
 	Strm       map[string]any `yaml:"strm"`
 	Trakt      map[string]any `yaml:"trakt"`
 	Plex       map[string]any `yaml:"plex"`
+	Rss        map[string]any `yaml:"rss"`
 }
 
 // Load 从 YAML 文件加载配置；path 为空时按默认搜索路径查找。
@@ -275,6 +288,7 @@ func parseConfig(data []byte) (*Config, error) {
 	cfg.Strm = parseStrm(raw.Strm)
 	cfg.Trakt = parseTrakt(raw.Trakt)
 	cfg.Plex = parsePlex(raw.Plex)
+	cfg.Rss = parseRss(raw.Rss)
 	return cfg, nil
 }
 
@@ -324,6 +338,20 @@ func findConfig(path string) (string, bool) {
 func str(m map[string]any, key, def string) string {
 	if v, ok := m[key].(string); ok && v != "" {
 		return v
+	}
+	return def
+}
+
+// cronString 读取 cron 表达式配置（TrimSpace）。
+// 显式空串保留（空＝不定时）；键缺失时用默认值。
+// 非字符串标量（手改 YAML 如 sync_cron: 123）转成字符串：
+// 交由运行时 cron 解析报错，而非静默回退默认（与 WebUI 保存校验拒绝非字符串的行为对齐）。
+func cronString(m map[string]any, key, def string) string {
+	if v, ok := m[key].(string); ok {
+		return strings.TrimSpace(v)
+	}
+	if v := m[key]; v != nil {
+		return strings.TrimSpace(fmt.Sprint(v))
 	}
 	return def
 }
@@ -385,7 +413,7 @@ func parseU115(m map[string]any) U115 {
 		DownloadFolderID:          str(m, "download_folder_id", ""),
 		RootFolderID:              str(m, "root_folder_id", ""),
 		AutoOrganizeEnabled:       boolean(m, "auto_organize_enabled", false),
-		AutoOrganizePollSeconds:   maxInt(integer(m, "auto_organize_poll_seconds", 45), 10),
+		AutoOrganizeCron:          cronString(m, "auto_organize_cron", "* * * * *"),
 		AutoOrganizeStableSeconds: maxInt(integer(m, "auto_organize_stable_seconds", 30), 0),
 		QPS:                       maxInt(integer(m, "qps", 3), 1),
 	}
@@ -553,15 +581,15 @@ func parseStrm(m map[string]any) Strm {
 		sidecarExt = append([]string{}, DefaultStrmSidecarExt...)
 	}
 	return Strm{
-		Enabled:             boolean(m, "enabled", false),
-		URLBase:             normalizeStrmURLBase(str(m, "url_base", "")),
-		URLSecret:           strings.TrimSpace(str(m, "url_secret", "")),
-		SyncIntervalSeconds: integer(m, "sync_interval_seconds", 0),
-		RefreshPlex:         boolean(m, "refresh_plex", false),
-		MediaExt:            mediaExt,
-		FetchSidecar:        boolean(m, "fetch_sidecar", true),
-		SidecarExt:          sidecarExt,
-		Mappings:            mappings,
+		Enabled:      boolean(m, "enabled", false),
+		URLBase:      normalizeStrmURLBase(str(m, "url_base", "")),
+		URLSecret:    strings.TrimSpace(str(m, "url_secret", "")),
+		SyncCron:     cronString(m, "sync_cron", ""),
+		RefreshPlex:  boolean(m, "refresh_plex", false),
+		MediaExt:     mediaExt,
+		FetchSidecar: boolean(m, "fetch_sidecar", true),
+		SidecarExt:   sidecarExt,
+		Mappings:     mappings,
 	}
 }
 
@@ -572,19 +600,20 @@ func maxInt(a, b int) int {
 	return b
 }
 
-// parseTrakt Trakt 同步段解析（方向开关默认开；间隔有下限）。
+// parseTrakt Trakt 同步段解析（方向开关默认开）。
+// sync_cron 缺省 */15 * * * *（等价旧默认 900s）；旧 sync_interval_seconds 键静默忽略。
 // 注：Trakt 已改为 PKCE 模式、不再签发 Client Secret，故无此配置项；
 // 旧配置文件里残留的 client_secret 键会被静默忽略。
 func parseTrakt(m map[string]any) Trakt {
 	return Trakt{
-		Enabled:             boolean(m, "enabled", false),
-		ClientID:            strings.TrimSpace(str(m, "client_id", "")),
-		TokenJSON:           str(m, "token_json", "config/trakt-token.json"),
-		SyncIntervalSeconds: maxInt(integer(m, "sync_interval_seconds", 900), 60),
-		SessionPollSeconds:  maxInt(integer(m, "session_poll_seconds", 45), 15),
-		SSEEnabled:          boolean(m, "sse_enabled", true),
-		SyncToPlex:          boolean(m, "sync_to_plex", true),
-		SyncToTrakt:         boolean(m, "sync_to_trakt", true),
+		Enabled:            boolean(m, "enabled", false),
+		ClientID:           strings.TrimSpace(str(m, "client_id", "")),
+		TokenJSON:          str(m, "token_json", "config/trakt-token.json"),
+		SyncCron:           cronString(m, "sync_cron", "*/15 * * * *"),
+		SessionPollSeconds: maxInt(integer(m, "session_poll_seconds", 45), 15),
+		SSEEnabled:         boolean(m, "sse_enabled", true),
+		SyncToPlex:         boolean(m, "sync_to_plex", true),
+		SyncToTrakt:        boolean(m, "sync_to_trakt", true),
 	}
 }
 
@@ -595,6 +624,12 @@ func parsePlex(m map[string]any) Plex {
 		TokenJSON: str(m, "token_json", "config/plex-auth.json"),
 		Timeout:   maxInt(integer(m, "timeout", 10), 1),
 	}
+}
+
+// parseRss RSS 订阅段解析。
+// poll_cron 缺省 */5 * * * *（等价旧默认 300s）；旧 poll_seconds 键静默忽略。
+func parseRss(m map[string]any) Rss {
+	return Rss{PollCron: cronString(m, "poll_cron", "*/5 * * * *")}
 }
 
 // ── 便利方法 ────────────────────────────────────────────────

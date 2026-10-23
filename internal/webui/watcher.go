@@ -1,15 +1,46 @@
-// watcher.go —— 后台轮询任务（对应 webui/services/watcher.py）：
-// 115 云下载自动整理监听 + RSS 订阅轮询。
+// watcher.go —— 后台定时任务（对应 webui/services/watcher.py）：
+// 115 云下载自动整理 + RSS 订阅轮询 + STRM 定时同步，统一按 cron 表达式调度。
 package webui
 
 import (
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/robfig/cron/v3"
+
 	"meta2cloud/internal/u115"
 )
+
+// cronNextDelay 计算距下一次 cron 触发的等待时长（服务器本地时区，5 段式，支持 @every 简写）。
+// spec 为空串返回 ok=false（未配置定时）；表达式非法返回 err。
+// 另两类畸形同样按非法处理（否则 time.After(负值/1s) 会让后台循环热空转）：
+//   - 合法但永不触发的表达式（如 0 0 30 2 *、0 0 31 4 *）：robfig Next 返回零时刻，
+//     Sub 出负数等待，循环会被立即反复触发；
+//   - @every 间隔小于 1 分钟（robfig 向上取整后可打出秒级节奏，如 @every 500ms ≙ 1s），
+//     延续旧 *_interval_seconds 的 60s 下限，防止全量同步/轮询被打成秒级。
+//
+// 校验（validateCronField）与四个后台循环共用本函数，行为保持一致。
+func cronNextDelay(spec string, now time.Time) (time.Duration, bool, error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return 0, false, nil
+	}
+	sched, err := cron.ParseStandard(spec)
+	if err != nil {
+		return 0, false, err
+	}
+	if delay, isDelay := sched.(cron.ConstantDelaySchedule); isDelay && delay.Delay < time.Minute {
+		return 0, false, fmt.Errorf("@every 间隔不得小于 1 分钟（当前 %v）", delay.Delay)
+	}
+	next := sched.Next(now)
+	if next.IsZero() || next.Sub(now) <= 0 {
+		return 0, false, fmt.Errorf("表达式合法但永远不触发（如 2 月 30 日这类不存在的日期）")
+	}
+	return next.Sub(now), true, nil
+}
 
 type watcherState struct {
 	mu                sync.Mutex
@@ -160,13 +191,38 @@ func recordU115PollError(err error) {
 	u115AutoWatcher.mu.Unlock()
 }
 
-// ensureU115AutoOrganizeLoop 启动 115 自动整理监听（幂等）。
+// ensureU115AutoOrganizeLoop 启动 115 自动整理监听（幂等；按 u115.auto_organize_cron 计划轮询）。
 func ensureU115AutoOrganizeLoop() {
 	u115AutoOnce.Do(func() {
 		go func() {
-			log.Printf("115 自动整理监听线程已启动")
+			log.Printf("115 自动整理监听线程已启动（按 u115.auto_organize_cron 计划轮询；未配置 cron 时不定时）")
+			cronWarned := "" // 已告警过的非法 cron：仅状态变化时告警，避免每 60s 重复刷日志
 			for {
-				sleepSeconds := 45
+				spec := RT().GetConfig().U115.AutoOrganizeCron
+				d, ok, err := cronNextDelay(spec, time.Now())
+				if err != nil {
+					if cronWarned != spec {
+						appLog("u115", "auto_organize_cron_invalid", "ERROR",
+							"自动整理 cron 表达式无效，60s 后重试："+err.Error(), map[string]any{"cron": spec})
+						log.Printf("115 自动整理 cron 表达式无效（%q），60s 后重试", spec)
+						cronWarned = spec
+					}
+					ok = false
+				} else {
+					cronWarned = "" // 恢复正常后重置，再次非法时重新告警
+				}
+				if !ok {
+					d = 60 * time.Second // 未配置 cron（不定时）或表达式非法：空转等待，保持配置热响应
+				}
+				select {
+				case <-u115AutoWatcher.stopCh:
+					log.Printf("115 自动整理监听线程已停止")
+					return
+				case <-time.After(d):
+				}
+				if !ok {
+					continue
+				}
 				func() {
 					defer func() {
 						if r := recover(); r != nil {
@@ -178,30 +234,45 @@ func ensureU115AutoOrganizeLoop() {
 								"115 自动整理轮询失败: "+msg, map[string]any{"error": msg})
 						}
 					}()
-					cfg := RT().GetConfig()
-					if s := cfg.U115.AutoOrganizePollSeconds; s >= 10 {
-						sleepSeconds = s
-					}
 					pollU115AutoOrganizeOnce()
 				}()
-				select {
-				case <-u115AutoWatcher.stopCh:
-					log.Printf("115 自动整理监听线程已停止")
-					return
-				case <-time.After(time.Duration(sleepSeconds) * time.Second):
-				}
 			}
 		}()
 	})
 }
 
-// ensureRSSSubscriptionLoop 启动 RSS 订阅轮询（幂等）。
+// ensureRSSSubscriptionLoop 启动 RSS 订阅轮询（幂等；按 rss.poll_cron 计划轮询）。
 func ensureRSSSubscriptionLoop() {
 	rssOnce.Do(func() {
 		go func() {
-			log.Printf("RSS 订阅监听线程已启动")
+			log.Printf("RSS 订阅监听线程已启动（按 rss.poll_cron 计划轮询；未配置 cron 时不定时）")
+			cronWarned := "" // 已告警过的非法 cron：仅状态变化时告警，避免每 60s 重复刷日志
 			for {
-				sleepSeconds := getSubscriptionPollSeconds()
+				spec := getSubscriptionPollCron()
+				d, ok, err := cronNextDelay(spec, time.Now())
+				if err != nil {
+					if cronWarned != spec {
+						appLog("rss", "poll_cron_invalid", "ERROR",
+							"RSS 订阅 cron 表达式无效，60s 后重试："+err.Error(), map[string]any{"cron": spec})
+						log.Printf("RSS 订阅 cron 表达式无效（%q），60s 后重试", spec)
+						cronWarned = spec
+					}
+					ok = false
+				} else {
+					cronWarned = "" // 恢复正常后重置，再次非法时重新告警
+				}
+				if !ok {
+					d = 60 * time.Second // 未配置 cron（不定时）或表达式非法：空转等待，保持配置热响应
+				}
+				select {
+				case <-rssWatcher.stopCh:
+					log.Printf("RSS 订阅监听线程已停止")
+					return
+				case <-time.After(d):
+				}
+				if !ok {
+					continue
+				}
 				func() {
 					defer func() {
 						if r := recover(); r != nil {
@@ -221,29 +292,43 @@ func ensureRSSSubscriptionLoop() {
 					rssWatcher.lastSummary = summary
 					rssWatcher.mu.Unlock()
 				}()
-				select {
-				case <-rssWatcher.stopCh:
-					log.Printf("RSS 订阅监听线程已停止")
-					return
-				case <-time.After(time.Duration(sleepSeconds) * time.Second):
-				}
 			}
 		}()
 	})
 }
 
-// ensureStrmSyncLoop 启动 STRM 定时增量同步（幂等；sync_interval_seconds < 60 时不开轮询）。
+// ensureStrmSyncLoop 启动 STRM 定时增量同步（幂等；按 strm.sync_cron 计划执行，未配置 cron 时仅事件触发）。
 func ensureStrmSyncLoop() {
 	strmOnce.Do(func() {
 		go func() {
-			log.Printf("STRM 定时同步线程已启动")
+			log.Printf("STRM 定时同步线程已启动（按 strm.sync_cron 计划执行；未配置 cron 时仅整理入库/手动/删除后触发）")
+			cronWarned := "" // 已告警过的非法 cron：仅状态变化时告警，避免每 60s 重复刷日志
 			for {
 				cfg := RT().GetConfig()
-				// sync_interval_seconds < 60 表示关闭定时同步，仅手动/入库触发
-				interval := cfg.Strm.SyncIntervalSeconds
-				enabled := cfg.Strm.Enabled && cfg.ActiveStorageName() == "pan115" && interval >= 60
-				if interval < 60 {
-					interval = 60 // 空转等待下限，保持响应配置变更
+				spec := cfg.Strm.SyncCron
+				d, ok, err := cronNextDelay(spec, time.Now())
+				if err != nil {
+					if cronWarned != spec {
+						appLog("strm", "sync_cron_invalid", "ERROR",
+							"STRM 定时同步 cron 表达式无效，60s 后重试："+err.Error(), map[string]any{"cron": spec})
+						log.Printf("STRM 定时同步 cron 表达式无效（%q），60s 后重试", spec)
+						cronWarned = spec
+					}
+					ok = false
+				} else {
+					cronWarned = "" // 恢复正常后重置，再次非法时重新告警
+				}
+				if !ok {
+					d = 60 * time.Second // 未配置 cron（仅事件触发）或表达式非法：空转等待，保持配置热响应
+				}
+				select {
+				case <-strmWatcher.stopCh:
+					log.Printf("STRM 定时同步线程已停止")
+					return
+				case <-time.After(d):
+				}
+				if !ok {
+					continue
 				}
 				func() {
 					defer func() {
@@ -254,16 +339,13 @@ func ensureStrmSyncLoop() {
 							strmWatcher.mu.Unlock()
 						}
 					}()
-					if enabled && !StrmSyncRunning() {
+					// 触发点现读配置：上面的快照在睡眠后可陈旧整个 cron 周期（如每天一次可达 24h），
+					// 睡眠窗口内的 enabled/存储切换必须以执行时刻的配置为准
+					cur := RT().GetConfig()
+					if cur.Strm.Enabled && cur.ActiveStorageName() == "pan115" && !StrmSyncRunning() {
 						TriggerStrmSync(triggerSchedule)
 					}
 				}()
-				select {
-				case <-strmWatcher.stopCh:
-					log.Printf("STRM 定时同步线程已停止")
-					return
-				case <-time.After(time.Duration(interval) * time.Second):
-				}
 			}
 		}()
 	})
@@ -325,7 +407,7 @@ func U115AutoOrganizeStatusPayload() map[string]any {
 		"storage_primary":    cfg.ActiveStorageName(),
 		"authorized":         authorized,
 		"watcher_alive":      watcherAlive(u115AutoWatcher),
-		"poll_seconds":       cfg.U115.AutoOrganizePollSeconds,
+		"poll_cron":          cfg.U115.AutoOrganizeCron,
 		"stable_seconds":     cfg.U115.AutoOrganizeStableSeconds,
 		"download_folder_id": cfg.U115.DownloadFolderID,
 		"last_polled_at":     lastPolled,

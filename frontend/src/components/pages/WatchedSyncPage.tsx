@@ -67,7 +67,7 @@ interface WatchedSyncStatus {
   plex_reachable: boolean
   sync_to_plex: boolean
   sync_to_trakt: boolean
-  sync_interval_seconds: number
+  sync_cron: string
   session_poll_seconds: number
   running: boolean
   sse_enabled?: boolean

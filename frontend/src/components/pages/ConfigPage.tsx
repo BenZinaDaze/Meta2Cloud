@@ -126,8 +126,9 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   if (tmdb.image_base_url === undefined || tmdb.image_base_url === null) {
     tmdb.image_base_url = ''
   }
-  if (u115.auto_organize_poll_seconds === undefined || u115.auto_organize_poll_seconds === null || u115.auto_organize_poll_seconds === '') {
-    u115.auto_organize_poll_seconds = 45
+  if (u115.auto_organize_cron === undefined || u115.auto_organize_cron === null) {
+    // 与后端默认值一致（等价旧默认 45 秒轮询），避免保存后把定时规则写成空串（不定时）
+    u115.auto_organize_cron = '* * * * *'
   }
   if (u115.auto_organize_stable_seconds === undefined || u115.auto_organize_stable_seconds === null || u115.auto_organize_stable_seconds === '') {
     u115.auto_organize_stable_seconds = 30
@@ -135,8 +136,9 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   if (u115.qps === undefined || u115.qps === null || u115.qps === '') {
     u115.qps = 3
   }
-  if (rss.poll_seconds === undefined || rss.poll_seconds === null || rss.poll_seconds === '') {
-    rss.poll_seconds = 300
+  if (rss.poll_cron === undefined || rss.poll_cron === null) {
+    // 与后端默认值一致（等价旧默认 300 秒），避免保存后把轮询写成空串（不定时）
+    rss.poll_cron = '*/5 * * * *'
   }
   if (telegram.debounce_seconds === undefined || telegram.debounce_seconds === null || telegram.debounce_seconds === '') {
     telegram.debounce_seconds = 60
@@ -150,8 +152,8 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   if (strm.enabled === undefined || strm.enabled === null) {
     strm.enabled = false
   }
-  if (strm.sync_interval_seconds === undefined || strm.sync_interval_seconds === null || strm.sync_interval_seconds === '') {
-    strm.sync_interval_seconds = 0
+  if (strm.sync_cron === undefined || strm.sync_cron === null) {
+    strm.sync_cron = ''
   }
   if (!Array.isArray(strm.mappings)) {
     strm.mappings = []
@@ -171,8 +173,9 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
   if (trakt.enabled === undefined || trakt.enabled === null) {
     trakt.enabled = false
   }
-  if (trakt.sync_interval_seconds === undefined || trakt.sync_interval_seconds === null || trakt.sync_interval_seconds === '') {
-    trakt.sync_interval_seconds = 900
+  if (trakt.sync_cron === undefined || trakt.sync_cron === null) {
+    // 与后端默认值一致（等价旧默认 900 秒），避免保存后把定时写成空串（不定时）
+    trakt.sync_cron = '*/15 * * * *'
   }
   if (trakt.session_poll_seconds === undefined || trakt.session_poll_seconds === null || trakt.session_poll_seconds === '') {
     trakt.session_poll_seconds = 45
@@ -204,7 +207,8 @@ function normalizeConfig(data: Record<string, unknown>): Record<string, unknown>
 }
 
 function FieldGroup({ children }: { children: React.ReactNode }) {
-  return <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">{children}</div>
+  // items-end：描述行数不同的相邻字段输入框保持底对齐（输入框均位于块尾）
+  return <div className="grid items-end gap-x-8 gap-y-4 sm:grid-cols-2">{children}</div>
 }
 
 function Field({
@@ -1376,12 +1380,12 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                         onChange={(v) => set('u115', 'auto_organize_enabled', v)}
                       />
                     </Field>
-                    <Field label="轮询间隔" description="秒">
-                      <NumberInput
-                        value={(cfg?.u115 as Record<string, unknown>)?.auto_organize_poll_seconds as number | undefined ?? 45}
-                        onChange={(v) => set('u115', 'auto_organize_poll_seconds', v)}
-                        min={10}
-                        max={3600}
+                    <Field label="定时规则" description="cron 表达式：分 时 日 月 周（服务器时区），支持 @every 30m 简写；留空表示不定时">
+                      <TextInput
+                        value={(cfg?.u115 as Record<string, unknown>)?.auto_organize_cron as string | undefined}
+                        onChange={(v) => set('u115', 'auto_organize_cron', v)}
+                        placeholder="*/5 * * * * 或 0 8 * * *"
+                        mono
                       />
                     </Field>
                     <Field label="稳定等待" description="秒">
@@ -1597,7 +1601,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                   <div className="text-sm font-medium">同步设置</div>
                   {/* 开关区：集中放一起 */}
                   <FieldGroup>
-                    <Field label="启用定时同步" description="按下方间隔自动全量同步">
+                    <Field label="启用定时同步" description="按下方定时规则自动全量同步">
                       <Toggle
                         value={(cfg?.trakt as Record<string, unknown>)?.enabled as boolean | undefined}
                         onChange={(v) => set('trakt', 'enabled', v)}
@@ -1626,12 +1630,12 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                   <div className="border-t border-dashed border-border/50" />
                   {/* 参数区：集中放一起 */}
                   <FieldGroup>
-                    <Field label="同步间隔" description="秒（<60 视为关闭定时同步）">
-                      <NumberInput
-                        value={(cfg?.trakt as Record<string, unknown>)?.sync_interval_seconds as number | undefined ?? 900}
-                        onChange={(v) => set('trakt', 'sync_interval_seconds', v)}
-                        min={60}
-                        max={604800}
+                    <Field label="定时规则" description="cron 表达式：分 时 日 月 周（服务器时区），支持 @every 简写（如 @every 15m，间隔不得小于 1 分钟）；留空仅 SSE 实时/会话轮询/手动触发">
+                      <TextInput
+                        value={(cfg?.trakt as Record<string, unknown>)?.sync_cron as string | undefined}
+                        onChange={(v) => set('trakt', 'sync_cron', v)}
+                        placeholder="*/15 * * * *"
+                        mono
                       />
                     </Field>
                     <Field label="会话轮询间隔" description="秒；SSE 未连接时生效，用于检测播放进度">
@@ -1656,12 +1660,12 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
               </CardHeader>
               <CardContent>
                 <FieldGroup>
-                  <Field label="轮询间隔" description="检查订阅频率（秒）">
-                    <NumberInput
-                      value={(cfg?.rss as Record<string, unknown>)?.poll_seconds as number | undefined ?? 300}
-                      onChange={(v) => set('rss', 'poll_seconds', v)}
-                      min={10}
-                      max={3600}
+                  <Field label="定时规则" description="cron 表达式：分 时 日 月 周（服务器时区），支持 @every 30m 简写；留空表示不定时">
+                    <TextInput
+                      value={(cfg?.rss as Record<string, unknown>)?.poll_cron as string | undefined}
+                      onChange={(v) => set('rss', 'poll_cron', v)}
+                      placeholder="*/5 * * * *"
+                      mono
                     />
                   </Field>
                 </FieldGroup>
@@ -1875,12 +1879,12 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                       onChange={(v) => set('strm', 'enabled', v)}
                     />
                   </Field>
-                  <Field label="定时同步间隔（秒）" description="0 仅手动/入库触发；≥60 开启定时增量">
-                    <NumberInput
-                      value={(cfg?.strm as Record<string, unknown>)?.sync_interval_seconds as number | undefined}
-                      onChange={(v) => set('strm', 'sync_interval_seconds', v)}
-                      min={0}
-                      max={86400}
+                  <Field label="定时规则" description="cron 表达式：分 时 日 月 周（服务器时区），支持 @every 30m 简写；留空仅整理入库/手动/删除后触发">
+                    <TextInput
+                      value={(cfg?.strm as Record<string, unknown>)?.sync_cron as string | undefined}
+                      onChange={(v) => set('strm', 'sync_cron', v)}
+                      placeholder="0 8 * * *"
+                      mono
                     />
                   </Field>
                   <Field label="服务地址 (url_base)" description="写入 .strm 的地址，支持 IP:端口或域名（含反代/HTTPS）；省略 http:// 时自动按 http 处理" fullWidth>
