@@ -157,7 +157,7 @@ func TestAniBTSearchAndEpisodes(t *testing.T) {
 }
 
 func TestFactory(t *testing.T) {
-	f := RegisterDefault()
+	f := DefaultFactory()
 	sites := f.ListSites()
 	if len(sites) < 2 {
 		t.Fatalf("sites = %+v", sites)

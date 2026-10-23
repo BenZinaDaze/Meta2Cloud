@@ -18,7 +18,6 @@ import (
 	"meta2cloud/internal/cloudfile"
 	"meta2cloud/internal/config"
 	"meta2cloud/internal/jsonx"
-	"meta2cloud/internal/scraper"
 	"meta2cloud/internal/tmdb"
 	"meta2cloud/internal/u115"
 
@@ -807,10 +806,7 @@ func newSubscriptionTestServer(t *testing.T) (*httptest.Server, string) {
 	RT().SetU115ClientForTest(u115Client)
 
 	// 注入测试 mikan spider
-	factory := scraper.RegisterDefault()
-	if spider, err := factory.GetSpider("mikan"); err == nil {
-		spider.(*scraper.MikanSpider).SetTestBaseURL(mikanServer.URL)
-	}
+	mikanTestSpider(t).SetTestBaseURL(mikanServer.URL)
 
 	server := NewServer()
 	t.Cleanup(server.Close)

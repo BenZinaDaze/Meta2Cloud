@@ -10,14 +10,15 @@
 internal/scraper/<site>.go
 ```
 
-站点需要实现 `scraper.Spider` 接口，并在 `scraper.go` 的 `RegisterDefault()` 注册：
+站点需要实现 `scraper.Spider` 接口，并在 `scraper.go` 的 `buildDefaultFactory()` 注册（全局工厂随包初始化一次性装好，之后只读）：
 
 ```go
-func RegisterDefault() *Factory {
-	defaultFactory.Register(NewMikanSpider())
-	defaultFactory.Register(NewAniBTSpider())
-	defaultFactory.Register(NewExampleSpider()) // 新增
-	return defaultFactory
+func buildDefaultFactory() *Factory {
+	f := NewFactory()
+	f.Register(NewMikanSpider())
+	f.Register(NewAniBTSpider())
+	f.Register(NewExampleSpider()) // 新增
+	return f
 }
 ```
 

@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"meta2cloud/internal/scraper"
 	"meta2cloud/internal/webui/store"
 )
 
@@ -61,9 +60,4 @@ func intParam(s string, def int) int {
 // jsonDecodeBody 解码 JSON 请求体。
 func jsonDecodeBody(r *http.Request, v any) error {
 	return json.NewDecoder(r.Body).Decode(v)
-}
-
-// scraperFactory 返回已注册内置爬虫的全局工厂。
-func scraperFactory() *scraper.Factory {
-	return scraper.RegisterDefault()
 }

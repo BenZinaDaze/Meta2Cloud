@@ -14,6 +14,7 @@ import (
 	"meta2cloud/internal/cloudfile"
 	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/mediaparser"
+	"meta2cloud/internal/scraper"
 	"meta2cloud/internal/tmdb"
 )
 
@@ -558,7 +559,7 @@ func handleTmdbAlternativeNames(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleScraperSearch(w http.ResponseWriter, r *http.Request) {
-	factory := scraperFactory()
+	factory := scraper.DefaultFactory()
 	results := factory.SearchAll(r.URL.Query().Get("keyword"))
 	grouped := map[string][]map[string]any{}
 	var order []string
@@ -588,7 +589,7 @@ func handleScraperSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleScraperSites(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "sites": scraperFactory().ListSites()})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "sites": scraper.DefaultFactory().ListSites()})
 }
 
 func handleScraperEpisodes(w http.ResponseWriter, r *http.Request) {
@@ -596,7 +597,7 @@ func handleScraperEpisodes(w http.ResponseWriter, r *http.Request) {
 	site := q.Get("site")
 	mediaID := q.Get("media_id")
 	subgroupID := q.Get("subgroup_id")
-	spider, err := scraperFactory().GetSpider(site)
+	spider, err := scraper.DefaultFactory().GetSpider(site)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return

@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"meta2cloud/internal/scraper"
 	"meta2cloud/internal/tmdb"
 	"strings"
 )
@@ -78,9 +77,7 @@ func TestSubscriptionTmdbCacheBackfill(t *testing.T) {
 		</channel></rss>`))
 	}))
 	defer mikanServer.Close()
-	if spider, err := scraper.RegisterDefault().GetSpider("mikan"); err == nil {
-		spider.(*scraper.MikanSpider).SetTestBaseURL(mikanServer.URL)
-	}
+	mikanTestSpider(t).SetTestBaseURL(mikanServer.URL)
 
 	rootDir := t.TempDir()
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)

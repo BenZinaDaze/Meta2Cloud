@@ -351,13 +351,30 @@ func (s fakeMikanSpider) GetEpisodes(string, string) ([]scraper.MagnetItem, erro
 	return s.items, nil
 }
 
+// mikanTestSpider 取全局工厂中的 *MikanSpider。未注册或类型异常即 Fatal——
+// 静默跳过会让工厂为空这类回归（原 bug）在远离病根处才暴露。
+func mikanTestSpider(t *testing.T) *scraper.MikanSpider {
+	t.Helper()
+	spider, err := scraper.DefaultFactory().GetSpider("mikan")
+	if err != nil {
+		t.Fatalf("默认工厂未注册 mikan：%v", err)
+	}
+	mikan, ok := spider.(*scraper.MikanSpider)
+	if !ok {
+		t.Fatalf("mikan spider 类型异常：%T", spider)
+	}
+	return mikan
+}
+
 // useFakeMikanSpider 以假爬虫替换全局 mikan 注册，测试结束恢复原爬虫。
 func useFakeMikanSpider(t *testing.T, items []scraper.MagnetItem) {
 	t.Helper()
 	factory := scraper.DefaultFactory()
-	if prev, err := factory.GetSpider("mikan"); err == nil {
-		t.Cleanup(func() { factory.Register(prev) })
+	prev, err := factory.GetSpider("mikan")
+	if err != nil {
+		t.Fatalf("默认工厂未注册 mikan：%v", err)
 	}
+	t.Cleanup(func() { factory.Register(prev) })
 	factory.Register(fakeMikanSpider{items: items})
 }
 

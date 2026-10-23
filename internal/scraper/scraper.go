@@ -51,24 +51,27 @@ type Factory struct {
 	order   []string
 }
 
-var defaultFactory = NewFactory()
+// defaultFactory 全局注册中心：包初始化即装好内置爬虫，之后只读——
+// 不存在"注册前调用"的时序（Register 仅供测试替换 fake 爬虫）。
+var defaultFactory = buildDefaultFactory()
 
 // NewFactory 构造注册中心。
 func NewFactory() *Factory {
 	return &Factory{spiders: map[string]Spider{}}
 }
 
-// RegisterDefault 注册内置爬虫（mikan + anibt）。
-func RegisterDefault() *Factory {
-	defaultFactory.Register(NewMikanSpider())
-	defaultFactory.Register(NewAniBTSpider())
-	return defaultFactory
+// buildDefaultFactory 构造全局工厂并注册内置爬虫（mikan + anibt）。
+func buildDefaultFactory() *Factory {
+	f := NewFactory()
+	f.Register(NewMikanSpider())
+	f.Register(NewAniBTSpider())
+	return f
 }
 
-// DefaultFactory 全局注册中心（已注册内置爬虫）。
+// DefaultFactory 全局注册中心（内置爬虫已随包初始化装好）。
 func DefaultFactory() *Factory { return defaultFactory }
 
-// Register 注册爬虫。
+// Register 注册/替换爬虫（生产代码仅包初始化调用；导出供测试注入 fake）。
 func (f *Factory) Register(spider Spider) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
