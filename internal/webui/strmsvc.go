@@ -276,11 +276,14 @@ func notifyPlexRefresh(changed int, changes *strmChanges) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
+				appLog("strm", "plex_notify", "ERROR", fmt.Sprintf("通知 Plex panic：%v", r), nil)
 				log.Printf("[strm] 通知 Plex panic：%v", r)
 			}
 		}()
 		sections, err := client.Sections()
 		if err != nil {
+			appLog("strm", "plex_notify", "ERROR", "通知 Plex 失败（获取媒体库列表）："+err.Error(),
+				map[string]any{"changed": changed})
 			log.Printf("[strm] 通知 Plex 失败（获取媒体库列表）：%v", err)
 			return
 		}
@@ -293,13 +296,28 @@ func notifyPlexRefresh(changed int, changes *strmChanges) {
 		if len(targets) == 0 { // 库名与分类名对不上：宁可多刷不漏刷
 			targets = sections
 		}
+		failed := 0
 		for _, s := range targets {
 			if err := client.RefreshSection(s.Key); err != nil {
+				failed++
+				appLog("strm", "plex_notify", "ERROR", fmt.Sprintf("通知 Plex 刷新媒体库 %s 失败：%v", s.Title, err),
+					map[string]any{"section": s.Title})
 				log.Printf("[strm] 通知 Plex 刷新媒体库 %s 失败：%v", s.Title, err)
 			}
 		}
-		log.Printf("[strm] 已通知 Plex 刷新 %d 个媒体库（变更分类：%s）",
-			len(targets), strings.Join(changes.list(), "、"))
+		cats := "全部媒体库"
+		if changes != nil && len(changes.list()) > 0 {
+			cats = strings.Join(changes.list(), "、")
+		}
+		msg := fmt.Sprintf("已通知 Plex 刷新 %d 个媒体库（变更分类：%s）", len(targets), cats)
+		level := "SUCCESS"
+		if failed > 0 {
+			level = "WARN"
+			msg += fmt.Sprintf("，%d 个失败", failed)
+		}
+		appLog("strm", "plex_notify", level, msg,
+			map[string]any{"targets": len(targets), "failed": failed, "changed": changed})
+		log.Printf("[strm] %s", msg)
 	}()
 }
 
