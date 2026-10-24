@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1325,7 +1324,7 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 func ensureTraktSSELoop() {
 	traktSSEOnce.Do(func() {
 		go func() {
-			log.Printf("Plex 实时通知线程已启动")
+			appLog("trakt", "watcher_started", "INFO", "Plex 实时通知线程已启动", nil)
 			backoff := 5 * time.Second
 			lastGateOK := true
 			for {
@@ -1348,7 +1347,7 @@ func ensureTraktSSELoop() {
 				if !ok {
 					setSSEConnected(false)
 					if lastGateOK {
-						log.Printf("Plex 实时通知未启用或未就绪（需开启 sse_enabled、完成 Trakt 与 Plex 配对并启用 →Trakt 方向），30 秒后重新检查")
+						appLog("trakt", "sse_gate_pending", "INFO", "Plex 实时通知未启用或未就绪（需开启 sse_enabled、完成 Trakt 与 Plex 配对并启用 →Trakt 方向），30 秒后重新检查", nil)
 						lastGateOK = false
 					}
 					if !sleepWatcher(traktSSEWatcher, 30*time.Second) {
@@ -1384,7 +1383,6 @@ func ensureTraktSSELoop() {
 				}()
 				err := plexClient.StreamNotifications(ctx, func() {
 					openedAt = time.Now()
-					log.Printf("Plex 实时通知已连接：%s", plexClient.BaseURL)
 					setSSEConnected(true)
 					NotifyServiceHealth("Plex", true, "")
 					appLog("trakt", "sse_connected", "INFO",
@@ -1505,7 +1503,7 @@ func waitPlexReachable(stop <-chan struct{}) (ready, halted bool) {
 func ensureTraktSessionLoop() {
 	traktSessionOnce.Do(func() {
 		go func() {
-			log.Printf("Plex 会话轮询线程已启动")
+			appLog("trakt", "watcher_started", "INFO", "Plex 会话轮询线程已启动", nil)
 			for {
 				interval := RT().GetConfig().Trakt.SessionPollSeconds
 				if interval < 15 {
@@ -1524,7 +1522,7 @@ func ensureTraktSessionLoop() {
 				}()
 				select {
 				case <-traktSessionWatcher.stopCh:
-					log.Printf("Plex 会话轮询线程已停止")
+					appLog("trakt", "watcher_stopped", "INFO", "Plex 会话轮询线程已停止", nil)
 					return
 				case <-time.After(time.Duration(interval) * time.Second):
 				}

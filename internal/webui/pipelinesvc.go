@@ -23,8 +23,11 @@ var (
 // appLog 写应用日志（库不可用时静默）。
 func appLog(category, event, level, message string, details map[string]any) {
 	if ls := RT().GetLogStore(); ls != nil {
-		// 落库后实时广播给日志页 WebSocket 订阅者（全类别）
-		broadcastEntry(ls.Write(category, event, level, message, details))
+		entry := ls.Write(category, event, level, message, details)
+		// 统一日志出口：落库（日志页 + WS 实时）并镜像到进程 stdout，
+		// 终端/docker logs 与「日志」页观察同一份事件
+		log.Printf("[%s/%s] %s %s", category, event, level, message)
+		broadcastEntry(entry)
 	}
 }
 
