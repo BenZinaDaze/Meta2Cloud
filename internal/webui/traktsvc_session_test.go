@@ -83,7 +83,7 @@ func newSessionTestEnv(t *testing.T, traktHandler http.Handler) (*store.TraktSyn
 			_ = json.NewEncoder(w).Encode(map[string]any{"MediaContainer": map[string]any{"Metadata": []any{map[string]any{
 				"ratingKey": "856", "type": "episode", "key": "/library/metadata/856",
 				"grandparentTitle": "某番剧", "grandparentRatingKey": "853",
-				"parentIndex": 1, "index": 2,
+				"parentIndex": 1, "index": 2, "title": "第二集",
 			}}}})
 		case "/library/metadata/853":
 			_ = json.NewEncoder(w).Encode(map[string]any{"MediaContainer": map[string]any{"Metadata": []any{map[string]any{
@@ -166,10 +166,13 @@ func TestSessionScrobbleFlowPlayingToStopped(t *testing.T) {
 	if sh.SessionPushedAt == 0 {
 		t.Fatal("SessionPushedAt 应已记录")
 	}
-	// run 记录：一条成功
+	// run 记录：一条成功，且带会话标题（供页面「内容」列与相邻合并）
 	runs, total, _ := syncStore.ListSyncRuns(10, 0)
 	if total != 1 || len(runs) != 1 || runs[0].ToTrakt != 1 || runs[0].Error != nil {
 		t.Fatalf("应有一条成功推送记录：total=%d %+v", total, runs)
+	}
+	if runs[0].Title == nil || *runs[0].Title != "某番剧 S01E02「第二集」" {
+		t.Fatalf("run 应带会话标题：%+v", runs[0].Title)
 	}
 }
 
@@ -193,16 +196,16 @@ func TestSessionScrobbleStopDuplicate409(t *testing.T) {
 
 	key := watched.MediaKey{Type: "tv", TMDBID: 335790, Season: 1, Episode: 2}
 	sh, ok, _ := syncStore.GetShadow(key)
-	// 409 = 媒体已在 Trakt 历史中：目的态达成，按成功处理
+	// 409 = 媒体已在 Trakt 历史中：目的态达成，仅对齐本地观看状态
 	if !ok || sh.TraktWatched == nil || !*sh.TraktWatched {
 		t.Fatalf("409 后 Trakt 观看状态应按已看处理：%+v ok=%v", sh, ok)
 	}
 	if sh.TraktLastAt == 0 {
 		t.Fatal("应回填服务端 watched_at")
 	}
-	runs, total, _ := syncStore.ListSyncRuns(10, 0)
-	if total != 1 || runs[0].ToTrakt != 1 || runs[0].Error != nil {
-		t.Fatalf("409 应落成功记录：total=%d %+v", total, runs)
+	// 去重不是真实计次推送，不落 run 记录（页面不呈现）
+	if _, total, _ := syncStore.ListSyncRuns(10, 0); total != 0 {
+		t.Fatalf("409 去重不应落记录：total=%d", total)
 	}
 }
 

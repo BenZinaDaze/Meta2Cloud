@@ -1096,8 +1096,9 @@ func scrobbleDoWith(mapper watched.IDMapper, traktClient *trakt.Client, action t
 }
 
 // finishSession 会话收尾：以最后已知进度上报 stop，计次与否由 Trakt 服务端裁定
-// （action=scrobble 计一次；pause 未达阈值；409 处于去重窗口即媒体已在历史中；
-// 422 进度不足被忽略）。失败落退避标记与失败记录，观看状态最终由定时全量同步兜底。
+// （action=scrobble 计一次；pause 未达阈值；409 处于去重窗口即媒体已在历史中，
+// 仅对齐本地状态不落记录；422 进度不足被忽略）。失败落退避标记与失败记录，
+// 观看状态最终由定时全量同步兜底。
 // 不清理 scrobble 上报态（调用方在移除会话时 dropScrobbleState），以便 ≥80% 暂停
 // 经由此收尾后终态标记仍生效。
 func finishSession(syncStore *store.TraktSyncStore, traktClient *trakt.Client, mapper watched.IDMapper, key watched.MediaKey, title, source string, progress float64, sessionKey string) {
@@ -1123,7 +1124,8 @@ func finishSession(syncStore *store.TraktSyncStore, traktClient *trakt.Client, m
 	case err == nil:
 		// action=pause：进度未达阈值，服务端未计次——不落记录
 	case errors.As(err, new(*trakt.DuplicateScrobbleError)):
-		// 服务端去重（409）：媒体已在 Trakt 历史中，目的态达成，按成功记录
+		// 服务端去重（409）：媒体已在 Trakt 历史中，目的态达成——仅对齐本地
+		// 观看状态并记日志，不落 run 记录（页面只呈现真实计次推送）
 		watchedAt := now
 		var dup *trakt.DuplicateScrobbleError
 		if errors.As(err, &dup) && !dup.WatchedAt.IsZero() {
@@ -1131,7 +1133,6 @@ func finishSession(syncStore *store.TraktSyncStore, traktClient *trakt.Client, m
 		}
 		_ = syncStore.UpdateTraktWatched(key, watchedAt, now)
 		_ = syncStore.SetTraktPushedAt(now)
-		record(true, "")
 		appLog("trakt", "session_pushed", "INFO",
 			fmt.Sprintf("Trakt 近期已记录过该内容，本次不重复计入：%s", displayOrKey(key, title)), nil)
 	case errors.As(err, new(*trakt.ScrobbleIgnoredError)):
@@ -1293,16 +1294,24 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 	if notif.RatingKey == "" {
 		return
 	}
-	// duration 缺失时先取会话观察行，再退回详情接口
+	// duration/标题缺失时先取会话观察行，再退回详情接口；标题随观察行缓存，
+	// 每个会话至多拉一次详情
 	duration := notif.DurationMS
+	title := ""
 	if row := syncStore.GetSyncSession(notif.SessionKey); row != nil {
 		if duration == 0 {
 			duration = row.DurationMS
 		}
+		title = derefString(row.Title)
 	}
-	if duration == 0 {
+	if duration == 0 || title == "" {
 		if md, err := plexClient.Metadata(notif.RatingKey); err == nil {
-			duration = int64(md.Duration)
+			if duration == 0 {
+				duration = int64(md.Duration)
+			}
+			if title == "" {
+				title = sessionDisplayTitle(md)
+			}
 		}
 	}
 	source := plexserver.NewSource(plexClient, buildTitleIndex(), syncStore)
@@ -1316,7 +1325,6 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 	if duration > 0 {
 		progress = float64(notif.ViewOffsetMS) / float64(duration)
 	}
-	title := sessionDisplayTitle(sess)
 	row := store.TraktSyncSession{
 		SessionKey: notif.SessionKey, PlexRef: notif.RatingKey,
 		ViewOffsetMS: notif.ViewOffsetMS, DurationMS: duration,
