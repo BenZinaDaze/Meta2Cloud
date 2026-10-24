@@ -1,7 +1,8 @@
 // wslogs.go —— 实时日志 WebSocket 端点（对应 webui/websocket.py）。
 //
 // 协议：客户端带 ?token=JWT 连接 /api/logs/live；无效 token 以 4001 关闭。
-// 服务端只读丢弃客户端消息，向前端广播 {type:"log", ts, level, message, runId}。
+// 服务端只读丢弃客户端消息，向前端广播全类别的落库日志条目
+// {type:"log", ts, category, event, level, message, details}。
 package webui
 
 import (

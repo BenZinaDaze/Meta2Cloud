@@ -12,6 +12,7 @@ import (
 
 	"meta2cloud/internal/config"
 	"meta2cloud/internal/pipeline"
+	"meta2cloud/internal/webui/store"
 )
 
 // handleMediavaultTest 测试 MediaVault 连接。
@@ -144,16 +145,21 @@ type wsBroadcaster struct {
 
 var broadcaster = &wsBroadcaster{conns: map[chan map[string]any]bool{}}
 
-// BroadcastLog 广播一条日志（websocket 客户端 + app log）。
+// BroadcastLog 广播一条流水线输出（落库 + 实时广播都经 appLog）。
 func BroadcastLog(level, message string, runID string) {
 	appLog("pipeline", "pipeline_output", level, message, map[string]any{"runId": runID})
+}
+
+// broadcastEntry 把一条已落库的日志实时推给 WebSocket 订阅者（全类别）。
+func broadcastEntry(e store.LogEntry) {
 	broadcaster.mu.Lock()
 	defer broadcaster.mu.Unlock()
 	if len(broadcaster.conns) == 0 {
 		return
 	}
 	payload := map[string]any{
-		"type": "log", "ts": nil, "level": level, "message": message, "runId": runID,
+		"type": "log", "ts": e.Ts, "category": e.Category, "event": e.Event,
+		"level": e.Level, "message": e.Message, "details": e.Details,
 	}
 	for ch := range broadcaster.conns {
 		select {

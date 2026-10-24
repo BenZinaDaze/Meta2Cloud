@@ -23,7 +23,8 @@ var (
 // appLog 写应用日志（库不可用时静默）。
 func appLog(category, event, level, message string, details map[string]any) {
 	if ls := RT().GetLogStore(); ls != nil {
-		ls.Write(category, event, level, message, details)
+		// 落库后实时广播给日志页 WebSocket 订阅者（全类别）
+		broadcastEntry(ls.Write(category, event, level, message, details))
 	}
 }
 

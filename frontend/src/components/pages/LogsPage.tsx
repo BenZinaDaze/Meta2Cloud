@@ -101,8 +101,8 @@ function wsToLogItem(msg: WsMessage): LogItem {
     ts: msg.ts || new Date().toISOString(),
     level: msg.level,
     message: msg.message,
-    event: 'pipeline_output',
-    details: msg.runId ? { runId: msg.runId } : {},
+    event: msg.event || 'pipeline_output',
+    details: msg.details || {},
   }
 }
 

@@ -50,8 +50,12 @@ func TestLogsLiveWebsocket(t *testing.T) {
 	if payload["type"] != "log" || payload["level"] != "SUCCESS" || payload["message"] != "测试消息 ABC123" {
 		t.Errorf("payload = %v", payload)
 	}
-	if payload["runId"] != "run000001" {
-		t.Errorf("runId = %v", payload["runId"])
+	if payload["event"] != "pipeline_output" || payload["category"] != "pipeline" {
+		t.Errorf("payload 应携带完整字段（category/event）：%v", payload)
+	}
+	details, _ := payload["details"].(map[string]any)
+	if details == nil || details["runId"] != "run000001" {
+		t.Errorf("details.runId = %v", payload["details"])
 	}
 
 	// 3. 广播同时写入了日志库(前端实时页与历史页数据一致)

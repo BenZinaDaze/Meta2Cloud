@@ -6,6 +6,9 @@ export interface WsMessage {
   level: string
   message: string
   runId?: string
+  category?: string
+  event?: string
+  details?: Record<string, unknown>
 }
 
 interface UseWebSocketOptions {
