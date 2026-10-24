@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"meta2cloud/internal/cloudfile"
@@ -19,6 +20,9 @@ import (
 	"meta2cloud/internal/webui/store"
 )
 
+// appliedScheduleGen 已应用过调度启停的配置代数（ApplyWatchSchedules 幂等去重）。
+var appliedScheduleGen atomic.Int64
+
 // Runtime 全局运行时状态。
 type Runtime struct {
 	RootDir string
@@ -28,6 +32,7 @@ type Runtime struct {
 	configPath  string
 	rulesPath   string
 	configSig   [2]int64 // (config mtime, rules mtime)
+	scheduleGen int64    // 配置变更代数（每次重载递增，驱动 cron 调度启停）
 	categories  *config.CategoriesConfig
 	categoriesM int64 // categories.yaml mtime
 	library     *store.LibraryStore
@@ -101,23 +106,29 @@ func fileMtime(path string) int64 {
 }
 
 // invalidateIfChanged 配置文件变更时重载缓存（需已持锁）。
-func (rt *Runtime) invalidateIfChanged() {
+// 返回是否发生了重载（含首次加载）。
+func (rt *Runtime) invalidateIfChanged() bool {
 	sig := [2]int64{fileMtime(rt.configPath), fileMtime(rt.rulesPath)}
-	if rt.configSig != sig {
-		log.Printf("检测到配置文件已变更，重载配置与存储 Provider 缓存")
-		rt.cfg = nil
-		rt.provider = nil
-		rt.u115Client = nil
-		rt.tmdbClient = nil
-		rt.traktClient = nil
-		rt.plexClient = nil
-		rt.configSig = sig
+	if rt.configSig == sig {
+		return false
 	}
+	log.Printf("检测到配置文件已变更，重载配置与存储 Provider 缓存")
+	rt.cfg = nil
+	rt.provider = nil
+	rt.u115Client = nil
+	rt.tmdbClient = nil
+	rt.traktClient = nil
+	rt.plexClient = nil
+	rt.configSig = sig
+	rt.scheduleGen++
+	return true
 }
 
 // getConfigLocked 当前配置（需已持锁；sync.Mutex 不可重入，内部方法禁止再取锁）。
 func (rt *Runtime) getConfigLocked() *config.Config {
-	rt.invalidateIfChanged()
+	if rt.invalidateIfChanged() {
+		rt.scheduleGen++
+	}
 	if rt.cfg == nil {
 		cfg, err := config.Load(rt.configPath)
 		if err != nil {
@@ -130,11 +141,21 @@ func (rt *Runtime) getConfigLocked() *config.Config {
 	return rt.cfg
 }
 
-// GetConfig 当前配置（带 mtime 缓存失效）。
+// GetConfig 当前配置（带 mtime 缓存失效）。检测到配置变更时同步启停
+// 各 cron 调度（开关开启才存在轮询循环，见 ApplyWatchSchedules）。
 func (rt *Runtime) GetConfig() *config.Config {
 	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	return rt.getConfigLocked()
+	rt.getConfigLocked()
+	gen := rt.scheduleGen
+	cfg := rt.cfg
+	rt.mu.Unlock()
+	if gen != appliedScheduleGen.Load() {
+		// 先记代数再应用：Apply 内部会读配置（如订阅 cron），重入时据此返回，
+		// 避免无限递归；并发双跑无害（调度启停幂等且有互斥）
+		appliedScheduleGen.Store(gen)
+		ApplyWatchSchedules(cfg)
+	}
+	return cfg
 }
 
 func (rt *Runtime) categoriesPath() string {

@@ -24,7 +24,14 @@ var healthNow = time.Now
 var healthSendTG = pipeline.SendTelegramMessage
 
 // healthTGConfig Telegram 通知配置（包级变量，测试可替换）。
-var healthTGConfig = func() config.Telegram { return RT().GetConfig().Telegram }
+// 经 init() 赋值而非 var 初始化表达式：GetConfig 现会触发 cron 调度链
+// （ApplyWatchSchedules→…→NotifyServiceHealth→本变量），写在 var 初始化
+// 表达式里会构成初始化依赖环。
+var healthTGConfig func() config.Telegram
+
+func init() {
+	healthTGConfig = func() config.Telegram { return RT().GetConfig().Telegram }
+}
 
 // serviceHealth 单服务健康状态。
 type serviceHealth struct {

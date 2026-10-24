@@ -1461,7 +1461,6 @@ var (
 	traktWatcher        = &watcherState{stopCh: make(chan struct{})}
 	traktSessionWatcher = &watcherState{stopCh: make(chan struct{})}
 	traktSSEWatcher     = &watcherState{stopCh: make(chan struct{})}
-	traktOnce           sync.Once
 	traktSessionOnce    sync.Once
 	traktSSEOnce        sync.Once
 )
@@ -1480,94 +1479,25 @@ func plexReachable() bool {
 // Plex 常与本服务同 compose 部署、随之同时重启——启动首轮同步若在
 // 对端未就绪时触发，会在 DNS/连接层立刻失败并留下错误记录。探测
 // 不可达时短周期等待，恢复后立即开始本轮；超时放弃，交由下一轮定时。
-func waitPlexReachable() bool {
+// halted=true 表示调度已被停止（随 stop 退出）。
+func waitPlexReachable(stop <-chan struct{}) (ready, halted bool) {
 	if plexReachable() {
-		return true
+		return true, false
 	}
 	appLog("trakt", "plex_unreachable", "WARNING", "Plex 暂不可达，等待就绪后开始本轮同步", nil)
 	deadline := time.Now().Add(10 * time.Minute)
 	for time.Now().Before(deadline) {
-		if !sleepWatcher(traktWatcher, 30*time.Second) {
-			return false
+		select {
+		case <-stop:
+			return false, true
+		case <-time.After(30 * time.Second):
 		}
 		if plexReachable() {
-			return true
+			return true, false
 		}
 	}
 	appLog("trakt", "plex_unreachable_timeout", "WARNING", "等待 Plex 就绪超时，本轮定时同步跳过", nil)
-	return false
-}
-
-// ensureTraktSyncLoop 启动观看同步定时循环（幂等；按 trakt.sync_cron 计划执行，
-// 未配置 cron 时仅 SSE 实时推送/会话轮询/手动触发）。
-func ensureTraktSyncLoop() {
-	traktOnce.Do(func() {
-		go func() {
-			log.Printf("观看同步定时线程已启动（按 trakt.sync_cron 计划执行；未配置 cron 时仅 SSE 实时/会话轮询/手动触发）")
-			cronWarned := "" // 已告警过的非法 cron：仅状态变化时告警，避免每 60s 重复刷日志
-			lastGateOK := true
-			for {
-				spec := RT().GetConfig().Trakt.SyncCron
-				d, ok, err := cronNextDelay(spec, time.Now())
-				if err != nil {
-					if cronWarned != spec {
-						appLog("trakt", "sync_cron_invalid", "ERROR",
-							"观看同步 cron 表达式无效，60s 后重试："+err.Error(), map[string]any{"cron": spec})
-						log.Printf("观看同步 cron 表达式无效（%q），60s 后重试", spec)
-						cronWarned = spec
-					}
-					ok = false
-				} else {
-					cronWarned = "" // 恢复正常后重置，再次非法时重新告警
-				}
-				if !ok {
-					d = 60 * time.Second // 未配置 cron（仅实时/手动触发）或表达式非法：空转等待，保持配置热响应
-				}
-				select {
-				case <-traktWatcher.stopCh:
-					log.Printf("观看同步定时线程已停止")
-					return
-				case <-time.After(d):
-				}
-				if !ok {
-					continue
-				}
-				func() {
-					defer func() {
-						if r := recover(); r != nil {
-							msg := fmt.Sprintf("%v", r)
-							traktWatcher.mu.Lock()
-							traktWatcher.lastPollError = &msg
-							traktWatcher.mu.Unlock()
-							appLog("trakt", "sync_loop_panic", "ERROR", "观看同步轮询异常: "+msg, nil)
-						}
-					}()
-					nowStr := utcNowISO()
-					traktWatcher.mu.Lock()
-					traktWatcher.lastPolledAt = &nowStr
-					traktWatcher.mu.Unlock()
-					// 触发点现读配置：睡眠前的快照可陈旧整个 cron 周期（如每天一次可达 24h），
-					// 睡眠窗口内的开关/配对变更必须以执行时刻的配置为准
-					cfg := RT().GetConfig()
-					// 定时同步需开关开启且两侧均已配置；不满足时跳过本轮（手动触发会报出明确原因）
-					enabled := cfg.Trakt.Enabled && cfg.IsPlexReady() && cfg.IsTraktReady()
-					if !enabled {
-						if lastGateOK {
-							appLog("trakt", "sync_schedule_skipped", "INFO",
-								"观看同步定时触发跳过（需开启 trakt.enabled 并完成 Trakt 与 Plex 配对），下个 cron 点重试", nil)
-							log.Printf("观看同步定时触发条件未满足，本 cron 点跳过")
-							lastGateOK = false
-						}
-						return
-					}
-					lastGateOK = true
-					if waitPlexReachable() {
-						TriggerTraktSync(triggerSchedule)
-					}
-				}()
-			}
-		}()
-	})
+	return false, false
 }
 
 // ensureTraktSessionLoop 启动 Plex 会话轮询（正在看 → Trakt）。

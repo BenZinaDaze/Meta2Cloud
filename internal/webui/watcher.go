@@ -7,10 +7,12 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/robfig/cron/v3"
 
+	"meta2cloud/internal/config"
 	"meta2cloud/internal/u115"
 )
 
@@ -56,9 +58,6 @@ var (
 	u115AutoWatcher = &watcherState{stopCh: make(chan struct{})}
 	rssWatcher      = &watcherState{stopCh: make(chan struct{})}
 	strmWatcher     = &watcherState{stopCh: make(chan struct{})}
-	u115AutoOnce    sync.Once
-	rssOnce         sync.Once
-	strmOnce        sync.Once
 )
 
 // u115TaskKey 任务稳定键（info_hash → file_id → 名称+时间+大小）。
@@ -207,56 +206,6 @@ func recordU115PollError(err error) {
 	u115AutoWatcher.mu.Unlock()
 }
 
-// ensureU115AutoOrganizeLoop 启动 115 自动整理监听（幂等；按 u115.auto_organize_cron 计划轮询）。
-func ensureU115AutoOrganizeLoop() {
-	u115AutoOnce.Do(func() {
-		go func() {
-			log.Printf("115 自动整理监听线程已启动（按 u115.auto_organize_cron 计划轮询；未配置 cron 时不定时）")
-			cronWarned := "" // 已告警过的非法 cron：仅状态变化时告警，避免每 60s 重复刷日志
-			for {
-				spec := RT().GetConfig().U115.AutoOrganizeCron
-				d, ok, err := cronNextDelay(spec, time.Now())
-				if err != nil {
-					if cronWarned != spec {
-						appLog("u115", "auto_organize_cron_invalid", "ERROR",
-							"自动整理 cron 表达式无效，60s 后重试："+err.Error(), map[string]any{"cron": spec})
-						log.Printf("115 自动整理 cron 表达式无效（%q），60s 后重试", spec)
-						cronWarned = spec
-					}
-					ok = false
-				} else {
-					cronWarned = "" // 恢复正常后重置，再次非法时重新告警
-				}
-				if !ok {
-					d = 60 * time.Second // 未配置 cron（不定时）或表达式非法：空转等待，保持配置热响应
-				}
-				select {
-				case <-u115AutoWatcher.stopCh:
-					log.Printf("115 自动整理监听线程已停止")
-					return
-				case <-time.After(d):
-				}
-				if !ok {
-					continue
-				}
-				func() {
-					defer func() {
-						if r := recover(); r != nil {
-							msg := fmt.Sprintf("[panic] %v", r)
-							u115AutoWatcher.mu.Lock()
-							u115AutoWatcher.lastPollError = &msg
-							u115AutoWatcher.mu.Unlock()
-							appLog("u115", "auto_organize_poll_failed", "ERROR",
-								"115 自动整理轮询失败: "+msg, map[string]any{"error": msg})
-						}
-					}()
-					pollU115AutoOrganizeOnce()
-				}()
-			}
-		}()
-	})
-}
-
 // rssHealthState RSS 轮询健康判定：连续 2 次 summary.errors（抓取错误数）> 0 才视为
 // 订阅源失效（推送类错误单列 push_errors，不计入；窗口状态仅存于 watcher 循环局部，
 // 进程重启即清零），任一次干净轮询即恢复。
@@ -277,137 +226,266 @@ func (s *rssHealthState) update(summary map[string]any) (report, ok bool, reason
 	return true, false, reason
 }
 
-// ensureRSSSubscriptionLoop 启动 RSS 订阅轮询（幂等；按 rss.poll_cron 计划轮询）。
-func ensureRSSSubscriptionLoop() {
-	rssOnce.Do(func() {
-		go func() {
-			log.Printf("RSS 订阅监听线程已启动（按 rss.poll_cron 计划轮询；未配置 cron 时不定时）")
-			cronWarned := ""             // 已告警过的非法 cron：仅状态变化时告警，避免每 60s 重复刷日志
-			var rssHealth rssHealthState // 连续失败计数（循环局部）
-			for {
-				spec := getSubscriptionPollCron()
-				d, ok, err := cronNextDelay(spec, time.Now())
-				if err != nil {
-					if cronWarned != spec {
-						appLog("rss", "poll_cron_invalid", "ERROR",
-							"RSS 订阅 cron 表达式无效，60s 后重试："+err.Error(), map[string]any{"cron": spec})
-						log.Printf("RSS 订阅 cron 表达式无效（%q），60s 后重试", spec)
-						cronWarned = spec
-					}
-					ok = false
-				} else {
-					cronWarned = "" // 恢复正常后重置，再次非法时重新告警
-				}
-				if !ok {
-					d = 60 * time.Second // 未配置 cron（不定时）或表达式非法：空转等待，保持配置热响应
-				}
-				select {
-				case <-rssWatcher.stopCh:
-					log.Printf("RSS 订阅监听线程已停止")
-					return
-				case <-time.After(d):
-				}
-				if !ok {
-					continue
-				}
-				func() {
-					defer func() {
-						if r := recover(); r != nil {
-							msg := fmt.Sprintf("%v", r)
-							rssWatcher.mu.Lock()
-							rssWatcher.lastPollError = &msg
-							rssWatcher.mu.Unlock()
-						}
-					}()
-					nowStr := utcNowISO()
-					rssWatcher.mu.Lock()
-					rssWatcher.lastPolledAt = &nowStr
-					rssWatcher.lastPollError = nil
-					rssWatcher.mu.Unlock()
-					summary := PollSubscriptionsOnce()
-					rssWatcher.mu.Lock()
-					rssWatcher.lastSummary = summary
-					rssWatcher.mu.Unlock()
-					// 连续 2 次轮询出错才判定订阅源失效（单次抖动不告警）；任一次干净轮询即恢复
-					if report, ok, reason := rssHealth.update(summary); report {
-						NotifyServiceHealth("订阅源", ok, reason)
-					}
-				}()
-			}
-		}()
-	})
+// ── cron 调度管理（开关开启才存在执行循环）──────────────────
+
+// schedulesStopped 全局停止后不再随配置变更重启（测试/关机路径）。
+var schedulesStopped atomic.Bool
+
+// cronLoop 单个功能的 cron 调度生命周期管理：开关开启才启动执行循环，
+// 关闭即停（睡眠中的循环经 stop 立即退出，不等到触发点）。
+type cronLoop struct {
+	name    string
+	mu      sync.Mutex
+	stopCh  chan struct{}
+	running bool
+	halted  bool // 全局停止后不再重启
 }
 
-// ensureStrmSyncLoop 启动 STRM 定时增量同步（幂等；按 strm.sync_cron 计划执行，未配置 cron 时仅事件触发）。
-func ensureStrmSyncLoop() {
-	strmOnce.Do(func() {
-		go func() {
-			log.Printf("STRM 定时同步线程已启动（按 strm.sync_cron 计划执行；未配置 cron 时仅整理入库/手动/删除后触发）")
-			cronWarned := "" // 已告警过的非法 cron：仅状态变化时告警，避免每 60s 重复刷日志
-			for {
-				cfg := RT().GetConfig()
-				spec := cfg.Strm.SyncCron
-				d, ok, err := cronNextDelay(spec, time.Now())
-				if err != nil {
-					if cronWarned != spec {
-						appLog("strm", "sync_cron_invalid", "ERROR",
-							"STRM 定时同步 cron 表达式无效，60s 后重试："+err.Error(), map[string]any{"cron": spec})
-						log.Printf("STRM 定时同步 cron 表达式无效（%q），60s 后重试", spec)
-						cronWarned = spec
-					}
-					ok = false
-				} else {
-					cronWarned = "" // 恢复正常后重置，再次非法时重新告警
-				}
-				if !ok {
-					d = 60 * time.Second // 未配置 cron（仅事件触发）或表达式非法：空转等待，保持配置热响应
-				}
-				select {
-				case <-strmWatcher.stopCh:
-					log.Printf("STRM 定时同步线程已停止")
-					return
-				case <-time.After(d):
-				}
-				if !ok {
-					continue
-				}
-				func() {
-					defer func() {
-						if r := recover(); r != nil {
-							msg := fmt.Sprintf("%v", r)
-							strmWatcher.mu.Lock()
-							strmWatcher.lastPollError = &msg
-							strmWatcher.mu.Unlock()
-						}
-					}()
-					// 触发点现读配置：上面的快照在睡眠后可陈旧整个 cron 周期（如每天一次可达 24h），
-					// 睡眠窗口内的 enabled/存储切换必须以执行时刻的配置为准
-					cur := RT().GetConfig()
-					if cur.Strm.Enabled && cur.ActiveStorageName() == "pan115" && !StrmSyncRunning() {
-						TriggerStrmSync(triggerSchedule)
-					}
-				}()
+// apply 依开关状态启停执行循环（幂等；可在任意 goroutine 调用）。
+func (m *cronLoop) apply(start bool, run func(stop <-chan struct{})) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.halted {
+		return
+	}
+	if !start {
+		if m.running {
+			close(m.stopCh)
+			m.running = false
+		}
+		return
+	}
+	if m.running {
+		return
+	}
+	m.stopCh = make(chan struct{})
+	stop := m.stopCh
+	m.running = true
+	go func() {
+		defer func() {
+			m.mu.Lock()
+			if m.running && m.stopCh == stop {
+				m.running = false
 			}
+			m.mu.Unlock()
 		}()
-	})
+		run(stop)
+	}()
 }
 
-// StartupBackgroundWatchers 启动全部后台任务。
+// halt 全局停止：此后 apply 不再启动。
+func (m *cronLoop) halt() {
+	m.mu.Lock()
+	m.halted = true
+	if m.running {
+		close(m.stopCh)
+		m.running = false
+	}
+	m.mu.Unlock()
+}
+
+var (
+	traktCronLoop = &cronLoop{name: "观看同步"}
+	strmCronLoop  = &cronLoop{name: "STRM 定时同步"}
+	u115CronLoop  = &cronLoop{name: "115 自动整理"}
+	rssCronLoop   = &cronLoop{name: "订阅轮询"}
+)
+
+// ApplyWatchSchedules 依当前配置启停各 cron 调度（配置变更检测点调用，幂等）：
+// 开关开启才存在执行循环，关闭即停。
+func ApplyWatchSchedules(cfg *config.Config) {
+	if schedulesStopped.Load() {
+		return
+	}
+	traktCronLoop.apply(cfg.Trakt.Enabled && cfg.Trakt.SyncCron != "", runTraktCron)
+	strmCronLoop.apply(cfg.Strm.Enabled && cfg.ActiveStorageName() == "pan115" && cfg.Strm.SyncCron != "", runStrmCron)
+	u115CronLoop.apply(cfg.ActiveStorageName() == "pan115" && cfg.U115.AutoOrganizeEnabled && cfg.U115.DownloadFolderID != "" && cfg.U115.AutoOrganizeCron != "", runU115Cron)
+	rssCronLoop.apply(getSubscriptionPollCron() != "", runRSSCron)
+}
+
+// runTraktCron 观看同步 cron 执行器。配对未完成（token 等不随配置文件变更）
+// 时跳过本轮并提示，下个 cron 点重试。
+func runTraktCron(stop <-chan struct{}) {
+	cronWarned := ""
+	readyWarned := false
+	for {
+		spec := RT().GetConfig().Trakt.SyncCron
+		d, ok, err := cronNextDelay(spec, time.Now())
+		if err != nil {
+			if cronWarned != spec {
+				appLog("trakt", "sync_cron_invalid", "ERROR",
+					"观看同步 cron 表达式无效，修正配置后自动恢复："+err.Error(), map[string]any{"cron": spec})
+				cronWarned = spec
+			}
+			return // 修正配置触发重载后由调度管理重启
+		}
+		if !ok {
+			return // 未配置 cron：无可调度内容
+		}
+		timer := time.NewTimer(d)
+		select {
+		case <-stop:
+			timer.Stop()
+			log.Printf("观看同步定时线程已停止")
+			return
+		case <-timer.C:
+		}
+		nowStr := utcNowISO()
+		traktWatcher.mu.Lock()
+		traktWatcher.lastPolledAt = &nowStr
+		traktWatcher.mu.Unlock()
+		cfg := RT().GetConfig()
+		if !cfg.IsPlexReady() || !cfg.IsTraktReady() {
+			if !readyWarned {
+				appLog("trakt", "sync_schedule_skipped", "INFO",
+					"观看同步定时触发跳过（Plex/Trakt 配对未完成），下个 cron 点重试", nil)
+				readyWarned = true
+			}
+			continue
+		}
+		readyWarned = false
+		if ready, halted := waitPlexReachable(stop); halted {
+			return
+		} else if ready {
+			TriggerTraktSync(triggerSchedule)
+		}
+	}
+}
+
+// runStrmCron STRM 定时同步 cron 执行器。
+func runStrmCron(stop <-chan struct{}) {
+	cronWarned := ""
+	for {
+		spec := RT().GetConfig().Strm.SyncCron
+		d, ok, err := cronNextDelay(spec, time.Now())
+		if err != nil {
+			if cronWarned != spec {
+				appLog("strm", "sync_cron_invalid", "ERROR",
+					"STRM 定时同步 cron 表达式无效，修正配置后自动恢复："+err.Error(), map[string]any{"cron": spec})
+				cronWarned = spec
+			}
+			return
+		}
+		if !ok {
+			return
+		}
+		timer := time.NewTimer(d)
+		select {
+		case <-stop:
+			timer.Stop()
+			log.Printf("STRM 定时同步线程已停止")
+			return
+		case <-timer.C:
+		}
+		// 触发点现读配置（执行期间配置可能已变更）
+		cur := RT().GetConfig()
+		if cur.Strm.Enabled && cur.ActiveStorageName() == "pan115" && !StrmSyncRunning() {
+			TriggerStrmSync(triggerSchedule)
+		}
+	}
+}
+
+// runU115Cron 115 自动整理 cron 执行器。
+func runU115Cron(stop <-chan struct{}) {
+	cronWarned := ""
+	for {
+		spec := RT().GetConfig().U115.AutoOrganizeCron
+		d, ok, err := cronNextDelay(spec, time.Now())
+		if err != nil {
+			if cronWarned != spec {
+				appLog("u115", "auto_organize_cron_invalid", "ERROR",
+					"自动整理 cron 表达式无效，修正配置后自动恢复："+err.Error(), map[string]any{"cron": spec})
+				cronWarned = spec
+			}
+			return
+		}
+		if !ok {
+			return
+		}
+		timer := time.NewTimer(d)
+		select {
+		case <-stop:
+			timer.Stop()
+			log.Printf("115 自动整理监听线程已停止")
+			return
+		case <-timer.C:
+		}
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					msg := fmt.Sprintf("[panic] %v", r)
+					u115AutoWatcher.mu.Lock()
+					u115AutoWatcher.lastPollError = &msg
+					u115AutoWatcher.mu.Unlock()
+					appLog("u115", "auto_organize_poll_failed", "ERROR",
+						"115 自动整理轮询失败: "+msg, map[string]any{"error": msg})
+				}
+			}()
+			pollU115AutoOrganizeOnce()
+		}()
+	}
+}
+
+// runRSSCron 订阅轮询 cron 执行器。
+func runRSSCron(stop <-chan struct{}) {
+	cronWarned := ""
+	rssHealth := rssHealthState{} // 连续失败计数（本次调度生命周期内）
+	for {
+		spec := getSubscriptionPollCron()
+		d, ok, err := cronNextDelay(spec, time.Now())
+		if err != nil {
+			if cronWarned != spec {
+				appLog("rss", "poll_cron_invalid", "ERROR",
+					"订阅轮询 cron 表达式无效，修正配置后自动恢复："+err.Error(), map[string]any{"cron": spec})
+				cronWarned = spec
+			}
+			return
+		}
+		if !ok {
+			return
+		}
+		timer := time.NewTimer(d)
+		select {
+		case <-stop:
+			timer.Stop()
+			log.Printf("RSS 订阅监听线程已停止")
+			return
+		case <-timer.C:
+		}
+		nowStr := utcNowISO()
+		rssWatcher.mu.Lock()
+		rssWatcher.lastPolledAt = &nowStr
+		rssWatcher.lastPollError = nil
+		rssWatcher.mu.Unlock()
+		summary := PollSubscriptionsOnce()
+		rssWatcher.mu.Lock()
+		rssWatcher.lastSummary = summary
+		rssWatcher.mu.Unlock()
+		if report, ok2, reason := rssHealth.update(summary); report {
+			NotifyServiceHealth("订阅源", ok2, reason)
+		}
+	}
+}
+
+// StartupBackgroundWatchers 启动全部后台任务：非 cron 类监听线程常驻，
+// cron 类调度由配置变更检测按开关启停（见 ApplyWatchSchedules）。
 func StartupBackgroundWatchers() {
-	ensureU115AutoOrganizeLoop()
-	ensureRSSSubscriptionLoop()
-	ensureStrmSyncLoop()
-	ensureTraktSyncLoop()
 	ensureTraktSessionLoop()
 	ensureTraktSSELoop()
+	ApplyWatchSchedules(RT().GetConfig())
 }
 
 // StopBackgroundWatchers 停止全部后台监听线程（幂等）。
 // 供 Server.Close 与测试清理调用，避免线程在临时目录清理后仍惰性重建
 // config/data（测试偶发 TempDir 清理竞态的根因）。
-// 注意：停止后当前进程内不会重启（ensure*Loop 的 sync.Once 已消费）；
+// 注意：停止后当前进程内 cron 调度不会随配置变更重启；
 // 生产环境进程生命周期即线程生命周期，不受影响。
 func StopBackgroundWatchers() {
+	schedulesStopped.Store(true)
+	traktCronLoop.halt()
+	strmCronLoop.halt()
+	u115CronLoop.halt()
+	rssCronLoop.halt()
 	for _, w := range []*watcherState{u115AutoWatcher, rssWatcher, strmWatcher, traktWatcher, traktSessionWatcher, traktSSEWatcher} {
 		w.mu.Lock()
 		if !w.stopped {
