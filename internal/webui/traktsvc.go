@@ -1019,12 +1019,21 @@ func scrobbleTransition(source string, traktClient *trakt.Client, mapper watched
 	}
 }
 
-// scrobbleCall 单次 start/pause 上报；失败仅记日志（下个事件自然重试）。
+// scrobbleCall 单次 start/pause 上报（仅在状态跃迁时调用，量级为每次观看
+// 个位数条）：成功记 INFO 便于观察上报轨迹，失败记 WARNING（下个事件自然重试）。
 func scrobbleCall(mapper watched.IDMapper, traktClient *trakt.Client, action trakt.ScrobbleAction, key watched.MediaKey, progress float64) bool {
 	if _, err := scrobbleDoWith(mapper, traktClient, action, key, progress); err != nil {
 		appLog("trakt", "session_scrobble_failed", "WARNING",
 			fmt.Sprintf("播放状态上报 Trakt 失败（%s %s）：%v", action, key, err), nil)
 		return false
+	}
+	switch action {
+	case trakt.ScrobbleStart:
+		appLog("trakt", "session_scrobble_started", "INFO",
+			fmt.Sprintf("已上报播放开始（start）：%s（进度 %.0f%%）", key, progress), nil)
+	case trakt.ScrobblePause:
+		appLog("trakt", "session_scrobble_paused", "INFO",
+			fmt.Sprintf("已上报暂停（pause）：%s（进度 %.0f%%）", key, progress), nil)
 	}
 	return true
 }
