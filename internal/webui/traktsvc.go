@@ -980,8 +980,9 @@ func scrobbleProgress(offsetMS, durationMS int64) (float64, bool) {
 }
 
 // sessionScrobble 每会话的上报状态（内存态；进程重启即重建，start 幂等无碍）。
-// lastSent: "" | "playing" | "paused" —— 仅在状态跃迁时调 API，播放中的
-// 周期性 progress 事件不重复上报（Trakt watching 状态按剩余时长自动过期）。
+// lastSent: "" | "playing" | "paused" | "finished" —— 仅在状态跃迁时调 API，
+// 播放中的周期性 progress 事件不重复上报（Trakt watching 状态按剩余时长自动过期）；
+// finished 表示已按收尾上报 stop（≥80% 暂停视同看完），同会话后续事件不再上报。
 type sessionScrobble struct {
 	lastSent string
 }
@@ -1009,12 +1010,19 @@ func dropScrobbleState(sessionKey string) {
 }
 
 // scrobbleTransition 按状态跃迁上报 start/pause（均不计次）。仅 stop 收尾
-// 由 finishSession 负责（计次与否由 Trakt 服务端裁定）。
-func scrobbleTransition(source string, traktClient *trakt.Client, mapper watched.IDMapper, key watched.MediaKey, title, state string, progress float64, sessionKey string) {
+// 由 finishSession 负责（计次与否由 Trakt 服务端裁定）。Trakt 的 pause 仅
+// 接受 1%~80% 进度：<1% 尚无进度可存（跳过上报），≥80% 官方语义为「应改用
+// stop」，按已看完收尾处理。
+func scrobbleTransition(source string, syncStore *store.TraktSyncStore, traktClient *trakt.Client, mapper watched.IDMapper, key watched.MediaKey, title, state string, progress float64, sessionKey string) {
 	st := scrobbleStateFor(sessionKey)
 	switch state {
 	case "playing":
 		if st.lastSent == "playing" {
+			return
+		}
+		// 已收尾且仍在片尾段（≥80%）：不再上报 start（亦超出其有效区间），
+		// 会话结束时的 stop 由服务端去重（409），不会重复计次
+		if st.lastSent == "finished" && progress >= 80 {
 			return
 		}
 		if scrobbleCall(mapper, traktClient, trakt.ScrobbleStart, key, title, progress) {
@@ -1024,8 +1032,20 @@ func scrobbleTransition(source string, traktClient *trakt.Client, mapper watched
 		if st.lastSent != "playing" {
 			return
 		}
-		if scrobbleCall(mapper, traktClient, trakt.ScrobblePause, key, title, progress) {
+		switch {
+		case progress >= 80:
+			// Trakt 不接受 >80% 的 pause（官方提示改用 stop）：进度已过计次线，
+			// 视同看完直接按收尾上报；置终态避免暂停期间后续 paused 事件反复收尾
+			st.lastSent = "finished"
+			finishSession(syncStore, traktClient, mapper, key, title, source, progress/100, sessionKey)
+		case progress < 1:
+			// Trakt 至少要求 1% 才接受 pause：刚开播尚无进度可存，本地记为已暂停
+			// 即可（否则暂停期间每个事件都会重试同一失败），恢复播放仍会正常上报 start
 			st.lastSent = "paused"
+		default:
+			if scrobbleCall(mapper, traktClient, trakt.ScrobblePause, key, title, progress) {
+				st.lastSent = "paused"
+			}
 		}
 	}
 }
@@ -1078,8 +1098,9 @@ func scrobbleDoWith(mapper watched.IDMapper, traktClient *trakt.Client, action t
 // finishSession 会话收尾：以最后已知进度上报 stop，计次与否由 Trakt 服务端裁定
 // （action=scrobble 计一次；pause 未达阈值；409 处于去重窗口即媒体已在历史中；
 // 422 进度不足被忽略）。失败落退避标记与失败记录，观看状态最终由定时全量同步兜底。
+// 不清理 scrobble 上报态（调用方在移除会话时 dropScrobbleState），以便 ≥80% 暂停
+// 经由此收尾后终态标记仍生效。
 func finishSession(syncStore *store.TraktSyncStore, traktClient *trakt.Client, mapper watched.IDMapper, key watched.MediaKey, title, source string, progress float64, sessionKey string) {
-	dropScrobbleState(sessionKey)
 	if (key.TMDBID == 0 && key.TVDBID == 0) || !sessionScrobbleGate(syncStore, key) {
 		return
 	}
@@ -1207,7 +1228,7 @@ func pollPlexSessionsOnce() {
 		}
 		syncStore.UpsertSyncSession(row)
 		if keyOK && progressOK && sessionScrobbleGate(syncStore, key) {
-			scrobbleTransition("poll", traktClient, syncStore, key, title, "playing", pct, sess.SessionKey)
+			scrobbleTransition("poll", syncStore, traktClient, syncStore, key, title, "playing", pct, sess.SessionKey)
 		}
 	}
 
@@ -1218,6 +1239,7 @@ func pollPlexSessionsOnce() {
 		}
 		if misses := syncStore.IncrementSessionMiss(row.SessionKey); misses >= sessionMaxMisses {
 			finishSession(syncStore, traktClient, syncStore, row.Key(), derefString(row.Title), "poll", row.MaxProgress, row.SessionKey)
+			dropScrobbleState(row.SessionKey)
 			syncStore.DeleteSyncSession(row.SessionKey)
 		}
 	}
@@ -1332,7 +1354,7 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 	}
 	pct, _ := scrobbleProgress(notif.ViewOffsetMS, duration)
 	if sessionScrobbleGate(syncStore, key) {
-		scrobbleTransition("sse", traktClient, syncStore, key, title, notif.State, pct, notif.SessionKey)
+		scrobbleTransition("sse", syncStore, traktClient, syncStore, key, title, notif.State, pct, notif.SessionKey)
 	}
 }
 

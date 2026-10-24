@@ -260,6 +260,104 @@ func TestSessionScrobbleStopErrorBackoff(t *testing.T) {
 	}
 }
 
+// TestSessionScrobblePauseBeyond80Finishes Trakt 的 pause 只接受 1%~80%：
+// 片尾暂停（85%）应视同看完改发 stop（计次/落库与正常收尾一致），
+// 暂停期间后续 paused 事件与 ≥80% 段恢复播放均不再重复上报。
+func TestSessionScrobblePauseBeyond80Finishes(t *testing.T) {
+	syncStore, plexClient, traktClient, cap := newSessionTestEnv(t, nil)
+
+	// 播放到 75% → start
+	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+		State: "playing", SessionKey: "s5", RatingKey: "856",
+		ViewOffsetMS: 1080000, DurationMS: 1440000,
+	})
+	// 片尾暂停（85%）→ 不发 pause，直接按收尾上报 stop
+	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+		State: "paused", SessionKey: "s5", RatingKey: "856",
+		ViewOffsetMS: 1224000, DurationMS: 1440000,
+	})
+	// 暂停期间后续 paused 事件（进度不变）→ 不应反复收尾
+	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+		State: "paused", SessionKey: "s5", RatingKey: "856",
+		ViewOffsetMS: 1224000, DurationMS: 1440000,
+	})
+	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+		State: "paused", SessionKey: "s5", RatingKey: "856",
+		ViewOffsetMS: 1230000, DurationMS: 1440000,
+	})
+	// 片尾段恢复播放（90%）→ 不应再上报 start
+	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+		State: "playing", SessionKey: "s5", RatingKey: "856",
+		ViewOffsetMS: 1296000, DurationMS: 1440000,
+	})
+	// 停止 → 会话收尾（实际会命中服务端去重 409，此处仅验证调用序列）
+	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, stoppedEvent("s5", 1296000))
+
+	paths, bodies := cap.snapshot()
+	want := []string{"/scrobble/start", "/scrobble/stop", "/scrobble/stop"}
+	if len(paths) != len(want) {
+		t.Fatalf("调用序列不符：%v", paths)
+	}
+	for i, p := range want {
+		if paths[i] != p {
+			t.Fatalf("调用序列不符：期望 %v 实际 %v", want, paths)
+		}
+	}
+	if got := bodies[1]["progress"].(float64); got != 85 {
+		t.Fatalf("片尾暂停应收尾 stop 且进度 85%%：%v", got)
+	}
+
+	key := watched.MediaKey{Type: "tv", TMDBID: 335790, Season: 1, Episode: 2}
+	sh, ok, _ := syncStore.GetShadow(key)
+	if !ok || sh.TraktWatched == nil || !*sh.TraktWatched {
+		t.Fatalf("片尾暂停收尾后应记为已看：%+v ok=%v", sh, ok)
+	}
+	runs, total, _ := syncStore.ListSyncRuns(10, 0)
+	if total != 2 || runs[0].ToTrakt != 1 || runs[1].ToTrakt != 1 {
+		t.Fatalf("两次收尾各落一条成功记录：total=%d %+v", total, runs)
+	}
+}
+
+// TestSessionScrobblePauseUnder1PercentSkipped Trakt 的 pause 要求 ≥1%：
+// 刚开播即暂停不发 pause，且后续 paused 事件不重试（否则暂停期间无限刷警告）。
+func TestSessionScrobblePauseUnder1PercentSkipped(t *testing.T) {
+	syncStore, plexClient, traktClient, cap := newSessionTestEnv(t, nil)
+
+	// 刚开播（0.2%）→ start
+	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+		State: "playing", SessionKey: "s6", RatingKey: "856",
+		ViewOffsetMS: 2880, DurationMS: 1440000,
+	})
+	// 立即暂停（0.5%、0.8%）→ 无进度可存，跳过上报且不重试
+	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+		State: "paused", SessionKey: "s6", RatingKey: "856",
+		ViewOffsetMS: 7200, DurationMS: 1440000,
+	})
+	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+		State: "paused", SessionKey: "s6", RatingKey: "856",
+		ViewOffsetMS: 11520, DurationMS: 1440000,
+	})
+	// 恢复播放（5%）→ 正常上报 start
+	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+		State: "playing", SessionKey: "s6", RatingKey: "856",
+		ViewOffsetMS: 72000, DurationMS: 1440000,
+	})
+
+	paths, _ := cap.snapshot()
+	want := []string{"/scrobble/start", "/scrobble/start"}
+	if len(paths) != len(want) {
+		t.Fatalf("调用序列不符（应只有两次 start，无 pause）：%v", paths)
+	}
+	for i, p := range want {
+		if paths[i] != p {
+			t.Fatalf("调用序列不符：期望 %v 实际 %v", want, paths)
+		}
+	}
+	if _, total, _ := syncStore.ListSyncRuns(10, 0); total != 0 {
+		t.Fatalf("未收尾不应落记录：total=%d", total)
+	}
+}
+
 // TestSessionScrobbleTVDBAnchoredEndToEnd tvdb 锚定媒体（Trakt 缺 tmdb 映射的
 // 场景）：Plex 侧只解析出 tvdb → 键与载荷全程 tvdb 锚，推送仍可达。
 func TestSessionScrobbleTVDBAnchoredEndToEnd(t *testing.T) {
