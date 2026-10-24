@@ -181,7 +181,7 @@ func handleDeleteTitlePin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	appLog("library", "title_pin_delete", "SUCCESS",
-		fmt.Sprintf("已解除整理名称固定：media_type=%s tmdb_id=%d", body.MediaType, body.TmdbID),
+		"已解除整理名称固定",
 		map[string]any{"media_type": body.MediaType, "tmdb_id": body.TmdbID})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

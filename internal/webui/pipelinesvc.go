@@ -167,7 +167,7 @@ func SchedulePipeline(debounce int) bool {
 			pipelineDebounce.Stop()
 			log.Printf("整理流程防抖计时器已重置 | 防抖：%d 秒", debounce)
 		} else {
-			appLog("pipeline", "pipeline_schedule", "INFO", "整理流程已进入防抖等待",
+			appLog("pipeline", "pipeline_schedule", "INFO", "检测到媒体变化，等待稳定后开始整理",
 				map[string]any{"debounceSeconds": debounce})
 		}
 		pipelineDebounce = time.AfterFunc(time.Duration(debounce)*time.Second, doRunPipeline)

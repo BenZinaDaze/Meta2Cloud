@@ -250,14 +250,14 @@ func handleLibraryMediaDelete(w http.ResponseWriter, r *http.Request) {
 				writeJSONError(w, http.StatusInternalServerError, "删除网盘目录失败："+err.Error())
 				return
 			}
-			appLog("library", "delete_pan", "INFO", "网盘目录已不存在（幂等跳过网盘删除）",
+			appLog("library", "delete_pan", "INFO", "网盘目录已不存在，无需删除",
 				map[string]any{"folder_id": folderID})
 		} else {
 			appLog("library", "delete_pan", "SUCCESS", "网盘目录已删除",
 				map[string]any{"folder_id": folderID})
 		}
 	} else {
-		appLog("library", "delete_walk", "INFO", "网盘目录已不存在（幂等跳过网盘删除）",
+		appLog("library", "delete_walk", "INFO", "网盘目录已不存在，无需删除",
 			map[string]any{"folder_id": folderID})
 	}
 

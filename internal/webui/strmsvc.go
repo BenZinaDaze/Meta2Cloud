@@ -290,8 +290,8 @@ func notifyPlexRefresh(changed int, changes *strmChanges) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				appLog("strm", "plex_notify", "ERROR", fmt.Sprintf("通知 Plex panic：%v", r), nil)
-				log.Printf("[strm] 通知 Plex panic：%v", r)
+				appLog("strm", "plex_notify", "ERROR", fmt.Sprintf("通知 Plex 时程序异常：%v", r), nil)
+				log.Printf("[strm] 通知 Plex 时程序异常：%v", r)
 			}
 		}()
 		sections, err := client.Sections()

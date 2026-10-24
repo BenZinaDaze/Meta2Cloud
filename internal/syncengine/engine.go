@@ -195,7 +195,7 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 				traktStaleMovies = moviesStamp+traktStaleMargin < lastPush
 				traktStaleShows = showsStamp+traktStaleMargin < lastPush
 				if traktStaleMovies || traktStaleShows {
-					e.log("WARNING", "Trakt 已看数据尚未反映最近一次写入，本轮跳过 Trakt 侧比对", map[string]any{
+					e.log("WARNING", "Trakt 的观看记录尚未同步最近一次写入，本轮暂不比对 Trakt", map[string]any{
 						"movies_stamp": moviesStamp, "shows_stamp": showsStamp, "last_push": lastPush,
 					})
 				}
@@ -353,7 +353,7 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 		for _, res := range results {
 			byKey[res.Key] = res
 		}
-		failed, firstKey, firstErr := 0, "", ""
+		failed, firstErr := 0, ""
 		for _, p := range items {
 			res := byKey[p.key]
 			outcome := sideOutcome{side: side, ok: res.OK, desired: p.desired, at: p.at}
@@ -373,7 +373,7 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 			if !res.OK {
 				failedKeys[p.key] = true
 				if failed == 0 {
-					firstKey, firstErr = p.key.String(), res.Err
+					firstErr = res.Err
 				}
 				failed++
 				continue
@@ -388,8 +388,12 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 		// 失败日志聚合成每侧一条：逐键明细已完整落库（同步记录页可查），
 		// 大批量失败（如 Trakt 缺整部剧的 tmdb 映射）不再逐条刷日志
 		if failed > 0 {
-			e.log("WARNING", fmt.Sprintf("观看同步写入 %s 侧失败 %d 条，下轮重试；示例 %s：%s（明细见同步记录）",
-				side, failed, firstKey, firstErr), map[string]any{
+			sideName := "Trakt"
+			if side == "plex" {
+				sideName = "Plex"
+			}
+			e.log("WARNING", fmt.Sprintf("向 %s 写入观看状态失败 %d 条，稍后自动重试；示例：%s（明细见同步记录）",
+				sideName, failed, firstErr), map[string]any{
 				"side": side, "failed": failed,
 			})
 		}

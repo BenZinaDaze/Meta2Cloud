@@ -342,7 +342,7 @@ func handleRefreshItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	appLog("library", "refresh_item", "SUCCESS",
-		fmt.Sprintf("已刷新元数据：tmdb_id=%d (%s)", body.TmdbID, body.MediaType), map[string]any{
+		fmt.Sprintf("已刷新元数据：%s（TMDB 编号 %d）", body.MediaType, body.TmdbID), map[string]any{
 			"tmdb_id": body.TmdbID, "media_type": body.MediaType,
 			"drive_folder_id": body.DriveFolderID,
 		})
