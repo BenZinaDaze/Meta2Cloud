@@ -305,7 +305,7 @@ func ApplyWatchSchedules(cfg *config.Config) {
 // runTraktCron 观看同步 cron 执行器。配对未完成（token 等不随配置文件变更）
 // 时跳过本轮并提示，下个 cron 点重试。
 func runTraktCron(stop <-chan struct{}) {
-	appLog("trakt", "watcher_started", "INFO", "观看同步定时线程已启动（按 cron 计划执行）", nil)
+	appLog("trakt", "watcher_started", "INFO", "观看同步定时线程已启动", nil)
 	cronWarned := ""
 	readyWarned := false
 	for {
@@ -354,7 +354,7 @@ func runTraktCron(stop <-chan struct{}) {
 
 // runStrmCron STRM 定时同步 cron 执行器。
 func runStrmCron(stop <-chan struct{}) {
-	appLog("strm", "watcher_started", "INFO", "STRM 定时同步线程已启动（按 cron 计划执行）", nil)
+	appLog("strm", "watcher_started", "INFO", "STRM 定时同步线程已启动", nil)
 	cronWarned := ""
 	for {
 		spec := RT().GetConfig().Strm.SyncCron
@@ -388,7 +388,7 @@ func runStrmCron(stop <-chan struct{}) {
 
 // runU115Cron 115 自动整理 cron 执行器。
 func runU115Cron(stop <-chan struct{}) {
-	appLog("u115", "watcher_started", "INFO", "115 自动整理监听线程已启动（按 cron 计划轮询）", nil)
+	appLog("u115", "watcher_started", "INFO", "115 自动整理监听线程已启动", nil)
 	cronWarned := ""
 	for {
 		spec := RT().GetConfig().U115.AutoOrganizeCron
@@ -430,7 +430,7 @@ func runU115Cron(stop <-chan struct{}) {
 
 // runRSSCron 订阅轮询 cron 执行器。
 func runRSSCron(stop <-chan struct{}) {
-	appLog("rss", "watcher_started", "INFO", "RSS 订阅监听线程已启动（按 cron 计划轮询）", nil)
+	appLog("rss", "watcher_started", "INFO", "RSS 订阅监听线程已启动", nil)
 	cronWarned := ""
 	rssHealth := rssHealthState{} // 连续失败计数（本次调度生命周期内）
 	for {
