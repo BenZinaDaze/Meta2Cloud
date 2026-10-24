@@ -1341,7 +1341,7 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 func ensureTraktSSELoop() {
 	traktSSEOnce.Do(func() {
 		go func() {
-			appLog("trakt", "watcher_started", "INFO", "Plex 实时通知线程已启动", nil)
+			appLog("trakt", "sse_started", "INFO", "Plex 实时通知线程已启动", nil)
 			backoff := 5 * time.Second
 			lastGateOK := true
 			for {
@@ -1520,7 +1520,7 @@ func waitPlexReachable(stop <-chan struct{}) (ready, halted bool) {
 func ensureTraktSessionLoop() {
 	traktSessionOnce.Do(func() {
 		go func() {
-			appLog("trakt", "watcher_started", "INFO", "Plex 会话轮询线程已启动", nil)
+			appLog("trakt", "session_poll_started", "INFO", "Plex 会话轮询线程已启动", nil)
 			for {
 				interval := RT().GetConfig().Trakt.SessionPollSeconds
 				if interval < 15 {
@@ -1539,7 +1539,7 @@ func ensureTraktSessionLoop() {
 				}()
 				select {
 				case <-traktSessionWatcher.stopCh:
-					appLog("trakt", "watcher_stopped", "INFO", "Plex 会话轮询线程已停止", nil)
+					appLog("trakt", "session_poll_stopped", "INFO", "Plex 会话轮询线程已停止", nil)
 					return
 				case <-time.After(time.Duration(interval) * time.Second):
 				}
