@@ -983,8 +983,12 @@ func scrobbleProgress(offsetMS, durationMS int64) (float64, bool) {
 // lastSent: "" | "playing" | "paused" | "finished" —— 仅在状态跃迁时调 API，
 // 播放中的周期性 progress 事件不重复上报（Trakt watching 状态按剩余时长自动过期）；
 // finished 表示已按收尾上报 stop（≥80% 暂停视同看完），同会话后续事件不再上报。
+// awaitPlay: 播放队列切集后置位——抓包证实（2026-10-25，
+// config/data/sse-capture/20261025-172916）切换后新条目的 paused/buffering
+// 事件仍带旧条目的遗留 offset、playing 才复位，期间进度按 0 记。
 type sessionScrobble struct {
-	lastSent string
+	lastSent  string
+	awaitPlay bool
 }
 
 var (
@@ -1148,6 +1152,18 @@ func finishSession(syncStore *store.TraktSyncStore, traktClient *trakt.Client, m
 	}
 }
 
+// finishSwitchedSession 会话内条目切换（播放队列切集）时收尾旧条目并重置
+// 跟踪：以观察行的最大进度上报 stop（已收尾过则不重复），随后清空观察行
+// 与上报状态，新条目重新解析身份、进度从零跟踪——上一集的进度不会带到
+// 下一集。切换后到 playing 前的 offset 守卫（awaitPlay）由调用方置位。
+func finishSwitchedSession(syncStore *store.TraktSyncStore, traktClient *trakt.Client, prev *store.TraktSyncSession, source, sessionKey string) {
+	if prev.TmdbID > 0 && scrobbleStateFor(sessionKey).lastSent != "finished" {
+		finishSession(syncStore, traktClient, syncStore, prev.Key(), derefString(prev.Title), source, prev.MaxProgress, sessionKey)
+	}
+	dropScrobbleState(sessionKey)
+	syncStore.DeleteSyncSession(sessionKey)
+}
+
 // pollPlexSessionsOnce 单次会话轮询（SSE 离线时的兜底）：
 // 首见会话上报 start；连续缺席的会话以最后已知进度 stop 收尾。
 func pollPlexSessionsOnce() {
@@ -1205,16 +1221,29 @@ func pollPlexSessionsOnce() {
 		sess := &sessions[i]
 		seen[sess.SessionKey] = true
 
+		// 切集检测（同 SSE 路径，事件形态见 handlePlexPlaybackNotification）：
+		// 检测到切换的这一轮快照 offset 是旧条目遗留值，进度按 0 记且不派发
+		// 跃迁；轮询间隔 ≥ 切换过渡窗，下一轮快照 offset 已复位
+		switched := false
+		if prev := syncStore.GetSyncSession(sess.SessionKey); prev != nil && prev.PlexRef != "" && prev.PlexRef != sess.RatingKey {
+			finishSwitchedSession(syncStore, traktClient, prev, "poll", sess.SessionKey)
+			switched = true
+		}
+
 		key, keyOK := resolveSessionKey(syncStore, source, sess)
 		pct, progressOK := scrobbleProgress(int64(sess.ViewOffset), int64(sess.Duration))
 		title := sessionDisplayTitle(sess)
+		maxProgress := func() float64 {
+			f, _ := scrobbleProgress(int64(sess.ViewOffset), int64(sess.Duration))
+			return f / 100
+		}()
+		if switched {
+			maxProgress = 0
+		}
 		row := store.TraktSyncSession{
 			SessionKey: sess.SessionKey, PlexRef: sess.RatingKey,
 			ViewOffsetMS: int64(sess.ViewOffset), DurationMS: int64(sess.Duration),
-			MaxProgress: func() float64 {
-				f, _ := scrobbleProgress(int64(sess.ViewOffset), int64(sess.Duration))
-				return f / 100
-			}(), Title: &title,
+			MaxProgress: maxProgress, Title: &title,
 		}
 		if keyOK {
 			row.MediaType = key.Type
@@ -1228,7 +1257,7 @@ func pollPlexSessionsOnce() {
 			row.Episode = key.Episode
 		}
 		syncStore.UpsertSyncSession(row)
-		if keyOK && progressOK && sessionScrobbleGate(syncStore, key) {
+		if keyOK && progressOK && !switched && sessionScrobbleGate(syncStore, key) {
 			scrobbleTransition("poll", syncStore, traktClient, syncStore, key, title, "playing", pct, sess.SessionKey)
 		}
 	}
@@ -1294,15 +1323,55 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 	if notif.RatingKey == "" {
 		return
 	}
+	// 会话观察行与切集处理。抓包证实（2026-10-25，config/data/sse-capture/）：
+	// 播放/暂停态事件随 ~10s 周期重发，正常播放的会话必有观察行；播放队列
+	// 切集时新 sessionKey 先以「旧条目 + 旧最终 offset」出现（paused），
+	// ratingKey 随后切换而 viewOffset 仍为旧值（buffering），直到 playing
+	// 才复位——若不重置，上一集的 ~99% 会被并进下一集的收尾。
+	tracked := syncStore.GetSyncSession(notif.SessionKey)
+	if tracked != nil && tracked.PlexRef != "" && tracked.PlexRef != notif.RatingKey {
+		finishSwitchedSession(syncStore, traktClient, tracked, "sse", notif.SessionKey)
+		scrobbleStateFor(notif.SessionKey).awaitPlay = true
+		tracked = nil
+	}
+	st := scrobbleStateFor(notif.SessionKey)
+	if notif.State == "playing" {
+		st.awaitPlay = false // 开播即恢复信任：切集后 playing 的 offset 已复位（抓包）
+	}
+
+	// 播放结束：以观察行身份 + 上下文内最大进度上报 stop，随后清理观察行
+	// 与上报状态（计次与去重由 Trakt 服务端裁定）。未跟踪过（无观察行）或
+	// 切集后尚未开播（awaitPlay，offset 是上一集遗留值）的 stopped 不据此
+	// 上报，观看状态由定时全量同步兜底。
+	if notif.State == "stopped" {
+		if tracked != nil && tracked.TmdbID > 0 && !st.awaitPlay {
+			duration := notif.DurationMS
+			if duration == 0 {
+				duration = tracked.DurationMS
+			}
+			finalProgress := 0.0
+			if duration > 0 {
+				finalProgress = float64(notif.ViewOffsetMS) / float64(duration)
+			}
+			if tracked.MaxProgress > finalProgress {
+				finalProgress = tracked.MaxProgress
+			}
+			finishSession(syncStore, traktClient, syncStore, tracked.Key(), derefString(tracked.Title), "sse", finalProgress, notif.SessionKey)
+		}
+		dropScrobbleState(notif.SessionKey)
+		syncStore.DeleteSyncSession(notif.SessionKey)
+		return
+	}
+
 	// duration/标题缺失时先取会话观察行，再退回详情接口；标题随观察行缓存，
 	// 每个会话至多拉一次详情
 	duration := notif.DurationMS
 	title := ""
-	if row := syncStore.GetSyncSession(notif.SessionKey); row != nil {
+	if tracked != nil {
 		if duration == 0 {
-			duration = row.DurationMS
+			duration = tracked.DurationMS
 		}
-		title = derefString(row.Title)
+		title = derefString(tracked.Title)
 	}
 	if duration == 0 || title == "" {
 		if md, err := plexClient.Metadata(notif.RatingKey); err == nil {
@@ -1325,10 +1394,17 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 	if duration > 0 {
 		progress = float64(notif.ViewOffsetMS) / float64(duration)
 	}
+	// 切集后尚未开播（awaitPlay）的 paused/buffering 事件携带上一集遗留
+	// offset（抓包），进度按 0 记；UpsertSyncSession 取历史最大，归零可保
+	// 新条目从零跟踪
+	maxProgress := progress
+	if st.awaitPlay {
+		maxProgress = 0
+	}
 	row := store.TraktSyncSession{
 		SessionKey: notif.SessionKey, PlexRef: notif.RatingKey,
 		ViewOffsetMS: notif.ViewOffsetMS, DurationMS: duration,
-		MaxProgress: progress, Title: &title,
+		MaxProgress: maxProgress, Title: &title,
 	}
 	if keyOK {
 		row.MediaType = key.Type
@@ -1342,20 +1418,6 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 		row.Episode = key.Episode
 	}
 	syncStore.UpsertSyncSession(row)
-
-	// 播放结束：以上下文内的最大进度收尾 stop，然后清理会话观察行与上报状态
-	if notif.State == "stopped" {
-		finalProgress := progress
-		if merged := syncStore.GetSyncSession(notif.SessionKey); merged != nil && merged.MaxProgress > finalProgress {
-			finalProgress = merged.MaxProgress
-		}
-		if keyOK {
-			finishSession(syncStore, traktClient, syncStore, key, title, "sse", finalProgress, notif.SessionKey)
-		}
-		dropScrobbleState(notif.SessionKey)
-		syncStore.DeleteSyncSession(notif.SessionKey)
-		return
-	}
 
 	if !keyOK || duration <= 0 {
 		return
