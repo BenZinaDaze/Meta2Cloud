@@ -257,6 +257,35 @@ func (s *IngestStore) GetRecent(limit int) []map[string]any {
 	return out
 }
 
+// ListByFolder 取该媒体目录的全部入库记录（修正识别改写用，按时间升序）。
+// 仅成功记录带 drive_folder_id（recordIngest 落库语义），失败/无 TMDB 行不会命中。
+func (s *IngestStore) ListByFolder(mediaType, driveFolderID string) []map[string]any {
+	rows, err := s.db.Query(
+		fmt.Sprintf("%s WHERE media_type = ? AND drive_folder_id = ? ORDER BY ingested_at ASC, id ASC", ingestSelect),
+		mediaType, driveFolderID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := []map[string]any{}
+	for rows.Next() {
+		if item := scanIngestRow(rows); item != nil {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// UpdateIdentity 改写一条入库记录的识别身份（修正识别后调用）。
+// 入库时间与原始文件名是历史事实，保留不动。
+func (s *IngestStore) UpdateIdentity(id int64, tmdbID int64, title, originalTitle, year, posterPath, episodeTitle string) error {
+	_, err := s.db.Exec(`UPDATE ingest_history
+		SET tmdb_id = ?, title = ?, original_title = ?, year = ?, poster_path = ?, episode_title = ?
+		WHERE id = ?`,
+		tmdbID, title, originalTitle, year, posterPath, episodeTitle, id)
+	return err
+}
+
 // FindMatchByTitleYear 按标题+年份查找成功记录。
 func (s *IngestStore) FindMatchByTitleYear(mediaType, title, year string) map[string]any {
 	if len(lookupTitleVariants(title)) == 0 {

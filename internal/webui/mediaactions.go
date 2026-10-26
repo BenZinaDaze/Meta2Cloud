@@ -426,6 +426,54 @@ func fileStemOf(name string) string {
 	return name
 }
 
+// rewriteIngestHistory 修正识别后把该目录的历史入库记录改写到新 TMDB 身份：
+// 标题/原始标题/年份/海报/ID 全量覆盖；剧集行按新条目单集详情补正单集标题
+// （详情走 TMDB 客户端缓存）。入库时间与原始文件名是历史事实，保留不动。
+// 记录页与「入库历史 → TMDB」识别回退（resolveMediaIdentity）都随修正同步，
+// 否则旧记录会把同名再次下载重新识别到错误条目上。
+func rewriteIngestHistory(mediaType, driveFolderID string, tmdbID int64) (int, error) {
+	ingest := RT().GetIngestStore()
+	if ingest == nil {
+		return 0, nil
+	}
+	rows := ingest.ListByFolder(mediaType, driveFolderID)
+	if len(rows) == 0 {
+		return 0, nil
+	}
+	// 复用修正识别刚拉取的详情缓存（零额外请求）
+	info, err := fetchTmdbInfoForRefresh(tmdbID, mediaType)
+	if err != nil {
+		return 0, err
+	}
+	titleKey, origKey, dateKey := "title", "original_title", "release_date"
+	if mediaType == "tv" {
+		titleKey, origKey, dateKey = "name", "original_name", "first_air_date"
+	}
+	title := jsonx.Str(info, titleKey)
+	originalTitle := jsonx.Str(info, origKey)
+	year := firstN4Str(jsonx.Str(info, dateKey))
+	posterPath := jsonx.Str(info, "poster_path")
+	client := RT().GetTmdbClient()
+	for _, row := range rows {
+		episodeTitle, _ := row["episode_title"].(string)
+		if mediaType == "tv" && client != nil {
+			if s, ok1 := row["season"].(int64); ok1 {
+				if e, ok2 := row["episode"].(int64); ok2 && e > 0 {
+					// 拉取失败保持原值（下轮修正识别可再补）
+					if detail := client.GetEpisodeDetail(int(tmdbID), int(s), int(e)); detail != nil {
+						episodeTitle = jsonx.Str(detail, "name")
+					}
+				}
+			}
+		}
+		rowID, _ := row["id"].(int64)
+		if err := ingest.UpdateIdentity(rowID, tmdbID, title, originalTitle, year, posterPath, episodeTitle); err != nil {
+			return 0, err
+		}
+	}
+	return len(rows), nil
+}
+
 // reclassifyLibraryFolder 修正识别后按新 TMDB 信息重新归类：
 // 解析分类目录链（媒体库根/一级/二级），目录不在新分类下时移动过去（目录 ID 不变）。
 // 分类判定取 TMDB 最新详情（与修正识别弹窗展示的应属分类同标准）。
@@ -522,6 +570,16 @@ func handleReidentifyItem(w http.ResponseWriter, r *http.Request) {
 	if item := persistLibraryItem(body.DriveFolderID, result); item != nil {
 		result["item"] = item
 	}
+	// 入库历史改写到新身份（与库条目同级的一致性修正，不受重命名开关约束）
+	historyErrors := []string{}
+	if n, err := rewriteIngestHistory(body.MediaType, body.DriveFolderID, body.TmdbID); err != nil {
+		historyErrors = append(historyErrors, "入库记录改写失败："+err.Error())
+	} else if n > 0 {
+		result["history_rewritten"] = n
+	}
+	if len(historyErrors) > 0 {
+		result["errors"] = historyErrors
+	}
 	renameErrors := []string{}
 	renamed := false
 	folderName := ""
@@ -571,7 +629,7 @@ func handleReidentifyItem(w http.ResponseWriter, r *http.Request) {
 	if reclassified || renamed || filesRenamed > 0 {
 		TriggerStrmSync("reidentify")
 	}
-	partial := len(renameErrors) > 0 || reclassifyError != ""
+	partial := len(renameErrors) > 0 || reclassifyError != "" || len(historyErrors) > 0
 	result["partial"] = partial
 	result["ok"] = !partial
 	writeJSON(w, http.StatusOK, result)

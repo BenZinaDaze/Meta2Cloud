@@ -35,6 +35,7 @@ export interface ReidentifyResponse {
   reclassified?: boolean
   category?: string
   reclassify_errors?: string[]
+  history_rewritten?: number
   item?: MediaItem
 }
 

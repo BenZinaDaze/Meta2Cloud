@@ -19,6 +19,7 @@ import (
 	"meta2cloud/internal/config"
 	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/tmdb"
+	"meta2cloud/internal/webui/store"
 	"meta2cloud/internal/u115"
 
 	"gopkg.in/yaml.v3"
@@ -1170,6 +1171,10 @@ func TestReidentifyReclassifiesFolder(t *testing.T) {
 
 	// TMDB mock：新识别的媒体带动画流派（16）与日语
 	tmdbServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/episode/") {
+			json.NewEncoder(w).Encode(map[string]any{"name": "正确的单集名"})
+			return
+		}
 		if strings.Contains(r.URL.Path, "/season/") {
 			json.NewEncoder(w).Encode(map[string]any{"name": "Season 1", "episodes": []any{}})
 			return
@@ -1204,6 +1209,20 @@ func TestReidentifyReclassifiesFolder(t *testing.T) {
 	video := fp.addFile("误识别的剧 - S01E01.mkv", season.ID)
 	subtitle := fp.addFile("误识别的剧 - S01E01.chs.srt", season.ID)
 	RT().SetProviderForTest(fp.provider())
+
+	// 旧识别写入的入库历史：错误 TMDB ID/标题/单集名
+	ingest := RT().GetIngestStore()
+	_ = RT().GetStrmStore() // 预开 STRM 存储：修正识别触发的异步同步复用句柄，避免清理阶段懒建文件（同 TestCategoriesReclassifyFlow）
+	seasonNum, epNum := 1, 1
+	if _, err := ingest.RecordIngest(store.IngestRecord{
+		MediaType: "tv", TmdbID: 111, Title: "误识别的剧", OriginalTitle: "wrong-show",
+		Year: "2026", Season: &seasonNum, Episode: &epNum,
+		EpisodeTitle: "错误单集名", PosterPath: "/wrong.jpg",
+		DriveFolderID: show.ID, OriginalName: "误识别的剧 - S01E01.mkv",
+		Status: "success",
+	}); err != nil {
+		t.Fatalf("写入入库历史失败: %v", err)
+	}
 
 	RT().SetCategories(&config.CategoriesConfig{
 		Dirs: config.CategoryDirs{TV: "剧集", Movie: "电影", Other: "其他"},
@@ -1245,6 +1264,24 @@ func TestReidentifyReclassifiesFolder(t *testing.T) {
 	}
 	if got, _ := fp.GetFile(subtitle.ID); got.Name != "从后面来的神威先生 - S01E01.chs.srt" {
 		t.Fatalf("字幕文件未随视频改名: %q", got.Name)
+	}
+	// 入库历史应同步改写到新身份（含单集标题）
+	if resp["history_rewritten"] != float64(1) {
+		t.Fatalf("history_rewritten = %v, want 1", resp["history_rewritten"])
+	}
+	rewritten := ingest.Query(store.IngestQuery{MediaType: "tv", TmdbID: 325052})
+	if len(rewritten.Items) != 1 {
+		t.Fatalf("新身份入库记录 = %d, want 1", len(rewritten.Items))
+	}
+	rec := rewritten.Items[0]
+	if rec["title"] != "从后面来的神威先生" || rec["episode_title"] != "正确的单集名" || rec["poster_path"] != "/p.jpg" {
+		t.Fatalf("入库记录未改写为新身份: %v", rec)
+	}
+	if rec["original_name"] != "误识别的剧 - S01E01.mkv" || rec["tmdb_id"] != int64(325052) {
+		t.Fatalf("入库记录历史字段应保留、ID 应更新: %v", rec)
+	}
+	if old := ingest.Query(store.IngestQuery{MediaType: "tv", TmdbID: 111}); len(old.Items) != 0 {
+		t.Fatalf("旧 TMDB ID 不应再有记录: %v", old.Items)
 	}
 	moved, err := fp.GetFile(show.ID)
 	if err != nil || moved.ParentID != rightCat.ID {

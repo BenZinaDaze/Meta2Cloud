@@ -202,6 +202,7 @@ export default function ReidentifyModal({
         if (payload.renamed) actions.push(`目录已重命名为 ${payload.folder_name || '新标题'}`)
         if (payload.files_renamed) actions.push(`已重命名 ${payload.files_renamed} 个媒体文件`)
         if (payload.reclassified) actions.push(`已归入 ${payload.category || '正确分类'}`)
+        if (payload.history_rewritten) actions.push(`已更新 ${payload.history_rewritten} 条入库记录`)
         toast.success('修正完成', {
           description: actions.length > 0 ? actions.join('；') : 'TMDB 识别与分类均已正确，未做改动',
         })
