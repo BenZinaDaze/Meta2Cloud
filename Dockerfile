@@ -1,4 +1,6 @@
-FROM node:22-bookworm-slim AS frontend-builder
+# 前端构建钉在构建机原生平台（$BUILDPLATFORM）：产物是纯 JS 与目标架构无关，
+# 多平台构建时只跑一遍，arm64 不必在 QEMU 模拟下重复构建
+FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS frontend-builder
 
 ARG APP_VERSION=dev
 
@@ -14,9 +16,12 @@ COPY frontend/ ./
 RUN VITE_APP_VERSION=${APP_VERSION} npm run build
 
 
-FROM golang:1.27.3-bookworm AS backend-builder
+# 后端构建同样钉在构建机原生平台，Go 按 TARGETARCH 交叉编译——
+# 两个架构都在 amd64 runner 上原生速度编译，QEMU 只用于最终镜像的 apt
+FROM --platform=$BUILDPLATFORM golang:1.27.3-bookworm AS backend-builder
 
 ARG APP_VERSION=dev
+ARG TARGETARCH
 
 WORKDIR /src
 
@@ -24,10 +29,10 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
-# 复制后端源码并构建（纯 Go 依赖，CGO 关闭便于静态链接）
+# 复制后端源码并构建（纯 Go 依赖，CGO 关闭便于静态链接与交叉编译）
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
-RUN CGO_ENABLED=0 go build -trimpath \
+RUN CGO_ENABLED=0 GOARCH=${TARGETARCH} go build -trimpath \
     -ldflags "-s -w -X main.version=${APP_VERSION}" \
     -o /out/meta2cloud ./cmd/meta2cloud
 
