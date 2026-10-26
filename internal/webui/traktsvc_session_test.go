@@ -580,3 +580,49 @@ func TestSessionScrobbleTVDBAnchoredEndToEnd(t *testing.T) {
 		t.Fatalf("tvdb 锚载荷应以 tvdb 标识：%v", show)
 	}
 }
+
+// TestSessionScrobbleUnresolvedMediaLogsOnce 事故复现（2026-10-26）：
+// PMS 对某条目不回传 Guid（剧集匹配到 TMDB 重复条目的状态）且路径兜底
+// 未命中时，实时推送应零调用 Trakt，并恰好告警一次（此后静默不刷屏）。
+func TestSessionScrobbleUnresolvedMediaLogsOnce(t *testing.T) {
+	syncStore, _, traktClient, cap := newSessionTestEnv(t, nil)
+	// 独立 Plex fixture：集详情无 Guid 无路径，上级剧集也无 Guid——
+	// 复刻不带 includeGuids 时 PMS 的真实响应形态
+	plexSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/library/metadata/856":
+			_ = json.NewEncoder(w).Encode(map[string]any{"MediaContainer": map[string]any{"Metadata": []any{map[string]any{
+				"ratingKey": "856", "type": "episode", "key": "/library/metadata/856",
+				"grandparentTitle": "某番剧", "grandparentRatingKey": "853",
+				"parentIndex": 1, "index": 2, "title": "第二集", "duration": 1440000,
+			}}}})
+		case "/library/metadata/853":
+			_ = json.NewEncoder(w).Encode(map[string]any{"MediaContainer": map[string]any{"Metadata": []any{map[string]any{
+				"ratingKey": "853", "type": "show", "title": "某番剧",
+			}}}})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(plexSrv.Close)
+	plexClient := plexserver.NewClient(plexSrv.URL, "tok", "cid")
+
+	// 同一会话三条 playing 事件（Plex 每 ~10s 重发）
+	for i := 0; i < 3; i++ {
+		handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+			State: "playing", SessionKey: "unres-1", RatingKey: "856", ViewOffsetMS: 100000,
+		})
+	}
+	if paths, _ := cap.snapshot(); len(paths) != 0 {
+		t.Fatalf("身份解析失败不应调用 Trakt：%v", paths)
+	}
+	warns := 0
+	for _, e := range RT().GetLogStore().Read(50, "trakt", "WARNING", 0) {
+		if e.Event == "session_unresolved" {
+			warns++
+		}
+	}
+	if warns != 1 {
+		t.Fatalf("应恰好告警一次，实际 %d 次", warns)
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -521,6 +522,43 @@ func TestParsePlaybackNotificationRealWorldShapes(t *testing.T) {
 	got = parsePlaybackNotification(objectForm, "ping")
 	if len(got) != 0 {
 		t.Fatalf("ping 事件应忽略：%+v", got)
+	}
+}
+
+// TestMetadataAndLibraryItemsRequestIncludeGuids 详情与枚举请求必须带
+// includeGuids=1：部分条目状态下 PMS 不带此参数不回传 Guid（2026-10-26
+// 实测事故根因），身份解析会因外部 ID 全空而静默失败。
+func TestMetadataAndLibraryItemsRequestIncludeGuids(t *testing.T) {
+	var metaQuery, listQuery url.Values
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /library/metadata/862", func(w http.ResponseWriter, r *http.Request) {
+		metaQuery = r.URL.Query()
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"MediaContainer": map[string]any{"Metadata": []Metadata{{RatingKey: "862", Type: "show"}}},
+		})
+	})
+	mux.HandleFunc("GET /library/sections/3/all", func(w http.ResponseWriter, r *http.Request) {
+		listQuery = r.URL.Query()
+		w.Header().Set("X-Plex-Container-Total-Size", "0")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"MediaContainer": map[string]any{"Metadata": []Metadata{}, "totalSize": 0},
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	client := NewClient(srv.URL, "tok", "cid", WithHTTPClient(srv.Client()))
+
+	if _, err := client.Metadata("862"); err != nil {
+		t.Fatalf("Metadata 出错：%v", err)
+	}
+	if metaQuery.Get("includeGuids") != "1" {
+		t.Fatalf("Metadata 应带 includeGuids=1，实际 %v", metaQuery)
+	}
+	if _, err := client.LibraryItems("3", 2); err != nil {
+		t.Fatalf("LibraryItems 出错：%v", err)
+	}
+	if listQuery.Get("includeGuids") != "1" {
+		t.Fatalf("LibraryItems 应带 includeGuids=1，实际 %v", listQuery)
 	}
 }
 

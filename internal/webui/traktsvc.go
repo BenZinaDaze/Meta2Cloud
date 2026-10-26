@@ -989,6 +989,9 @@ func scrobbleProgress(offsetMS, durationMS int64) (float64, bool) {
 type sessionScrobble struct {
 	lastSent  string
 	awaitPlay bool
+	// unresolvedLogged 身份解析失败告警只记一次（事件每 ~10s 重发，
+	// 无闸会刷屏；2026-10-26 事故曾因该路径完全静默排查数小时）
+	unresolvedLogged bool
 }
 
 var (
@@ -1420,6 +1423,13 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 	syncStore.UpsertSyncSession(row)
 
 	if !keyOK || duration <= 0 {
+		// 身份解析失败此前完全静默（每 10s 事件重复丢弃），事故排查只能靠
+		// 逐层抓包；这里每会话告警一次，给出可核对的条目定位
+		if !keyOK && !st.unresolvedLogged {
+			st.unresolvedLogged = true
+			appLog("trakt", "session_unresolved", "WARNING",
+				fmt.Sprintf("无法识别正在播放的条目对应哪部媒体，本次不推送播放记录（Plex 条目 %s）。常见原因：Plex 未提供外部 ID，或文件路径与本地媒体库不一致", notif.RatingKey), nil)
+		}
 		return
 	}
 	pct, _ := scrobbleProgress(notif.ViewOffsetMS, duration)

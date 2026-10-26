@@ -380,6 +380,7 @@ func (c *Client) LibraryItems(sectionKey string, plexType int) ([]Metadata, erro
 		query := url.Values{}
 		query.Set("type", strconv.Itoa(plexType))
 		query.Set("sort", "addedAt:asc")
+		query.Set("includeGuids", "1") // 同 Metadata：不带此参数 Guid 可能不回传
 		query.Set("X-Plex-Container-Start", strconv.Itoa(start))
 		query.Set("X-Plex-Container-Size", strconv.Itoa(pageSize))
 		data, header, err := c.get("/library/sections/"+sectionKey+"/all", query)
@@ -410,8 +411,13 @@ func (c *Client) LibraryItems(sectionKey string, plexType int) ([]Metadata, erro
 }
 
 // Metadata 按 ratingKey 查详情（Guid/文件路径齐全，用于会话身份补解析）。
+// 必须带 includeGuids=1：部分条目状态下 PMS 不带此参数不回传 Guid 列表，
+// 身份解析会因外部 ID 全空而静默失败（2026-10-26 实测事故：
+// 剧集匹配到 TMDB 重复条目时 agent guid 不回传，手动编辑过的 ID 才回传）。
 func (c *Client) Metadata(ratingKey string) (*Metadata, error) {
-	data, _, err := c.get("/library/metadata/"+ratingKey, nil)
+	query := url.Values{}
+	query.Set("includeGuids", "1")
+	data, _, err := c.get("/library/metadata/"+ratingKey, query)
 	if err != nil {
 		return nil, err
 	}
