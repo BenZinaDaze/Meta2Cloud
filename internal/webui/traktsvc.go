@@ -1345,6 +1345,10 @@ func sseConnected() bool {
 // 且 45s 轮询兜底，丢事件不影响正确性，只保证连接读循环不被卡死。
 const sseEventQueueSize = 64
 
+// stoppedOffsetTolerance stopped 报文 offset 相对观察轨迹的容差：小量超出
+// 视为正常收尾（如播放至末尾最后几秒），大幅超出视为客户端垃圾值封顶。
+const stoppedOffsetTolerance = 0.02
+
 // handlePlexPlaybackNotification 处理一条实时播放通知：
 // 更新会话观察行，按状态跃迁上报 scrobble（start/pause 不计次），
 // stopped 事件以最终进度上报 stop（计次与去重由 Trakt 服务端裁定），
@@ -1387,6 +1391,14 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 			finalProgress := 0.0
 			if duration > 0 {
 				finalProgress = float64(notif.ViewOffsetMS) / float64(duration)
+			}
+			// 收尾进度封顶：stopped 报文的 offset 不得超过观察行见过的最大进度
+			// 加容差。实测（2026-10-26 ATV 暂停后休眠）：播放队列客户端的会话
+			// 被终止时可能报出上一集的时长当本集位置（观察全程 1%、收尾报 92%
+			// =上集时长/本集时长）；暂停中的播放器位置不可能前进，超出观察
+			// 轨迹的 offset 按观察值收尾（不足额的真实观看由全量同步兜底）。
+			if finalProgress > tracked.MaxProgress+stoppedOffsetTolerance {
+				finalProgress = tracked.MaxProgress
 			}
 			if tracked.MaxProgress > finalProgress {
 				finalProgress = tracked.MaxProgress

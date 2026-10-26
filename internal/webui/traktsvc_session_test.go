@@ -677,3 +677,61 @@ func TestSessionPollStaleRowDroppedWithoutPush(t *testing.T) {
 		t.Fatalf("应恰好一条僵尸行清理日志，实际 %d", dropped)
 	}
 }
+
+// TestSessionScrobbleStoppedOffsetCappedByObserved ATV 休眠幽灵收尾复现
+// （2026-10-26）：播放队列客户端切集后新会话仍挂上一集上下文，暂停休眠
+// 终止时 stopped 报出上一集时长（408426ms）当本集位置——观察行全程只见
+// 过 1%。收尾必须按观察轨迹封顶，不得以 92% 计次。
+func TestSessionScrobbleStoppedOffsetCappedByObserved(t *testing.T) {
+	syncStore, plexClient, traktClient, cap := newSessionTestEnv(t, nil)
+
+	title := "行李"
+	syncStore.UpsertSyncSession(store.TraktSyncSession{
+		SessionKey: "sk-atv", PlexRef: "856", MediaType: "tv", Anchor: "tmdb", TmdbID: 334504,
+		Season: 1, Episode: 3, Title: &title,
+		ViewOffsetMS: 4663, DurationMS: 442475, MaxProgress: 0.0105,
+	})
+
+	// 暂停后休眠，28 分钟后终止：报文 offset=408426ms（上一集时长）
+	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+		State: "stopped", SessionKey: "sk-atv", RatingKey: "856", ViewOffsetMS: 408426,
+	})
+
+	paths, bodies := cap.snapshot()
+	if len(paths) != 1 || paths[0] != "/scrobble/stop" {
+		t.Fatalf("应恰好一次 stop 收尾：%v", paths)
+	}
+	// 封顶后按观察值 1.05% 收尾（<80%，Trakt 不计次）
+	if got := bodies[0]["progress"].(float64); got > 2 {
+		t.Fatalf("收尾进度应封顶至观察值 ~1%%，实际 %v", got)
+	}
+	if syncStore.GetSyncSession("sk-atv") != nil {
+		t.Fatal("收尾后观察行应清除")
+	}
+}
+
+// TestSessionScrobbleStoppedOffsetWithinToleranceKept 正常收尾不受封顶影响：
+// 观察至 98% 后停止报 99.65%，超出量在容差内按报文值收尾。
+func TestSessionScrobbleStoppedOffsetWithinToleranceKept(t *testing.T) {
+	syncStore, plexClient, traktClient, cap := newSessionTestEnv(t, nil)
+
+	title := "正常收尾"
+	syncStore.UpsertSyncSession(store.TraktSyncSession{
+		SessionKey: "sk-ok", PlexRef: "856", MediaType: "tv", Anchor: "tmdb", TmdbID: 334504,
+		Season: 1, Episode: 3, Title: &title,
+		ViewOffsetMS: 433625, DurationMS: 442475, MaxProgress: 0.98,
+	})
+
+	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+		State: "stopped", SessionKey: "sk-ok", RatingKey: "856", ViewOffsetMS: 440923, // 99.65%
+	})
+
+	paths, bodies := cap.snapshot()
+	if len(paths) != 1 || paths[0] != "/scrobble/stop" {
+		t.Fatalf("应恰好一次 stop 收尾：%v", paths)
+	}
+	// 99.65% - 98% = 1.65% 在 2% 容差内 → 按报文值 99.65% 收尾
+	if got := bodies[0]["progress"].(float64); got < 99 || got > 100 {
+		t.Fatalf("容差内应按报文值 ~99.65%% 收尾，实际 %v", got)
+	}
+}
