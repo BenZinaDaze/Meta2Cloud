@@ -626,3 +626,54 @@ func TestSessionScrobbleUnresolvedMediaLogsOnce(t *testing.T) {
 		t.Fatalf("应恰好告警一次，实际 %d 次", warns)
 	}
 }
+
+// TestSessionPollStaleRowDroppedWithoutPush 重启幽灵推送复现（2026-10-26）：
+// sync_sessions 里遗留的旧行（updated_at 距今过久、misses 已累积）在重启后
+// 首轮缺席清理时不得推送 Trakt——应直接丢弃；新鲜行仍走正常收尾推送。
+func TestSessionPollStaleRowDroppedWithoutPush(t *testing.T) {
+	syncStore, _, traktClient, cap := newSessionTestEnv(t, nil)
+
+	seed := func(key string) {
+		title := "昨天的剧"
+		syncStore.UpsertSyncSession(store.TraktSyncSession{
+			SessionKey: key, PlexRef: "860", MediaType: "tv", Anchor: "tmdb", TmdbID: 312266,
+			Season: 1, Episode: 9, Title: &title,
+			ViewOffsetMS: 1424577, DurationMS: 1425280, MaxProgress: 0.99,
+		})
+	}
+	seed("stale-1")
+	seed("fresh-1")
+	// 两行都带上段进程累积的 1 次缺席——重启后首轮即达收尾阈值；
+	// 僵尸行的时间停在 30 小时前，新鲜行保持当前
+	if err := syncStore.BackdateSession("stale-1", time.Now().Add(-30*time.Hour), 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := syncStore.BackdateSession("fresh-1", time.Now(), 1); err != nil {
+		t.Fatal(err)
+	}
+
+	reapAbsentSessions(syncStore, traktClient, map[string]bool{})
+
+	paths, bodies := cap.snapshot()
+	if len(paths) != 1 || paths[0] != "/scrobble/stop" {
+		t.Fatalf("僵尸行不应推送，新鲜行应恰好一次 stop：%v", paths)
+	}
+	if got := bodies[0]["progress"].(float64); got != 99 {
+		t.Fatalf("stop 进度应为 99%%，实际 %v", got)
+	}
+	if row := syncStore.GetSyncSession("stale-1"); row != nil {
+		t.Fatalf("僵尸行应被清除：%+v", row)
+	}
+	if row := syncStore.GetSyncSession("fresh-1"); row != nil {
+		t.Fatalf("收尾后新鲜行也应清除：%+v", row)
+	}
+	dropped := 0
+	for _, e := range RT().GetLogStore().Read(50, "trakt", "INFO", 0) {
+		if e.Event == "session_stale_dropped" {
+			dropped++
+		}
+	}
+	if dropped != 1 {
+		t.Fatalf("应恰好一条僵尸行清理日志，实际 %d", dropped)
+	}
+}

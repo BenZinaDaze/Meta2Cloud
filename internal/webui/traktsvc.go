@@ -1266,8 +1266,40 @@ func pollPlexSessionsOnce() {
 	}
 
 	// 缺席检测：连续 2 次未见 → 以最后已知进度 stop 收尾并移除
+	reapAbsentSessions(syncStore, traktClient, seen)
+}
+
+// sessionStaleAge 会话观察行超过该时长未刷新即视为僵尸（上一段进程生命
+// 周期遗留）。活跃会话随每条 SSE 事件/每轮轮询刷新 updated_at；正常收尾
+// 路径（连续缺席 2 轮 × 30s）远早于该阈值，只有重启前遗留的旧行会触到。
+const sessionStaleAge = 10 * time.Minute
+
+// sessionRowStale 会话观察行是否已过期。时间不可解析时保守按未过期处理
+// （走原缺席计数路径，行为与修复前一致）。
+func sessionRowStale(row store.TraktSyncSession) bool {
+	t, err := time.Parse(time.RFC3339, row.UpdatedAt)
+	if err != nil {
+		return false
+	}
+	return time.Since(t) > sessionStaleAge
+}
+
+// reapAbsentSessions 清理本轮未见到的会话观察行：僵尸行（updated_at 距今
+// 过久，重启前遗留）直接丢弃——其进度来自上一段进程生命周期，不能当作
+// 「刚停止」推送，否则重启会把昨天看过的集再记一次 Trakt（2026-10-26
+// 实测事故：docker 重启即推送 tv:312266:S01E09 进度 99%）；确有未推送的
+// 观看由定时全量同步兜底。新鲜行连续缺席 2 轮后以最后已知进度收尾。
+func reapAbsentSessions(syncStore *store.TraktSyncStore, traktClient *trakt.Client, seen map[string]bool) {
 	for _, row := range syncStore.ListSyncSessions() {
 		if seen[row.SessionKey] {
+			continue
+		}
+		if sessionRowStale(row) {
+			dropScrobbleState(row.SessionKey)
+			syncStore.DeleteSyncSession(row.SessionKey)
+			appLog("trakt", "session_stale_dropped", "INFO",
+				fmt.Sprintf("已忽略一段重启前遗留的播放会话（%s，最后更新于 %s），不推送播放记录",
+					displayOrKey(row.Key(), derefString(row.Title)), row.UpdatedAt), nil)
 			continue
 		}
 		if misses := syncStore.IncrementSessionMiss(row.SessionKey); misses >= sessionMaxMisses {

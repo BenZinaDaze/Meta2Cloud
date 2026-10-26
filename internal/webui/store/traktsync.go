@@ -774,6 +774,14 @@ func (s *TraktSyncStore) UpsertSyncSession(sess TraktSyncSession) {
 		sess.ViewOffsetMS, sess.DurationMS, sess.MaxProgress, now, sess.SessionKey)
 }
 
+// BackdateSession 设定会话观察行的更新时间与缺席计数（测试与数据修正用：
+// 模拟「上一段进程生命周期遗留的僵尸行」）。
+func (s *TraktSyncStore) BackdateSession(sessionKey string, at time.Time, misses int) error {
+	_, err := s.db.Exec("UPDATE sync_sessions SET updated_at = ?, misses = ? WHERE session_key = ?",
+		at.UTC().Format("2006-01-02T15:04:05.000000-07:00"), misses, sessionKey)
+	return err
+}
+
 // IncrementSessionMiss 会话键缺席本次轮询时递增 miss 计数，返回累计值。
 func (s *TraktSyncStore) IncrementSessionMiss(sessionKey string) int {
 	if _, err := s.db.Exec("UPDATE sync_sessions SET misses = misses + 1 WHERE session_key = ?", sessionKey); err != nil {
