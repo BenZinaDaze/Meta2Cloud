@@ -200,6 +200,7 @@ export default function ReidentifyModal({
         const actions: string[] = []
         if (currentTmdbId !== item.tmdb_id) actions.push(`已切换到 TMDB ${currentTmdbId}`)
         if (payload.renamed) actions.push(`目录已重命名为 ${payload.folder_name || '新标题'}`)
+        if (payload.files_renamed) actions.push(`已重命名 ${payload.files_renamed} 个媒体文件`)
         if (payload.reclassified) actions.push(`已归入 ${payload.category || '正确分类'}`)
         toast.success('修正完成', {
           description: actions.length > 0 ? actions.join('；') : 'TMDB 识别与分类均已正确，未做改动',
@@ -227,7 +228,7 @@ export default function ReidentifyModal({
         <DialogHeader>
           <DialogTitle>修正识别</DialogTitle>
           <DialogDescription>
-            重新绑定 TMDB 条目并更新本地库记录；目录名与分类归位会按需一并修正（TMDB 可与当前一致）。
+            重新绑定 TMDB 条目并更新本地库记录；目录名、文件名与分类归位会按需一并修正（TMDB 可与当前一致）。
           </DialogDescription>
         </DialogHeader>
 
@@ -331,11 +332,11 @@ export default function ReidentifyModal({
                 onChange={(e) => setRenameFolder(e.target.checked)}
                 className="size-4 rounded border-input accent-[oklch(76%_0.19_150)]"
               />
-              同步重命名媒体目录
+              同步重命名目录与文件
             </label>
             {currentTmdbId === item?.tmdb_id && (
               <p className="text-xs text-muted-foreground">
-                TMDB 与当前绑定一致，确认后将仅核对目录名与分类归位（放错位置时自动移动）。
+                TMDB 与当前绑定一致，确认后将仅核对目录名、文件名与分类归位（放错位置时自动移动）。
               </p>
             )}
           </div>

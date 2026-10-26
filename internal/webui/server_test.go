@@ -1201,7 +1201,8 @@ func TestReidentifyReclassifiesFolder(t *testing.T) {
 	rightCat := fp.addFolder("动漫", tvDir.ID)
 	show := fp.addFolder("误识别的剧 (2026)", wrongCat.ID)
 	season := fp.addFolder("Season 01", show.ID)
-	fp.addFile("误识别的剧 - S01E01.mkv", season.ID)
+	video := fp.addFile("误识别的剧 - S01E01.mkv", season.ID)
+	subtitle := fp.addFile("误识别的剧 - S01E01.chs.srt", season.ID)
 	RT().SetProviderForTest(fp.provider())
 
 	RT().SetCategories(&config.CategoriesConfig{
@@ -1231,6 +1232,19 @@ func TestReidentifyReclassifiesFolder(t *testing.T) {
 	}
 	if resp["category"] != "剧集/动漫" {
 		t.Fatalf("分类错误: %v", resp["category"])
+	}
+	// 目录与目录内媒体文件都应按新识别改名
+	if resp["renamed"] != true || resp["folder_name"] != "从后面来的神威先生 (2026)" {
+		t.Fatalf("目录改名异常: renamed=%v folder_name=%v", resp["renamed"], resp["folder_name"])
+	}
+	if resp["files_renamed"] != float64(2) {
+		t.Fatalf("files_renamed = %v, want 2（视频+字幕）", resp["files_renamed"])
+	}
+	if got, _ := fp.GetFile(video.ID); got.Name != "从后面来的神威先生 - S01E01.mkv" {
+		t.Fatalf("视频文件未按新名改名: %q", got.Name)
+	}
+	if got, _ := fp.GetFile(subtitle.ID); got.Name != "从后面来的神威先生 - S01E01.chs.srt" {
+		t.Fatalf("字幕文件未随视频改名: %q", got.Name)
 	}
 	moved, err := fp.GetFile(show.ID)
 	if err != nil || moved.ParentID != rightCat.ID {

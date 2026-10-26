@@ -278,6 +278,154 @@ func renameLibraryFolder(client cloudfile.Provider, driveFolderID, mediaType str
 	return map[string]any{"renamed": renamedName != currentName, "folder_name": renamedName}, nil
 }
 
+var unsafeFilenameRe = regexp.MustCompile(`[\\/:*?"<>|]`)
+
+func safeFilename(name string) string {
+	return strings.TrimSpace(unsafeFilenameRe.ReplaceAllString(name, ""))
+}
+
+// renameLibraryFiles 修正识别后把目录内的媒体文件一并改成标准命名（与整理管线
+// buildCleanNameFromMeta 同一套命名）：电影目录唯一视频 → 「标题 (年份).ext」；
+// 剧集 Season 目录内视频 → 「标题 - SxxEyy.ext」。字幕文件随同名视频一起改名
+// （保留语言标签后缀）。已符合标准命名的文件跳过（零网盘请求）。
+func renameLibraryFiles(provider cloudfile.Provider, driveFolderID, mediaType string, updates map[string]any) (int, []string) {
+	title, _ := updates["title"].(string)
+	if strings.TrimSpace(title) == "" {
+		return 0, nil
+	}
+	files, err := provider.ListFiles(driveFolderID, 500)
+	if err != nil {
+		return 0, []string{fmt.Sprintf("读取目录文件失败：%v", err)}
+	}
+	if mediaType == "tv" {
+		return renameTvFiles(provider, files, title)
+	}
+	return renameMovieFiles(provider, files, title, updates)
+}
+
+// renameMovieFiles 电影目录：唯一视频改为「标题 (年份).ext」，字幕随视频基名同步。
+func renameMovieFiles(provider cloudfile.Provider, files []cloudfile.CloudFile, title string, updates map[string]any) (int, []string) {
+	year, _ := updates["year"].(string)
+	var videos, siblings []cloudfile.CloudFile
+	for _, f := range files {
+		if f.IsVideo() {
+			videos = append(videos, f)
+		} else {
+			siblings = append(siblings, f)
+		}
+	}
+	if len(videos) == 0 {
+		return 0, nil
+	}
+	if len(videos) > 1 {
+		return 0, []string{fmt.Sprintf("目录内有 %d 个视频文件，无法确定命名，跳过文件重命名", len(videos))}
+	}
+	video := videos[0]
+	newStem := movieFolderName(safeFilename(title), year)
+	renamed, err := renameMediaFile(provider, video, newStem+video.Extension())
+	if err != nil {
+		return 0, []string{fmt.Sprintf("改名失败 %s：%v", video.Name, err)}
+	}
+	n := 0
+	if renamed {
+		n++
+	}
+	subN, subErrs := renameSiblingSubtitles(provider, siblings, fileStemOf(video.Name), newStem)
+	return n + subN, subErrs
+}
+
+// renameTvFiles 剧集目录：各 Season 子目录内视频改为「标题 - SxxEyy.ext」，
+// 季号须与所在 Season 目录一致（同 collectDriveEpisodes 的判定）。
+func renameTvFiles(provider cloudfile.Provider, files []cloudfile.CloudFile, title string) (int, []string) {
+	renamed := 0
+	var errs []string
+	for _, folder := range files {
+		if !folder.IsFolder() || !seasonNameRe.MatchString(folder.Name) {
+			continue
+		}
+		m := seasonNumRe.FindString(folder.Name)
+		if m == "" {
+			continue
+		}
+		seasonNum, _ := strconv.Atoi(m)
+		seasonFiles, err := provider.ListFiles(folder.ID, 500)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("读取 %s 失败：%v", folder.Name, err))
+			continue
+		}
+		var videos, siblings []cloudfile.CloudFile
+		for _, file := range seasonFiles {
+			if file.IsVideo() {
+				videos = append(videos, file)
+			} else {
+				siblings = append(siblings, file)
+			}
+		}
+		for _, file := range videos {
+			s, e, ok := ParseEpisodeFromFilename(file.Name)
+			if !ok || s != seasonNum {
+				errs = append(errs, fmt.Sprintf("无法识别季集，跳过改名：%s", file.Name))
+				continue
+			}
+			newStem := fmt.Sprintf("%s - S%02dE%02d", safeFilename(title), s, e)
+			done, err := renameMediaFile(provider, file, newStem+file.Extension())
+			if err != nil {
+				errs = append(errs, fmt.Sprintf("改名失败 %s：%v", file.Name, err))
+				continue
+			}
+			if done {
+				renamed++
+			}
+			// 视频已就位（本轮改名或原本就是标准名）后字幕跟随；改名失败则字幕不动
+			subN, subErrs := renameSiblingSubtitles(provider, siblings, fileStemOf(file.Name), newStem)
+			renamed += subN
+			errs = append(errs, subErrs...)
+		}
+	}
+	return renamed, errs
+}
+
+// renameSiblingSubtitles 把与视频旧基名同前缀的字幕改成新基名（保留语言标签等后缀）。
+func renameSiblingSubtitles(provider cloudfile.Provider, siblings []cloudfile.CloudFile, oldStem, newStem string) (int, []string) {
+	if oldStem == "" || oldStem == newStem {
+		return 0, nil
+	}
+	renamed := 0
+	var errs []string
+	for _, sub := range siblings {
+		if !sub.IsSubtitle() || !strings.HasPrefix(sub.Name, oldStem+".") {
+			continue
+		}
+		done, err := renameMediaFile(provider, sub, newStem+sub.Name[len(oldStem):])
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("字幕改名失败 %s：%v", sub.Name, err))
+			continue
+		}
+		if done {
+			renamed++
+		}
+	}
+	return renamed, errs
+}
+
+// renameMediaFile 目标名与当前名一致时跳过（零网盘请求），否则改名。
+func renameMediaFile(provider cloudfile.Provider, file cloudfile.CloudFile, newName string) (bool, error) {
+	if file.Name == newName {
+		return false, nil
+	}
+	if _, err := provider.RenameFile(file.ID, newName); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func fileStemOf(name string) string {
+	if i := strings.LastIndex(name, "."); i > 0 {
+		return name[:i]
+	}
+	return name
+}
+
 // reclassifyLibraryFolder 修正识别后按新 TMDB 信息重新归类：
 // 解析分类目录链（媒体库根/一级/二级），目录不在新分类下时移动过去（目录 ID 不变）。
 // 分类判定取 TMDB 最新详情（与修正识别弹窗展示的应属分类同标准）。
@@ -374,25 +522,31 @@ func handleReidentifyItem(w http.ResponseWriter, r *http.Request) {
 	if item := persistLibraryItem(body.DriveFolderID, result); item != nil {
 		result["item"] = item
 	}
-	renameError := ""
+	renameErrors := []string{}
 	renamed := false
 	folderName := ""
+	filesRenamed := 0
 	if body.RenameFolder {
 		updates, _ := result["updates"].(map[string]any)
 		if renameResult, err := renameLibraryFolder(
 			RT().GetStorageProvider(), body.DriveFolderID, body.MediaType, updates); err != nil {
-			renameError = err.Error()
+			renameErrors = append(renameErrors, err.Error())
 		} else {
 			renamed, _ = renameResult["renamed"].(bool)
 			folderName, _ = renameResult["folder_name"].(string)
 		}
+		// 目录内媒体文件同步改成标准命名（跟随新识别的标题/季集）
+		n, fileErrs := renameLibraryFiles(RT().GetStorageProvider(), body.DriveFolderID, body.MediaType, updates)
+		filesRenamed = n
+		renameErrors = append(renameErrors, fileErrs...)
 	}
 	result["renamed"] = renamed
+	result["files_renamed"] = filesRenamed
 	if folderName != "" {
 		result["folder_name"] = folderName
 	}
-	if renameError != "" {
-		result["rename_errors"] = []string{renameError}
+	if len(renameErrors) > 0 {
+		result["rename_errors"] = renameErrors
 	}
 	// 重新归类：按新 TMDB 流派解析分类目录链，目录不在新分类下时移动过去
 	reclassified := false
@@ -413,11 +567,11 @@ func handleReidentifyItem(w http.ResponseWriter, r *http.Request) {
 	if reclassifyError != "" {
 		result["reclassify_errors"] = []string{reclassifyError}
 	}
-	// 目录被移动或重命名都会改变本地 STRM 树的镜像路径，触发全量同步立即跟进
-	if reclassified || renamed {
+	// 目录被移动、重命名或文件改名都会改变本地 STRM 树的镜像路径，触发全量同步立即跟进
+	if reclassified || renamed || filesRenamed > 0 {
 		TriggerStrmSync("reidentify")
 	}
-	partial := renameError != "" || reclassifyError != ""
+	partial := len(renameErrors) > 0 || reclassifyError != ""
 	result["partial"] = partial
 	result["ok"] = !partial
 	writeJSON(w, http.StatusOK, result)

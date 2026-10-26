@@ -31,6 +31,7 @@ export interface ReidentifyResponse {
   rename_errors?: string[]
   renamed?: boolean
   folder_name?: string
+  files_renamed?: number
   reclassified?: boolean
   category?: string
   reclassify_errors?: string[]
