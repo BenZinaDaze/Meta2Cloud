@@ -1013,6 +1013,10 @@ func scrobbleProgress(offsetMS, durationMS int64) (float64, bool) {
 type sessionScrobble struct {
 	lastSent  string
 	awaitPlay bool
+	// lastObserved 本会话最近一次观察到的非 stopped 状态：暂停中的播放器
+	// 位置不可能前进，其后的 stopped 大幅超出观察轨迹即客户端垃圾值；
+	// playing 态则与 stopped 之间的自然推进属正常，不封顶
+	lastObserved string
 	// unresolvedLogged 身份解析失败告警只记一次（事件每 ~10s 重发，
 	// 无闸会刷屏；2026-10-26 事故曾因该路径完全静默排查数小时）
 	unresolvedLogged bool
@@ -1398,6 +1402,9 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 		tracked = nil
 	}
 	st := scrobbleStateFor(notif.SessionKey)
+	if notif.State != "stopped" {
+		st.lastObserved = notif.State
+	}
 	if notif.State == "playing" {
 		st.awaitPlay = false // 开播即恢复信任：切集后 playing 的 offset 已复位（抓包）
 	}
@@ -1416,12 +1423,13 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 			if duration > 0 {
 				finalProgress = float64(notif.ViewOffsetMS) / float64(duration)
 			}
-			// 收尾进度封顶：stopped 报文的 offset 不得超过观察行见过的最大进度
-			// 加容差。实测（2026-10-26 ATV 暂停后休眠）：播放队列客户端的会话
-			// 被终止时可能报出上一集的时长当本集位置（观察全程 1%、收尾报 92%
-			// =上集时长/本集时长）；暂停中的播放器位置不可能前进，超出观察
-			// 轨迹的 offset 按观察值收尾（不足额的真实观看由全量同步兜底）。
-			if finalProgress > tracked.MaxProgress+stoppedOffsetTolerance {
+			// 收尾进度封顶（仅暂停态会话）：实测（2026-10-26 ATV 暂停后休眠）
+			// 播放队列客户端的会话被终止时报出的 offset 是上一集的时长
+			// （观察全程 1%、收尾报 92%=上集时长/本集时长）。暂停中的播放器
+			// 位置不可能前进——最后观察到暂停（或未知状态）时，stopped 报文
+			// 大幅超出观察轨迹即垃圾值，按观察值收尾；playing 态与 stopped
+			// 之间的自然推进不封顶（不足额的真实观看由全量同步兜底）。
+			if st.lastObserved != "playing" && finalProgress > tracked.MaxProgress+stoppedOffsetTolerance {
 				finalProgress = tracked.MaxProgress
 			}
 			if tracked.MaxProgress > finalProgress {

@@ -681,28 +681,30 @@ func TestSessionPollStaleRowDroppedWithoutPush(t *testing.T) {
 // TestSessionScrobbleStoppedOffsetCappedByObserved ATV 休眠幽灵收尾复现
 // （2026-10-26）：播放队列客户端切集后新会话仍挂上一集上下文，暂停休眠
 // 终止时 stopped 报出上一集时长（408426ms）当本集位置——观察行全程只见
-// 过 1%。收尾必须按观察轨迹封顶，不得以 92% 计次。
+// 过 1%。暂停态会话的收尾按观察轨迹封顶，不得以 92% 计次。
 func TestSessionScrobbleStoppedOffsetCappedByObserved(t *testing.T) {
 	syncStore, plexClient, traktClient, cap := newSessionTestEnv(t, nil)
 
-	title := "行李"
-	syncStore.UpsertSyncSession(store.TraktSyncSession{
-		SessionKey: "sk-atv", PlexRef: "856", MediaType: "tv", Anchor: "tmdb", TmdbID: 334504,
-		Season: 1, Episode: 3, Title: &title,
-		ViewOffsetMS: 4663, DurationMS: 442475, MaxProgress: 0.0105,
+	// 播放 1% 后暂停（ATV 随后休眠，28 分钟无事件）
+	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+		State: "playing", SessionKey: "sk-atv", RatingKey: "856",
+		ViewOffsetMS: 4663, DurationMS: 442475,
 	})
-
-	// 暂停后休眠，28 分钟后终止：报文 offset=408426ms（上一集时长）
+	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+		State: "paused", SessionKey: "sk-atv", RatingKey: "856",
+		ViewOffsetMS: 4663, DurationMS: 442475,
+	})
+	// 终止：报文 offset=408426ms（上一集时长）
 	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "stopped", SessionKey: "sk-atv", RatingKey: "856", ViewOffsetMS: 408426,
 	})
 
 	paths, bodies := cap.snapshot()
-	if len(paths) != 1 || paths[0] != "/scrobble/stop" {
-		t.Fatalf("应恰好一次 stop 收尾：%v", paths)
+	if len(paths) != 3 || paths[0] != "/scrobble/start" || paths[1] != "/scrobble/pause" || paths[2] != "/scrobble/stop" {
+		t.Fatalf("应为 start + pause + stop：%v", paths)
 	}
-	// 封顶后按观察值 1.05% 收尾（<80%，Trakt 不计次）
-	if got := bodies[0]["progress"].(float64); got > 2 {
+	// 封顶后按观察值 ~1% 收尾（<80%，Trakt 不计次）
+	if got := bodies[2]["progress"].(float64); got > 2 {
 		t.Fatalf("收尾进度应封顶至观察值 ~1%%，实际 %v", got)
 	}
 	if syncStore.GetSyncSession("sk-atv") != nil {
@@ -710,28 +712,25 @@ func TestSessionScrobbleStoppedOffsetCappedByObserved(t *testing.T) {
 	}
 }
 
-// TestSessionScrobbleStoppedOffsetWithinToleranceKept 正常收尾不受封顶影响：
-// 观察至 98% 后停止报 99.65%，超出量在容差内按报文值收尾。
-func TestSessionScrobbleStoppedOffsetWithinToleranceKept(t *testing.T) {
+// TestSessionScrobbleStoppedOffsetPlayingStateTrusted playing 态会话的
+// stopped 与最后一个周期事件之间的自然推进属正常：不封顶，按报文值收尾。
+func TestSessionScrobbleStoppedOffsetPlayingStateTrusted(t *testing.T) {
 	syncStore, plexClient, traktClient, cap := newSessionTestEnv(t, nil)
 
-	title := "正常收尾"
-	syncStore.UpsertSyncSession(store.TraktSyncSession{
-		SessionKey: "sk-ok", PlexRef: "856", MediaType: "tv", Anchor: "tmdb", TmdbID: 334504,
-		Season: 1, Episode: 3, Title: &title,
-		ViewOffsetMS: 433625, DurationMS: 442475, MaxProgress: 0.98,
-	})
-
+	// 持续播放至 75%，最后一个周期事件后正常停止于 92.5%
 	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
-		State: "stopped", SessionKey: "sk-ok", RatingKey: "856", ViewOffsetMS: 440923, // 99.65%
+		State: "playing", SessionKey: "sk-ok", RatingKey: "856",
+		ViewOffsetMS: 1080000, DurationMS: 1440000,
+	})
+	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+		State: "stopped", SessionKey: "sk-ok", RatingKey: "856", ViewOffsetMS: 1332000, // 92.5%
 	})
 
 	paths, bodies := cap.snapshot()
-	if len(paths) != 1 || paths[0] != "/scrobble/stop" {
-		t.Fatalf("应恰好一次 stop 收尾：%v", paths)
+	if len(paths) != 2 || paths[0] != "/scrobble/start" || paths[1] != "/scrobble/stop" {
+		t.Fatalf("应为 start + stop：%v", paths)
 	}
-	// 99.65% - 98% = 1.65% 在 2% 容差内 → 按报文值 99.65% 收尾
-	if got := bodies[0]["progress"].(float64); got < 99 || got > 100 {
-		t.Fatalf("容差内应按报文值 ~99.65%% 收尾，实际 %v", got)
+	if got := bodies[1]["progress"].(float64); got != 92.5 {
+		t.Fatalf("playing 态应按报文值 92.5%% 收尾，实际 %v", got)
 	}
 }
