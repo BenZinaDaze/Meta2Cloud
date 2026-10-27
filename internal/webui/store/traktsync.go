@@ -116,6 +116,16 @@ CREATE TABLE IF NOT EXISTS sync_ignores (
 	created_at TEXT NOT NULL,
 	PRIMARY KEY (media_type, anchor, tmdb_id)
 );
+
+CREATE TABLE IF NOT EXISTS trakt_show_cache (
+	anchor          TEXT NOT NULL,        -- 'tmdb' | 'tvdb'
+	anchor_id       INTEGER NOT NULL,
+	plays           INTEGER NOT NULL,     -- 剧级指纹：/sync/watched/shows 的 plays
+	last_watched_at TEXT NOT NULL,        -- 剧级指纹：last_watched_at（原样 Zeit 串）
+	episodes        TEXT NOT NULL,        -- 上次逐集结果 JSON [{season,episode,last_at}]
+	updated_at      TEXT NOT NULL,        -- 缓存写入时刻（TTL 兜底用）
+	PRIMARY KEY (anchor, anchor_id)
+);
 `
 
 // TraktSyncStore 观看同步同步状态存储（独立 traktsync.db）。
@@ -772,6 +782,28 @@ func (s *TraktSyncStore) UpsertSyncSession(sess TraktSyncSession) {
 		WHERE session_key = ?`,
 		sess.PlexRef, sess.MediaType, sess.Anchor, sess.TmdbID, sess.Season, sess.Episode, titleArg,
 		sess.ViewOffsetMS, sess.DurationMS, sess.MaxProgress, now, sess.SessionKey)
+}
+
+// GetTraktShowCache 取逐剧观看进度缓存（剧级指纹 + 上次逐集结果）。
+// 实现 trakt.ShowProgressCache。
+func (s *TraktSyncStore) GetTraktShowCache(anchor string, anchorID int64) (plays int, lastWatchedAt, episodesJSON, fetchedAt string, ok bool) {
+	var p int
+	err := s.db.QueryRow("SELECT plays, last_watched_at, episodes, updated_at FROM trakt_show_cache WHERE anchor = ? AND anchor_id = ?",
+		anchor, anchorID).Scan(&p, &lastWatchedAt, &episodesJSON, &fetchedAt)
+	if err != nil {
+		return 0, "", "", "", false
+	}
+	return p, lastWatchedAt, episodesJSON, fetchedAt, true
+}
+
+// SaveTraktShowCache 写逐剧观看进度缓存。实现 trakt.ShowProgressCache。
+func (s *TraktSyncStore) SaveTraktShowCache(anchor string, anchorID int64, plays int, lastWatchedAt, episodesJSON string) {
+	_, _ = s.db.Exec(`INSERT INTO trakt_show_cache(anchor, anchor_id, plays, last_watched_at, episodes, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(anchor, anchor_id) DO UPDATE SET
+			plays = excluded.plays, last_watched_at = excluded.last_watched_at,
+			episodes = excluded.episodes, updated_at = excluded.updated_at`,
+		anchor, anchorID, plays, lastWatchedAt, episodesJSON, traktSyncNow())
 }
 
 // BackdateSession 设定会话观察行的更新时间与缺席计数（测试与数据修正用：

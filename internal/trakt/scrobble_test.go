@@ -206,7 +206,7 @@ func TestAddHistoryPayloadCarriesMultiIDs(t *testing.T) {
 	c := newTestClient(t, rec)
 	c.token = testToken()
 
-	source := NewTraktSource(c, watched.NewMemIDMapper())
+	source := NewTraktSource(c, watched.NewMemIDMapper(), nil)
 	movie := watched.MediaKey{Type: "movie", TMDBID: 603}
 	// 先归并多 ID，再推送（与真实路径一致：身份解析时写入映射）
 	if _, ok := source.Mapper.ResolveKey("movie", watched.MediaIDs{TMDB: 603, IMDB: "tt0120915"}, 0, 0); !ok {
@@ -257,7 +257,7 @@ func TestNotFoundAttributionWithTVDBEcho(t *testing.T) {
 	c := newTestClient(t, rec)
 	c.token = testToken()
 
-	source := NewTraktSource(c, watched.NewMemIDMapper())
+	source := NewTraktSource(c, watched.NewMemIDMapper(), nil)
 	showKey, ok := source.Mapper.ResolveKey("tv", watched.MediaIDs{TVDB: 474294}, 0, 0)
 	if !ok || showKey.TVDBID != 474294 {
 		t.Fatalf("tvdb 锚应成键：%+v ok=%v", showKey, ok)
@@ -316,7 +316,7 @@ func TestListAllTVDBAnchoredShow(t *testing.T) {
 	c := newTestClient(t, handler)
 	c.token = testToken()
 
-	source := NewTraktSource(c, watched.NewMemIDMapper())
+	source := NewTraktSource(c, watched.NewMemIDMapper(), nil)
 	state, err := source.ListAll(context.Background())
 	if err != nil {
 		t.Fatal(err)

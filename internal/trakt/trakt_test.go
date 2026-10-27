@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -121,7 +122,7 @@ func TestAddHistoryChunkingAndBody(t *testing.T) {
 	c := newTestClient(t, handler)
 	c.token = testToken()
 
-	source := NewTraktSource(c, watched.NewMemIDMapper())
+	source := NewTraktSource(c, watched.NewMemIDMapper(), nil)
 	// 250 集 → 3 个分块（100+100+50）
 	ops := make([]watched.WatchOp, 0, 250)
 	for i := 1; i <= 250; i++ {
@@ -175,7 +176,7 @@ func TestAddHistoryNotFoundFailsChunk(t *testing.T) {
 	c := newTestClient(t, handler)
 	c.token = testToken()
 
-	source := NewTraktSource(c, watched.NewMemIDMapper())
+	source := NewTraktSource(c, watched.NewMemIDMapper(), nil)
 	results := source.MarkWatched(context.Background(), []watched.WatchOp{{Key: movieKey(999)}})
 	// not_found 非空 → 整块失败（状态记录不更新，下轮重试）
 	for _, res := range results {
@@ -285,7 +286,7 @@ func TestUnwatchedUsesRemoveEndpoint(t *testing.T) {
 	c := newTestClient(t, handler)
 	c.token = testToken()
 
-	source := NewTraktSource(c, watched.NewMemIDMapper())
+	source := NewTraktSource(c, watched.NewMemIDMapper(), nil)
 	results := source.MarkUnwatched(context.Background(), []watched.MediaKey{movieKey(100)})
 	if len(results) != 1 || !results[0].OK {
 		t.Fatalf("期望成功：%+v", results)
@@ -355,7 +356,7 @@ func TestListAllShowLevelEntriesViaProgress(t *testing.T) {
 	c := newTestClient(t, mux)
 	c.token = testToken()
 
-	state, err := NewTraktSource(c, watched.NewMemIDMapper()).ListAll(context.Background())
+	state, err := NewTraktSource(c, watched.NewMemIDMapper(), nil).ListAll(context.Background())
 	if err != nil {
 		t.Fatalf("ListAll 出错：%v", err)
 	}
@@ -400,7 +401,7 @@ func TestListAllRespectsResetAt(t *testing.T) {
 	c := newTestClient(t, mux)
 	c.token = testToken()
 
-	state, err := NewTraktSource(c, watched.NewMemIDMapper()).ListAll(context.Background())
+	state, err := NewTraktSource(c, watched.NewMemIDMapper(), nil).ListAll(context.Background())
 	if err != nil {
 		t.Fatalf("ListAll 出错：%v", err)
 	}
@@ -423,7 +424,7 @@ func TestAddHistoryZeroAddedFails(t *testing.T) {
 	c := newTestClient(t, handler)
 	c.token = testToken()
 
-	source := NewTraktSource(c, watched.NewMemIDMapper())
+	source := NewTraktSource(c, watched.NewMemIDMapper(), nil)
 	results := source.MarkWatched(context.Background(), []watched.WatchOp{{Key: movieKey(100)}})
 	for _, res := range results {
 		if res.OK {
@@ -439,7 +440,7 @@ func TestAddHistoryZeroAddedFails(t *testing.T) {
 	})
 	c2 := newTestClient(t, removeHandler)
 	c2.token = testToken()
-	results = NewTraktSource(c2, watched.NewMemIDMapper()).MarkUnwatched(context.Background(), []watched.MediaKey{movieKey(100)})
+	results = NewTraktSource(c2, watched.NewMemIDMapper(), nil).MarkUnwatched(context.Background(), []watched.MediaKey{movieKey(100)})
 	if len(results) != 1 || !results[0].OK {
 		t.Fatalf("deleted=0 的取消应幂等成功：%+v", results)
 	}
@@ -496,7 +497,7 @@ func TestNotFoundShowLevelAttribution(t *testing.T) {
 	c := newTestClient(t, handler)
 	c.token = testToken()
 
-	source := NewTraktSource(c, watched.NewMemIDMapper())
+	source := NewTraktSource(c, watched.NewMemIDMapper(), nil)
 	ops := []watched.WatchOp{}
 	for ep := 1; ep <= 12; ep++ {
 		ops = append(ops, watched.WatchOp{Key: watched.MediaKey{Type: "tv", TMDBID: 329623, Season: 1, Episode: ep}})
@@ -540,7 +541,7 @@ func TestNotFoundEpisodeLevelAttribution(t *testing.T) {
 	c := newTestClient(t, handler)
 	c.token = testToken()
 
-	source := NewTraktSource(c, watched.NewMemIDMapper())
+	source := NewTraktSource(c, watched.NewMemIDMapper(), nil)
 	ops := []watched.WatchOp{
 		{Key: watched.MediaKey{Type: "tv", TMDBID: 500, Season: 1, Episode: 4}},
 		{Key: watched.MediaKey{Type: "tv", TMDBID: 500, Season: 1, Episode: 5}},
@@ -569,7 +570,7 @@ func TestNotFoundUnknownShapeFallsBackWholeChunk(t *testing.T) {
 	c := newTestClient(t, handler)
 	c.token = testToken()
 
-	source := NewTraktSource(c, watched.NewMemIDMapper())
+	source := NewTraktSource(c, watched.NewMemIDMapper(), nil)
 	results := source.MarkWatched(context.Background(), []watched.WatchOp{
 		{Key: watched.MediaKey{Type: "tv", TMDBID: 500, Season: 1, Episode: 1}},
 		{Key: watched.MediaKey{Type: "tv", TMDBID: 501, Season: 1, Episode: 1}},
@@ -603,5 +604,109 @@ func TestUnauthorizedSentinel(t *testing.T) {
 	c2.token = &Token{AccessToken: "expired", RefreshToken: "stale", RefreshTime: time.Now().Unix() - 7200, ExpiresIn: 3600}
 	if err := c2.RefreshToken(); !errors.Is(err, ErrUnauthorized) {
 		t.Errorf("刷新被拒应命中 ErrUnauthorized: %v", err)
+	}
+}
+
+// memShowCache ShowProgressCache 内存实现（测试用）。
+type memShowCache struct {
+	now   string // SaveTraktShowCache 写入的 updated_at（固定值便于 TTL 测试）
+	hits  map[string]memCacheEntry
+	saved int
+}
+
+type memCacheEntry struct {
+	plays        int
+	lastWatched  string
+	episodesJSON string
+}
+
+func (m *memShowCache) GetTraktShowCache(anchor string, anchorID int64) (int, string, string, string, bool) {
+	if v, ok := m.hits[fmt.Sprintf("%s:%d", anchor, anchorID)]; ok {
+		return v.plays, v.lastWatched, v.episodesJSON, m.now, true
+	}
+	return 0, "", "", "", false
+}
+
+func (m *memShowCache) SaveTraktShowCache(anchor string, anchorID int64, plays int, lastWatchedAt, episodesJSON string) {
+	m.saved++
+	m.hits[fmt.Sprintf("%s:%d", anchor, anchorID)] = memCacheEntry{plays: plays, lastWatched: lastWatchedAt, episodesJSON: episodesJSON}
+}
+
+// TestListAllShowProgressCacheSkipsUnchanged 剧级指纹未变时跳过逐剧
+// progress/watched 请求（全量同步请求量优化）；指纹变化后重取并更新缓存。
+func TestListAllShowProgressCacheSkipsUnchanged(t *testing.T) {
+	progressHits := 0
+	plays := 2
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/sync/watched/movies":
+			_ = json.NewEncoder(w).Encode([]any{})
+		case "/sync/watched/shows":
+			_ = json.NewEncoder(w).Encode([]any{map[string]any{
+				"plays": plays, "last_watched_at": "2026-10-20T12:00:00.000Z",
+				"show": map[string]any{"title": "剧 A", "ids": map[string]any{"trakt": 42, "tmdb": 100}},
+			}})
+		case "/shows/42/progress/watched":
+			progressHits++
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"aired": 12, "completed": 2,
+				"seasons": []any{map[string]any{"number": 1, "episodes": []any{
+					map[string]any{"number": 1, "completed": true, "last_watched_at": "2026-10-19T10:00:00.000Z"},
+					map[string]any{"number": 2, "completed": true, "last_watched_at": "2026-10-20T12:00:00.000Z"},
+					map[string]any{"number": 3, "completed": false},
+				}}},
+			})
+		default:
+			t.Fatalf("意外路径：%s", r.URL.Path)
+		}
+	})
+	c := newTestClient(t, handler)
+	c.token = testToken()
+	cache := &memShowCache{now: time.Now().UTC().Format(time.RFC3339), hits: map[string]memCacheEntry{}}
+	source := NewTraktSource(c, watched.NewMemIDMapper(), cache)
+
+	// 首轮：逐剧请求 1 次，缓存落 1 条
+	state, err := source.ListAll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progressHits != 1 || cache.saved != 1 {
+		t.Fatalf("首轮应请求 1 次并写缓存：hits=%d saved=%d", progressHits, cache.saved)
+	}
+	want := episodeKey(100, 1, 1)
+	if got := state[want]; !got.Present || !got.Watched {
+		t.Fatalf("首轮逐集状态异常：%+v", got)
+	}
+
+	// 次轮：指纹未变 → 零逐剧请求，逐集结果与首轮一致
+	state2, err := source.ListAll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progressHits != 1 {
+		t.Fatalf("指纹未变应跳过逐剧请求：hits=%d", progressHits)
+	}
+	for k, v := range state {
+		if state2[k] != v {
+			t.Fatalf("缓存复用结果与首轮不一致：key=%+v %+v vs %+v", k, v, state2[k])
+		}
+	}
+
+	// 指纹变化（plays +1）→ 重取
+	plays = 3
+	if _, err := source.ListAll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if progressHits != 2 {
+		t.Fatalf("指纹变化应重取：hits=%d", progressHits)
+	}
+
+	// TTL 兜底：缓存写入时刻超期 → 即使指纹未变也重取
+	cache.now = time.Now().Add(-8 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	if _, err := source.ListAll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if progressHits != 3 {
+		t.Fatalf("缓存过期应强制重取：hits=%d", progressHits)
 	}
 }

@@ -5,6 +5,7 @@ package trakt
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -14,18 +15,41 @@ import (
 // historyChunkSize 单次 /sync/history 请求携带的最大条数（保守安全值）。
 const historyChunkSize = 100
 
+// showProgressCacheTTL 逐剧进度缓存的兜底有效期：指纹（plays + last_watched_at）
+// 覆盖不到的变化（如 reset_at 调整）最迟在此期限内强制重取一次。
+const showProgressCacheTTL = 7 * 24 * time.Hour
+
+// ShowProgressCache 逐剧观看进度的本地缓存（由宿主存储实现）：
+// /sync/watched/shows 的剧级指纹（plays + last_watched_at）未变时复用上次
+// 逐集结果，跳过逐剧 /shows/{id}/progress/watched 请求，把全量同步的
+// 请求量从 O(有记录剧数) 降到 O(有变化剧数)。
+type ShowProgressCache interface {
+	// GetTraktShowCache 返回 (plays 指纹, last_watched_at 指纹, 逐集 JSON, 写入时刻, 是否命中)。
+	GetTraktShowCache(anchor string, anchorID int64) (plays int, lastWatchedAt, episodesJSON, fetchedAt string, ok bool)
+	// SaveTraktShowCache 写入指纹与逐集结果。
+	SaveTraktShowCache(anchor string, anchorID int64, plays int, lastWatchedAt, episodesJSON string)
+}
+
+// cachedEpisode 缓存的逐集结果（已完成且未被 reset_at 过滤的集）。
+type cachedEpisode struct {
+	Season  int   `json:"season"`
+	Episode int   `json:"episode"`
+	LastAt  int64 `json:"last_at"`
+}
+
 // TraktSource watched.Provider 的 Trakt 实现。
 type TraktSource struct {
 	Client *Client
 	Mapper watched.IDMapper
+	Cache  ShowProgressCache // 可空：无缓存时每剧必调 progress
 }
 
-// NewTraktSource 构造。mapper 为 nil 时使用内存映射。
-func NewTraktSource(client *Client, mapper watched.IDMapper) *TraktSource {
+// NewTraktSource 构造。mapper 为 nil 时使用内存映射；cache 可空。
+func NewTraktSource(client *Client, mapper watched.IDMapper, cache ShowProgressCache) *TraktSource {
 	if mapper == nil {
 		mapper = watched.NewMemIDMapper()
 	}
-	return &TraktSource{Client: client, Mapper: mapper}
+	return &TraktSource{Client: client, Mapper: mapper, Cache: cache}
 }
 
 // Name 实现 watched.Provider。
@@ -37,6 +61,8 @@ func (s *TraktSource) Name() string { return "trakt" }
 // 剧集：/sync/watched/shows 只能列出「有记录的剧」，但记录可能是剧级聚合
 // （如 Trakt 官方 Plex 集成写入的条目，无 seasons 明细）；逐集的权威状态
 // 以 /shows/{id}/progress/watched 为准——每剧一调，枚举 completed 集。
+// 剧级指纹（plays + last_watched_at）未变且缓存未过期时复用上次逐集结果，
+// 跳过逐剧请求；指纹变化、缓存缺失或过期才重取。
 // 身份经 IDMapper 归一：tmdb 缺失的剧以 tvdb 锚成键（不再直接跳过）。
 func (s *TraktSource) ListAll(ctx context.Context) (map[watched.MediaKey]watched.ItemState, error) {
 	out := map[watched.MediaKey]watched.ItemState{}
@@ -72,15 +98,38 @@ func (s *TraktSource) ListAll(ctx context.Context) (map[watched.MediaKey]watched
 		if !ok {
 			continue
 		}
+		anchor, anchorID := "tmdb", showKey.TMDBID
+		if showKey.TVDBID > 0 {
+			anchor, anchorID = "tvdb", showKey.TVDBID
+		}
+		// 剧级指纹未变且缓存未过期 → 复用上次逐集结果，跳过逐剧请求。
+		// 任何逐集增删都会反映到 show 级 plays/last_watched_at；指纹外的
+		// 变化（reset_at）由 TTL 兜底强制重取。
+		if s.Cache != nil {
+			if plays, lastAt, epsJSON, fetchedAt, hit := s.Cache.GetTraktShowCache(anchor, anchorID); hit &&
+				plays == show.Plays && lastAt == string(show.LastWatchedAt) && !showCacheExpired(fetchedAt) {
+				for _, ep := range decodeCachedEpisodes(epsJSON) {
+					key := showKey
+					key.Season, key.Episode = ep.Season, ep.Episode
+					out[key] = watched.ItemState{
+						Present: true, Watched: true,
+						LastAt: ep.LastAt, Plays: 1,
+					}
+				}
+				continue
+			}
+		}
 		progress, err := s.Client.ShowWatchedProgress(show.Show.IDs.Trakt)
 		if err != nil {
-			// 单剧进度失败不拖垮整轮：跳过该剧（同步状态保留旧值，下轮重试）
+			// 单剧进度失败不拖垮整轮：跳过该剧（同步状态保留旧值，下轮重试），
+			// 缓存也不动——指纹比对在失败后仍然有效
 			continue
 		}
 		var resetAt int64
 		if progress.ResetAt != "" {
 			resetAt = progress.ResetAt.Unix()
 		}
+		var cached []cachedEpisode
 		for _, season := range progress.Seasons {
 			for _, ep := range season.Episodes {
 				if !ep.Completed {
@@ -97,10 +146,40 @@ func (s *TraktSource) ListAll(ctx context.Context) (map[watched.MediaKey]watched
 					Present: true, Watched: true,
 					LastAt: lastAt, Plays: 1,
 				}
+				cached = append(cached, cachedEpisode{Season: season.Number, Episode: ep.Number, LastAt: lastAt})
 			}
+		}
+		if s.Cache != nil {
+			s.Cache.SaveTraktShowCache(anchor, anchorID, show.Plays, string(show.LastWatchedAt), encodeCachedEpisodes(cached))
 		}
 	}
 	return out, nil
+}
+
+// showCacheExpired 缓存写入时刻解析失败按过期处理（宁可多一次请求）。
+func showCacheExpired(fetchedAt string) bool {
+	t, err := time.Parse(time.RFC3339, fetchedAt)
+	if err != nil {
+		return true
+	}
+	return time.Since(t) > showProgressCacheTTL
+}
+
+func encodeCachedEpisodes(eps []cachedEpisode) string {
+	if len(eps) == 0 {
+		return "[]"
+	}
+	data, _ := json.Marshal(eps)
+	return string(data)
+}
+
+// decodeCachedEpisodes 解析失败返回 nil（按缓存未命中处理，走重取）。
+func decodeCachedEpisodes(s string) []cachedEpisode {
+	var eps []cachedEpisode
+	if json.Unmarshal([]byte(s), &eps) != nil {
+		return nil
+	}
+	return eps
 }
 
 // MarkWatched 批量记录已看；分块提交，块内未匹配或 added=0 均视为失败（同步状态不动，下轮重试）。

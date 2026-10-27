@@ -531,3 +531,27 @@ func TestShadowTVDBKeyRoundTrip(t *testing.T) {
 		t.Fatalf("引擎视图应含 tvdb 锚键：%+v", ignores)
 	}
 }
+
+// TestTraktShowCacheRoundtrip 逐剧进度缓存读写与未命中。
+func TestTraktShowCacheRoundtrip(t *testing.T) {
+	s := openTestTraktSyncStore(t)
+
+	if _, _, _, _, ok := s.GetTraktShowCache("tmdb", 100); ok {
+		t.Fatal("未写入应未命中")
+	}
+	s.SaveTraktShowCache("tmdb", 100, 2, "2026-10-20T12:00:00.000Z", `[{"season":1,"episode":2,"last_at":1770000000}]`)
+	plays, lastAt, eps, fetchedAt, ok := s.GetTraktShowCache("tmdb", 100)
+	if !ok || plays != 2 || lastAt != "2026-10-20T12:00:00.000Z" ||
+		eps != `[{"season":1,"episode":2,"last_at":1770000000}]` || fetchedAt == "" {
+		t.Fatalf("读回不符：plays=%d lastAt=%q eps=%q fetchedAt=%q ok=%v", plays, lastAt, eps, fetchedAt, ok)
+	}
+	// tvdb 锚独立键空间
+	if _, _, _, _, ok := s.GetTraktShowCache("tvdb", 100); ok {
+		t.Fatal("不同锚不应命中")
+	}
+	// upsert 覆盖
+	s.SaveTraktShowCache("tmdb", 100, 3, "t2", "[]")
+	if plays, _, _, _, _ := s.GetTraktShowCache("tmdb", 100); plays != 3 {
+		t.Fatalf("upsert 未生效：plays=%d", plays)
+	}
+}

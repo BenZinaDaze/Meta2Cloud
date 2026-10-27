@@ -668,3 +668,31 @@ func TestIgnoredMediaTVDBAnchorSkipped(t *testing.T) {
 		t.Fatalf("tvdb 锚媒体级忽略应整键跳过：%+v", summary)
 	}
 }
+
+// TestFailedWritesCounted 写入失败的条目计入 summary.Failed（供异常提醒
+// 与日志口径使用），且影子行不推进——下轮重试仍能检测到同一变化。
+func TestFailedWritesCounted(t *testing.T) {
+	plex, trakt := newFakeProvider("plex"), newFakeProvider("trakt")
+	store := newFakeStore()
+	key := movie(101)
+	// Plex 已看、Trakt 无记录：首观察并集路径会计划 →Trakt 写入，注入失败
+	plex.setWatched(key, 1700000100, 1)
+	trakt.failKeys[key] = true
+
+	summary, err := newEngine(plex, trakt, store, true, true).Run(context.Background(), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Failed != 1 || summary.ToTrakt != 0 {
+		t.Fatalf("期望 Failed=1 ToTrakt=0，实际 %+v", summary)
+	}
+	// 影子行未推进：解除注入后重跑应补上同一写入
+	trakt.failKeys = map[watched.MediaKey]bool{}
+	summary, err = newEngine(plex, trakt, store, true, true).Run(context.Background(), "retry")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Failed != 0 || summary.ToTrakt != 1 {
+		t.Fatalf("重试应补上写入：Failed=%d ToTrakt=%d", summary.Failed, summary.ToTrakt)
+	}
+}

@@ -633,7 +633,7 @@ func runTraktSync(trigger string) {
 	}
 	engine := &syncengine.Engine{
 		Playback: plexserver.NewSource(plexClient, buildTitleIndex(), syncStore),
-		Trakt:    trakt.NewTraktSource(traktClient, syncStore),
+		Trakt:    trakt.NewTraktSource(traktClient, syncStore, syncStore),
 		Store:    syncStore,
 		ToPlex:   cfg.Trakt.SyncToPlex,
 		ToTrakt:  cfg.Trakt.SyncToTrakt,
@@ -657,13 +657,37 @@ func runTraktSync(trigger string) {
 	NotifyServiceHealth("Trakt", true, "")
 	NotifyServiceHealth("Plex", true, "")
 	appLog("trakt", "sync_done", "SUCCESS",
-		fmt.Sprintf("观看同步完成（耗时 %s）：记录到 Trakt %d 条，回写 Plex %d 条，冲突 %d，无法识别 %d，跳过 %d",
-			took, summary.ToTrakt, summary.ToPlex, summary.Conflicts, summary.Unresolved, summary.Skipped),
+		fmt.Sprintf("观看同步完成（耗时 %s）：记录到 Trakt %d 条，回写 Plex %d 条，冲突 %d，无法识别 %d，跳过 %d，失败 %d",
+			took, summary.ToTrakt, summary.ToPlex, summary.Conflicts, summary.Unresolved, summary.Skipped, summary.Failed),
 		map[string]any{
 			"to_trakt": summary.ToTrakt, "to_plex": summary.ToPlex,
 			"conflicts": summary.Conflicts, "unresolved": summary.Unresolved,
-			"skipped": summary.Skipped, "took_ms": took.Milliseconds(),
+			"skipped": summary.Skipped, "failed": summary.Failed,
+			"took_ms": took.Milliseconds(),
 		})
+	// 有未处理项时提醒（长尾故障不再沉默数天）：写入失败 / 两侧冲突 / 无法识别
+	if summary.Failed > 0 || summary.Conflicts > 0 || summary.Unresolved > 0 {
+		notifyTraktSyncAnomaly(summary)
+	}
+}
+
+// traktSyncAnomaly 异常提醒节流：持续异常每小时至多一条，避免 15 分钟一轮刷屏。
+var (
+	traktAnomalyMu   sync.Mutex
+	traktAnomalyLast time.Time
+)
+
+func notifyTraktSyncAnomaly(summary syncengine.RunSummary) {
+	traktAnomalyMu.Lock()
+	if time.Since(traktAnomalyLast) < time.Hour {
+		traktAnomalyMu.Unlock()
+		return
+	}
+	traktAnomalyLast = time.Now()
+	traktAnomalyMu.Unlock()
+	sendHealthTelegram("trakt", "Trakt", fmt.Sprintf(
+		"⚠️ 观看同步有未处理项：写入失败 %d 条，两侧状态冲突 %d 条，无法识别 %d 条。详情见同步记录",
+		summary.Failed, summary.Conflicts, summary.Unresolved))
 }
 
 // ── HTTP 处理器：同步状态 / 触发 / 历史 ─────────────────────

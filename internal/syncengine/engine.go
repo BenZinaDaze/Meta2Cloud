@@ -52,6 +52,7 @@ type RunSummary struct {
 	Conflicts  int
 	Unresolved int
 	Skipped    int
+	Failed     int // 写入失败条数（状态未推进，下轮重试）
 	Err        string
 }
 
@@ -376,6 +377,7 @@ func (e *Engine) Run(ctx context.Context, trigger string) (RunSummary, error) {
 					firstErr = res.Err
 				}
 				failed++
+				summary.Failed++
 				continue
 			}
 			if side == "trakt" {
