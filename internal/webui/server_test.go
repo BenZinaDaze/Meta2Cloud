@@ -25,12 +25,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// testServer 以当前全局运行时构造裸 Server（不经 NewServer 的路由注册/后台任务），
+// testServer 以指定运行时构造裸 Server（不经 NewServer 的路由注册/后台任务），
 // 供直接调用单个 handler 方法的测试使用。
-func testServer() *Server { return &Server{rt: defaultRuntime} }
+func testServer(rt *Runtime) *Server { return &Server{rt: rt} }
 
 // newTestServer 构造测试服务：独立 rootDir + 密码配置。
-func newTestServer(t *testing.T) *httptest.Server {
+func newTestServer(t *testing.T) (*httptest.Server, *Runtime) {
 	t.Helper()
 	rootDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(rootDir, "config"), 0o755); err != nil {
@@ -44,12 +44,12 @@ func newTestServer(t *testing.T) *httptest.Server {
 	if err := os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	RT().ResetJWTSecretCache()
-	resetLoginLimiterForTest()
-	InitRuntime(rootDir)
-	server := NewServer()
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
+	rt.resetLoginLimiter()
+	server := NewServer(rt)
 	t.Cleanup(server.Close)
-	return httptest.NewServer(server.Handler())
+	return httptest.NewServer(server.Handler()), rt
 }
 
 func login(t *testing.T, ts *httptest.Server, user, pass string) (int, map[string]any) {
@@ -66,7 +66,7 @@ func login(t *testing.T, ts *httptest.Server, user, pass string) (int, map[strin
 }
 
 func TestLoginFlow(t *testing.T) {
-	ts := newTestServer(t)
+	ts, _ := newTestServer(t)
 	defer ts.Close()
 
 	// 错误密码
@@ -121,7 +121,7 @@ func TestLoginFlow(t *testing.T) {
 }
 
 func TestLibraryEmptyHint(t *testing.T) {
-	ts := newTestServer(t)
+	ts, _ := newTestServer(t)
 	defer ts.Close()
 
 	_, out := login(t, ts, "admin", "secret123")
@@ -152,9 +152,9 @@ func TestLoginWithoutPassword(t *testing.T) {
 	rootDir := t.TempDir()
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte("webui:\n  username: admin\n"), 0o644)
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
-	server := NewServer()
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
+	server := NewServer(rt)
 	defer server.Close()
 	ts := httptest.NewServer(server.Handler())
 	defer ts.Close()
@@ -166,30 +166,30 @@ func TestLoginWithoutPassword(t *testing.T) {
 }
 
 func TestTokenRoundTrip(t *testing.T) {
-	newTestServer(t) // 初始化 runtime
-	token, err := RT().CreateToken("tester", 1)
+	rt := InitRuntime(t.TempDir())
+	token, err := rt.CreateToken("tester", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := RT().VerifyToken(token); got != "tester" {
+	if got := rt.VerifyToken(token); got != "tester" {
 		t.Errorf("verify = %q", got)
 	}
-	if got := RT().VerifyToken(token + "x"); got != "" {
+	if got := rt.VerifyToken(token + "x"); got != "" {
 		t.Errorf("篡改 token 不应通过: %q", got)
 	}
 }
 
 // ── 媒体库刷新 / 扫描 / 日志 / 入库历史 端到端 ─────────────
 
-func newScanServer(t *testing.T) (*httptest.Server, string) {
+func newScanServer(t *testing.T) (*httptest.Server, string, *Runtime) {
 	t.Helper()
 	rootDir := t.TempDir()
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	cfgYAML := "webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n"
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
-	RT().ResetJWTSecretCache()
-	resetLoginLimiterForTest()
-	InitRuntime(rootDir)
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
+	rt.resetLoginLimiter()
 
 	// 构造假网盘（分类布局）：媒体库根/电影/电影 (2010)；媒体库根/剧集/剧 (2008)/Season 01/S01E01
 	fp := newFakeWebProvider()
@@ -202,15 +202,15 @@ func newScanServer(t *testing.T) (*httptest.Server, string) {
 	season := fp.addFolder("Season 01", show.ID)
 	fp.addFile("剧 - S01E01.mkv", season.ID)
 
-	RT().SetProviderForTest(fp.provider())
+	rt.provider = fp.provider()
 
-	server := NewServer()
+	server := NewServer(rt)
 	t.Cleanup(server.Close)
 	ts := httptest.NewServer(server.Handler())
 	t.Cleanup(ts.Close)
 
 	_, out := login(t, ts, "admin", "secret123")
-	return ts, out["token"].(string)
+	return ts, out["token"].(string), rt
 }
 
 func authedGet(t *testing.T, ts *httptest.Server, token, path string) (int, map[string]any) {
@@ -228,7 +228,7 @@ func authedGet(t *testing.T, ts *httptest.Server, token, path string) (int, map[
 }
 
 func TestRefreshLibraryAndScan(t *testing.T) {
-	ts, token := newScanServer(t)
+	ts, token, _ := newScanServer(t)
 
 	// 增量刷新
 	req, _ := http.NewRequest("POST", ts.URL+"/api/library:refresh", nil)
@@ -299,7 +299,7 @@ func TestRefreshLibraryAndScan(t *testing.T) {
 }
 
 func TestIngestEndpointsEmpty(t *testing.T) {
-	ts, token := newScanServer(t)
+	ts, token, _ := newScanServer(t)
 	code, history := authedGet(t, ts, token, "/api/ingest/history")
 	if code != 200 {
 		t.Fatalf("history code = %d", code)
@@ -314,9 +314,9 @@ func TestIngestEndpointsEmpty(t *testing.T) {
 }
 
 // webhookSecretFromSecrets 读取启动时自动生成的 webhook 密钥（secrets.yaml）。
-func webhookSecretFromSecrets(t *testing.T) string {
+func webhookSecretFromSecrets(t *testing.T, rt *Runtime) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(RT().RootDir, "config", "secrets.yaml"))
+	data, err := os.ReadFile(filepath.Join(rt.RootDir, "config", "secrets.yaml"))
 	if err != nil {
 		t.Fatalf("secrets.yaml 未生成: %v", err)
 	}
@@ -335,13 +335,13 @@ func webhookSecretFromSecrets(t *testing.T) string {
 }
 
 func TestPipelineStatusAndWebhook(t *testing.T) {
-	ts, token := newScanServer(t)
+	ts, token, rt := newScanServer(t)
 	code, status := authedGet(t, ts, token, "/api/pipeline/status")
 	if code != 200 || status["running"] != false {
 		t.Fatalf("status = %v %v", code, status)
 	}
 	// webhook 密钥启动时自动生成：无密钥 / 错误密钥 → 403
-	secret := webhookSecretFromSecrets(t)
+	secret := webhookSecretFromSecrets(t, rt)
 	resp, err := http.Post(ts.URL+"/trigger", "application/json", bytes.NewReader([]byte("{}")))
 	if err != nil {
 		t.Fatal(err)
@@ -381,9 +381,9 @@ func TestTriggerWebhookEmptySecretLoopbackOnly(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	cfgYAML := "webui:\n  username: admin\n  password: secret123\n  webhook_secret: \"\"\n"
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
-	server := NewServer()
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
+	server := NewServer(rt)
 	t.Cleanup(server.Close)
 	ts := httptest.NewServer(server.Handler())
 	t.Cleanup(ts.Close)
@@ -416,8 +416,8 @@ func TestTriggerWebhookEmptySecretLoopbackOnly(t *testing.T) {
 
 // TestLoginRateLimit 登录连续失败达到上限后按 IP 锁定，锁定期内正确密码也被拒。
 func TestLoginRateLimit(t *testing.T) {
-	ts := newTestServer(t)
-	t.Cleanup(resetLoginLimiterForTest) // 解除 127.0.0.1 锁定，避免影响后续测试
+	ts, rt := newTestServer(t)
+	t.Cleanup(rt.resetLoginLimiter) // 解除 127.0.0.1 锁定，避免影响后续测试
 	for i := 0; i < loginMaxFailures; i++ {
 		if code, _ := login(t, ts, "admin", "错误密码"); code != http.StatusUnauthorized {
 			t.Fatalf("第 %d 次失败登录 = %d, want 401", i+1, code)
@@ -437,9 +437,9 @@ func TestConfigEndpoints(t *testing.T) {
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
 	os.WriteFile(filepath.Join(rootDir, "config", "parser-rules.yaml"),
 		[]byte("parser:\n  custom_words:\n    - 测试词\n  custom_release_groups:\n    - FSD\n"), 0o644)
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
-	server := NewServer()
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
+	server := NewServer(rt)
 	t.Cleanup(server.Close)
 	ts := httptest.NewServer(server.Handler())
 	t.Cleanup(ts.Close)
@@ -509,8 +509,8 @@ func TestConfigEndpoints(t *testing.T) {
 		t.Errorf("token_expire_hours = %v", webuiSec["token_expire_hours"])
 	}
 	// 新配置生效（运行时缓存失效）
-	if RT().GetConfig().WebUI.TokenExpireHours != 48 {
-		t.Errorf("运行时未感知新配置: %d", RT().GetConfig().WebUI.TokenExpireHours)
+	if rt.GetConfig().WebUI.TokenExpireHours != 48 {
+		t.Errorf("运行时未感知新配置: %d", rt.GetConfig().WebUI.TokenExpireHours)
 	}
 
 	// 越界校验
@@ -531,7 +531,7 @@ func TestConfigEndpoints(t *testing.T) {
 
 // ── 115 OAuth 与云下载端到端 ───────────────────────────────
 
-func newU115TestServer(t *testing.T, confirmed bool) (*httptest.Server, string) {
+func newU115TestServer(t *testing.T, confirmed bool) (*httptest.Server, string, *Runtime) {
 	t.Helper()
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -570,25 +570,25 @@ func newU115TestServer(t *testing.T, confirmed bool) (*httptest.Server, string) 
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	cfgYAML := "webui:\n  username: admin\n  password: secret123\nu115:\n  client_id: test-cid\n"
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
 
 	client := u115.NewClient("test-cid",
 		u115.WithToken(u115.Token{AccessToken: "at", RefreshToken: "rt", ExpiresIn: 3600, RefreshTime: time.Now().Unix()}),
 		u115.WithQPS(1000))
 	client.SetTestBaseURL(apiServer.URL)
-	RT().SetU115ClientForTest(client)
+	rt.u115Client = client
 
-	server := NewServer()
+	server := NewServer(rt)
 	t.Cleanup(server.Close)
 	ts := httptest.NewServer(server.Handler())
 	t.Cleanup(ts.Close)
 	_, out := login(t, ts, "admin", "secret123")
-	return ts, out["token"].(string)
+	return ts, out["token"].(string), rt
 }
 
 func TestU115OauthFlow(t *testing.T) {
-	ts, token := newU115TestServer(t, true)
+	ts, token, _ := newU115TestServer(t, true)
 
 	// 初始状态：无 token 文件未授权（注入客户端不算持久化 token）
 	req, _ := http.NewRequest("GET", ts.URL+"/api/u115/oauth/status", nil)
@@ -651,7 +651,7 @@ func authToken(ts *httptest.Server, t *testing.T) string {
 }
 
 func TestU115OfflineEndpoints(t *testing.T) {
-	ts, token := newU115TestServer(t, true)
+	ts, token, _ := newU115TestServer(t, true)
 
 	// 任务列表
 	code, overview := authedGet(t, ts, token, "/api/u115/offline/overview")
@@ -751,6 +751,7 @@ func (f *fakeTorrentProvider) CreateFolder(name, _ string) (cloudfile.CloudFile,
 }
 
 func TestIsTorrentLink(t *testing.T) {
+	rt := InitRuntime(t.TempDir())
 	cases := map[string]bool{
 		"https://anibt.net/api/torrent/rel_xxx.torrent":                    true,
 		"https://mikan/Download/x/" + strings.Repeat("a", 40) + ".TORRENT": true,
@@ -760,8 +761,8 @@ func TestIsTorrentLink(t *testing.T) {
 		"":                                                                 false,
 	}
 	for raw, want := range cases {
-		if got := RT().isTorrentLink(raw); got != want {
-			t.Errorf("RT().isTorrentLink(%q) = %v, want %v", raw, got, want)
+		if got := rt.isTorrentLink(raw); got != want {
+			t.Errorf("rt.isTorrentLink(%q) = %v, want %v", raw, got, want)
 		}
 	}
 }
@@ -811,19 +812,19 @@ func TestPushTorrentLinkAddsBTTask(t *testing.T) {
 	// 持久化 token 文件 → authorized = true
 	tokenData := fmt.Sprintf(`{"access_token":"at","refresh_token":"rt","expires_in":3600,"refresh_time":%d}`, time.Now().Unix())
 	os.WriteFile(filepath.Join(rootDir, "config", "115-token.json"), []byte(tokenData), 0o600)
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
 
 	client := u115.NewClient("cid",
 		u115.WithToken(u115.Token{AccessToken: "at", RefreshToken: "rt", ExpiresIn: 3600, RefreshTime: time.Now().Unix()}),
 		u115.WithQPS(1000))
 	client.SetTestBaseURL(u115Server.URL)
-	RT().SetU115ClientForTest(client)
+	rt.u115Client = client
 	provider := &fakeTorrentProvider{}
-	RT().SetProviderForTest(provider)
+	rt.provider = provider
 
 	// 无 magnet、仅 .torrent 链接的条目 → 应创建 BT 任务而非链接任务
-	err := RT().pushItem("u115", map[string]any{
+	err := rt.pushItem("u115", map[string]any{
 		"torrent_url": torrentSite.URL + "/api/torrent/rel_xxx.torrent",
 	})
 	if err != nil {
@@ -857,7 +858,7 @@ func TestPushTorrentLinkAddsBTTask(t *testing.T) {
 
 // ── RSS 订阅端到端 ─────────────────────────────────────────
 
-func newSubscriptionTestServer(t *testing.T) (*httptest.Server, string) {
+func newSubscriptionTestServer(t *testing.T) (*httptest.Server, string, *Runtime) {
 	t.Helper()
 	// mock mikan RSS 站点
 	mikanServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -893,25 +894,25 @@ func newSubscriptionTestServer(t *testing.T) (*httptest.Server, string) {
 	tokenData := fmt.Sprintf(`{"access_token":"at","refresh_token":"rt","expires_in":3600,"refresh_time":%d}`, time.Now().Unix())
 	os.WriteFile(filepath.Join(rootDir, "config", "115-token.json"), []byte(tokenData), 0o600)
 
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
 
 	// 注入测试 115 客户端
 	u115Client := u115.NewClient("cid",
 		u115.WithToken(u115.Token{AccessToken: "at", RefreshToken: "rt", ExpiresIn: 3600, RefreshTime: time.Now().Unix()}),
 		u115.WithQPS(1000))
 	u115Client.SetTestBaseURL(u115Server.URL)
-	RT().SetU115ClientForTest(u115Client)
+	rt.u115Client = u115Client
 
 	// 注入测试 mikan spider
 	mikanTestSpider(t).SetTestBaseURL(mikanServer.URL)
 
-	server := NewServer()
+	server := NewServer(rt)
 	t.Cleanup(server.Close)
 	ts := httptest.NewServer(server.Handler())
 	t.Cleanup(ts.Close)
 	_, out := login(t, ts, "admin", "secret123")
-	return ts, out["token"].(string)
+	return ts, out["token"].(string), rt
 }
 
 func authedRequest(t *testing.T, ts *httptest.Server, token, method, path string, body any) (int, map[string]any) {
@@ -937,7 +938,7 @@ func authedRequest(t *testing.T, ts *httptest.Server, token, method, path string
 }
 
 func TestSubscriptionCRUDAndCheck(t *testing.T) {
-	ts, token := newSubscriptionTestServer(t)
+	ts, token, _ := newSubscriptionTestServer(t)
 	rssURL := mikanTestRSSURL(ts)
 
 	// 解析 RSS 建议
@@ -1047,8 +1048,8 @@ func TestScanAggregatesDuplicateShowFolders(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n"), 0o644)
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
 
 	fp := newFakeWebProvider()
 	root := fp.addFolder("root", "0") // 配置 root_folder_id 存目录名，扫描时按名解析出真实 ID
@@ -1063,16 +1064,16 @@ func TestScanAggregatesDuplicateShowFolders(t *testing.T) {
 	showB := fp.addFolder("令和妖神斑小姐 (2026)", tvCat.ID)
 	seasonB := fp.addFolder("Season 01", showB.ID)
 	fp.addFile("令和妖神斑小姐 - S01E06.mkv", seasonB.ID)
-	RT().SetProviderForTest(fp.provider())
+	rt.provider = fp.provider()
 
 	// 预置库条目: 两个目录都已关联同一 tmdb_id(手动修正后的状态)
-	libStore := RT().GetLibraryStore()
+	libStore := rt.GetLibraryStore()
 	libStore.SaveIncremental([]map[string]any{
 		{"drive_folder_id": showA.ID, "media_type": "tv", "tmdb_id": 312507, "title": "令和的斑小姐", "year": "2026"},
 		{"drive_folder_id": showB.ID, "media_type": "tv", "tmdb_id": 312507, "title": "令和妖神斑小姐", "year": "2026"},
 	}, nil)
 
-	server := NewServer()
+	server := NewServer(rt)
 	t.Cleanup(server.Close)
 	ts := httptest.NewServer(server.Handler())
 	t.Cleanup(ts.Close)
@@ -1108,21 +1109,21 @@ func TestGetMovieDetailByTmdbID(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n"), 0o644)
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
 
 	fp := newFakeWebProvider()
 	root := fp.addFolder("root", "0")
 	movieFolder := fp.addFolder("盗梦空间 (2010)", root.ID)
 	fp.addFile("盗梦空间 (2010).mkv", movieFolder.ID)
-	RT().SetProviderForTest(fp.provider())
+	rt.provider = fp.provider()
 
-	libStore := RT().GetLibraryStore()
+	libStore := rt.GetLibraryStore()
 	libStore.SaveIncremental([]map[string]any{
 		{"drive_folder_id": movieFolder.ID, "media_type": "movie", "tmdb_id": 27205, "title": "盗梦空间", "year": "2010"},
 	}, nil)
 
-	server := NewServer()
+	server := NewServer(rt)
 	t.Cleanup(server.Close)
 	ts := httptest.NewServer(server.Handler())
 	t.Cleanup(ts.Close)
@@ -1149,8 +1150,8 @@ func TestIncrementalSiblingRescan(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n"), 0o644)
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
 
 	fp := newFakeWebProvider()
 	root := fp.addFolder("root", "0") // 配置 root_folder_id 存目录名，扫描时按名解析出真实 ID
@@ -1170,16 +1171,16 @@ func TestIncrementalSiblingRescan(t *testing.T) {
 	for _, id := range []string{showA.ID, seasonA.ID, showB.ID, seasonB.ID} {
 		fp.setMtime(id, 1000)
 	}
-	RT().SetProviderForTest(fp.provider())
+	rt.provider = fp.provider()
 
 	// 预置库条目: 两个目录都已关联同一 tmdb_id(手动修正后的状态)
-	libStore := RT().GetLibraryStore()
+	libStore := rt.GetLibraryStore()
 	libStore.SaveIncremental([]map[string]any{
 		{"drive_folder_id": showA.ID, "media_type": "tv", "tmdb_id": 312507, "title": "令和的斑小姐", "year": "2026"},
 		{"drive_folder_id": showB.ID, "media_type": "tv", "tmdb_id": 312507, "title": "令和妖神斑小姐", "year": "2026"},
 	}, nil)
 
-	server := NewServer()
+	server := NewServer(rt)
 	t.Cleanup(server.Close)
 	ts := httptest.NewServer(server.Handler())
 	t.Cleanup(ts.Close)
@@ -1210,7 +1211,7 @@ func TestIncrementalSiblingRescan(t *testing.T) {
 	}
 
 	// 联动重扫后 A 行应被重写为聚合值 12，卡片保持一张
-	itemA := RT().GetLibraryStore().GetLibraryItemByFolderID(showA.ID)
+	itemA := rt.GetLibraryStore().GetLibraryItemByFolderID(showA.ID)
 	if itemA == nil || jsonx.Int(itemA, "in_library_episodes", 0) != 12 {
 		t.Fatalf("增量联动: A 行未联动重扫, in_library_episodes = %+v", itemA)
 	}
@@ -1227,8 +1228,8 @@ func TestScanCategoryPassthrough(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n"), 0o644)
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
 
 	fp := newFakeWebProvider()
 	root := fp.addFolder("root", "0")
@@ -1238,9 +1239,9 @@ func TestScanCategoryPassthrough(t *testing.T) {
 	season := fp.addFolder("Season 01", show.ID)
 	fp.addFile("学生会也有洞！ - S01E01.mkv", season.ID)
 	fp.addFolder("电影", root.ID)
-	RT().SetProviderForTest(fp.provider())
+	rt.provider = fp.provider()
 
-	RT().SetCategories(&config.CategoriesConfig{
+	rt.SetCategories(&config.CategoriesConfig{
 		Dirs: config.CategoryDirs{TV: "剧集", Movie: "电影", Other: "其他"},
 		TV: []config.CategoryRule{
 			{Name: "动漫", GenreIDs: []int{16}, Languages: []string{"ja"}},
@@ -1248,7 +1249,7 @@ func TestScanCategoryPassthrough(t *testing.T) {
 		},
 	})
 
-	shows := RT().ScanTVShows(fp.provider(), RT().GetConfig(), false)
+	shows := rt.ScanTVShows(fp.provider(), rt.GetConfig(), false)
 	if len(shows) != 1 {
 		t.Fatalf("shows = %d, want 1（分类目录应透传）", len(shows))
 	}
@@ -1263,8 +1264,8 @@ func TestReidentifyReclassifiesFolder(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: secret123\ntmdb:\n  api_key: k\nu115:\n  root_folder_id: \"root\"\n"), 0o644)
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
 
 	// TMDB mock：新识别的媒体带动画流派（16）与日语
 	tmdbServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1294,7 +1295,7 @@ func TestReidentifyReclassifiesFolder(t *testing.T) {
 	defer tmdbServer.Close()
 	tmdbClient := tmdb.NewClient("k", "zh-CN", "", 5, nil)
 	tmdbClient.SetTestBaseURL(tmdbServer.URL)
-	RT().SetTmdbClientForTest(tmdbClient)
+	rt.tmdbClient = tmdbClient
 
 	fp := newFakeWebProvider()
 	root := fp.addFolder("root", "0")
@@ -1305,11 +1306,11 @@ func TestReidentifyReclassifiesFolder(t *testing.T) {
 	season := fp.addFolder("Season 01", show.ID)
 	video := fp.addFile("误识别的剧 - S01E01.mkv", season.ID)
 	subtitle := fp.addFile("误识别的剧 - S01E01.chs.srt", season.ID)
-	RT().SetProviderForTest(fp.provider())
+	rt.provider = fp.provider()
 
 	// 旧识别写入的入库历史：错误 TMDB ID/标题/单集名
-	ingest := RT().GetIngestStore()
-	_ = RT().GetStrmStore() // 预开 STRM 存储：修正识别触发的异步同步复用句柄，避免清理阶段懒建文件（同 TestCategoriesReclassifyFlow）
+	ingest := rt.GetIngestStore()
+	_ = rt.GetStrmStore() // 预开 STRM 存储：修正识别触发的异步同步复用句柄，避免清理阶段懒建文件（同 TestCategoriesReclassifyFlow）
 	seasonNum, epNum := 1, 1
 	if _, err := ingest.RecordIngest(store.IngestRecord{
 		MediaType: "tv", TmdbID: 111, Title: "误识别的剧", OriginalTitle: "wrong-show",
@@ -1321,7 +1322,7 @@ func TestReidentifyReclassifiesFolder(t *testing.T) {
 		t.Fatalf("写入入库历史失败: %v", err)
 	}
 
-	RT().SetCategories(&config.CategoriesConfig{
+	rt.SetCategories(&config.CategoriesConfig{
 		Dirs: config.CategoryDirs{TV: "剧集", Movie: "电影", Other: "其他"},
 		TV: []config.CategoryRule{
 			{Name: "动漫", GenreIDs: []int{16}, Languages: []string{"ja"}},
@@ -1329,7 +1330,7 @@ func TestReidentifyReclassifiesFolder(t *testing.T) {
 		},
 	})
 
-	server := NewServer()
+	server := NewServer(rt)
 	t.Cleanup(server.Close)
 	ts := httptest.NewServer(server.Handler())
 	t.Cleanup(ts.Close)
@@ -1404,8 +1405,8 @@ func TestCategoriesReclassifyFlow(t *testing.T) {
 	strmLocal := filepath.Join(t.TempDir(), "media")
 	cfgYAML := "webui:\n  username: admin\n  password: secret123\ntmdb:\n  api_key: k\nu115:\n  root_folder_id: \"root\"\nstrm:\n  enabled: true\n  url_base: \"http://127.0.0.1:38765\"\n  mappings:\n    - pan_folder_id: \"root\"\n      local_path: \"" + strmLocal + "\"\n"
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
 
 	fp := newFakeWebProvider()
 	root := fp.addFolder("root", "0")
@@ -1414,9 +1415,9 @@ func TestCategoriesReclassifyFlow(t *testing.T) {
 	normal := fp.addFolder("普通电视剧", tvDir.ID)
 	wrongShow := fp.addFolder("错放的动漫 (2026)", normal.ID) // 属于动漫却放在普通电视剧
 	rightShow := fp.addFolder("普通剧 (2025)", normal.ID)
-	RT().SetProviderForTest(fp.provider())
+	rt.provider = fp.provider()
 
-	RT().SetCategories(&config.CategoriesConfig{
+	rt.SetCategories(&config.CategoriesConfig{
 		Dirs: config.CategoryDirs{TV: "剧集", Movie: "电影", Other: "其他"},
 		TV: []config.CategoryRule{
 			{Name: "动漫", GenreIDs: []int{16}, Languages: []string{"ja"}},
@@ -1424,8 +1425,8 @@ func TestCategoriesReclassifyFlow(t *testing.T) {
 		},
 	})
 
-	ls := RT().GetLibraryStore()
-	_ = RT().GetStrmStore() // 预开 STRM 存储：归位完成触发的异步同步复用句柄，避免清理阶段懒建目录
+	ls := rt.GetLibraryStore()
+	_ = rt.GetStrmStore() // 预开 STRM 存储：归位完成触发的异步同步复用句柄，避免清理阶段懒建目录
 
 	// TMDB mock：执行阶段会绕缓存拉最新详情重判分类，返回与上方缓存一致的判定
 	tmdbServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1453,7 +1454,7 @@ func TestCategoriesReclassifyFlow(t *testing.T) {
 	defer tmdbServer.Close()
 	tmdbClient := tmdb.NewClient("k", "zh-CN", "", 5, nil)
 	tmdbClient.SetTestBaseURL(tmdbServer.URL)
-	RT().SetTmdbClientForTest(tmdbClient)
+	rt.tmdbClient = tmdbClient
 
 	ls.SaveIncremental([]map[string]any{
 		{"drive_folder_id": wrongShow.ID, "media_type": "tv", "tmdb_id": 325052, "title": "错放的动漫", "year": "2026"},
@@ -1469,7 +1470,7 @@ func TestCategoriesReclassifyFlow(t *testing.T) {
 		"genres": []any{map[string]any{"id": 18, "name": "剧情"}},
 	}, expires)
 
-	server := NewServer()
+	server := NewServer(rt)
 	t.Cleanup(server.Close)
 	ts := httptest.NewServer(server.Handler())
 	t.Cleanup(ts.Close)
@@ -1521,7 +1522,7 @@ func TestCategoriesReclassifyFlow(t *testing.T) {
 	// 等待归位触发的 STRM 同步结束，避免清理阶段与异步建库竞态
 	deadline2 := time.Now().Add(5 * time.Second)
 	for {
-		if run := RT().GetStrmStore().GetLastFinishedSyncRun(); run != nil && run.Trigger == "reclassify" {
+		if run := rt.GetStrmStore().GetLastFinishedSyncRun(); run != nil && run.Trigger == "reclassify" {
 			break
 		}
 		if time.Now().After(deadline2) {
@@ -1536,8 +1537,8 @@ func TestMediaClassificationEndpoint(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	cfgYAML := "webui:\n  username: admin\n  password: secret123\ntmdb:\n  api_key: k\nu115:\n  root_folder_id: \"root\"\n"
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
 
 	// TMDB mock：执行/核对均绕缓存拉最新详情，返回动画流派
 	tmdbServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1556,27 +1557,27 @@ func TestMediaClassificationEndpoint(t *testing.T) {
 	defer tmdbServer.Close()
 	tmdbClient := tmdb.NewClient("k", "zh-CN", "", 5, nil)
 	tmdbClient.SetTestBaseURL(tmdbServer.URL)
-	RT().SetTmdbClientForTest(tmdbClient)
+	rt.tmdbClient = tmdbClient
 
 	fp := newFakeWebProvider()
 	root := fp.addFolder("root", "0")
 	tvDir := fp.addFolder("剧集", root.ID)
 	normal := fp.addFolder("普通电视剧", tvDir.ID)
 	wrongShow := fp.addFolder("错放的动漫 (2026)", normal.ID)
-	RT().SetProviderForTest(fp.provider())
-	RT().SetCategories(&config.CategoriesConfig{
+	rt.provider = fp.provider()
+	rt.SetCategories(&config.CategoriesConfig{
 		Dirs: config.CategoryDirs{TV: "剧集", Movie: "电影", Other: "其他"},
 		TV: []config.CategoryRule{
 			{Name: "动漫", GenreIDs: []int{16}, Languages: []string{"ja"}},
 			{Name: "普通电视剧"},
 		},
 	})
-	ls := RT().GetLibraryStore()
+	ls := rt.GetLibraryStore()
 	ls.SaveIncremental([]map[string]any{
 		{"drive_folder_id": wrongShow.ID, "drive_parent_id": normal.ID, "media_type": "tv", "tmdb_id": 325052, "title": "错放的动漫"},
 	}, nil)
 
-	server := NewServer()
+	server := NewServer(rt)
 	t.Cleanup(server.Close)
 	ts := httptest.NewServer(server.Handler())
 	t.Cleanup(ts.Close)

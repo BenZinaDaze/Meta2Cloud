@@ -69,20 +69,20 @@ func (r *tgRecorder) attempts() int {
 }
 
 // setupHealthTest 初始化运行时、清空健康状态并注入可替换依赖；返回发送记录器。
-func setupHealthTest(t *testing.T) *tgRecorder {
+func setupHealthTest(t *testing.T) (*tgRecorder, *Runtime) {
 	t.Helper()
-	InitRuntime(t.TempDir())
+	rt := InitRuntime(t.TempDir())
 	resetHealthState()
 	rec := &tgRecorder{}
-	RT().healthSendTG = rec.send
-	RT().healthTGConfig = func() config.Telegram { return config.Telegram{BotToken: "tok", ChatID: "cid"} }
+	rt.healthSendTG = rec.send
+	rt.healthTGConfig = func() config.Telegram { return config.Telegram{BotToken: "tok", ChatID: "cid"} }
 	t.Cleanup(func() {
-		RT().healthSendTG = pipeline.SendTelegramMessage
-		RT().healthTGConfig = func() config.Telegram { return RT().GetConfig().Telegram }
+		rt.healthSendTG = pipeline.SendTelegramMessage
+		rt.healthTGConfig = func() config.Telegram { return rt.GetConfig().Telegram }
 		healthNow = time.Now
 		resetHealthState()
 	})
-	return rec
+	return rec, rt
 }
 
 func resetHealthState() {
@@ -91,8 +91,8 @@ func resetHealthState() {
 	healthServices = map[string]*serviceHealth{}
 }
 
-func healthLogEvents(category string) []store.LogEntry {
-	ls := RT().GetLogStore()
+func healthLogEvents(rt *Runtime, category string) []store.LogEntry {
+	ls := rt.GetLogStore()
 	if ls == nil {
 		return nil
 	}
@@ -101,12 +101,12 @@ func healthLogEvents(category string) []store.LogEntry {
 
 // TestNotifyServiceHealthStateMachine 失效边沿发一次、24h 内不重复、跨 24h 再提醒、恢复边沿。
 func TestNotifyServiceHealthStateMachine(t *testing.T) {
-	rec := setupHealthTest(t)
+	rec, rt := setupHealthTest(t)
 	clock := newFakeClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC))
 	healthNow = clock.Now
 
 	// 失效边沿：发一次失效通知
-	RT().NotifyServiceHealth("115", false, "token 已过期")
+	rt.NotifyServiceHealth("115", false, "token 已过期")
 	if got := rec.sent(); len(got) != 1 {
 		t.Fatalf("失效边沿应发 1 条通知，实际 %d：%v", len(got), got)
 	} else if !containsAll(got[0], "⚠️", "115", "配置失效", "token 已过期") {
@@ -115,34 +115,34 @@ func TestNotifyServiceHealthStateMachine(t *testing.T) {
 
 	// 持续失效（24h 内）：不重复通知
 	clock.Advance(23 * time.Hour)
-	RT().NotifyServiceHealth("115", false, "token 仍失效")
+	rt.NotifyServiceHealth("115", false, "token 仍失效")
 	if got := rec.sent(); len(got) != 1 {
 		t.Fatalf("24h 内持续失效不应重复通知，实际 %d：%v", len(got), got)
 	}
 
 	// 跨过 24h：再提醒一次
 	clock.Advance(2 * time.Hour)
-	RT().NotifyServiceHealth("115", false, "token 仍失效")
+	rt.NotifyServiceHealth("115", false, "token 仍失效")
 	if got := rec.sent(); len(got) != 2 {
 		t.Fatalf("跨 24h 应再提醒一次，实际 %d：%v", len(got), got)
 	}
 
 	// 恢复边沿：发恢复通知
 	clock.Advance(1 * time.Hour)
-	RT().NotifyServiceHealth("115", true, "")
+	rt.NotifyServiceHealth("115", true, "")
 	if got := rec.sent(); len(got) != 3 || !containsAll(got[2], "✅", "115", "已恢复") {
 		t.Fatalf("恢复边沿应发恢复通知，实际 %d：%v", len(got), got)
 	}
 
 	// 持续正常：无操作
-	RT().NotifyServiceHealth("115", true, "")
-	RT().NotifyServiceHealth("115", true, "")
+	rt.NotifyServiceHealth("115", true, "")
+	rt.NotifyServiceHealth("115", true, "")
 	if got := rec.sent(); len(got) != 3 {
 		t.Fatalf("持续正常不应发通知，实际 %d：%v", len(got), got)
 	}
 
 	// 应用日志可见：失效 ERROR 与恢复 INFO
-	logs := healthLogEvents("u115")
+	logs := healthLogEvents(rt, "u115")
 	var failedEvt, recoveredEvt bool
 	for _, e := range logs {
 		switch e.Event {
@@ -164,19 +164,19 @@ func TestNotifyServiceHealthStateMachine(t *testing.T) {
 // TestNotifyServiceHealthCooldownBoundary 恰好达到 24h 冷却（>= 语义）应再次提醒，
 // 差 1 分钟则仍在冷却内不提醒。
 func TestNotifyServiceHealthCooldownBoundary(t *testing.T) {
-	rec := setupHealthTest(t)
+	rec, rt := setupHealthTest(t)
 	clock := newFakeClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC))
 	healthNow = clock.Now
 
-	RT().NotifyServiceHealth("Plex", false, "token 失效") // 失效边沿：立即通知
+	rt.NotifyServiceHealth("Plex", false, "token 失效") // 失效边沿：立即通知
 	clock.Advance(healthNotifyCooldown - time.Minute)
-	RT().NotifyServiceHealth("Plex", false, "token 仍失效")
+	rt.NotifyServiceHealth("Plex", false, "token 仍失效")
 	if got := rec.sent(); len(got) != 1 {
 		t.Fatalf("冷却差 1 分钟不应重复通知，实际 %d：%v", len(got), got)
 	}
 
 	clock.Advance(time.Minute) // 恰好 24h
-	RT().NotifyServiceHealth("Plex", false, "token 仍失效")
+	rt.NotifyServiceHealth("Plex", false, "token 仍失效")
 	if got := rec.sent(); len(got) != 2 || !containsAll(got[1], "token 仍失效") {
 		t.Fatalf("恰好达到 24h（>= 语义）应再提醒一次，实际 %d：%v", len(got), got)
 	}
@@ -184,13 +184,13 @@ func TestNotifyServiceHealthCooldownBoundary(t *testing.T) {
 
 // TestNotifyServiceHealthPerServiceIndependent 各服务状态互不影响。
 func TestNotifyServiceHealthPerServiceIndependent(t *testing.T) {
-	rec := setupHealthTest(t)
+	rec, rt := setupHealthTest(t)
 	healthNow = newFakeClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)).Now
 
-	RT().NotifyServiceHealth("Plex", false, "token 失效")
-	RT().NotifyServiceHealth("Trakt", true, "") // 正常服务上报无操作
-	RT().NotifyServiceHealth("Trakt", false, "刷新被拒")
-	RT().NotifyServiceHealth("订阅源", false, "连续两次抓取失败")
+	rt.NotifyServiceHealth("Plex", false, "token 失效")
+	rt.NotifyServiceHealth("Trakt", true, "") // 正常服务上报无操作
+	rt.NotifyServiceHealth("Trakt", false, "刷新被拒")
+	rt.NotifyServiceHealth("订阅源", false, "连续两次抓取失败")
 
 	got := rec.sent()
 	if len(got) != 3 {
@@ -206,18 +206,18 @@ func TestNotifyServiceHealthPerServiceIndependent(t *testing.T) {
 
 // TestNotifyServiceHealthTGUnconfigured TG 未配置时静默降级为仅应用日志。
 func TestNotifyServiceHealthTGUnconfigured(t *testing.T) {
-	rec := setupHealthTest(t)
-	RT().healthTGConfig = func() config.Telegram { return config.Telegram{} } // 未配置
+	rec, rt := setupHealthTest(t)
+	rt.healthTGConfig = func() config.Telegram { return config.Telegram{} } // 未配置
 	healthNow = newFakeClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)).Now
 
-	RT().NotifyServiceHealth("Plex", false, "token 失效")
-	RT().NotifyServiceHealth("Plex", true, "")
+	rt.NotifyServiceHealth("Plex", false, "token 失效")
+	rt.NotifyServiceHealth("Plex", true, "")
 	if got := rec.sent(); len(got) != 0 || rec.attempts() != 0 {
 		t.Fatalf("TG 未配置不应尝试发送，实际尝试 %d 次：%v", rec.attempts(), got)
 	}
 	// 失效/恢复均应留应用日志
 	events := map[string]bool{}
-	for _, e := range healthLogEvents("plex") {
+	for _, e := range healthLogEvents(rt, "plex") {
 		events[e.Event] = true
 	}
 	if !events["health_failed"] || !events["health_recovered"] {
@@ -227,17 +227,17 @@ func TestNotifyServiceHealthTGUnconfigured(t *testing.T) {
 
 // TestNotifyServiceHealthTGSendFailure TG 发送失败只记 WARN 日志，不影响状态机（不重复发送）。
 func TestNotifyServiceHealthTGSendFailure(t *testing.T) {
-	rec := setupHealthTest(t)
+	rec, rt := setupHealthTest(t)
 	rec.err = errors.New("网络不可达")
 	healthNow = newFakeClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)).Now
 
-	RT().NotifyServiceHealth("Trakt", false, "刷新被拒")
-	RT().NotifyServiceHealth("Trakt", false, "刷新仍被拒") // 24h 内：不再尝试发送
+	rt.NotifyServiceHealth("Trakt", false, "刷新被拒")
+	rt.NotifyServiceHealth("Trakt", false, "刷新仍被拒") // 24h 内：不再尝试发送
 	if rec.attempts() != 1 {
 		t.Fatalf("发送失败后状态机仍应记冷却，24h 内只应尝试 1 次，实际 %d", rec.attempts())
 	}
 	var warnSeen bool
-	for _, e := range healthLogEvents("trakt") {
+	for _, e := range healthLogEvents(rt, "trakt") {
 		if e.Event == "health_notify_failed" && e.Level == "WARNING" {
 			warnSeen = true
 		}
@@ -249,7 +249,7 @@ func TestNotifyServiceHealthTGSendFailure(t *testing.T) {
 
 // TestNotifyServiceHealthConcurrency 多循环 goroutine 并发上报不死锁、不 panic（-race 验证）。
 func TestNotifyServiceHealthConcurrency(t *testing.T) {
-	rec := setupHealthTest(t)
+	rec, rt := setupHealthTest(t)
 	healthNow = newFakeClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)).Now
 
 	services := []string{"115", "Plex", "Trakt", "订阅源"}
@@ -260,9 +260,9 @@ func TestNotifyServiceHealthConcurrency(t *testing.T) {
 			go func(svc string, j, i int) {
 				defer wg.Done()
 				if (i+j)%2 == 0 {
-					RT().NotifyServiceHealth(svc, false, fmt.Sprintf("并发原因 %d", j))
+					rt.NotifyServiceHealth(svc, false, fmt.Sprintf("并发原因 %d", j))
 				} else {
-					RT().NotifyServiceHealth(svc, true, "")
+					rt.NotifyServiceHealth(svc, true, "")
 				}
 			}(svc, j, i)
 		}
@@ -271,11 +271,11 @@ func TestNotifyServiceHealthConcurrency(t *testing.T) {
 
 	// 收尾：全部恢复后再次上报正常，不应产生任何新通知（稳定不变量）
 	for _, svc := range services {
-		RT().NotifyServiceHealth(svc, true, "")
+		rt.NotifyServiceHealth(svc, true, "")
 	}
 	settled := len(rec.sent())
 	for _, svc := range services {
-		RT().NotifyServiceHealth(svc, true, "")
+		rt.NotifyServiceHealth(svc, true, "")
 	}
 	if got := len(rec.sent()); got != settled {
 		t.Errorf("全部恢复后继续上报正常仍有新通知：%d → %d", settled, got)
@@ -284,8 +284,8 @@ func TestNotifyServiceHealthConcurrency(t *testing.T) {
 
 // TestPollSubscriptionsOnceCarriesFirstError 轮询失败时 summary 携带首条失败原因，供健康判定上报。
 func TestPollSubscriptionsOnceCarriesFirstError(t *testing.T) {
-	setupHealthTest(t)
-	rssStore := RT().GetRSSStore()
+	_, rt := setupHealthTest(t)
+	rssStore := rt.GetRSSStore()
 	if rssStore == nil {
 		t.Fatal("RSS 存储不可用")
 	}
@@ -298,7 +298,7 @@ func TestPollSubscriptionsOnceCarriesFirstError(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	summary := RT().PollSubscriptionsOnce()
+	summary := rt.PollSubscriptionsOnce()
 	if errs, _ := summary["errors"].(int); errs != 1 {
 		t.Fatalf("errors = %v, want 1", summary["errors"])
 	}
@@ -382,11 +382,11 @@ func useFakeMikanSpider(t *testing.T, items []scraper.MagnetItem) {
 // summary.errors 必须为 0（健康判定只认抓取错误，连续失败计数不被推送错误污染）、
 // push_errors 单列；「115 未授权」改路上报 115 服务健康，而非误报订阅源失效。
 func TestPollSubscriptionsOncePushErrorsExcludedFromHealth(t *testing.T) {
-	rec := setupHealthTest(t)
+	rec, rt := setupHealthTest(t)
 	useFakeMikanSpider(t, []scraper.MagnetItem{{
 		Title: "Test Anime S01E01 1080p", MagnetURL: "magnet:?xt=urn:btih:abc", Site: "mikan",
 	}})
-	rssStore := RT().GetRSSStore()
+	rssStore := rt.GetRSSStore()
 	if rssStore == nil {
 		t.Fatal("RSS 存储不可用")
 	}
@@ -400,7 +400,7 @@ func TestPollSubscriptionsOncePushErrorsExcludedFromHealth(t *testing.T) {
 	}
 
 	// 测试运行时无 115 token 文件：pushItem 必走「115 未授权」分支
-	summary := RT().PollSubscriptionsOnce()
+	summary := rt.PollSubscriptionsOnce()
 	if errs, _ := summary["errors"].(int); errs != 0 {
 		t.Fatalf("推送失败不应计入 errors（健康判定只认抓取错误），实际 %v", summary["errors"])
 	}
@@ -421,16 +421,16 @@ func TestPollSubscriptionsOncePushErrorsExcludedFromHealth(t *testing.T) {
 // TestReportSubscriptionPushHealthClassification 推送失败健康归因：
 // 115 授权类改路上报 115 服务；限流（429）/网络/条目类静默不告警。
 func TestReportSubscriptionPushHealthClassification(t *testing.T) {
-	rec := setupHealthTest(t)
+	rec, rt := setupHealthTest(t)
 
 	// 115 未授权哨兵：失效边沿上报
-	RT().reportSubscriptionPushHealth(errPush115Unauthorized)
+	rt.reportSubscriptionPushHealth(errPush115Unauthorized)
 	if got := rec.sent(); len(got) != 1 || !containsAll(got[0], "订阅推送：115 未授权") {
 		t.Fatalf("115 未授权推送失败应上报 115 健康，实际 %v", got)
 	}
 
 	// 真实 API 返回的授权错误同样归类为 115 失效（同服务 24h 冷却内不重发，仅更新原因）
-	RT().reportSubscriptionPushHealth(fmt.Errorf("推送云下载失败：%w",
+	rt.reportSubscriptionPushHealth(fmt.Errorf("推送云下载失败：%w",
 		&u115.APIError{Kind: u115.KindAuth, Message: "token 失效"}))
 	if got := rec.sent(); len(got) != 1 {
 		t.Fatalf("冷却内重复上报不应再发送，实际 %v", got)
@@ -443,9 +443,9 @@ func TestReportSubscriptionPushHealthClassification(t *testing.T) {
 	}
 
 	// 限流（115 429）/网络抖动/条目缺地址：静默
-	RT().reportSubscriptionPushHealth(&u115.APIError{Kind: u115.KindRateLimit, Message: "已达到当前访问上限，进入冷却"})
-	RT().reportSubscriptionPushHealth(errors.New("网络不可达"))
-	RT().reportSubscriptionPushHealth(errors.New("RSS 条目缺少下载地址"))
+	rt.reportSubscriptionPushHealth(&u115.APIError{Kind: u115.KindRateLimit, Message: "已达到当前访问上限，进入冷却"})
+	rt.reportSubscriptionPushHealth(errors.New("网络不可达"))
+	rt.reportSubscriptionPushHealth(errors.New("RSS 条目缺少下载地址"))
 	if got := rec.sent(); len(got) != 1 {
 		t.Fatalf("限流/网络/条目类推送失败应静默，实际 %v", got)
 	}

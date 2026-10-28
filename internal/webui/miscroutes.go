@@ -143,8 +143,6 @@ type wsBroadcaster struct {
 	conns map[chan map[string]any]bool
 }
 
-var broadcaster = &wsBroadcaster{conns: map[chan map[string]any]bool{}}
-
 // BroadcastLog 广播一条流水线输出（落库 + 实时广播都经 appLog）。
 func (rt *Runtime) BroadcastLog(level, message string, runID string) {
 	rt.appLog("pipeline", "pipeline_output", level, message, map[string]any{"runId": runID})
@@ -152,16 +150,16 @@ func (rt *Runtime) BroadcastLog(level, message string, runID string) {
 
 // broadcastEntry 把一条已落库的日志实时推给 WebSocket 订阅者（全类别）。
 func (rt *Runtime) broadcastEntry(e store.LogEntry) {
-	broadcaster.mu.Lock()
-	defer broadcaster.mu.Unlock()
-	if len(broadcaster.conns) == 0 {
+	rt.broadcaster.mu.Lock()
+	defer rt.broadcaster.mu.Unlock()
+	if len(rt.broadcaster.conns) == 0 {
 		return
 	}
 	payload := map[string]any{
 		"type": "log", "ts": e.Ts, "category": e.Category, "event": e.Event,
 		"level": e.Level, "message": e.Message, "details": e.Details,
 	}
-	for ch := range broadcaster.conns {
+	for ch := range rt.broadcaster.conns {
 		select {
 		case ch <- payload:
 		default: // 慢消费者跳过
@@ -170,15 +168,15 @@ func (rt *Runtime) broadcastEntry(e store.LogEntry) {
 }
 
 // SubscribeLog 订阅日志流（返回通道与取消函数）。
-func SubscribeLog() (<-chan map[string]any, func()) {
+func (rt *Runtime) SubscribeLog() (<-chan map[string]any, func()) {
 	ch := make(chan map[string]any, 64)
-	broadcaster.mu.Lock()
-	broadcaster.conns[ch] = true
-	broadcaster.mu.Unlock()
+	rt.broadcaster.mu.Lock()
+	rt.broadcaster.conns[ch] = true
+	rt.broadcaster.mu.Unlock()
 	cancel := func() {
-		broadcaster.mu.Lock()
-		delete(broadcaster.conns, ch)
-		broadcaster.mu.Unlock()
+		rt.broadcaster.mu.Lock()
+		delete(rt.broadcaster.conns, ch)
+		rt.broadcaster.mu.Unlock()
 	}
 	return ch, cancel
 }

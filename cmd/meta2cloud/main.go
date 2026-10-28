@@ -56,8 +56,8 @@ func runServe(args []string) {
 	root := fs.String("root", "", "项目根目录")
 	fs.Parse(args)
 
-	webui.InitRuntime(*root)
-	server := webui.NewServer()
+	rt := webui.InitRuntime(*root)
+	server := webui.NewServer(rt)
 	defer server.Close()
 
 	addr := fmt.Sprintf("%s:%d", *host, *port)

@@ -75,7 +75,7 @@ func (f *fakeWebProvider) replacePickCode(fileID, pickCode string, size int64) {
 }
 
 // initStrmTestRuntime 初始化隔离的运行时并写入带 url_secret 的配置。
-func initStrmTestRuntime(t *testing.T, urlSecret string) {
+func initStrmTestRuntime(t *testing.T, urlSecret string) *Runtime {
 	t.Helper()
 	// 不用 t.TempDir：全局 RT 单例的监听线程可能在清理窗口内惰性重建
 	// config/data，与 RemoveAll 竞态会误判测试失败；此处清理尽力而为。
@@ -97,7 +97,7 @@ func initStrmTestRuntime(t *testing.T, urlSecret string) {
 	if err := os.WriteFile(filepath.Join(root, "config", "config.yaml"), []byte(cfgYAML), 0o644); err != nil {
 		t.Fatalf("写入配置失败：%v", err)
 	}
-	InitRuntime(root)
+	return InitRuntime(root)
 }
 
 func testStrmConfig() *config.Config {
@@ -171,25 +171,25 @@ func TestPickCodeValidation(t *testing.T) {
 }
 
 func TestHandleStrmRedirectBadParams(t *testing.T) {
-	initStrmTestRuntime(t, "s3cret")
+	rt := initStrmTestRuntime(t, "s3cret")
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/strm/redirect?pickcode=bad", nil)
-	testServer().handleStrmRedirect(rr, req)
+	testServer(rt).handleStrmRedirect(rr, req)
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("无效 pickcode 应 400，得到 %d", rr.Code)
 	}
 
 	rr = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/strm/redirect?pickcode=Abc123DEF456ghi78&sign=wrong", nil)
-	testServer().handleStrmRedirect(rr, req)
+	testServer(rt).handleStrmRedirect(rr, req)
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("签名错误应 403，得到 %d", rr.Code)
 	}
 }
 
 func TestHandleStrmRedirectCacheHit(t *testing.T) {
-	initStrmTestRuntime(t, "s3cret")
+	rt := initStrmTestRuntime(t, "s3cret")
 	pickCode := "abc123def456ghi78"
 	expires := time.Now().Add(time.Hour)
 	strmLinkCache.set(pickCode, "test-ua",
@@ -200,7 +200,7 @@ func TestHandleStrmRedirectCacheHit(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/strm/redirect?pickcode="+pickCode+"&sign="+sign, nil)
 	req.Header.Set("User-Agent", "test-ua")
-	testServer().handleStrmRedirect(rr, req)
+	testServer(rt).handleStrmRedirect(rr, req)
 
 	if rr.Code != http.StatusFound {
 		t.Fatalf("缓存命中应 302，得到 %d", rr.Code)
@@ -213,7 +213,7 @@ func TestHandleStrmRedirectCacheHit(t *testing.T) {
 	}
 
 	// 播放记录异步落库，轮询等待
-	st := RT().GetStrmStore()
+	st := rt.GetStrmStore()
 	if st == nil {
 		t.Fatalf("STRM 存储不可用")
 	}
@@ -240,7 +240,7 @@ func TestHandleStrmRedirectCacheHit(t *testing.T) {
 	rr = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/strm/redirect?pickcode="+pickCode+"&sign=bad", nil)
 	req.Header.Set("User-Agent", "test-ua")
-	testServer().handleStrmRedirect(rr, req)
+	testServer(rt).handleStrmRedirect(rr, req)
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("错误签名应 403，得到 %d", rr.Code)
 	}
@@ -326,7 +326,7 @@ func fakeDownurlResp(pickCode string) string {
 }
 
 func TestStrmFetchLimiter(t *testing.T) {
-	initStrmTestRuntime(t, "")
+	rt := initStrmTestRuntime(t, "")
 	resetStrmLimiter()
 	t.Cleanup(resetStrmLimiter)
 
@@ -336,19 +336,19 @@ func TestStrmFetchLimiter(t *testing.T) {
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/strm/redirect?pickcode="+pickCode, nil)
 		req.Header.Set("User-Agent", "limiter-ua")
-		testServer().handleStrmRedirect(rr, req)
+		testServer(rt).handleStrmRedirect(rr, req)
 		return rr
 	}
 
 	// 1) 失败（无 token client → 授权错误）→ 负缓存
-	RT().SetU115ClientForTest(u115.NewClient("test"))
+	rt.u115Client = u115.NewClient("test")
 	if rr := doReq(pickA); rr.Code != http.StatusBadGateway {
 		t.Fatalf("无 token 应 502，得到 %d", rr.Code)
 	}
 	// 2) 换成正常 client，同 pickcode 再请求：应命中负缓存，不打 115
 	transport := &countingTransport{resp: fakeDownurlResp(pickA)}
 	goodToken := u115.Token{AccessToken: "x", ExpiresIn: 86400, RefreshTime: time.Now().Unix()}
-	RT().SetU115ClientForTest(u115.NewClient("test", u115.WithToken(goodToken), u115.WithHTTPClient(&http.Client{Transport: transport})))
+	rt.u115Client = u115.NewClient("test", u115.WithToken(goodToken), u115.WithHTTPClient(&http.Client{Transport: transport}))
 	if rr := doReq(pickA); rr.Code != http.StatusBadGateway {
 		t.Fatalf("负缓存应返回同状态 502，得到 %d", rr.Code)
 	}
@@ -388,6 +388,7 @@ func TestStrmFetchLimiter(t *testing.T) {
 }
 
 func TestSyncMappingFlow(t *testing.T) {
+	rt := InitRuntime(t.TempDir())
 	tmp := t.TempDir()
 	st, err := store.OpenStrmStore(filepath.Join(tmp, "strm.db"))
 	if err != nil {
@@ -409,7 +410,7 @@ func TestSyncMappingFlow(t *testing.T) {
 	localRoot := filepath.Join(tmp, "media")
 	mapping := config.StrmMapping{PanFolderID: movieRoot.ID, LocalPath: localRoot}
 
-	created, updated, removed, skipped, err := RT().syncMapping(fp, st, cfg, mapping, 0, nil)
+	created, updated, removed, skipped, err := rt.syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("首次同步失败：%v", err)
 	}
@@ -429,7 +430,7 @@ func TestSyncMappingFlow(t *testing.T) {
 	}
 
 	// 二次同步：全部跳过
-	created, updated, removed, skipped, err = RT().syncMapping(fp, st, cfg, mapping, 0, nil)
+	created, updated, removed, skipped, err = rt.syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("二次同步失败：%v", err)
 	}
@@ -439,7 +440,7 @@ func TestSyncMappingFlow(t *testing.T) {
 
 	// pick_code 变化（网盘重新上传）：应重写
 	fp.replacePickCode(video.ID, "new123def456ghi78", 2<<30)
-	created, updated, _, _, err = RT().syncMapping(fp, st, cfg, mapping, 0, nil)
+	created, updated, _, _, err = rt.syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("三次同步失败：%v", err)
 	}
@@ -452,7 +453,7 @@ func TestSyncMappingFlow(t *testing.T) {
 	delete(fp.byID, video.ID)
 	fp.children[movieRoot.ID] = nil
 	fp.mu.Unlock()
-	_, _, removed, _, err = RT().syncMapping(fp, st, cfg, mapping, 0, nil)
+	_, _, removed, _, err = rt.syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("清理同步失败：%v", err)
 	}
@@ -468,6 +469,7 @@ func TestSyncMappingFlow(t *testing.T) {
 }
 
 func TestSyncSidecarFlow(t *testing.T) {
+	rt := InitRuntime(t.TempDir())
 	tmp := t.TempDir()
 	st, err := store.OpenStrmStore(filepath.Join(tmp, "strm.db"))
 	if err != nil {
@@ -489,7 +491,7 @@ func TestSyncSidecarFlow(t *testing.T) {
 	mapping := config.StrmMapping{PanFolderID: movieRoot.ID, LocalPath: localRoot}
 
 	fetchCount.Store(0)
-	created, _, _, _, err := RT().syncMapping(fp, st, cfg, mapping, 0, nil)
+	created, _, _, _, err := rt.syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("首次同步失败：%v", err)
 	}
@@ -509,7 +511,7 @@ func TestSyncSidecarFlow(t *testing.T) {
 
 	// 二次同步：全部跳过，不重复下载
 	fetchCount.Store(0)
-	created, updated, _, skipped, err := RT().syncMapping(fp, st, cfg, mapping, 0, nil)
+	created, updated, _, skipped, err := rt.syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("二次同步失败：%v", err)
 	}
@@ -522,7 +524,7 @@ func TestSyncSidecarFlow(t *testing.T) {
 
 	// 字幕在网盘更新（大小变化）→ 重新下载（updated）
 	fp.replacePickCode(sub.ID, "sub123def456ghi78", 4096)
-	_, updated, _, _, err = RT().syncMapping(fp, st, cfg, mapping, 0, nil)
+	_, updated, _, _, err = rt.syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("三次同步失败：%v", err)
 	}
@@ -540,7 +542,7 @@ func TestSyncSidecarFlow(t *testing.T) {
 	fp.children[titleDir.ID] = filterOut(fp.children[titleDir.ID], sub.ID)
 	delete(fp.byID, sub.ID)
 	fp.mu.Unlock()
-	created, updated, removed, skipped, err := RT().syncMapping(fp, st, cfg, mapping, 0, nil)
+	created, updated, removed, skipped, err := rt.syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("清理同步失败：%v", err)
 	}
@@ -569,6 +571,7 @@ func filterOut(items []cloudfile.CloudFile, id string) []cloudfile.CloudFile {
 }
 
 func TestSyncRewritesWhenURLBaseChanges(t *testing.T) {
+	rt := InitRuntime(t.TempDir())
 	tmp := t.TempDir()
 	st, err := store.OpenStrmStore(filepath.Join(tmp, "strm.db"))
 	if err != nil {
@@ -584,19 +587,19 @@ func TestSyncRewritesWhenURLBaseChanges(t *testing.T) {
 	localRoot := filepath.Join(tmp, "media")
 	mapping := config.StrmMapping{PanFolderID: root.ID, LocalPath: localRoot}
 
-	if _, _, _, _, err := RT().syncMapping(fp, st, cfg, mapping, 0, nil); err != nil {
+	if _, _, _, _, err := rt.syncMapping(fp, st, cfg, mapping, 0, nil); err != nil {
 		t.Fatalf("首次同步失败：%v", err)
 	}
 
 	// 全部跳过
-	_, _, _, skipped, err := RT().syncMapping(fp, st, cfg, mapping, 0, nil)
+	_, _, _, skipped, err := rt.syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil || skipped != 1 {
 		t.Fatalf("第二次同步应跳过：skipped=%d err=%v", skipped, err)
 	}
 
 	// 改 url_base 后同步：内容不一致应重写（updated）
 	cfg.Strm.URLBase = "http://10.0.0.5:39000"
-	created, updated, _, _, err := RT().syncMapping(fp, st, cfg, mapping, 0, nil)
+	created, updated, _, _, err := rt.syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("改地址后同步失败：%v", err)
 	}
@@ -613,13 +616,14 @@ func TestSyncRewritesWhenURLBaseChanges(t *testing.T) {
 
 	// 改 url_secret 后同理
 	cfg.Strm.URLSecret = "s3cret"
-	_, updated, _, _, err = RT().syncMapping(fp, st, cfg, mapping, 0, nil)
+	_, updated, _, _, err = rt.syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil || updated != 1 {
 		t.Fatalf("url_secret 变更应重写：updated=%d err=%v", updated, err)
 	}
 }
 
 func TestUpsertSkipsWhenFileMissingOnDisk(t *testing.T) {
+	rt := InitRuntime(t.TempDir())
 	tmp := t.TempDir()
 	st, err := store.OpenStrmStore(filepath.Join(tmp, "strm.db"))
 	if err != nil {
@@ -635,7 +639,7 @@ func TestUpsertSkipsWhenFileMissingOnDisk(t *testing.T) {
 	localRoot := filepath.Join(tmp, "media")
 	mapping := config.StrmMapping{PanFolderID: root.ID, LocalPath: localRoot}
 
-	if _, _, _, _, err := RT().syncMapping(fp, st, cfg, mapping, 0, nil); err != nil {
+	if _, _, _, _, err := rt.syncMapping(fp, st, cfg, mapping, 0, nil); err != nil {
 		t.Fatalf("首次同步失败：%v", err)
 	}
 	strmPath := filepath.Join(localRoot, "a.strm")
@@ -643,7 +647,7 @@ func TestUpsertSkipsWhenFileMissingOnDisk(t *testing.T) {
 		t.Fatalf("删除本地 strm 失败：%v", err)
 	}
 	// 本地文件丢失时，即使记录未变也应补写
-	created, _, _, _, err := RT().syncMapping(fp, st, cfg, mapping, 0, nil)
+	created, _, _, _, err := rt.syncMapping(fp, st, cfg, mapping, 0, nil)
 	if err != nil {
 		t.Fatalf("补写同步失败：%v", err)
 	}
@@ -656,6 +660,7 @@ func TestUpsertSkipsWhenFileMissingOnDisk(t *testing.T) {
 }
 
 func TestLocateMappingParentChain(t *testing.T) {
+	rt := InitRuntime(t.TempDir())
 	fp := newFakeWebProvider()
 	tvRoot := fp.addFolder("电视剧", "0")
 	showDir := fp.addFolder("三体 (2023)", tvRoot.ID)
@@ -665,7 +670,7 @@ func TestLocateMappingParentChain(t *testing.T) {
 	cfg.Strm.Mappings = []config.StrmMapping{{PanFolderID: tvRoot.ID, LocalPath: "/mnt/tv"}}
 
 	// 无链条：走网络回退逐级向上查询
-	mapping, relPath, ok := RT().locateMapping(fp, cfg, seasonDir, nil)
+	mapping, relPath, ok := rt.locateMapping(fp, cfg, seasonDir, nil)
 	if !ok {
 		t.Fatalf("应能定位映射")
 	}
@@ -678,7 +683,7 @@ func TestLocateMappingParentChain(t *testing.T) {
 
 	// 管线传链：本地匹配映射根并拼接相对路径，全程零网络调用。
 	// 用一个 GetFile 必失败的 Provider 证明链条命中时不发任何反查请求
-	mapping, relPath, ok = RT().locateMapping(&failGetFileProvider{fakeWebProvider: fp}, cfg, seasonDir,
+	mapping, relPath, ok = rt.locateMapping(&failGetFileProvider{fakeWebProvider: fp}, cfg, seasonDir,
 		[]cloudfile.CloudFile{
 			{ID: tvRoot.ID, Name: "电视剧", FileType: cloudfile.TypeFolder},
 			{ID: showDir.ID, Name: "三体 (2023)", FileType: cloudfile.TypeFolder},
@@ -695,13 +700,13 @@ func TestLocateMappingParentChain(t *testing.T) {
 	}
 
 	// 目标文件夹本身就是映射根
-	if m, rel, ok := RT().locateMapping(fp, cfg, tvRoot, nil); !ok || m.LocalPath != "/mnt/tv" || rel != "" {
+	if m, rel, ok := rt.locateMapping(fp, cfg, tvRoot, nil); !ok || m.LocalPath != "/mnt/tv" || rel != "" {
 		t.Fatalf("映射根本身应命中且相对路径为空：%+v %q %v", m, rel, ok)
 	}
 
 	// 不在映射内的目录
 	other := fp.addFolder("其他", "0")
-	if _, _, ok := RT().locateMapping(fp, cfg, other, nil); ok {
+	if _, _, ok := rt.locateMapping(fp, cfg, other, nil); ok {
 		t.Fatalf("映射外的目录不应命中")
 	}
 }
@@ -739,6 +744,7 @@ func TestStrmStoreRuns(t *testing.T) {
 
 // 映射本地位置变更后，旧位置的记录与文件应由全局孤儿对账清理
 func TestSweepOrphanStrmFiles(t *testing.T) {
+	rt := InitRuntime(t.TempDir())
 	tmp := t.TempDir()
 	st, err := store.OpenStrmStore(filepath.Join(tmp, "strm.db"))
 	if err != nil {
@@ -758,7 +764,7 @@ func TestSweepOrphanStrmFiles(t *testing.T) {
 	newMapping := config.StrmMapping{PanFolderID: movieRoot.ID, LocalPath: newRoot}
 
 	// 旧位置同步 → 生成 1 条记录与 1 个文件
-	if _, _, _, _, err := RT().syncMapping(fp, st, cfg, mapping, 0, nil); err != nil {
+	if _, _, _, _, err := rt.syncMapping(fp, st, cfg, mapping, 0, nil); err != nil {
 		t.Fatalf("旧位置同步失败：%v", err)
 	}
 	if st.CountStrmFiles() != 1 {
@@ -771,10 +777,10 @@ func TestSweepOrphanStrmFiles(t *testing.T) {
 
 	// 换位置同步：新位置生成；孤儿对账清掉旧位置记录与文件
 	runID := st.StartSyncRun("test")
-	if _, _, _, _, err := RT().syncMapping(fp, st, cfg, newMapping, runID, nil); err != nil {
+	if _, _, _, _, err := rt.syncMapping(fp, st, cfg, newMapping, runID, nil); err != nil {
 		t.Fatalf("新位置同步失败：%v", err)
 	}
-	if orphans := RT().sweepOrphanStrmFiles(st, []config.StrmMapping{newMapping}, runID); orphans != 1 {
+	if orphans := rt.sweepOrphanStrmFiles(st, []config.StrmMapping{newMapping}, runID); orphans != 1 {
 		t.Fatalf("应清理 1 条孤儿，got %d", orphans)
 	}
 	if st.CountStrmFiles() != 1 {
@@ -803,6 +809,7 @@ func (f *failGetFileProvider) GetFile(string) (cloudfile.CloudFile, error) {
 
 // 路径型映射：映射值为网盘根起算的相对路径，与链条节点名字路径前缀匹配
 func TestLocateMappingByPathChain(t *testing.T) {
+	rt := InitRuntime(t.TempDir())
 	fp := newFakeWebProvider()
 	media := fp.addFolder("Media", "0")
 	tvDir := fp.addFolder("剧集", media.ID)
@@ -819,14 +826,14 @@ func TestLocateMappingByPathChain(t *testing.T) {
 	}
 
 	// 链上「Media/剧集」节点命中映射路径，相对路径取其后的名字
-	m, rel, ok := RT().locateMapping(&failGetFileProvider{fakeWebProvider: fp}, cfg, seasonDir, chain)
+	m, rel, ok := rt.locateMapping(&failGetFileProvider{fakeWebProvider: fp}, cfg, seasonDir, chain)
 	if !ok || m.LocalPath != "/mnt/tv" || rel != "三体 (2023)/Season 01" {
 		t.Fatalf("路径型映射匹配错误：%+v %q %v", m, rel, ok)
 	}
 
 	// 映射指向更深的剧名目录
 	cfg.Strm.Mappings = []config.StrmMapping{{PanFolderID: "Media/剧集/三体 (2023)", LocalPath: "/mnt/santi"}}
-	m, rel, ok = RT().locateMapping(&failGetFileProvider{fakeWebProvider: fp}, cfg, seasonDir, chain)
+	m, rel, ok = rt.locateMapping(&failGetFileProvider{fakeWebProvider: fp}, cfg, seasonDir, chain)
 	if !ok || m.LocalPath != "/mnt/santi" || rel != "Season 01" {
 		t.Fatalf("深路径映射匹配错误：%+v %q %v", m, rel, ok)
 	}
@@ -865,6 +872,7 @@ func TestStrmChangesAddAndList(t *testing.T) {
 }
 
 func TestSyncMappingCollectsChangedCategories(t *testing.T) {
+	rt := InitRuntime(t.TempDir())
 	tmp := t.TempDir()
 	st, err := store.OpenStrmStore(filepath.Join(tmp, "strm.db"))
 	if err != nil {
@@ -883,7 +891,7 @@ func TestSyncMappingCollectsChangedCategories(t *testing.T) {
 	mapping := config.StrmMapping{PanFolderID: movieRoot.ID, LocalPath: localRoot}
 
 	changes := newStrmChanges(testStrmCategories())
-	if _, _, _, _, err := RT().syncMapping(fp, st, cfg, mapping, 0, changes); err != nil {
+	if _, _, _, _, err := rt.syncMapping(fp, st, cfg, mapping, 0, changes); err != nil {
 		t.Fatalf("首次同步失败：%v", err)
 	}
 	if got := changes.list(); len(got) != 1 || got[0] != "动漫电影" {
@@ -892,7 +900,7 @@ func TestSyncMappingCollectsChangedCategories(t *testing.T) {
 
 	// 无变更的二次同步不应产生分类
 	changes2 := newStrmChanges(testStrmCategories())
-	if _, _, _, _, err := RT().syncMapping(fp, st, cfg, mapping, 0, changes2); err != nil {
+	if _, _, _, _, err := rt.syncMapping(fp, st, cfg, mapping, 0, changes2); err != nil {
 		t.Fatalf("二次同步失败：%v", err)
 	}
 	if got := changes2.list(); len(got) != 0 {
@@ -905,7 +913,7 @@ func TestSyncMappingCollectsChangedCategories(t *testing.T) {
 	fp.children[catDir.ID] = nil
 	fp.mu.Unlock()
 	changes3 := newStrmChanges(testStrmCategories())
-	if _, _, removed, _, err := RT().syncMapping(fp, st, cfg, mapping, 0, changes3); err != nil {
+	if _, _, removed, _, err := rt.syncMapping(fp, st, cfg, mapping, 0, changes3); err != nil {
 		t.Fatalf("删除对账同步失败：%v", err)
 	} else if removed != 1 {
 		t.Fatalf("应清理 1 个 strm，得到 removed=%d", removed)

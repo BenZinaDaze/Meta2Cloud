@@ -15,7 +15,7 @@ func wsURL(ts *httptest.Server, path string) string {
 }
 
 func TestLogsLiveWebsocket(t *testing.T) {
-	ts, token := newScanServer(t)
+	ts, token, rt := newScanServer(t)
 
 	// 1. 无效 token → 4001 关闭
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL(ts, "/api/logs/live?token=bad"), nil)
@@ -36,7 +36,7 @@ func TestLogsLiveWebsocket(t *testing.T) {
 	}
 	defer conn2.Close()
 
-	RT().BroadcastLog("SUCCESS", "测试消息 ABC123", "run000001")
+	rt.BroadcastLog("SUCCESS", "测试消息 ABC123", "run000001")
 
 	_ = conn2.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, msg, err := conn2.ReadMessage()
@@ -59,7 +59,7 @@ func TestLogsLiveWebsocket(t *testing.T) {
 	}
 
 	// 3. 广播同时写入了日志库(前端实时页与历史页数据一致)
-	ls := RT().GetLogStore()
+	ls := rt.GetLogStore()
 	entries := ls.Read(10, "pipeline", "", 0)
 	found := false
 	for _, e := range entries {

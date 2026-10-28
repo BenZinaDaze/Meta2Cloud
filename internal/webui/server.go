@@ -27,9 +27,9 @@ type Server struct {
 	stop   chan struct{}
 }
 
-// NewServer 构造服务（注册全部路由）。
-func NewServer() *Server {
-	s := &Server{rt: defaultRuntime, mux: http.NewServeMux(), stop: make(chan struct{})}
+// NewServer 构造服务（注册全部路由）。rt 为运行时依赖容器（配置/存储/客户端单例）。
+func NewServer(rt *Runtime) *Server {
+	s := &Server{rt: rt, mux: http.NewServeMux(), stop: make(chan struct{})}
 	s.registerRoutes()
 	s.rootFS = s.loadStaticFiles()
 	s.rt.startTmdbEvictLoop(s.stop)
@@ -165,7 +165,7 @@ func (s *Server) registerRoutes() {
 
 	// logs / ingest
 	m.HandleFunc("GET /api/logs", s.handleGetLogs)
-	m.HandleFunc("GET /api/logs/live", handleLogsLiveWS)
+	m.HandleFunc("GET /api/logs/live", s.handleLogsLiveWS)
 	m.HandleFunc("GET /api/ingest/history", s.handleIngestHistory)
 	m.HandleFunc("GET /api/ingest/stats", s.handleIngestStats)
 	m.HandleFunc("GET /api/ingest/stats/daily", s.handleIngestDailyStats)
@@ -275,9 +275,8 @@ var loginLimiter = struct {
 	entries map[string]*loginFailState
 }{entries: map[string]*loginFailState{}}
 
-// resetLoginLimiterForTest 清空限速状态（测试隔离用）。
-func resetLoginLimiterForTest() {
-	rt := RT()
+// resetLoginLimiter 清空限速状态（测试隔离用）。
+func (rt *Runtime) resetLoginLimiter() {
 	rt.loginLimiter.mu.Lock()
 	defer rt.loginLimiter.mu.Unlock()
 	rt.loginLimiter.entries = map[string]*loginFailState{}

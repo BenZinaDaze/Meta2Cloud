@@ -54,6 +54,9 @@ type Runtime struct {
 	jwtSecretOnce  sync.Once
 	jwtSecretValue string
 
+	// broadcaster 日志 WS 实时广播（见 miscroutes.go）
+	broadcaster wsBroadcaster
+
 	// strmSvc STRM 同步服务（入库钩子缓冲，见 strmsvc.go）
 	strmSvc *strmService
 
@@ -68,13 +71,8 @@ type Runtime struct {
 	}
 }
 
-var defaultRuntime = &Runtime{}
-
-// RT 全局运行时。
-func RT() *Runtime { return defaultRuntime }
-
 // InitRuntime 初始化运行时（rootDir 为空时取当前目录）。
-// 重置全部缓存状态（配置/Provider/存储单例）。
+// 每次调用构造全新实例：依赖注入模式下无全局单例，进程持有一个、测试各持私有实例。
 func InitRuntime(rootDir string) *Runtime {
 	if rootDir == "" {
 		if exe, err := os.Executable(); err == nil {
@@ -83,46 +81,48 @@ func InitRuntime(rootDir string) *Runtime {
 			rootDir, _ = os.Getwd()
 		}
 	}
-	defaultRuntime.mu.Lock()
-	defer defaultRuntime.mu.Unlock()
-	defaultRuntime.RootDir = rootDir
-	defaultRuntime.configPath = filepath.Join(rootDir, "config", "config.yaml")
-	defaultRuntime.rulesPath = filepath.Join(rootDir, "config", "parser-rules.yaml")
-	defaultRuntime.secretsPath = filepath.Join(rootDir, "config", config.SecretsFilename)
+	rt := &Runtime{}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.RootDir = rootDir
+	rt.configPath = filepath.Join(rootDir, "config", "config.yaml")
+	rt.rulesPath = filepath.Join(rootDir, "config", "parser-rules.yaml")
+	rt.secretsPath = filepath.Join(rootDir, "config", config.SecretsFilename)
 	// 首次启动友好：缺失的配置文件自动生成默认内容（已存在的不覆盖）
 	if err := config.EnsureDefaultFiles(
-		defaultRuntime.configPath,
-		defaultRuntime.secretsPath,
-		defaultRuntime.rulesPath,
+		rt.configPath,
+		rt.secretsPath,
+		rt.rulesPath,
 		filepath.Join(rootDir, "config", config.CategoriesFilename),
 	); err != nil {
 		log.Printf("默认配置文件生成失败：%v", err)
 	}
-	defaultRuntime.cfg = nil
-	defaultRuntime.provider = nil
-	defaultRuntime.u115Client = nil
-	defaultRuntime.tmdbClient = nil
-	defaultRuntime.library = nil
-	defaultRuntime.tmdbCache = nil
-	defaultRuntime.ingest = nil
-	defaultRuntime.logStore = nil
-	defaultRuntime.rss = nil
-	defaultRuntime.u115Auto = nil
-	defaultRuntime.strm = nil
-	defaultRuntime.traktClient = nil
-	defaultRuntime.plexClient = nil
-	defaultRuntime.traktSync = nil
-	defaultRuntime.categories = nil
-	defaultRuntime.categoriesM = 0
-	defaultRuntime.configSig = [3]int64{}
+	rt.cfg = nil
+	rt.provider = nil
+	rt.u115Client = nil
+	rt.tmdbClient = nil
+	rt.library = nil
+	rt.tmdbCache = nil
+	rt.ingest = nil
+	rt.logStore = nil
+	rt.rss = nil
+	rt.u115Auto = nil
+	rt.strm = nil
+	rt.traktClient = nil
+	rt.plexClient = nil
+	rt.traktSync = nil
+	rt.categories = nil
+	rt.categoriesM = 0
+	rt.configSig = [3]int64{}
 	// health 钩子默认实现（包级 init 环依赖已随钩子入字段消除）
-	defaultRuntime.strmSvc = &strmService{rt: defaultRuntime}
-	defaultRuntime.healthSendTG = pipeline.SendTelegramMessage
-	defaultRuntime.healthTGConfig = func() config.Telegram { return defaultRuntime.GetConfig().Telegram }
+	rt.broadcaster = wsBroadcaster{conns: map[chan map[string]any]bool{}}
+	rt.strmSvc = &strmService{rt: rt}
+	rt.healthSendTG = pipeline.SendTelegramMessage
+	rt.healthTGConfig = func() config.Telegram { return rt.GetConfig().Telegram }
 	// 上一次初始化打开的存储句柄先关闭（重复 InitRuntime 的测试场景防 fd 泄漏）
-	defaultRuntime.closeStores()
-	defaultRuntime.initStores()
-	return defaultRuntime
+	rt.closeStores()
+	rt.initStores()
+	return rt
 }
 
 // initStores 启动时统一打开全部存储单例（fail-fast）：库路径均由 RootDir 固定
@@ -589,23 +589,6 @@ func (rt *Runtime) GetTraktSyncStore() *store.TraktSyncStore {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	return rt.traktSync
-}
-
-// SetProviderForTest 注入测试 Provider（绕过配置构造）。
-// 先预热配置，避免后续首次 GetConfig 触发失效逻辑清掉注入的 Provider。
-func (rt *Runtime) SetProviderForTest(p cloudfile.Provider) {
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	_ = rt.getConfigLocked()
-	rt.provider = p
-}
-
-// SetU115ClientForTest 注入测试 115 客户端。
-func (rt *Runtime) SetU115ClientForTest(c *u115.Client) {
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	_ = rt.getConfigLocked()
-	rt.u115Client = c
 }
 
 // SetTmdbClientForTest 注入测试 TMDB 客户端。

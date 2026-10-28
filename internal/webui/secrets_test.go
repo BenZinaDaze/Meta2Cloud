@@ -39,19 +39,19 @@ func authedJSON(t *testing.T, ts *httptest.Server, method, path, token string, b
 // TestLoginMigratesPlaintextPassword 旧版主配置明文密码：登录成功后自动迁移为
 // secrets.yaml 哈希，主配置明文移除，新旧两种方式登录均按哈希校验。
 func TestLoginMigratesPlaintextPassword(t *testing.T) {
-	ts := newTestServer(t)
+	ts, rt := newTestServer(t)
 
 	if code, _ := login(t, ts, "admin", "secret123"); code != http.StatusOK {
 		t.Fatalf("明文密码登录失败: %d", code)
 	}
-	mainData, err := os.ReadFile(filepath.Join(RT().RootDir, "config", "config.yaml"))
+	mainData, err := os.ReadFile(filepath.Join(rt.RootDir, "config", "config.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(mainData), "secret123") {
 		t.Error("登录后主配置仍含明文密码")
 	}
-	secretsPath := filepath.Join(RT().RootDir, "config", "secrets.yaml")
+	secretsPath := filepath.Join(rt.RootDir, "config", "secrets.yaml")
 	secretsData, err := os.ReadFile(secretsPath)
 	if err != nil {
 		t.Fatalf("secrets.yaml 未生成: %v", err)
@@ -63,7 +63,7 @@ func TestLoginMigratesPlaintextPassword(t *testing.T) {
 		t.Errorf("secrets.yaml 权限 = %o, want 600", st.Mode().Perm())
 	}
 
-	cfg := RT().GetConfig()
+	cfg := rt.GetConfig()
 	if cfg.WebUI.Password != "" || cfg.WebUI.PasswordHash == "" {
 		t.Errorf("迁移后 Password=%q PasswordHash 非空期望, got %q", cfg.WebUI.Password, cfg.WebUI.PasswordHash)
 	}
@@ -80,7 +80,7 @@ func TestLoginMigratesPlaintextPassword(t *testing.T) {
 // 主配置不含敏感值；新密码哈希生效；读接口仅密码与 JWT 密钥不回传，
 // 其余敏感键（cookie/api_key 等）明文回显便于查看。
 func TestSaveConfigSplitsSecrets(t *testing.T) {
-	ts := newTestServer(t)
+	ts, rt := newTestServer(t)
 	_, out := login(t, ts, "admin", "secret123")
 	token, _ := out["token"].(string)
 
@@ -93,7 +93,7 @@ func TestSaveConfigSplitsSecrets(t *testing.T) {
 		t.Fatalf("保存配置失败: %d %v", code, resp)
 	}
 
-	root := RT().RootDir
+	root := rt.RootDir
 	mainData, _ := os.ReadFile(filepath.Join(root, "config", "config.yaml"))
 	if strings.Contains(string(mainData), "UID=1") || strings.Contains(string(mainData), "新密码456") {
 		t.Error("主配置不应含 cookie 或明文密码")
@@ -144,7 +144,7 @@ func TestSaveConfigSplitsSecrets(t *testing.T) {
 // TestSaveConfigSecretMaskRoundTrip JWT 密钥掩码占位符原样回传保存 = 保持不变；
 // 清空保存 = 移除。
 func TestSaveConfigSecretMaskRoundTrip(t *testing.T) {
-	ts := newTestServer(t)
+	ts, rt := newTestServer(t)
 	_, out := login(t, ts, "admin", "secret123")
 	token, _ := out["token"].(string)
 
@@ -166,7 +166,7 @@ func TestSaveConfigSecretMaskRoundTrip(t *testing.T) {
 	if code, resp := authedJSON(t, ts, http.MethodPut, "/api/config/main", token, map[string]any{"data": payload}); code != http.StatusOK {
 		t.Fatalf("占位符保存失败: %d %v", code, resp)
 	}
-	secretsData, _ := os.ReadFile(filepath.Join(RT().RootDir, "config", "secrets.yaml"))
+	secretsData, _ := os.ReadFile(filepath.Join(rt.RootDir, "config", "secrets.yaml"))
 	if !strings.Contains(string(secretsData), "jwt-signing-secret") {
 		t.Error("占位符保存后 secret_key 被改动")
 	}
@@ -176,17 +176,17 @@ func TestSaveConfigSecretMaskRoundTrip(t *testing.T) {
 	if code, resp := authedJSON(t, ts, http.MethodPut, "/api/config/main", token, map[string]any{"data": payload}); code != http.StatusOK {
 		t.Fatalf("清空保存失败: %d %v", code, resp)
 	}
-	if got := RT().GetConfig().WebUI.SecretKey; got != "" {
+	if got := rt.GetConfig().WebUI.SecretKey; got != "" {
 		t.Errorf("清空保存后 secret_key 应为空, got %q", got)
 	}
 }
 
 // TestSaveConfigKeepsPasswordWhenEmpty 密码留空保存 = 保持现有密码不变。
 func TestSaveConfigKeepsPasswordWhenEmpty(t *testing.T) {
-	ts := newTestServer(t)
+	ts, rt := newTestServer(t)
 	_, out := login(t, ts, "admin", "secret123")
 	token, _ := out["token"].(string)
-	hashBefore := RT().GetConfig().WebUI.PasswordHash
+	hashBefore := rt.GetConfig().WebUI.PasswordHash
 	if hashBefore == "" {
 		t.Fatal("前置条件：登录迁移后应已有 password_hash")
 	}
@@ -199,7 +199,7 @@ func TestSaveConfigKeepsPasswordWhenEmpty(t *testing.T) {
 	if code, resp := authedJSON(t, ts, http.MethodPut, "/api/config/main", token, map[string]any{"data": payload}); code != http.StatusOK {
 		t.Fatalf("保存配置失败: %d %v", code, resp)
 	}
-	cfg := RT().GetConfig()
+	cfg := rt.GetConfig()
 	if cfg.WebUI.PasswordHash != hashBefore {
 		t.Errorf("密码留空保存后哈希被改动")
 	}

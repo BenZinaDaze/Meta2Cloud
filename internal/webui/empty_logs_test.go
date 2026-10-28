@@ -21,9 +21,9 @@ func TestLogsEmptyReturnsArrayNotNull(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: secret123\n"), 0o644)
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
-	server := NewServer()
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
+	server := NewServer(rt)
 	defer server.Close()
 	ts := httptest.NewServer(server.Handler())
 	defer ts.Close()
@@ -83,13 +83,13 @@ func TestSubscriptionTmdbCacheBackfill(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: secret123\ntmdb:\n  api_key: k\n"), 0o644)
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
-	tmdbClient := tmdb.NewClient("k", "zh-CN", "", 5, RT().GetTmdbCache())
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
+	tmdbClient := tmdb.NewClient("k", "zh-CN", "", 5, rt.GetTmdbCache())
 	tmdbClient.SetTestBaseURL(tmdbServer.URL)
-	RT().SetTmdbClientForTest(tmdbClient)
+	rt.tmdbClient = tmdbClient
 
-	server := NewServer()
+	server := NewServer(rt)
 	defer server.Close()
 	ts := httptest.NewServer(server.Handler())
 	defer ts.Close()
@@ -104,7 +104,7 @@ func TestSubscriptionTmdbCacheBackfill(t *testing.T) {
 	}
 
 	// 详情应已写入实体缓存(标题为中文)
-	entry := RT().GetLibraryStore().GetTmdbEntry("tv", 196285)
+	entry := rt.GetLibraryStore().GetTmdbEntry("tv", 196285)
 	if entry == nil {
 		t.Fatal("parse-rss 后 tmdb_media 缓存仍缺失")
 	}
@@ -123,9 +123,9 @@ func TestRootPathTraversal(t *testing.T) {
 	os.WriteFile(filepath.Join(rootDir, "secret", "token.txt"), []byte("TOPSECRET"), 0o644)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: secret123\n"), 0o644)
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
-	server := NewServer()
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
+	server := NewServer(rt)
 	defer server.Close()
 	ts := httptest.NewServer(server.Handler())
 	defer ts.Close()
@@ -167,14 +167,14 @@ func TestRefreshItemArraysNotNull(t *testing.T) {
 	movieFolder := fp.addFolder("测试电影 (2010)", "movies")
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: secret123\ntmdb:\n  api_key: k\n"), 0o644)
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
 	tmdbClient := tmdb.NewClient("k", "zh-CN", "", 5, nil)
 	tmdbClient.SetTestBaseURL(tmdbServer.URL)
-	RT().SetProviderForTest(fp.provider())
-	RT().SetTmdbClientForTest(tmdbClient)
+	rt.provider = fp.provider()
+	rt.tmdbClient = tmdbClient
 
-	server := NewServer()
+	server := NewServer(rt)
 	t.Cleanup(server.Close)
 	ts := httptest.NewServer(server.Handler())
 	t.Cleanup(ts.Close)
@@ -209,8 +209,8 @@ func TestBuildSeasonsTotalNotStale(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: p\n"), 0o644)
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
 
 	// TMDB mock: 主详情 seasons[0].episode_count=7, 季详情 12 集
 	tmdbServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -227,7 +227,7 @@ func TestBuildSeasonsTotalNotStale(t *testing.T) {
 	defer tmdbServer.Close()
 	tmdbClient := tmdb.NewClient("k", "zh-CN", "", 5, nil)
 	tmdbClient.SetTestBaseURL(tmdbServer.URL)
-	RT().SetTmdbClientForTest(tmdbClient)
+	rt.tmdbClient = tmdbClient
 
 	tmdbInfo := map[string]any{ // 主详情: 旧 episode_count=7
 		"seasons": []any{map[string]any{"season_number": 1.0, "episode_count": 7.0}},
@@ -236,7 +236,7 @@ func TestBuildSeasonsTotalNotStale(t *testing.T) {
 	for i := 1; i <= 12; i++ {
 		drive[epKey{1, i}] = true
 	}
-	seasons, total, inLib := RT().BuildSeasonsStatus(309163, tmdbInfo, drive, false)
+	seasons, total, inLib := rt.BuildSeasonsStatus(309163, tmdbInfo, drive, false)
 	if total != 12 {
 		t.Errorf("total = %d, want 12(季详情 12 集 > 主详情旧值 7)", total)
 	}
@@ -256,12 +256,12 @@ func TestBuildSeasonsTotalNotStale(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{"episodes": eps})
 	}))
 	defer tmdbServer2.Close()
-	RT().SetTmdbClientForTest(nil) // 防走缓存客户端干扰
+	rt.tmdbClient = nil // 防走缓存客户端干扰
 	c2 := tmdb.NewClient("k", "zh-CN", "", 5, nil)
 	c2.SetTestBaseURL(tmdbServer2.URL)
-	RT().SetTmdbClientForTest(c2)
+	rt.tmdbClient = c2
 
-	seasons2, total2, inLib2 := RT().BuildSeasonsStatus(309164, tmdbInfo, drive, false)
+	seasons2, total2, inLib2 := rt.BuildSeasonsStatus(309164, tmdbInfo, drive, false)
 	if total2 != 12 || inLib2 != 12 {
 		t.Errorf("场景2: total=%d inLib=%d, want 12/12(TMDB 未登记的 8-12 集应补占位)", total2, inLib2)
 	}

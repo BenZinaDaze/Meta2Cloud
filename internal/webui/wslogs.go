@@ -21,9 +21,9 @@ var wsUpgrader = websocket.Upgrader{
 }
 
 // handleLogsLiveWS /api/logs/live WebSocket 处理器。
-func handleLogsLiveWS(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleLogsLiveWS(w http.ResponseWriter, r *http.Request) {
 	// token 无效：升级后以 4001 关闭（对齐 Python close(code=4001)）
-	if RT().VerifyToken(r.URL.Query().Get("token")) == "" {
+	if s.rt.VerifyToken(r.URL.Query().Get("token")) == "" {
 		conn, err := wsUpgrader.Upgrade(w, r, nil)
 		if err != nil {
 			return
@@ -41,7 +41,7 @@ func handleLogsLiveWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	ch, cancel := SubscribeLog()
+	ch, cancel := s.rt.SubscribeLog()
 	defer cancel()
 
 	// 读取循环：丢弃客户端消息，连接断开时通知写循环退出

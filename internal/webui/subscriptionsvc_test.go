@@ -43,19 +43,19 @@ func setupSubscriptionTestConfig(t *testing.T, rootDir string) {
 }
 
 // newSubscriptionTmdbClient 构建指向 mock 的 TMDB 客户端（走实体缓存）。
-func newSubscriptionTmdbClient(t *testing.T, tmdbServer *httptest.Server) *tmdb.Client {
+func newSubscriptionTmdbClient(t *testing.T, rt *Runtime, tmdbServer *httptest.Server) *tmdb.Client {
 	t.Helper()
-	client := tmdb.NewClient("k", "zh-CN", "", 5, RT().GetTmdbCache())
+	client := tmdb.NewClient("k", "zh-CN", "", 5, rt.GetTmdbCache())
 	client.SetTestBaseURL(tmdbServer.URL)
 	return client
 }
 
 // newSubscriptionTestHTTPServer 启动被测服务。
-func newSubscriptionTestHTTPServer(t *testing.T) *httptest.Server {
+func newSubscriptionTestHTTPServer(t *testing.T, rt *Runtime) (*httptest.Server, *Runtime) {
 	t.Helper()
-	server := NewServer()
+	server := NewServer(rt)
 	t.Cleanup(server.Close)
-	return httptest.NewServer(server.Handler())
+	return httptest.NewServer(server.Handler()), rt
 }
 
 // subscriptionTestToken 登录并返回 JWT。
@@ -76,11 +76,11 @@ func TestCreateSubscriptionKeepsTmdbIDAndPoster(t *testing.T) {
 
 	rootDir := t.TempDir()
 	setupSubscriptionTestConfig(t, rootDir)
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
-	RT().SetTmdbClientForTest(newSubscriptionTmdbClient(t, tmdbServer))
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
+	rt.tmdbClient = newSubscriptionTmdbClient(t, rt, tmdbServer)
 
-	ts := newSubscriptionTestHTTPServer(t)
+	ts, rt := newSubscriptionTestHTTPServer(t, rt)
 	defer ts.Close()
 	token := subscriptionTestToken(t, ts)
 

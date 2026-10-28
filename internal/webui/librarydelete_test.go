@@ -14,6 +14,7 @@ import (
 
 // libraryDeleteEnv 联动删除测试环境。
 type libraryDeleteEnv struct {
+	rt        *Runtime
 	ts        *httptest.Server
 	token     string
 	fp        *fakeWebProvider
@@ -33,8 +34,8 @@ func newLibraryDeleteServer(t *testing.T) *libraryDeleteEnv {
 		[]byte("webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	RT().ResetJWTSecretCache()
-	InitRuntime(rootDir)
+	rt := InitRuntime(rootDir)
+	rt.ResetJWTSecretCache()
 
 	// 假网盘：root/剧集/删除之剧 (2024)/Season 01/两集视频
 	fp := newFakeWebProvider()
@@ -44,16 +45,16 @@ func newLibraryDeleteServer(t *testing.T) *libraryDeleteEnv {
 	season := fp.addFolder("Season 01", show.ID)
 	f1 := fp.addFile("删除之剧 - S01E01.mkv", season.ID)
 	f2 := fp.addFile("删除之剧 - S01E02.mkv", season.ID)
-	RT().SetProviderForTest(fp.provider())
+	rt.provider = fp.provider()
 
 	// 库条目
-	RT().GetLibraryStore().SaveIncremental([]map[string]any{
+	rt.GetLibraryStore().SaveIncremental([]map[string]any{
 		{"drive_folder_id": show.ID, "media_type": "tv", "tmdb_id": int64(312507), "title": "删除之剧", "year": "2024"},
 	}, nil)
 
 	// STRM 记录 + 本地 .strm 文件
-	env := &libraryDeleteEnv{fp: fp, showID: show.ID, fileIDs: []string{f1.ID, f2.ID}}
-	strmStore := RT().GetStrmStore()
+	env := &libraryDeleteEnv{rt: rt, fp: fp, showID: show.ID, fileIDs: []string{f1.ID, f2.ID}}
+	strmStore := rt.GetStrmStore()
 	for i, fileID := range env.fileIDs {
 		local := filepath.Join(rootDir, "strm", "删除之剧", fmt.Sprintf("S01E%02d.strm", i+1))
 		if err := os.MkdirAll(filepath.Dir(local), 0o755); err != nil {
@@ -75,7 +76,7 @@ func newLibraryDeleteServer(t *testing.T) *libraryDeleteEnv {
 	}
 
 	// 活跃订阅（media_type+tmdb_id 与库条目一致）
-	if _, err := RT().GetRSSStore().CreateSubscription(map[string]any{
+	if _, err := rt.GetRSSStore().CreateSubscription(map[string]any{
 		"name": "删除之剧订阅", "media_title": "删除之剧", "media_type": "tv", "tmdb_id": int64(312507),
 		"site": "mikan", "rss_url": "https://mikanani.me/RSS/Bangumi?bangumiId=3333&subgroupid=583",
 		"subgroup_name": "TestGroup", "season_number": 1, "start_episode": 1,
@@ -84,7 +85,7 @@ func newLibraryDeleteServer(t *testing.T) *libraryDeleteEnv {
 		t.Fatal(err)
 	}
 
-	server := NewServer()
+	server := NewServer(rt)
 	t.Cleanup(server.Close)
 	env.ts = httptest.NewServer(server.Handler())
 	t.Cleanup(env.ts.Close)
@@ -99,13 +100,13 @@ func assertLocalUntouched(t *testing.T, env *libraryDeleteEnv) {
 	if _, err := env.fp.GetFile(env.showID); err != nil {
 		t.Errorf("网盘目录不应被删除: %v", err)
 	}
-	if RT().GetLibraryStore().GetLibraryItemByFolderID(env.showID) == nil {
+	if env.rt.GetLibraryStore().GetLibraryItemByFolderID(env.showID) == nil {
 		t.Error("库条目不应被删除")
 	}
-	if subs := RT().GetRSSStore().ListSubscriptions(); len(subs) != 1 {
+	if subs := env.rt.GetRSSStore().ListSubscriptions(); len(subs) != 1 {
 		t.Errorf("订阅不应被取消, got %d", len(subs))
 	}
-	if n := RT().GetStrmStore().CountStrmFiles(); n != 2 {
+	if n := env.rt.GetStrmStore().CountStrmFiles(); n != 2 {
 		t.Errorf("STRM 记录不应被清理, got %d", n)
 	}
 	for _, p := range env.strmLocal {
@@ -113,7 +114,7 @@ func assertLocalUntouched(t *testing.T, env *libraryDeleteEnv) {
 			t.Errorf("本地 STRM 文件不应被删除 %s: %v", p, err)
 		}
 	}
-	if items := RT().GetIngestStore().Query(store.IngestQuery{Status: "deleted"}).Items; len(items) != 0 {
+	if items := env.rt.GetIngestStore().Query(store.IngestQuery{Status: "deleted"}).Items; len(items) != 0 {
 		t.Errorf("不应写入删除日志, got %v", items)
 	}
 }
@@ -136,7 +137,7 @@ func TestLibraryMediaDeleteFullFlow(t *testing.T) {
 		t.Error("网盘目录应已删除")
 	}
 	// STRM 记录与本地文件已清
-	if n := RT().GetStrmStore().CountStrmFiles(); n != 0 {
+	if n := env.rt.GetStrmStore().CountStrmFiles(); n != 0 {
 		t.Errorf("STRM 记录应清空, got %d", n)
 	}
 	for _, p := range env.strmLocal {
@@ -145,15 +146,15 @@ func TestLibraryMediaDeleteFullFlow(t *testing.T) {
 		}
 	}
 	// 库条目已删
-	if RT().GetLibraryStore().GetLibraryItemByFolderID(env.showID) != nil {
+	if env.rt.GetLibraryStore().GetLibraryItemByFolderID(env.showID) != nil {
 		t.Error("库条目应已删除")
 	}
 	// 订阅已取消（删行而非停用）
-	if subs := RT().GetRSSStore().ListSubscriptions(); len(subs) != 0 {
+	if subs := env.rt.GetRSSStore().ListSubscriptions(); len(subs) != 0 {
 		t.Errorf("订阅应已取消, got %d", len(subs))
 	}
 	// 删除日志：status='deleted'，title/tmdb_id/drive_folder_id 照抄
-	items := RT().GetIngestStore().Query(store.IngestQuery{Status: "deleted"}).Items
+	items := env.rt.GetIngestStore().Query(store.IngestQuery{Status: "deleted"}).Items
 	if len(items) != 1 {
 		t.Fatalf("删除日志应 1 条, got %d", len(items))
 	}
@@ -209,7 +210,7 @@ func TestLibraryMediaDeleteIdempotentWhenFolderGone(t *testing.T) {
 		t.Errorf("目录已不可遍历，本次请求内不应清理 STRM, got %v", out)
 	}
 	// STRM 记录与本地文件本次请求内保留（目录已无法遍历），由 after-delete 对账清理
-	if n := RT().GetStrmStore().CountStrmFiles(); n != 2 {
+	if n := env.rt.GetStrmStore().CountStrmFiles(); n != 2 {
 		t.Errorf("STRM 记录应保留待对账, got %d", n)
 	}
 	for _, p := range env.strmLocal {
@@ -217,10 +218,10 @@ func TestLibraryMediaDeleteIdempotentWhenFolderGone(t *testing.T) {
 			t.Errorf("本地 STRM 文件应保留待对账 %s: %v", p, err)
 		}
 	}
-	if RT().GetLibraryStore().GetLibraryItemByFolderID(env.showID) != nil {
+	if env.rt.GetLibraryStore().GetLibraryItemByFolderID(env.showID) != nil {
 		t.Error("库条目应已删除")
 	}
-	if items := RT().GetIngestStore().Query(store.IngestQuery{Status: "deleted"}).Items; len(items) != 1 {
+	if items := env.rt.GetIngestStore().Query(store.IngestQuery{Status: "deleted"}).Items; len(items) != 1 {
 		t.Errorf("删除日志应 1 条, got %d", len(items))
 	}
 }
@@ -236,7 +237,7 @@ func TestLibraryMediaDeleteKeepsSubscriptionWithoutFlag(t *testing.T) {
 	if out["cancelled_subscriptions"] != float64(0) {
 		t.Errorf("未带标志不应取消订阅, got %v", out)
 	}
-	if subs := RT().GetRSSStore().ListSubscriptions(); len(subs) != 1 {
+	if subs := env.rt.GetRSSStore().ListSubscriptions(); len(subs) != 1 {
 		t.Errorf("订阅应保留, got %d", len(subs))
 	}
 

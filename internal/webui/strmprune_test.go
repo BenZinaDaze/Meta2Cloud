@@ -7,6 +7,7 @@ import (
 )
 
 func TestPruneEmptyDirs(t *testing.T) {
+	rt := InitRuntime(t.TempDir())
 	root := t.TempDir()
 	// 空目录链（应自内向外全部删除）
 	empty := filepath.Join(root, "旧剧名 (2024)", "Season 01")
@@ -22,7 +23,7 @@ func TestPruneEmptyDirs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	RT().pruneEmptyDirs(root)
+	rt.pruneEmptyDirs(root)
 
 	if _, err := os.Stat(empty); !os.IsNotExist(err) {
 		t.Fatal("空目录应被删除")
