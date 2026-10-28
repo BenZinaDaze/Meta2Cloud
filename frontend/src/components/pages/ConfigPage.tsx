@@ -1196,12 +1196,12 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                       placeholder="输入登录用户名"
                     />
                   </Field>
-                  <Field label="密码" description="留空则无认证">
+                  <Field label="密码" description="留空保持当前密码不变">
                     <TextInput
                       value={(cfg?.webui as Record<string, unknown>)?.password as string | undefined}
                       onChange={(v) => set('webui', 'password', v)}
                       type="password"
-                      placeholder="设置强密码"
+                      placeholder="输入新密码"
                     />
                   </Field>
                   <Field label="Token 有效期" description="小时">

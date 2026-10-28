@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,6 +19,10 @@ const DefaultTMDBImageBaseURL = "https://image.tmdb.org"
 
 // parserRulesFilename 解析规则文件名（与主配置同目录）。
 const parserRulesFilename = "parser-rules.yaml"
+
+// SecretsFilename 敏感配置文件名（与主配置同目录，权限 0600）。
+// 敏感键（见 SecretKeys）的值持久化在此文件而非主配置，主配置可整体外发（贴日志/求助）而不泄漏凭证。
+const SecretsFilename = "secrets.yaml"
 
 // ParseError 配置解析错误。
 type ParseError struct{ msg string }
@@ -59,7 +64,7 @@ type U115 struct {
 	ClientID                  string `yaml:"client_id"`
 	TokenJSON                 string `yaml:"token_json"`
 	SessionJSON               string `yaml:"session_json"`
-	Cookie                    string `yaml:"cookie"`
+	Cookie                    string `yaml:"cookie,omitempty"`
 	DownloadFolderID          string `yaml:"download_folder_id"`
 	RootFolderID              string `yaml:"root_folder_id"`
 	AutoOrganizeEnabled       bool   `yaml:"auto_organize_enabled"`
@@ -95,7 +100,7 @@ type Subtitle struct {
 
 // Telegram 通知配置。
 type Telegram struct {
-	BotToken        string `yaml:"bot_token"`
+	BotToken        string `yaml:"bot_token,omitempty"`
 	ChatID          string `yaml:"chat_id"`
 	DebounceSeconds int    `yaml:"debounce_seconds"`
 }
@@ -105,18 +110,20 @@ type MediaVault struct {
 	Enabled   bool   `yaml:"enabled"`
 	Scheme    string `yaml:"scheme"`
 	Host      string `yaml:"host"`
-	APIKey    string `yaml:"api_key"`
+	APIKey    string `yaml:"api_key,omitempty"`
 	SourceDir string `yaml:"source_dir"`
 	Timeout   int    `yaml:"timeout"`
 }
 
 // WebUI Web 界面配置。
+// Password 为旧版明文密码（读取兼容，登录成功后自动迁移为 PasswordHash）；两者并存时哈希优先。
 type WebUI struct {
 	Username         string `yaml:"username"`
-	Password         string `yaml:"password"`
-	SecretKey        string `yaml:"secret_key"`
+	Password         string `yaml:"password,omitempty"`
+	PasswordHash     string `yaml:"password_hash,omitempty"`
+	SecretKey        string `yaml:"secret_key,omitempty"`
 	TokenExpireHours int    `yaml:"token_expire_hours"`
-	WebhookSecret    string `yaml:"webhook_secret"`
+	WebhookSecret    string `yaml:"webhook_secret,omitempty"`
 	LogRetentionDays int    `yaml:"log_retention_days"`
 }
 
@@ -136,7 +143,7 @@ type StrmMapping struct {
 type Strm struct {
 	Enabled      bool          `yaml:"enabled"`
 	URLBase      string        `yaml:"url_base"`
-	URLSecret    string        `yaml:"url_secret"`
+	URLSecret    string        `yaml:"url_secret,omitempty"`
 	SyncCron     string        `yaml:"sync_cron"`
 	RefreshPlex  bool          `yaml:"refresh_plex"`
 	MediaExt     []string      `yaml:"media_ext"`
@@ -225,23 +232,6 @@ func Default() *Config {
 	}
 }
 
-// rawConfig 与 YAML 结构对应的原始映射（先取默认值再覆盖）。
-type rawConfig struct {
-	Tmdb       map[string]any `yaml:"tmdb"`
-	Parser     map[string]any `yaml:"parser"`
-	U115       map[string]any `yaml:"u115"`
-	Pipeline   map[string]any `yaml:"pipeline"`
-	Subtitle   map[string]any `yaml:"subtitle"`
-	Telegram   map[string]any `yaml:"telegram"`
-	MediaVault map[string]any `yaml:"mediavault"`
-	WebUI      map[string]any `yaml:"webui"`
-	Storage    map[string]any `yaml:"storage"`
-	Strm       map[string]any `yaml:"strm"`
-	Trakt      map[string]any `yaml:"trakt"`
-	Plex       map[string]any `yaml:"plex"`
-	Rss        map[string]any `yaml:"rss"`
-}
-
 // Load 从 YAML 文件加载配置；path 为空时按默认搜索路径查找。
 // 文件不存在时返回默认配置（不报错，与 Python 版一致）。
 func Load(path string) (*Config, error) {
@@ -254,10 +244,12 @@ func Load(path string) (*Config, error) {
 		fmt.Fprintf(os.Stderr, "读取配置文件失败：%v，将使用默认配置。\n", err)
 		return Default(), nil
 	}
-	cfg, err := parseConfig(data)
-	if err != nil {
-		return nil, err
+	main := unmarshalYAMLMap(data)
+	// 敏感配置文件（与主配置同目录）：敏感键的值优先于主配置
+	if secretsData, err := os.ReadFile(filepath.Join(filepath.Dir(configPath), SecretsFilename)); err == nil {
+		MergeSecrets(main, unmarshalYAMLMap(secretsData))
 	}
+	cfg := parseConfigMap(main)
 
 	// 解析规则文件（与主配置同目录）
 	rulesPath := filepath.Join(filepath.Dir(configPath), parserRulesFilename)
@@ -270,26 +262,42 @@ func Load(path string) (*Config, error) {
 }
 
 func parseConfig(data []byte) (*Config, error) {
-	var raw rawConfig
-	if err := yaml.Unmarshal(data, &raw); err != nil {
-		fmt.Fprintf(os.Stderr, "读取配置文件失败：%v，将使用默认配置。\n", err)
-		return Default(), nil
-	}
+	return parseConfigMap(unmarshalYAMLMap(data)), nil
+}
+
+// parseConfigMap 从配置 map 解析（各段默认值兜底，与 Python from_dict 语义一致）。
+func parseConfigMap(m map[string]any) *Config {
 	cfg := Default()
-	cfg.Tmdb = parseTmdb(raw.Tmdb)
-	cfg.Parser = parseParser(raw.Parser)
-	cfg.U115 = parseU115(raw.U115)
-	cfg.Pipeline = parsePipeline(raw.Pipeline)
-	cfg.Subtitle = parseSubtitle(raw.Subtitle)
-	cfg.Telegram = parseTelegram(raw.Telegram)
-	cfg.MediaVault = parseMediaVault(raw.MediaVault)
-	cfg.WebUI = parseWebUI(raw.WebUI)
-	cfg.Storage = parseStorage(raw.Storage)
-	cfg.Strm = parseStrm(raw.Strm)
-	cfg.Trakt = parseTrakt(raw.Trakt)
-	cfg.Plex = parsePlex(raw.Plex)
-	cfg.Rss = parseRss(raw.Rss)
-	return cfg, nil
+	cfg.Tmdb = parseTmdb(sectionMap(m, "tmdb"))
+	cfg.Parser = parseParser(sectionMap(m, "parser"))
+	cfg.U115 = parseU115(sectionMap(m, "u115"))
+	cfg.Pipeline = parsePipeline(sectionMap(m, "pipeline"))
+	cfg.Subtitle = parseSubtitle(sectionMap(m, "subtitle"))
+	cfg.Telegram = parseTelegram(sectionMap(m, "telegram"))
+	cfg.MediaVault = parseMediaVault(sectionMap(m, "mediavault"))
+	cfg.WebUI = parseWebUI(sectionMap(m, "webui"))
+	cfg.Storage = parseStorage(sectionMap(m, "storage"))
+	cfg.Strm = parseStrm(sectionMap(m, "strm"))
+	cfg.Trakt = parseTrakt(sectionMap(m, "trakt"))
+	cfg.Plex = parsePlex(sectionMap(m, "plex"))
+	cfg.Rss = parseRss(sectionMap(m, "rss"))
+	return cfg
+}
+
+// sectionMap 取配置段（缺失返回 nil，各段解析函数按默认值兜底）。
+func sectionMap(m map[string]any, name string) map[string]any {
+	sec, _ := m[name].(map[string]any)
+	return sec
+}
+
+// unmarshalYAMLMap 解析为配置 map；失败时打印日志并返回空 map（默认值兜底）。
+func unmarshalYAMLMap(data []byte) map[string]any {
+	out := map[string]any{}
+	if err := yaml.Unmarshal(data, &out); err != nil {
+		fmt.Fprintf(os.Stderr, "读取配置文件失败：%v，将使用默认配置。\n", err)
+		return map[string]any{}
+	}
+	return out
 }
 
 // parseParserRules 解析 parser-rules.yaml（支持顶层或 parser: 包裹）。
@@ -455,6 +463,7 @@ func parseWebUI(m map[string]any) WebUI {
 	return WebUI{
 		Username:         str(m, "username", "admin"),
 		Password:         str(m, "password", ""),
+		PasswordHash:     str(m, "password_hash", ""),
 		SecretKey:        str(m, "secret_key", ""),
 		TokenExpireHours: integer(m, "token_expire_hours", 24),
 		WebhookSecret:    str(m, "webhook_secret", ""),
@@ -490,8 +499,9 @@ func normalizeStrmURLBase(u string) string {
 }
 
 // EnsureDefaultFiles 首次启动友好：缺失的配置文件写出默认内容（已存在的不覆盖）。
-// 覆盖三件套：config.yaml / parser-rules.yaml / categories.yaml。
-func EnsureDefaultFiles(configPath, rulesPath, categoriesPath string) error {
+// 覆盖 config.yaml / secrets.yaml / parser-rules.yaml / categories.yaml。
+// 首次生成的主配置不含密码：随机初始密码（打印在启动日志）以 bcrypt 哈希存入 secrets.yaml。
+func EnsureDefaultFiles(configPath, secretsPath, rulesPath, categoriesPath string) error {
 	if dir := filepath.Dir(configPath); dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
@@ -499,18 +509,28 @@ func EnsureDefaultFiles(configPath, rulesPath, categoriesPath string) error {
 	}
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		def := Default()
-		// 首次生成：自动设置随机初始密码（打印在启动日志），避免 WebUI 空密码锁死
-		def.WebUI.Password = randomPassword(10)
+		// 首次生成：随机初始密码打印在启动日志，密码只写入 secrets.yaml（哈希优先，避免空密码锁死）
+		plain := randomPassword(10)
+		secretsWebUI := map[string]any{}
+		if hash, err := HashPassword(plain); err == nil {
+			secretsWebUI["password_hash"] = hash
+		} else {
+			log.Printf("初始密码哈希失败（降级为 secrets.yaml 明文存储）：%v", err)
+			secretsWebUI["password"] = plain
+		}
 		data, err := yaml.Marshal(def)
 		if err != nil {
 			return err
 		}
 		header := "# Meta2Cloud 主配置（首次启动自动生成；完整可配置项参考 config.example.yaml）\n" +
-			"# 初始 WebUI 密码见启动日志中的「初始密码」，登录后请在配置页修改\n"
+			"# 登录密码等敏感项保存在同目录 secrets.yaml（权限 0600）；初始密码见启动日志\n"
 		if err := os.WriteFile(configPath, append([]byte(header), data...), 0o644); err != nil {
 			return err
 		}
-		log.Printf("已生成默认配置 %s，WebUI 初始密码：%s（用户名 %s，登录后请修改）", configPath, def.WebUI.Password, def.WebUI.Username)
+		if err := SaveSecrets(secretsPath, map[string]any{"webui": secretsWebUI}); err != nil {
+			return err
+		}
+		log.Printf("已生成默认配置 %s，WebUI 初始密码：%s（用户名 %s，登录后请修改）", configPath, plain, def.WebUI.Username)
 	}
 	if _, err := os.Stat(rulesPath); os.IsNotExist(err) {
 		data, err := yaml.Marshal(Default().Parser)
@@ -630,6 +650,95 @@ func parsePlex(m map[string]any) Plex {
 // poll_cron 缺省 */5 * * * *（等价旧默认 300s）；旧 poll_seconds 键静默忽略。
 func parseRss(m map[string]any) Rss {
 	return Rss{PollCron: cronString(m, "poll_cron", "*/5 * * * *")}
+}
+
+// ── 敏感配置（secrets.yaml）────────────────────────────────
+
+// SecretKeys 主配置中的敏感键集合（"section.key" 形式）。
+// 这些键的值持久化在 secrets.yaml（0600）而非主配置；读取时 secrets.yaml 优先，
+// 主配置中的同名键仅作旧配置兼容（保存时自动搬迁）。
+var SecretKeys = map[string]bool{
+	"u115.cookie":          true,
+	"telegram.bot_token":   true,
+	"mediavault.api_key":   true,
+	"webui.password":       true, // 旧版明文密码：读取兼容，登录成功后自动迁移为 password_hash
+	"webui.password_hash":  true,
+	"webui.secret_key":     true,
+	"webui.webhook_secret": true,
+	"strm.url_secret":      true,
+}
+
+// splitKeyPath 拆开 "section.key"。
+func splitKeyPath(path string) (section, key string) {
+	section, key, _ = strings.Cut(path, ".")
+	return
+}
+
+// MergeSecrets 将 secrets 中的敏感键覆盖进 dst（secrets.yaml 值优先于主配置）。
+func MergeSecrets(dst, secrets map[string]any) {
+	for path := range SecretKeys {
+		section, key := splitKeyPath(path)
+		secMap, ok := secrets[section].(map[string]any)
+		if !ok {
+			continue
+		}
+		v, ok := secMap[key]
+		if !ok {
+			continue
+		}
+		if dstSec, ok := dst[section].(map[string]any); ok {
+			dstSec[key] = v
+		} else {
+			dst[section] = map[string]any{key: v}
+		}
+	}
+}
+
+// SplitSecrets 从 payload 中摘出敏感键（并从 payload 删除），返回按段组织的敏感 map。
+// 调用后 payload 不含敏感键，可直接写主配置文件。
+func SplitSecrets(payload map[string]any) map[string]any {
+	secrets := map[string]any{}
+	for path := range SecretKeys {
+		section, key := splitKeyPath(path)
+		secMap, ok := payload[section].(map[string]any)
+		if !ok {
+			continue
+		}
+		v, ok := secMap[key]
+		if !ok {
+			continue
+		}
+		delete(secMap, key)
+		dst, _ := secrets[section].(map[string]any)
+		if dst == nil {
+			dst = map[string]any{}
+			secrets[section] = dst
+		}
+		dst[key] = v
+	}
+	return secrets
+}
+
+// SaveSecrets 写出敏感配置文件（权限 0600，仅属主可读写）。
+func SaveSecrets(path string, m map[string]any) error {
+	out, err := yaml.Marshal(m)
+	if err != nil {
+		return err
+	}
+	header := "# Meta2Cloud 敏感配置（权限 0600；请勿提交到代码仓库或随日志外发）\n" +
+		"# 键与主配置一致，由 WebUI 保存时自动维护；此文件中的值优先于主配置\n"
+	return os.WriteFile(path, append([]byte(header), out...), 0o600)
+}
+
+// HashPassword 生成 bcrypt 哈希（WebUI 登录密码的存储格式）。
+func HashPassword(password string) (string, error) {
+	b, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(b), err
+}
+
+// CheckPasswordHash 校验密码与 bcrypt 哈希是否匹配。
+func CheckPasswordHash(hash, password string) bool {
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
 // ── 便利方法 ────────────────────────────────────────────────

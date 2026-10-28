@@ -37,7 +37,7 @@ Backend uses JWT (HS256, `golang-jwt/jwt/v5`). Frontend stores token in localSto
 Go's ServeMux doesn't allow a suffix after a wildcard segment (`{id}:check` is invalid). Such routes register the bare wildcard and dispatch on the suffix inside the handler (see `handleSubscriptionPostOp`).
 
 ### Configuration
-Three YAML files under `config/`: `config.yaml` (main), `parser-rules.yaml` (识别规则), `categories.yaml` (媒体分类). All are editable via Web UI; missing files are auto-generated with defaults on first boot. u115 目录配置存目录名（WebUI 目录选择器直选网盘目录），不再手填 cid。`META2CLOUD_CONFIG_DIR` env var is not used; the server resolves `config/` under `--root` (default: current directory).
+Four YAML files under `config/`: `config.yaml` (main), `secrets.yaml` (敏感键，0600，值优先于主配置), `parser-rules.yaml` (识别规则), `categories.yaml` (媒体分类). All are editable via Web UI; missing files are auto-generated with defaults on first boot. WebUI 密码只存 bcrypt 哈希（`webui.password_hash`，旧版明文 `webui.password` 登录时自动迁移）；敏感键集合见 `config.SecretKeys`，保存配置时自动拆入 secrets.yaml。u115 目录配置存目录名（WebUI 目录选择器直选网盘目录），不再手填 cid。`META2CLOUD_CONFIG_DIR` env var is not used; the server resolves `config/` under `--root` (default: current directory).
 
 ### TMDB Caching
 TMDB responses are cached in the `tmdb_media` table of `library.db` (entity-keyed by media_type+tmdb_id, seasons/episodes nested in JSON columns). Pipeline and WebUI share the same cache.

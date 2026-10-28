@@ -261,8 +261,8 @@ func handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg := RT().GetConfig()
-	if cfg.WebUI.Password == "" {
-		writeJSONError(w, http.StatusForbidden, "密码未设置，请先在配置文件中设置 webui.password")
+	if cfg.WebUI.Password == "" && cfg.WebUI.PasswordHash == "" {
+		writeJSONError(w, http.StatusForbidden, "密码未设置，请先在配置文件中设置 webui 密码")
 		return
 	}
 	if !RT().CredentialsMatch(body.Username, body.Password) {

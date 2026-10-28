@@ -31,7 +31,8 @@ type Runtime struct {
 	cfg         *config.Config
 	configPath  string
 	rulesPath   string
-	configSig   [2]int64 // (config mtime, rules mtime)
+	secretsPath string
+	configSig   [3]int64 // (config mtime, rules mtime, secrets mtime)
 	scheduleGen int64    // 配置变更代数（每次重载递增，驱动 cron 调度启停）
 	categories  *config.CategoriesConfig
 	categoriesM int64 // categories.yaml mtime
@@ -70,9 +71,11 @@ func InitRuntime(rootDir string) *Runtime {
 	defaultRuntime.RootDir = rootDir
 	defaultRuntime.configPath = filepath.Join(rootDir, "config", "config.yaml")
 	defaultRuntime.rulesPath = filepath.Join(rootDir, "config", "parser-rules.yaml")
+	defaultRuntime.secretsPath = filepath.Join(rootDir, "config", config.SecretsFilename)
 	// 首次启动友好：缺失的配置文件自动生成默认内容（已存在的不覆盖）
 	if err := config.EnsureDefaultFiles(
 		defaultRuntime.configPath,
+		defaultRuntime.secretsPath,
 		defaultRuntime.rulesPath,
 		filepath.Join(rootDir, "config", config.CategoriesFilename),
 	); err != nil {
@@ -94,7 +97,7 @@ func InitRuntime(rootDir string) *Runtime {
 	defaultRuntime.traktSync = nil
 	defaultRuntime.categories = nil
 	defaultRuntime.categoriesM = 0
-	defaultRuntime.configSig = [2]int64{}
+	defaultRuntime.configSig = [3]int64{}
 	return defaultRuntime
 }
 
@@ -105,10 +108,15 @@ func fileMtime(path string) int64 {
 	return 0
 }
 
+// configSignature 配置三件套（主配置/解析规则/敏感配置）的 mtime 签名。
+func (rt *Runtime) configSignature() [3]int64 {
+	return [3]int64{fileMtime(rt.configPath), fileMtime(rt.rulesPath), fileMtime(rt.secretsPath)}
+}
+
 // invalidateIfChanged 配置文件变更时重载缓存（需已持锁）。
 // 返回是否发生了重载（含首次加载）。
 func (rt *Runtime) invalidateIfChanged() bool {
-	sig := [2]int64{fileMtime(rt.configPath), fileMtime(rt.rulesPath)}
+	sig := rt.configSignature()
 	if rt.configSig == sig {
 		return false
 	}
@@ -136,7 +144,7 @@ func (rt *Runtime) getConfigLocked() *config.Config {
 			cfg = config.Default()
 		}
 		rt.cfg = cfg
-		rt.configSig = [2]int64{fileMtime(rt.configPath), fileMtime(rt.rulesPath)}
+		rt.configSig = rt.configSignature()
 	}
 	return rt.cfg
 }
@@ -347,16 +355,22 @@ func (rt *Runtime) DataDir() string {
 	return filepath.Join(rt.RootDir, "config", "data")
 }
 
-// CredentialsMatch 校验用户名密码（恒定时间比较）。
+// CredentialsMatch 校验用户名密码：优先 bcrypt 哈希比对；
+// 旧版明文密码恒定时间比对，成功后自动迁移为哈希（迁移失败不影响本次登录）。
 func (rt *Runtime) CredentialsMatch(username, password string) bool {
 	cfg := rt.GetConfig()
 	cfgUser := cfg.WebUI.Username
 	if cfgUser == "" {
 		cfgUser = "admin"
 	}
-	cfgPass := cfg.WebUI.Password
 	userOK := subtle.ConstantTimeCompare([]byte(username), []byte(cfgUser)) == 1
-	passOK := subtle.ConstantTimeCompare([]byte(password), []byte(cfgPass)) == 1
+	if cfg.WebUI.PasswordHash != "" {
+		return userOK && config.CheckPasswordHash(cfg.WebUI.PasswordHash, password)
+	}
+	passOK := cfg.WebUI.Password != "" && subtle.ConstantTimeCompare([]byte(password), []byte(cfg.WebUI.Password)) == 1
+	if userOK && passOK {
+		migratePlaintextPassword(password)
+	}
 	return userOK && passOK
 }
 

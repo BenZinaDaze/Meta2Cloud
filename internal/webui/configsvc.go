@@ -4,6 +4,7 @@ package webui
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"regexp"
@@ -13,6 +14,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"meta2cloud/internal/config"
 	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/mediaparser"
 	"meta2cloud/internal/tmdb"
@@ -46,14 +48,31 @@ func extractParserRules(data map[string]any) map[string]any {
 	return map[string]any{"custom_words": words, "custom_release_groups": groups}
 }
 
-// readMergedConfigDict 主配置 + 解析规则合并。
-func readMergedConfigDict() map[string]any {
+// mergedConfigDict 主配置 + 敏感配置合并（secrets.yaml 值优先）。
+func mergedConfigDict() map[string]any {
 	parsed := readYAMLMap(RT().configPath)
+	config.MergeSecrets(parsed, readYAMLMap(RT().secretsPath))
+	return parsed
+}
+
+// maskPasswordFields 读接口不回传密码（明文与哈希都不出后端）：
+// 配置页密码框留空表示保持不变，写接口据此从现有文件补齐。
+func maskPasswordFields(m map[string]any) {
+	if sec, ok := m["webui"].(map[string]any); ok {
+		sec["password"] = ""
+		delete(sec, "password_hash")
+	}
+}
+
+// readMergedConfigDict 主配置 + 敏感配置 + 解析规则合并。
+func readMergedConfigDict() map[string]any {
+	parsed := mergedConfigDict()
 	rules := readYAMLMap(RT().rulesPath)
 	if section, ok := rules["parser"].(map[string]any); ok {
 		rules = section
 	}
 	parsed["parser"] = extractParserRules(map[string]any{"parser": rules})
+	maskPasswordFields(parsed)
 	return parsed
 }
 
@@ -495,6 +514,81 @@ func writeYAMLMap(path string, data map[string]any) error {
 	return os.WriteFile(path, out, 0o644)
 }
 
+// writeMainConfigFiles 保存主配置：敏感键拆入 secrets.yaml（0600），其余写主配置。
+// webui.password 非空 = 设置新密码（哈希后入 secrets.yaml，明文永不落盘）；
+// 为空或缺失 = 保持现有密码（读接口不回传密码值，这里从现有文件补齐，防止整体替换保存时丢失）。
+func writeMainConfigFiles(payload map[string]any) error {
+	secrets := config.SplitSecrets(payload)
+	if _, hasWebUI := payload["webui"]; hasWebUI {
+		sec, _ := secrets["webui"].(map[string]any)
+		if sec == nil {
+			sec = map[string]any{}
+			secrets["webui"] = sec
+		}
+		if plain, _ := sec["password"].(string); plain != "" {
+			hash, err := config.HashPassword(plain)
+			if err != nil {
+				if len(plain) > 72 {
+					return fmt.Errorf("密码过长（最多 72 字节）")
+				}
+				return fmt.Errorf("密码加密失败：%w", err)
+			}
+			delete(sec, "password")
+			sec["password_hash"] = hash
+		} else {
+			delete(sec, "password")
+			existing := jsonx.Map(mergedConfigDict(), "webui")
+			if h, _ := existing["password_hash"].(string); h != "" {
+				sec["password_hash"] = h
+			} else if p, _ := existing["password"].(string); p != "" {
+				sec["password"] = p // 旧版明文原样保留，待下次登录自动迁移
+			}
+		}
+	}
+	// 先写 secrets（0600）再写主配置：主配置写失败时 secrets 已生效，重载后取 secrets 值
+	if err := config.SaveSecrets(RT().secretsPath, secrets); err != nil {
+		return err
+	}
+	return writeYAMLMap(RT().configPath, payload)
+}
+
+// migratePlaintextPassword 旧版明文密码迁移：bcrypt 哈希写入 secrets.yaml 并从主配置移除明文。
+// 迁移失败仅记日志，不影响本次登录（下次登录重试）。
+func migratePlaintextPassword(password string) {
+	hash, err := config.HashPassword(password)
+	if err != nil {
+		log.Printf("明文密码迁移失败：%v", err)
+		return
+	}
+	rt := RT()
+	main := readYAMLMap(rt.configPath)
+	if sec, ok := main["webui"].(map[string]any); ok {
+		delete(sec, "password")
+	}
+	secrets := readYAMLMap(rt.secretsPath)
+	sec, _ := secrets["webui"].(map[string]any)
+	if sec == nil {
+		sec = map[string]any{}
+		secrets["webui"] = sec
+	}
+	sec["password_hash"] = hash
+	if err := config.SaveSecrets(rt.secretsPath, secrets); err != nil {
+		log.Printf("明文密码迁移失败（secrets.yaml 写入）：%v", err)
+		return
+	}
+	if err := writeYAMLMap(rt.configPath, main); err != nil {
+		log.Printf("明文密码迁移：主配置明文移除失败：%v", err)
+		return
+	}
+	// 只刷新配置缓存：密码迁移不影响 Provider/客户端，不应触发它们重建
+	//（也避免把注入的测试替身清掉）；签名取迁移后的文件状态，防止误判为外部变更。
+	rt.mu.Lock()
+	rt.cfg = nil
+	rt.configSig = rt.configSignature()
+	rt.mu.Unlock()
+	log.Printf("WebUI 明文密码已迁移为加密存储（secrets.yaml）")
+}
+
 // invalidateRuntimeCache 保存配置后清空运行时缓存。
 func invalidateRuntimeCache() {
 	rt := RT()
@@ -506,7 +600,7 @@ func invalidateRuntimeCache() {
 	rt.tmdbClient = nil
 	rt.traktClient = nil
 	rt.plexClient = nil
-	rt.configSig = [2]int64{0, 0}
+	rt.configSig = [3]int64{}
 }
 
 // ── HTTP 处理器 ─────────────────────────────────────────────
@@ -530,7 +624,9 @@ func handleReadMainConfig(w http.ResponseWriter, _ *http.Request) {
 	if !requireConfigFile(w) {
 		return
 	}
-	writeJSON(w, http.StatusOK, readYAMLMap(RT().configPath))
+	parsed := mergedConfigDict()
+	maskPasswordFields(parsed)
+	writeJSON(w, http.StatusOK, parsed)
 }
 
 func handleReadParserRules(w http.ResponseWriter, _ *http.Request) {
@@ -569,7 +665,7 @@ func handleWriteConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	parserRules := extractParserRules(payload)
 	delete(payload, "parser")
-	if err := writeYAMLMap(RT().configPath, payload); err != nil {
+	if err := writeMainConfigFiles(payload); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -599,7 +695,7 @@ func handleWriteMainConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	delete(payload, "parser")
-	if err := writeYAMLMap(RT().configPath, payload); err != nil {
+	if err := writeMainConfigFiles(payload); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
