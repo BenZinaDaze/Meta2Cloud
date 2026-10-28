@@ -33,14 +33,14 @@ func NewServer() *Server {
 	s.registerRoutes()
 	s.rootFS = s.loadStaticFiles()
 	s.rt.startTmdbEvictLoop(s.stop)
-	StartupBackgroundWatchers()
+	s.rt.StartupBackgroundWatchers()
 	return s
 }
 
 // Close 释放后台任务。
 func (s *Server) Close() {
 	close(s.stop)
-	StopBackgroundWatchers()
+	s.rt.StopBackgroundWatchers()
 }
 
 // loadStaticFiles 加载 frontend/dist（存在时）。

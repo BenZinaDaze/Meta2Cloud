@@ -91,8 +91,8 @@ func parseUTCTime(s *string) (time.Time, bool) {
 func utcNowISO() string { return time.Now().UTC().Format("2006-01-02T15:04:05.000000-07:00") }
 
 // pollU115AutoOrganizeOnce 单次轮询 115 云下载任务完成状态。
-func pollU115AutoOrganizeOnce() {
-	cfg := RT().GetConfig()
+func (rt *Runtime) pollU115AutoOrganizeOnce() {
+	cfg := rt.GetConfig()
 	u115AutoWatcher.mu.Lock()
 	nowStr := utcNowISO()
 	u115AutoWatcher.lastPolledAt = &nowStr
@@ -102,7 +102,7 @@ func pollU115AutoOrganizeOnce() {
 	if cfg.ActiveStorageName() != "pan115" || !cfg.U115.AutoOrganizeEnabled || cfg.U115.DownloadFolderID == "" {
 		return
 	}
-	auth := RT().u115OauthStatusPayload()
+	auth := rt.u115OauthStatusPayload()
 	if authorized, _ := auth["authorized"].(bool); !authorized {
 		// 最常见失效形态：本地 token 过期且自动刷新被拒——调 API 前即上报失效，
 		// 避免早退导致永不告警（token 文件缺失等未配置形态不在此告警，防止误报）；
@@ -116,7 +116,7 @@ func pollU115AutoOrganizeOnce() {
 		}
 		return
 	}
-	offline := RT().offlineClient()
+	offline := rt.offlineClient()
 	if offline == nil {
 		return
 	}
@@ -124,7 +124,7 @@ func pollU115AutoOrganizeOnce() {
 	dlFolderID := resolveFolderID(cfg.U115.DownloadFolderID)
 	taskPage, err := offline.GetTaskList(1)
 	if err != nil {
-		recordU115PollError(err)
+		rt.recordU115PollError(err)
 		return
 	}
 	NotifyServiceHealth("115", true, "")
@@ -133,7 +133,7 @@ func pollU115AutoOrganizeOnce() {
 		stableSeconds = 0
 	}
 	now := time.Now()
-	autoStore := RT().GetU115AutoStore()
+	autoStore := rt.GetU115AutoStore()
 	var completed []u115.OfflineTask
 
 	for _, task := range taskPage.Tasks {
@@ -157,10 +157,10 @@ func pollU115AutoOrganizeOnce() {
 		return
 	}
 
-	if !RT().SchedulePipeline(cfg.Telegram.DebounceSeconds) {
-		RT().appLog("u115", "auto_organize_deferred", "WARNING",
+	if !rt.SchedulePipeline(cfg.Telegram.DebounceSeconds) {
+		rt.appLog("u115", "auto_organize_deferred", "WARNING",
 			"检测到 115 云下载任务完成，但当前整理流程忙碌，等待后续轮询重试", map[string]any{
-				"count": len(completed), "tasks": summarizeTasks(completed),
+				"count": len(completed), "tasks": rt.summarizeTasks(completed),
 			})
 		return
 	}
@@ -169,16 +169,16 @@ func pollU115AutoOrganizeOnce() {
 	}
 	triggeredPayload := map[string]any{
 		"triggered_at": utcNowISO(), "count": len(completed),
-		"tasks": summarizeTasks(completed),
+		"tasks": rt.summarizeTasks(completed),
 	}
 	u115AutoWatcher.mu.Lock()
 	u115AutoWatcher.lastTriggeredTask = triggeredPayload
 	u115AutoWatcher.mu.Unlock()
-	RT().appLog("u115", "auto_organize_triggered", "SUCCESS",
+	rt.appLog("u115", "auto_organize_triggered", "SUCCESS",
 		fmt.Sprintf("检测到 %d 个 115 云下载任务完成，已触发自动整理", len(completed)), triggeredPayload)
 }
 
-func summarizeTasks(tasks []u115.OfflineTask) []map[string]any {
+func (rt *Runtime) summarizeTasks(tasks []u115.OfflineTask) []map[string]any {
 	out := make([]map[string]any, 0, len(tasks))
 	for _, task := range tasks {
 		out = append(out, map[string]any{
@@ -189,7 +189,7 @@ func summarizeTasks(tasks []u115.OfflineTask) []map[string]any {
 	return out
 }
 
-func recordU115PollError(err error) {
+func (rt *Runtime) recordU115PollError(err error) {
 	msg := ""
 	if u115.IsRateLimit(err) {
 		msg = "115 自动整理轮询进入冷却：" + err.Error()
@@ -292,28 +292,28 @@ var (
 
 // ApplyWatchSchedules 依当前配置启停各 cron 调度（配置变更检测点调用，幂等）：
 // 开关开启才存在执行循环，关闭即停。
-func ApplyWatchSchedules(cfg *config.Config) {
+func (rt *Runtime) ApplyWatchSchedules(cfg *config.Config) {
 	if schedulesStopped.Load() {
 		return
 	}
-	traktCronLoop.apply(cfg.Trakt.Enabled && cfg.Trakt.SyncCron != "", runTraktCron)
-	strmCronLoop.apply(cfg.Strm.Enabled && cfg.ActiveStorageName() == "pan115" && cfg.Strm.SyncCron != "", runStrmCron)
-	u115CronLoop.apply(cfg.ActiveStorageName() == "pan115" && cfg.U115.AutoOrganizeEnabled && cfg.U115.DownloadFolderID != "" && cfg.U115.AutoOrganizeCron != "", runU115Cron)
-	rssCronLoop.apply(RT().getSubscriptionPollCron() != "", runRSSCron)
+	traktCronLoop.apply(cfg.Trakt.Enabled && cfg.Trakt.SyncCron != "", rt.runTraktCron)
+	strmCronLoop.apply(cfg.Strm.Enabled && cfg.ActiveStorageName() == "pan115" && cfg.Strm.SyncCron != "", rt.runStrmCron)
+	u115CronLoop.apply(cfg.ActiveStorageName() == "pan115" && cfg.U115.AutoOrganizeEnabled && cfg.U115.DownloadFolderID != "" && cfg.U115.AutoOrganizeCron != "", rt.runU115Cron)
+	rssCronLoop.apply(rt.getSubscriptionPollCron() != "", rt.runRSSCron)
 }
 
 // runTraktCron 观看同步 cron 执行器。配对未完成（token 等不随配置文件变更）
 // 时跳过本轮并提示，下个 cron 点重试。
-func runTraktCron(stop <-chan struct{}) {
-	RT().appLog("trakt", "sync_schedule_started", "INFO", "观看同步定时线程已启动", nil)
+func (rt *Runtime) runTraktCron(stop <-chan struct{}) {
+	rt.appLog("trakt", "sync_schedule_started", "INFO", "观看同步定时线程已启动", nil)
 	cronWarned := ""
 	readyWarned := false
 	for {
-		spec := RT().GetConfig().Trakt.SyncCron
+		spec := rt.GetConfig().Trakt.SyncCron
 		d, ok, err := cronNextDelay(spec, time.Now())
 		if err != nil {
 			if cronWarned != spec {
-				RT().appLog("trakt", "sync_cron_invalid", "ERROR",
+				rt.appLog("trakt", "sync_cron_invalid", "ERROR",
 					"观看同步 cron 表达式无效，修正配置后自动恢复："+err.Error(), map[string]any{"cron": spec})
 				cronWarned = spec
 			}
@@ -326,7 +326,7 @@ func runTraktCron(stop <-chan struct{}) {
 		select {
 		case <-stop:
 			timer.Stop()
-			RT().appLog("trakt", "sync_schedule_stopped", "INFO", "观看同步定时线程已停止", nil)
+			rt.appLog("trakt", "sync_schedule_stopped", "INFO", "观看同步定时线程已停止", nil)
 			return
 		case <-timer.C:
 		}
@@ -334,34 +334,34 @@ func runTraktCron(stop <-chan struct{}) {
 		traktWatcher.mu.Lock()
 		traktWatcher.lastPolledAt = &nowStr
 		traktWatcher.mu.Unlock()
-		cfg := RT().GetConfig()
+		cfg := rt.GetConfig()
 		if !cfg.IsPlexReady() || !cfg.IsTraktReady() {
 			if !readyWarned {
-				RT().appLog("trakt", "sync_schedule_skipped", "INFO",
+				rt.appLog("trakt", "sync_schedule_skipped", "INFO",
 					"观看同步定时触发跳过（Plex/Trakt 配对未完成），下个 cron 点重试", nil)
 				readyWarned = true
 			}
 			continue
 		}
 		readyWarned = false
-		if ready, halted := RT().waitPlexReachable(stop); halted {
+		if ready, halted := rt.waitPlexReachable(stop); halted {
 			return
 		} else if ready {
-			RT().TriggerTraktSync(triggerSchedule)
+			rt.TriggerTraktSync(triggerSchedule)
 		}
 	}
 }
 
 // runStrmCron STRM 定时同步 cron 执行器。
-func runStrmCron(stop <-chan struct{}) {
-	RT().appLog("strm", "strm_sync_started", "INFO", "STRM 定时同步线程已启动", nil)
+func (rt *Runtime) runStrmCron(stop <-chan struct{}) {
+	rt.appLog("strm", "strm_sync_started", "INFO", "STRM 定时同步线程已启动", nil)
 	cronWarned := ""
 	for {
-		spec := RT().GetConfig().Strm.SyncCron
+		spec := rt.GetConfig().Strm.SyncCron
 		d, ok, err := cronNextDelay(spec, time.Now())
 		if err != nil {
 			if cronWarned != spec {
-				RT().appLog("strm", "sync_cron_invalid", "ERROR",
+				rt.appLog("strm", "sync_cron_invalid", "ERROR",
 					"STRM 定时同步 cron 表达式无效，修正配置后自动恢复："+err.Error(), map[string]any{"cron": spec})
 				cronWarned = spec
 			}
@@ -374,28 +374,28 @@ func runStrmCron(stop <-chan struct{}) {
 		select {
 		case <-stop:
 			timer.Stop()
-			RT().appLog("strm", "strm_sync_stopped", "INFO", "STRM 定时同步线程已停止", nil)
+			rt.appLog("strm", "strm_sync_stopped", "INFO", "STRM 定时同步线程已停止", nil)
 			return
 		case <-timer.C:
 		}
 		// 触发点现读配置（执行期间配置可能已变更）
-		cur := RT().GetConfig()
-		if cur.Strm.Enabled && cur.ActiveStorageName() == "pan115" && !RT().StrmSyncRunning() {
-			RT().TriggerStrmSync(triggerSchedule)
+		cur := rt.GetConfig()
+		if cur.Strm.Enabled && cur.ActiveStorageName() == "pan115" && !rt.StrmSyncRunning() {
+			rt.TriggerStrmSync(triggerSchedule)
 		}
 	}
 }
 
 // runU115Cron 115 自动整理 cron 执行器。
-func runU115Cron(stop <-chan struct{}) {
-	RT().appLog("u115", "u115_auto_started", "INFO", "115 自动整理监听线程已启动", nil)
+func (rt *Runtime) runU115Cron(stop <-chan struct{}) {
+	rt.appLog("u115", "u115_auto_started", "INFO", "115 自动整理监听线程已启动", nil)
 	cronWarned := ""
 	for {
-		spec := RT().GetConfig().U115.AutoOrganizeCron
+		spec := rt.GetConfig().U115.AutoOrganizeCron
 		d, ok, err := cronNextDelay(spec, time.Now())
 		if err != nil {
 			if cronWarned != spec {
-				RT().appLog("u115", "auto_organize_cron_invalid", "ERROR",
+				rt.appLog("u115", "auto_organize_cron_invalid", "ERROR",
 					"自动整理 cron 表达式无效，修正配置后自动恢复："+err.Error(), map[string]any{"cron": spec})
 				cronWarned = spec
 			}
@@ -408,7 +408,7 @@ func runU115Cron(stop <-chan struct{}) {
 		select {
 		case <-stop:
 			timer.Stop()
-			RT().appLog("u115", "u115_auto_stopped", "INFO", "115 自动整理监听线程已停止", nil)
+			rt.appLog("u115", "u115_auto_stopped", "INFO", "115 自动整理监听线程已停止", nil)
 			return
 		case <-timer.C:
 		}
@@ -419,26 +419,26 @@ func runU115Cron(stop <-chan struct{}) {
 					u115AutoWatcher.mu.Lock()
 					u115AutoWatcher.lastPollError = &msg
 					u115AutoWatcher.mu.Unlock()
-					RT().appLog("u115", "auto_organize_poll_failed", "ERROR",
+					rt.appLog("u115", "auto_organize_poll_failed", "ERROR",
 						"115 自动整理轮询失败: "+msg, map[string]any{"error": msg})
 				}
 			}()
-			pollU115AutoOrganizeOnce()
+			rt.pollU115AutoOrganizeOnce()
 		}()
 	}
 }
 
 // runRSSCron 订阅轮询 cron 执行器。
-func runRSSCron(stop <-chan struct{}) {
-	RT().appLog("rss", "rss_poll_started", "INFO", "RSS 订阅监听线程已启动", nil)
+func (rt *Runtime) runRSSCron(stop <-chan struct{}) {
+	rt.appLog("rss", "rss_poll_started", "INFO", "RSS 订阅监听线程已启动", nil)
 	cronWarned := ""
 	rssHealth := rssHealthState{} // 连续失败计数（本次调度生命周期内）
 	for {
-		spec := RT().getSubscriptionPollCron()
+		spec := rt.getSubscriptionPollCron()
 		d, ok, err := cronNextDelay(spec, time.Now())
 		if err != nil {
 			if cronWarned != spec {
-				RT().appLog("rss", "poll_cron_invalid", "ERROR",
+				rt.appLog("rss", "poll_cron_invalid", "ERROR",
 					"订阅轮询 cron 表达式无效，修正配置后自动恢复："+err.Error(), map[string]any{"cron": spec})
 				cronWarned = spec
 			}
@@ -451,7 +451,7 @@ func runRSSCron(stop <-chan struct{}) {
 		select {
 		case <-stop:
 			timer.Stop()
-			RT().appLog("rss", "rss_poll_stopped", "INFO", "RSS 订阅监听线程已停止", nil)
+			rt.appLog("rss", "rss_poll_stopped", "INFO", "RSS 订阅监听线程已停止", nil)
 			return
 		case <-timer.C:
 		}
@@ -460,7 +460,7 @@ func runRSSCron(stop <-chan struct{}) {
 		rssWatcher.lastPolledAt = &nowStr
 		rssWatcher.lastPollError = nil
 		rssWatcher.mu.Unlock()
-		summary := RT().PollSubscriptionsOnce()
+		summary := rt.PollSubscriptionsOnce()
 		rssWatcher.mu.Lock()
 		rssWatcher.lastSummary = summary
 		rssWatcher.mu.Unlock()
@@ -472,10 +472,10 @@ func runRSSCron(stop <-chan struct{}) {
 
 // StartupBackgroundWatchers 启动全部后台任务：非 cron 类监听线程常驻，
 // cron 类调度由配置变更检测按开关启停（见 ApplyWatchSchedules）。
-func StartupBackgroundWatchers() {
-	RT().ensureTraktSessionLoop()
-	RT().ensureTraktSSELoop()
-	ApplyWatchSchedules(RT().GetConfig())
+func (rt *Runtime) StartupBackgroundWatchers() {
+	rt.ensureTraktSessionLoop()
+	rt.ensureTraktSSELoop()
+	rt.ApplyWatchSchedules(rt.GetConfig())
 }
 
 // StopBackgroundWatchers 停止全部后台监听线程（幂等）。
@@ -483,7 +483,7 @@ func StartupBackgroundWatchers() {
 // config/data（测试偶发 TempDir 清理竞态的根因）。
 // 注意：停止后当前进程内 cron 调度不会随配置变更重启；
 // 生产环境进程生命周期即线程生命周期，不受影响。
-func StopBackgroundWatchers() {
+func (rt *Runtime) StopBackgroundWatchers() {
 	schedulesStopped.Store(true)
 	traktCronLoop.halt()
 	strmCronLoop.halt()

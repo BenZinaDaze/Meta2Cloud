@@ -268,7 +268,7 @@ func (rt *Runtime) GetConfig() *config.Config {
 		// 先记代数再应用：Apply 内部会读配置（如订阅 cron），重入时据此返回，
 		// 避免无限递归；并发双跑无害（调度启停幂等且有互斥）
 		appliedScheduleGen.Store(gen)
-		ApplyWatchSchedules(cfg)
+		rt.ApplyWatchSchedules(cfg)
 	}
 	return cfg
 }
