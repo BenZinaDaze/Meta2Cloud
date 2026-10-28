@@ -122,14 +122,14 @@ func extractTitleYear(name string) (string, string) {
 }
 
 // tmdbImageURL 用当前配置的图片根地址构建 URL。
-func tmdbImageURL(path, size string) string {
+func (rt *Runtime) tmdbImageURL(path, size string) string {
 	if path == "" {
 		return ""
 	}
 	if size == "" {
 		size = "original"
 	}
-	return tmdb.ImageURL(path, size, RT().GetConfig().TmdbImageBaseURL())
+	return tmdb.ImageURL(path, size, rt.GetConfig().TmdbImageBaseURL())
 }
 
 // ── 季集状态构建 ────────────────────────────────────────────
@@ -138,7 +138,7 @@ type epKey struct{ season, episode int }
 
 // BuildSeasonsStatus 根据 TMDB 信息与已入库集构建 seasons 状态。
 // 返回 (seasons, totalEpisodes, inLibraryEpisodes)。
-func BuildSeasonsStatus(tmdbID int64, tmdbInfo map[string]any, driveEpisodes map[epKey]bool, useCache bool) ([]SeasonStatus, int, int) {
+func (rt *Runtime) BuildSeasonsStatus(tmdbID int64, tmdbInfo map[string]any, driveEpisodes map[epKey]bool, useCache bool) ([]SeasonStatus, int, int) {
 	if driveEpisodes == nil {
 		driveEpisodes = map[epKey]bool{}
 	}
@@ -156,14 +156,14 @@ func BuildSeasonsStatus(tmdbID int64, tmdbInfo map[string]any, driveEpisodes map
 		var seasonDetail map[string]any
 		seasonCachePath := fmt.Sprintf("/tv/%d/season/%d", tmdbID, seasonNum)
 		if useCache {
-			if cache := RT().GetTmdbCache(); cache != nil {
-				if cached, ok := cache.Get(seasonCachePath, RT().GetConfig().Tmdb.Language); ok {
+			if cache := rt.GetTmdbCache(); cache != nil {
+				if cached, ok := cache.Get(seasonCachePath, rt.GetConfig().Tmdb.Language); ok {
 					seasonDetail = cached
 				}
 			}
 		}
 		if seasonDetail == nil {
-			if client := RT().GetTmdbClient(); client != nil {
+			if client := rt.GetTmdbClient(); client != nil {
 				seasonDetail = client.GetSeasonDetail(int(tmdbID), seasonNum)
 			}
 		}
@@ -229,7 +229,7 @@ func BuildSeasonsStatus(tmdbID int64, tmdbInfo map[string]any, driveEpisodes map
 		if name == "" {
 			name = "Season " + strconv.Itoa(seasonNum)
 		}
-		poster := tmdbImageURL(jsonx.Str(seasonRaw, "poster_path"), "w500")
+		poster := rt.tmdbImageURL(jsonx.Str(seasonRaw, "poster_path"), "w500")
 		seasonsStatus = append(seasonsStatus, SeasonStatus{
 			SeasonNumber: seasonNum, SeasonName: name,
 			PosterURL:    strPtrOrNil(poster),
@@ -272,25 +272,25 @@ func storedTitleCandidates(item map[string]any) []string {
 }
 
 // resolveTmdbInfo 库缓存优先，其次 API。
-func resolveTmdbInfo(mediaType string, tmdbID int64) map[string]any {
+func (rt *Runtime) resolveTmdbInfo(mediaType string, tmdbID int64) map[string]any {
 	if tmdbID <= 0 {
 		return nil
 	}
-	if entry := RT().GetLibraryStore().GetTmdbEntry(mediaType, tmdbID); entry != nil && len(entry.RawJSON) > 0 {
+	if entry := rt.GetLibraryStore().GetTmdbEntry(mediaType, tmdbID); entry != nil && len(entry.RawJSON) > 0 {
 		return entry.RawJSON
 	}
-	if client := RT().GetTmdbClient(); client != nil {
+	if client := rt.GetTmdbClient(); client != nil {
 		return client.Get(tmdbDetailPath(mediaType, tmdbID))
 	}
 	return nil
 }
 
 // searchTmdbIdentity 按标题搜索 TMDB。
-func searchTmdbIdentity(mediaType, title, year string, cfg *config.Config) (int64, map[string]any) {
+func (rt *Runtime) searchTmdbIdentity(mediaType, title, year string, cfg *config.Config) (int64, map[string]any) {
 	if title == "" || !cfg.IsTmdbReady() {
 		return 0, nil
 	}
-	client := RT().GetTmdbClient()
+	client := rt.GetTmdbClient()
 	if client == nil {
 		return 0, nil
 	}
@@ -313,15 +313,15 @@ func searchTmdbIdentity(mediaType, title, year string, cfg *config.Config) (int6
 }
 
 // resolveMediaIdentity 多级回退识别媒体（库条目 → 标题匹配 → TMDB 缓存 → 入库历史 → TMDB 搜索）。
-func resolveMediaIdentity(mediaType, driveFolderID, folderName string, cfg *config.Config) (int64, map[string]any) {
-	libStore := RT().GetLibraryStore()
+func (rt *Runtime) resolveMediaIdentity(mediaType, driveFolderID, folderName string, cfg *config.Config) (int64, map[string]any) {
+	libStore := rt.GetLibraryStore()
 	if existing := libStore.GetLibraryItemByFolderID(driveFolderID); existing != nil {
 		if tmdbID := jsonx.Int(existing, "tmdb_id", 0); tmdbID > 0 {
 			// 沿用存量识别前先校验目录名：目录名与已识别标题差异过大
 			// （衍生条目曾被误绑到正篇，如「未来福音 extra chorus」绑到「未来福音」）
 			// 时丢弃旧 ID 重新识别，否则错误 ID 随库存记录永久延续且无从纠正
 			if titlematch.TitlesMatch(folderName, storedTitleCandidates(existing)) {
-				return tmdbID, resolveTmdbInfo(mediaType, tmdbID)
+				return tmdbID, rt.resolveTmdbInfo(mediaType, tmdbID)
 			}
 			log.Printf("目录 %q 与已识别标题 %q 不一致，重新识别", folderName, jsonx.Str(existing, "title"))
 		}
@@ -332,7 +332,7 @@ func resolveMediaIdentity(mediaType, driveFolderID, folderName string, cfg *conf
 	}
 	if matched := libStore.FindLibraryItemByTitleYear(mediaType, title, year); matched != nil {
 		if tmdbID := jsonx.Int(matched, "tmdb_id", 0); tmdbID > 0 {
-			return tmdbID, resolveTmdbInfo(mediaType, tmdbID)
+			return tmdbID, rt.resolveTmdbInfo(mediaType, tmdbID)
 		}
 	}
 	if cached := libStore.FindTmdbEntryByTitleYear(mediaType, title, year); cached != nil {
@@ -340,17 +340,17 @@ func resolveMediaIdentity(mediaType, driveFolderID, folderName string, cfg *conf
 			if len(cached.RawJSON) > 0 {
 				return cached.TmdbID, cached.RawJSON
 			}
-			return cached.TmdbID, resolveTmdbInfo(mediaType, cached.TmdbID)
+			return cached.TmdbID, rt.resolveTmdbInfo(mediaType, cached.TmdbID)
 		}
 	}
-	if ingest := RT().GetIngestStore(); ingest != nil {
+	if ingest := rt.GetIngestStore(); ingest != nil {
 		if match := ingest.FindMatchByTitleYear(mediaType, title, year); match != nil {
 			if tmdbID := jsonx.Int(match, "tmdb_id", 0); tmdbID > 0 {
-				return tmdbID, resolveTmdbInfo(mediaType, tmdbID)
+				return tmdbID, rt.resolveTmdbInfo(mediaType, tmdbID)
 			}
 		}
 	}
-	if tmdbID, info := searchTmdbIdentity(mediaType, title, year, cfg); tmdbID > 0 && info != nil {
+	if tmdbID, info := rt.searchTmdbIdentity(mediaType, title, year, cfg); tmdbID > 0 && info != nil {
 		return tmdbID, info
 	}
 	return 0, nil
@@ -362,12 +362,12 @@ func roundTo1(v float64) float64 {
 	return float64(int64(v*10+0.5)) / 10
 }
 
-func scanSingleMovieFolder(_ cloudfile.Provider, folder cloudfile.CloudFile, cfg *config.Config) *MediaItem {
+func (rt *Runtime) scanSingleMovieFolder(_ cloudfile.Provider, folder cloudfile.CloudFile, cfg *config.Config) *MediaItem {
 	mtime := normalizeModifiedTime(folder.ModifiedTime)
-	tmdbID, tmdbInfo := resolveMediaIdentity("movie", folder.ID, folder.Name, cfg)
+	tmdbID, tmdbInfo := rt.resolveMediaIdentity("movie", folder.ID, folder.Name, cfg)
 	if tmdbInfo != nil {
-		poster := tmdbImageURL(jsonx.Str(tmdbInfo, "poster_path"), "w500")
-		backdrop := tmdbImageURL(jsonx.Str(tmdbInfo, "backdrop_path"), "")
+		poster := rt.tmdbImageURL(jsonx.Str(tmdbInfo, "poster_path"), "w500")
+		backdrop := rt.tmdbImageURL(jsonx.Str(tmdbInfo, "backdrop_path"), "")
 		year := jsonx.Str(tmdbInfo, "release_date")
 		if len(year) > 4 {
 			year = year[:4]
@@ -400,12 +400,12 @@ func scanSingleMovieFolder(_ cloudfile.Provider, folder cloudfile.CloudFile, cfg
 
 // categoryScanRoot 分类布局下的扫描根：先按名解析媒体库根目录，再在其下定位一级分类目录。
 // 任一环节未找到返回空串（上层按空串跳过该类型扫描）。
-func categoryScanRoot(client cloudfile.Provider, isTV bool) string {
-	cats := RT().GetCategories()
+func (rt *Runtime) categoryScanRoot(client cloudfile.Provider, isTV bool) string {
+	cats := rt.GetCategories()
 	if cats == nil {
 		return ""
 	}
-	rootID, ok := cloudfile.FindFolderByName(client, RT().GetConfig().ActiveRootFolderID())
+	rootID, ok := cloudfile.FindFolderByName(client, rt.GetConfig().ActiveRootFolderID())
 	if !ok {
 		return ""
 	}
@@ -426,8 +426,8 @@ func categoryScanRoot(client cloudfile.Provider, isTV bool) string {
 }
 
 // mediaCategoryLevel2 指定类型的二级分类目录名集合（未启用返回 nil）。
-func mediaCategoryLevel2(isTV bool) map[string]bool {
-	cats := RT().GetCategories()
+func (rt *Runtime) mediaCategoryLevel2(isTV bool) map[string]bool {
+	cats := rt.GetCategories()
 	if cats == nil {
 		return nil
 	}
@@ -469,8 +469,8 @@ func expandCategoryFolders(client cloudfile.Provider, folders []cloudfile.CloudF
 	return out
 }
 
-func ScanMovies(client cloudfile.Provider, cfg *config.Config) []MediaItem {
-	movieRoot := categoryScanRoot(client, false)
+func (rt *Runtime) ScanMovies(client cloudfile.Provider, cfg *config.Config) []MediaItem {
+	movieRoot := rt.categoryScanRoot(client, false)
 	if movieRoot == "" {
 		return []MediaItem{}
 	}
@@ -478,13 +478,13 @@ func ScanMovies(client cloudfile.Provider, cfg *config.Config) []MediaItem {
 	if err != nil {
 		return []MediaItem{}
 	}
-	folders = expandCategoryFolders(client, folders, mediaCategoryLevel2(false))
+	folders = expandCategoryFolders(client, folders, rt.mediaCategoryLevel2(false))
 	movies := []MediaItem{}
 	for _, folder := range folders {
 		if !folder.IsFolder() {
 			continue
 		}
-		if m := scanSingleMovieFolder(client, folder, cfg); m != nil {
+		if m := rt.scanSingleMovieFolder(client, folder, cfg); m != nil {
 			movies = append(movies, *m)
 		}
 	}
@@ -506,14 +506,14 @@ func tvLeafModifiedTime(showFolder cloudfile.CloudFile, showFiles []cloudfile.Cl
 	return maxMtime
 }
 
-func scanSingleTVFolder(client cloudfile.Provider, cfg *config.Config, showFolder cloudfile.CloudFile, showFiles []cloudfile.CloudFile, useCache bool) *MediaItem {
+func (rt *Runtime) scanSingleTVFolder(client cloudfile.Provider, cfg *config.Config, showFolder cloudfile.CloudFile, showFiles []cloudfile.CloudFile, useCache bool) *MediaItem {
 	if showFiles == nil {
 		if files, err := client.ListFiles(showFolder.ID, 200); err == nil {
 			showFiles = files
 		}
 	}
 	mtime := tvLeafModifiedTime(showFolder, showFiles)
-	tmdbID, tmdbInfo := resolveMediaIdentity("tv", showFolder.ID, showFolder.Name, cfg)
+	tmdbID, tmdbInfo := rt.resolveMediaIdentity("tv", showFolder.ID, showFolder.Name, cfg)
 
 	// 已入库集集合
 	driveEpisodes := collectFolderEpisodes(client, showFolder.ID, showFiles)
@@ -521,7 +521,7 @@ func scanSingleTVFolder(client cloudfile.Provider, cfg *config.Config, showFolde
 	// 「令和的斑小姐」与「令和妖神斑小姐」），把同 tmdb_id 其他目录
 	// 的集数并入，避免入库进度被拆分显示
 	if tmdbID > 0 {
-		for _, otherFolderID := range RT().GetLibraryStore().ListFolderIDsByTmdb("tv", tmdbID) {
+		for _, otherFolderID := range rt.GetLibraryStore().ListFolderIDsByTmdb("tv", tmdbID) {
 			if otherFolderID == showFolder.ID {
 				continue
 			}
@@ -534,7 +534,7 @@ func scanSingleTVFolder(client cloudfile.Provider, cfg *config.Config, showFolde
 	seasonsStatus := []SeasonStatus{}
 	totalEps, inLibEps := 0, 0
 	if tmdbInfo != nil {
-		seasonsStatus, totalEps, inLibEps = BuildSeasonsStatus(tmdbID, tmdbInfo, driveEpisodes, useCache)
+		seasonsStatus, totalEps, inLibEps = rt.BuildSeasonsStatus(tmdbID, tmdbInfo, driveEpisodes, useCache)
 	} else {
 		seasonMap := map[int][]int{}
 		for k := range driveEpisodes {
@@ -582,8 +582,8 @@ func scanSingleTVFolder(client cloudfile.Provider, cfg *config.Config, showFolde
 		overview = jsonx.Str(tmdbInfo, "overview")
 		status = jsonx.Str(tmdbInfo, "status")
 		rating = roundTo1(jsonx.Float(tmdbInfo, "vote_average", 0))
-		poster = strPtrOrNil(tmdbImageURL(jsonx.Str(tmdbInfo, "poster_path"), "w500"))
-		backdrop = strPtrOrNil(tmdbImageURL(jsonx.Str(tmdbInfo, "backdrop_path"), ""))
+		poster = strPtrOrNil(rt.tmdbImageURL(jsonx.Str(tmdbInfo, "poster_path"), "w500"))
+		backdrop = strPtrOrNil(rt.tmdbImageURL(jsonx.Str(tmdbInfo, "backdrop_path"), ""))
 	}
 	fid := showFolder.ID
 	m := mtime
@@ -598,8 +598,8 @@ func scanSingleTVFolder(client cloudfile.Provider, cfg *config.Config, showFolde
 }
 
 // ScanTVShows 全量扫描剧集。
-func ScanTVShows(client cloudfile.Provider, cfg *config.Config, useCache bool) []MediaItem {
-	tvRoot := categoryScanRoot(client, true)
+func (rt *Runtime) ScanTVShows(client cloudfile.Provider, cfg *config.Config, useCache bool) []MediaItem {
+	tvRoot := rt.categoryScanRoot(client, true)
 	if tvRoot == "" {
 		return []MediaItem{}
 	}
@@ -607,13 +607,13 @@ func ScanTVShows(client cloudfile.Provider, cfg *config.Config, useCache bool) [
 	if err != nil {
 		return []MediaItem{}
 	}
-	folders = expandCategoryFolders(client, folders, mediaCategoryLevel2(true))
+	folders = expandCategoryFolders(client, folders, rt.mediaCategoryLevel2(true))
 	shows := []MediaItem{}
 	for _, showFolder := range folders {
 		if !showFolder.IsFolder() {
 			continue
 		}
-		if m := scanSingleTVFolder(client, cfg, showFolder, nil, useCache); m != nil {
+		if m := rt.scanSingleTVFolder(client, cfg, showFolder, nil, useCache); m != nil {
 			shows = append(shows, *m)
 		}
 	}
@@ -622,8 +622,8 @@ func ScanTVShows(client cloudfile.Provider, cfg *config.Config, useCache bool) [
 }
 
 // ScanMoviesIncremental 增量扫描电影（mtime 未变则跳过）。
-func ScanMoviesIncremental(client cloudfile.Provider, cfg *config.Config, storedMtimes map[string]int64) ([]MediaItem, map[string]int64) {
-	movieRoot := categoryScanRoot(client, false)
+func (rt *Runtime) ScanMoviesIncremental(client cloudfile.Provider, cfg *config.Config, storedMtimes map[string]int64) ([]MediaItem, map[string]int64) {
+	movieRoot := rt.categoryScanRoot(client, false)
 	if movieRoot == "" {
 		return []MediaItem{}, map[string]int64{}
 	}
@@ -631,7 +631,7 @@ func ScanMoviesIncremental(client cloudfile.Provider, cfg *config.Config, stored
 	if err != nil {
 		return []MediaItem{}, map[string]int64{}
 	}
-	folders = expandCategoryFolders(client, folders, mediaCategoryLevel2(false))
+	folders = expandCategoryFolders(client, folders, rt.mediaCategoryLevel2(false))
 	movies := []MediaItem{}
 	currentMtimes := map[string]int64{}
 	for _, folder := range folders {
@@ -644,7 +644,7 @@ func ScanMoviesIncremental(client cloudfile.Provider, cfg *config.Config, stored
 		if storedMtime > 0 && currentMtime > 0 && currentMtime <= storedMtime {
 			continue
 		}
-		if m := scanSingleMovieFolder(client, folder, cfg); m != nil {
+		if m := rt.scanSingleMovieFolder(client, folder, cfg); m != nil {
 			movies = append(movies, *m)
 		}
 	}
@@ -652,8 +652,8 @@ func ScanMoviesIncremental(client cloudfile.Provider, cfg *config.Config, stored
 }
 
 // ScanTVShowsIncremental 增量扫描剧集。
-func ScanTVShowsIncremental(client cloudfile.Provider, cfg *config.Config, storedMtimes map[string]int64) ([]MediaItem, map[string]int64) {
-	tvRoot := categoryScanRoot(client, true)
+func (rt *Runtime) ScanTVShowsIncremental(client cloudfile.Provider, cfg *config.Config, storedMtimes map[string]int64) ([]MediaItem, map[string]int64) {
+	tvRoot := rt.categoryScanRoot(client, true)
 	if tvRoot == "" {
 		return []MediaItem{}, map[string]int64{}
 	}
@@ -661,7 +661,7 @@ func ScanTVShowsIncremental(client cloudfile.Provider, cfg *config.Config, store
 	if err != nil {
 		return []MediaItem{}, map[string]int64{}
 	}
-	folders = expandCategoryFolders(client, folders, mediaCategoryLevel2(true))
+	folders = expandCategoryFolders(client, folders, rt.mediaCategoryLevel2(true))
 	shows := []MediaItem{}
 	currentMtimes := map[string]int64{}
 
@@ -689,7 +689,7 @@ func ScanTVShowsIncremental(client cloudfile.Provider, cfg *config.Config, store
 	// 第二遍：同剧兄弟目录联动重扫。某目录变化时，同 tmdb_id 的其他目录
 	// 也必须重扫——跨目录集数聚合只发生在 scanSingleTVFolder 内，若兄弟
 	// 目录被 mtime 跳过，会保留旧的未聚合值（表现为集数统计不更新）。
-	if libStore := RT().GetLibraryStore(); libStore != nil {
+	if libStore := rt.GetLibraryStore(); libStore != nil {
 		for folderID := range changed {
 			if tmdbID, ok := libStore.GetTmdbIDByFolderID(folderID); ok && tmdbID > 0 {
 				for _, sib := range libStore.ListFolderIDsByTmdb("tv", tmdbID) {
@@ -709,7 +709,7 @@ func ScanTVShowsIncremental(client cloudfile.Provider, cfg *config.Config, store
 		if files, err := client.ListFiles(showFolder.ID, 200); err == nil {
 			showFiles = files
 		}
-		if m := scanSingleTVFolder(client, cfg, showFolder, showFiles, true); m != nil {
+		if m := rt.scanSingleTVFolder(client, cfg, showFolder, showFiles, true); m != nil {
 			shows = append(shows, *m)
 		}
 	}
@@ -775,17 +775,17 @@ func anyOfStr(s *string) any {
 }
 
 // RefreshLibrary 刷新媒体库（增量/全量），对应 services/pipeline._do_refresh_library。
-func RefreshLibrary(incremental bool) map[string]any {
-	client := RT().GetStorageProvider()
-	cfg := RT().GetConfig()
-	libStore := RT().GetLibraryStore()
+func (rt *Runtime) RefreshLibrary(incremental bool) map[string]any {
+	client := rt.GetStorageProvider()
+	cfg := rt.GetConfig()
+	libStore := rt.GetLibraryStore()
 	if client == nil {
 		return map[string]any{"error": "存储 Provider 不可用"}
 	}
 	if incremental {
 		storedMtimes := libStore.GetAllFolderModifiedTimes()
-		movies, movieMtimes := ScanMoviesIncremental(client, cfg, storedMtimes)
-		tvShows, tvMtimes := ScanTVShowsIncremental(client, cfg, storedMtimes)
+		movies, movieMtimes := rt.ScanMoviesIncremental(client, cfg, storedMtimes)
+		tvShows, tvMtimes := rt.ScanTVShowsIncremental(client, cfg, storedMtimes)
 		allMtimes := map[string]int64{}
 		for k, v := range movieMtimes {
 			allMtimes[k] = v
@@ -801,8 +801,8 @@ func RefreshLibrary(incremental bool) map[string]any {
 			"total": diff.Total, "scanned_at": diff.ScannedAt,
 		}
 	}
-	movies := ScanMovies(client, cfg)
-	tvShows := ScanTVShows(client, cfg, false)
+	movies := rt.ScanMovies(client, cfg)
+	tvShows := rt.ScanTVShows(client, cfg, false)
 	diff := libStore.SaveSnapshot(mediaItemsToPayloads(movies), mediaItemsToPayloads(tvShows))
 	return map[string]any{
 		"new_movies": diff.NewMovies, "new_tv": diff.NewTV,

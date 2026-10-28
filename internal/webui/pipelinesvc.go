@@ -152,7 +152,7 @@ func doRunPipeline() {
 				log.Printf("媒体库刷新异常：%v", r)
 			}
 		}()
-		RefreshLibrary(true)
+		RT().RefreshLibrary(true)
 	}()
 	pipelineMu.Lock()
 	pipelineRunning = false
@@ -247,7 +247,7 @@ func handleRefreshLibrary(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("%v", rec))
 		}
 	}()
-	diff := RefreshLibrary(!full)
+	diff := RT().RefreshLibrary(!full)
 	appLog("library", "refresh_scan_finish", "SUCCESS", "媒体库刷新完成", diff)
 	writeJSON(w, http.StatusOK, diff)
 }
@@ -258,7 +258,7 @@ func handleGetMovies(w http.ResponseWriter, _ *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
 		return
 	}
-	writeJSON(w, http.StatusOK, ScanMovies(client, RT().GetConfig()))
+	writeJSON(w, http.StatusOK, RT().ScanMovies(client, RT().GetConfig()))
 }
 
 func handleGetTVShows(w http.ResponseWriter, _ *http.Request) {
@@ -267,7 +267,7 @@ func handleGetTVShows(w http.ResponseWriter, _ *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
 		return
 	}
-	writeJSON(w, http.StatusOK, ScanTVShows(client, RT().GetConfig(), true))
+	writeJSON(w, http.StatusOK, RT().ScanTVShows(client, RT().GetConfig(), true))
 }
 
 func handleGetTVDetail(w http.ResponseWriter, r *http.Request) {
@@ -285,7 +285,7 @@ func handleGetTVDetail(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
 		return
 	}
-	for _, show := range ScanTVShows(client, RT().GetConfig(), true) {
+	for _, show := range RT().ScanTVShows(client, RT().GetConfig(), true) {
 		if show.TmdbID == tmdbID {
 			writeJSON(w, http.StatusOK, show)
 			return
@@ -309,7 +309,7 @@ func handleGetMovieDetail(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
 		return
 	}
-	for _, movie := range ScanMovies(client, RT().GetConfig()) {
+	for _, movie := range RT().ScanMovies(client, RT().GetConfig()) {
 		if movie.TmdbID == tmdbID {
 			writeJSON(w, http.StatusOK, movie)
 			return
@@ -346,7 +346,7 @@ func handleIngestHistory(w http.ResponseWriter, r *http.Request) {
 	result := is.Query(ingestQueryFromParams(q))
 	for _, item := range result.Items {
 		if path, ok := item["poster_path"].(string); ok && path != "" {
-			item["poster_url"] = tmdbImageURL(path, "w500")
+			item["poster_url"] = RT().tmdbImageURL(path, "w500")
 		}
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -371,7 +371,7 @@ func handleIngestRecent(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, item := range items {
 		if path, ok := item["poster_path"].(string); ok && path != "" {
-			item["poster_url"] = tmdbImageURL(path, "w500")
+			item["poster_url"] = RT().tmdbImageURL(path, "w500")
 		}
 	}
 	writeJSON(w, http.StatusOK, items)

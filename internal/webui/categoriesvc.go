@@ -13,12 +13,12 @@ import (
 )
 
 // handleGetCategories 回显分类配置。
-func handleGetCategories(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, RT().GetCategories())
+func (s *Server) handleGetCategories(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.rt.GetCategories())
 }
 
 // handleSaveCategories 保存分类配置并预创建分类目录树。
-func handleSaveCategories(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleSaveCategories(w http.ResponseWriter, r *http.Request) {
 	var cats config.CategoriesConfig
 	if err := jsonDecodeBody(r, &cats); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "请求体格式错误")
@@ -28,8 +28,8 @@ func handleSaveCategories(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	oldCats := RT().GetCategories()
-	if err := RT().SetCategories(&cats); err != nil {
+	oldCats := s.rt.GetCategories()
+	if err := s.rt.SetCategories(&cats); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -37,8 +37,8 @@ func handleSaveCategories(w http.ResponseWriter, r *http.Request) {
 	rulesChanged := categoriesChanged(oldCats, &cats)
 	// 预创建分类目录树（幂等），保存后立即可在文件管理/网盘看到结构
 	// 配置值为媒体库根目录名：先按名解析，根目录尚不存在则直接在网盘根下创建
-	provider := RT().GetStorageProvider()
-	rootName := strings.TrimSpace(RT().GetConfig().ActiveRootFolderID())
+	provider := s.rt.GetStorageProvider()
+	rootName := strings.TrimSpace(s.rt.GetConfig().ActiveRootFolderID())
 	if provider != nil && rootName != "" {
 		rootID, rootOK := cloudfile.FindFolderByName(provider, rootName)
 		if !rootOK {

@@ -39,7 +39,7 @@ type reclassifyProgress struct {
 }
 
 // reclassifyFailures 失败原因收集（上限 50 条，超出只计数）。
-func reclassifyFailures(state *reclassifyProgress, reason string) {
+func (s *Server) reclassifyFailures(state *reclassifyProgress, reason string) {
 	if len(state.Errors) < 50 {
 		state.Errors = append(state.Errors, reason)
 	}
@@ -50,21 +50,21 @@ var (
 	reclassifyRun reclassifyProgress
 )
 
-func reclassifyState() reclassifyProgress {
+func (s *Server) reclassifyState() reclassifyProgress {
 	reclassifyMu.Lock()
 	defer reclassifyMu.Unlock()
 	return reclassifyRun
 }
 
 // resolveCategoryFor 按规则解析分类；info 缺失（无缓存）时走兜底规则。
-func resolveCategoryFor(categories *config.CategoriesConfig, isTV bool, info map[string]any) (string, string) {
+func (s *Server) resolveCategoryFor(categories *config.CategoriesConfig, isTV bool, info map[string]any) (string, string) {
 	if info == nil {
 		info = map[string]any{}
 	}
 	return categories.Resolve(isTV, pipeline.TmdbGenreIDs(info), jsonx.Str(info, "original_language"))
 }
 
-func categoryLabel(level1, level2 string) string {
+func (s *Server) categoryLabel(level1, level2 string) string {
 	if level2 != "" && level2 != level1 {
 		return level1 + "/" + level2
 	}
@@ -72,7 +72,7 @@ func categoryLabel(level1, level2 string) string {
 }
 
 // ensureCategoryChainLevels 幂等创建分类链，返回二级（或一级）目录 ID。
-func ensureCategoryChainLevels(provider cloudfile.Provider, rootID, level1, level2 string) (string, error) {
+func (s *Server) ensureCategoryChainLevels(provider cloudfile.Provider, rootID, level1, level2 string) (string, error) {
 	l1, err := cloudfile.GetOrCreateFolder(provider, level1, rootID)
 	if err != nil {
 		return "", err
@@ -88,13 +88,13 @@ func ensureCategoryChainLevels(provider cloudfile.Provider, rootID, level1, leve
 }
 
 // classifyTargetParent 单媒体目标分类父目录（修正识别流程用）。
-func classifyTargetParent(provider cloudfile.Provider, categories *config.CategoriesConfig, rootID string, isTV bool, info map[string]any) (string, string, error) {
-	level1, level2 := resolveCategoryFor(categories, isTV, info)
-	parent, err := ensureCategoryChainLevels(provider, rootID, level1, level2)
+func (s *Server) classifyTargetParent(provider cloudfile.Provider, categories *config.CategoriesConfig, rootID string, isTV bool, info map[string]any) (string, string, error) {
+	level1, level2 := s.resolveCategoryFor(categories, isTV, info)
+	parent, err := s.ensureCategoryChainLevels(provider, rootID, level1, level2)
 	if err != nil {
 		return "", "", err
 	}
-	return parent, categoryLabel(level1, level2), nil
+	return parent, s.categoryLabel(level1, level2), nil
 }
 
 // reclassifyItem 归位计划中的单个条目。
@@ -116,24 +116,24 @@ type reclassifyPlan struct {
 	Targets map[string]int // 分类 → 条目数
 }
 
-func libraryRefKey(mt string, tmdbID int64) string {
+func (s *Server) libraryRefKey(mt string, tmdbID int64) string {
 	return mt + ":" + strconv.FormatInt(tmdbID, 10)
 }
 
-func buildReclassifyPlan(categories *config.CategoriesConfig, ls *store.LibraryStore) *reclassifyPlan {
+func (s *Server) buildReclassifyPlan(categories *config.CategoriesConfig, ls *store.LibraryStore) *reclassifyPlan {
 	items := ls.ListClassifiableItems()
 	keys := make([]string, 0, len(items))
 	for _, it := range items {
-		keys = append(keys, libraryRefKey(it.MediaType, it.TmdbID))
+		keys = append(keys, s.libraryRefKey(it.MediaType, it.TmdbID))
 	}
 	entries := ls.GetTmdbEntriesByKeys(keys)
 
 	plan := &reclassifyPlan{Items: make([]reclassifyItem, 0, len(items)), Targets: map[string]int{}}
 	for _, it := range items {
-		entry := entries[libraryRefKey(it.MediaType, it.TmdbID)]
+		entry := entries[s.libraryRefKey(it.MediaType, it.TmdbID)]
 		isTV := it.MediaType == "tv"
-		level1, level2 := resolveCategoryFor(categories, isTV, entryInfo(entry))
-		cat := categoryLabel(level1, level2)
+		level1, level2 := s.resolveCategoryFor(categories, isTV, s.entryInfo(entry))
+		cat := s.categoryLabel(level1, level2)
 		plan.Targets[cat]++
 		plan.Items = append(plan.Items, reclassifyItem{
 			FolderID: it.FolderID, ParentID: it.ParentID, Title: it.Title, IsTV: isTV,
@@ -145,7 +145,7 @@ func buildReclassifyPlan(categories *config.CategoriesConfig, ls *store.LibraryS
 }
 
 // entryInfo 从缓存实体提取分类判定所需字段（完整 TMDB 原始载荷，含 genres）。
-func entryInfo(entry *store.TmdbMediaRow) map[string]any {
+func (s *Server) entryInfo(entry *store.TmdbMediaRow) map[string]any {
 	if entry == nil {
 		return nil
 	}
@@ -153,15 +153,15 @@ func entryInfo(entry *store.TmdbMediaRow) map[string]any {
 }
 
 // handleCategoriesReclassifyDry 干跑统计：按当前规则与缓存流派统计各分类目标分布（零网盘调用）。
-func handleCategoriesReclassifyDry(w http.ResponseWriter, _ *http.Request) {
-	categories := RT().GetCategories()
-	rootRef := strings.TrimSpace(RT().GetConfig().ActiveRootFolderID())
+func (s *Server) handleCategoriesReclassifyDry(w http.ResponseWriter, _ *http.Request) {
+	categories := s.rt.GetCategories()
+	rootRef := strings.TrimSpace(s.rt.GetConfig().ActiveRootFolderID())
 	if categories == nil || rootRef == "" {
 		writeJSONError(w, http.StatusBadRequest, "请先配置媒体库根目录与分类规则")
 		return
 	}
-	ls := RT().GetLibraryStore()
-	plan := buildReclassifyPlan(categories, ls)
+	ls := s.rt.GetLibraryStore()
+	plan := s.buildReclassifyPlan(categories, ls)
 
 	type previewItem struct {
 		Title    string `json:"title"`
@@ -185,14 +185,14 @@ func handleCategoriesReclassifyDry(w http.ResponseWriter, _ *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"total":        len(plan.Items),
-		"uncached":     totalUncached(plan.Items),
+		"uncached":     s.totalUncached(plan.Items),
 		"targets":      plan.Targets,
 		"preview":      preview,
 		"root_missing": false,
 	})
 }
 
-func totalUncached(items []reclassifyItem) int {
+func (s *Server) totalUncached(items []reclassifyItem) int {
 	n := 0
 	for _, it := range items {
 		if !it.Cached {
@@ -203,15 +203,15 @@ func totalUncached(items []reclassifyItem) int {
 }
 
 // handleCategoriesReclassify 启动后台全库归位。
-func handleCategoriesReclassify(w http.ResponseWriter, _ *http.Request) {
-	categories := RT().GetCategories()
-	rootRef := strings.TrimSpace(RT().GetConfig().ActiveRootFolderID())
+func (s *Server) handleCategoriesReclassify(w http.ResponseWriter, _ *http.Request) {
+	categories := s.rt.GetCategories()
+	rootRef := strings.TrimSpace(s.rt.GetConfig().ActiveRootFolderID())
 	if categories == nil || rootRef == "" {
 		writeJSONError(w, http.StatusBadRequest, "请先配置媒体库根目录与分类规则")
 		return
 	}
-	ls := RT().GetLibraryStore()
-	provider := RT().GetStorageProvider()
+	ls := s.rt.GetLibraryStore()
+	provider := s.rt.GetStorageProvider()
 	if provider == nil {
 		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
 		return
@@ -222,18 +222,18 @@ func handleCategoriesReclassify(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]any{"started": false, "state": reclassifyRun})
 		return
 	}
-	plan := buildReclassifyPlan(categories, ls)
+	plan := s.buildReclassifyPlan(categories, ls)
 	reclassifyRun = reclassifyProgress{
 		Running: true, Total: len(plan.Items),
 		StartedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 	reclassifyMu.Unlock()
 
-	go runReclassify(provider, ls, categories, rootRef, plan)
+	go s.runReclassify(provider, ls, categories, rootRef, plan)
 	writeJSON(w, http.StatusOK, map[string]any{"started": true, "total": len(plan.Items)})
 }
 
-func runReclassify(provider cloudfile.Provider, ls *store.LibraryStore, categories *config.CategoriesConfig, rootRef string, plan *reclassifyPlan) {
+func (s *Server) runReclassify(provider cloudfile.Provider, ls *store.LibraryStore, categories *config.CategoriesConfig, rootRef string, plan *reclassifyPlan) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("[reclassify] panic：%v", r)
@@ -256,7 +256,7 @@ func runReclassify(provider cloudfile.Provider, ls *store.LibraryStore, categori
 	// 0. 按 TMDB 最新详情重新判定全部分类（绕缓存强制请求，结果落缓存）。
 	// TMDB 流派可能变化、缓存最多滞后一个 TTL，权威判定必须现查；
 	// TMDB 无严格 QPS（客户端自带 429 重试），全量刷新成本可忽略。失败保持原判定。
-	if tmdbClient := RT().GetTmdbClient(); tmdbClient != nil {
+	if tmdbClient := s.rt.GetTmdbClient(); tmdbClient != nil {
 		log.Printf("[reclassify] 按 TMDB 最新详情刷新 %d 项分类判定...", len(plan.Items))
 		for i := range plan.Items {
 			it := &plan.Items[i]
@@ -265,8 +265,8 @@ func runReclassify(provider cloudfile.Provider, ls *store.LibraryStore, categori
 				mtype = mediaparser.MediaTV
 			}
 			if info := tmdbClient.GetByIDFresh(mtype, int(it.TmdbID)); len(info) > 0 {
-				it.Level1, it.Level2 = resolveCategoryFor(categories, it.IsTV, info)
-				it.Category = categoryLabel(it.Level1, it.Level2)
+				it.Level1, it.Level2 = s.resolveCategoryFor(categories, it.IsTV, info)
+				it.Category = s.categoryLabel(it.Level1, it.Level2)
 				it.Cached = true
 			}
 		}
@@ -284,7 +284,7 @@ func runReclassify(provider cloudfile.Provider, ls *store.LibraryStore, categori
 	if needWalk {
 		log.Printf("[reclassify] 存在未知父目录的条目，遍历媒体库定位（之后无需再遍历）")
 		parentMap := map[string]string{}
-		walkAllFolders(provider, rootID, parentMap, 0)
+		s.walkAllFolders(provider, rootID, parentMap, 0)
 		curByID = parentMap
 		if ls != nil {
 			for i := range plan.Items {
@@ -305,12 +305,12 @@ func runReclassify(provider cloudfile.Provider, ls *store.LibraryStore, categori
 		if _, ok := parentByCategory[it.Category]; ok {
 			continue
 		}
-		parent, err := ensureCategoryChainLevels(provider, rootID, it.Level1, it.Level2)
+		parent, err := s.ensureCategoryChainLevels(provider, rootID, it.Level1, it.Level2)
 		if err != nil {
 			reason := fmt.Sprintf("创建分类目录 %s 失败：%v", it.Category, err)
 			log.Printf("[reclassify] %s", reason)
 			reclassifyMu.Lock()
-			reclassifyFailures(&reclassifyRun, reason)
+			s.reclassifyFailures(&reclassifyRun, reason)
 			reclassifyMu.Unlock()
 			continue
 		}
@@ -351,7 +351,7 @@ func runReclassify(provider cloudfile.Provider, ls *store.LibraryStore, categori
 			reason := fmt.Sprintf("%s：%v", it.Title, err)
 			log.Printf("[reclassify] 移动失败 %s", reason)
 			reclassifyMu.Lock()
-			reclassifyFailures(&reclassifyRun, reason)
+			s.reclassifyFailures(&reclassifyRun, reason)
 			reclassifyMu.Unlock()
 		} else {
 			moved++
@@ -408,7 +408,7 @@ func runReclassify(provider cloudfile.Provider, ls *store.LibraryStore, categori
 }
 
 // walkAllFolders 递归收集媒体库根下全部目录的父子关系（深度上限防环）。
-func walkAllFolders(provider cloudfile.Provider, folderID string, parentMap map[string]string, depth int) {
+func (s *Server) walkAllFolders(provider cloudfile.Provider, folderID string, parentMap map[string]string, depth int) {
 	if depth > 8 {
 		return
 	}
@@ -422,26 +422,26 @@ func walkAllFolders(provider cloudfile.Provider, folderID string, parentMap map[
 			continue
 		}
 		parentMap[it.ID] = it.ParentID
-		walkAllFolders(provider, it.ID, parentMap, depth+1)
+		s.walkAllFolders(provider, it.ID, parentMap, depth+1)
 	}
 }
 
 // handleCategoriesReclassifyStatus 归位进度查询。
-func handleCategoriesReclassifyStatus(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, reclassifyState())
+func (s *Server) handleCategoriesReclassifyStatus(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.reclassifyState())
 }
 
 // handleMediaClassification 单媒体分类核对：当前分类（库中 parent_id 记录 → 分类树标签）
 // 与按 TMDB 最新流派/规则应属分类。供修正识别弹窗展示「当前 vs 应属」。
-func handleMediaClassification(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleMediaClassification(w http.ResponseWriter, r *http.Request) {
 	folderID := strings.TrimSpace(r.URL.Query().Get("folder_id"))
 	if folderID == "" {
 		writeJSONError(w, http.StatusBadRequest, "folder_id 不能为空")
 		return
 	}
-	categories := RT().GetCategories()
-	ls := RT().GetLibraryStore()
-	provider := RT().GetStorageProvider()
+	categories := s.rt.GetCategories()
+	ls := s.rt.GetLibraryStore()
+	provider := s.rt.GetStorageProvider()
 	if categories == nil || provider == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"available": false})
 		return
@@ -451,13 +451,13 @@ func handleMediaClassification(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusNotFound, "媒体条目不存在")
 		return
 	}
-	info, err := fetchTmdbInfoForClassification(tmdbID, mediaType)
+	info, err := s.fetchTmdbInfoForClassification(tmdbID, mediaType)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"available": false, "error": err.Error()})
 		return
 	}
-	rootRef := strings.TrimSpace(RT().GetConfig().ActiveRootFolderID())
-	tree := currentCategoryLabels(provider, categories, rootRef)
+	rootRef := strings.TrimSpace(s.rt.GetConfig().ActiveRootFolderID())
+	tree := s.currentCategoryLabels(provider, categories, rootRef)
 	if tree == nil {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"available": false, "error": "分类目录定位失败（接口限流或目录不存在）",
@@ -472,11 +472,11 @@ func handleMediaClassification(w http.ResponseWriter, r *http.Request) {
 		current = tree.labels[cf.ParentID]
 		ls.UpdateMediaParentID(folderID, cf.ParentID)
 	}
-	expected1, expected2 := resolveCategoryFor(categories, mediaType == "tv", info)
+	expected1, expected2 := s.resolveCategoryFor(categories, mediaType == "tv", info)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"available": true,
 		"current":   current,
-		"expected":  categoryLabel(expected1, expected2),
+		"expected":  s.categoryLabel(expected1, expected2),
 	})
 }
 
@@ -495,7 +495,7 @@ var (
 // currentCategoryLabels 枚举媒体库根下的分类树建 ID→标签映射。
 // 短 TTL 缓存：分类目录很少变动，避免修正识别弹窗每次都重新枚举耗 QPS；
 // 分类规则改动后标签最多滞后 5 分钟。
-func currentCategoryLabels(provider cloudfile.Provider, categories *config.CategoriesConfig, rootRef string) *categoryTree {
+func (s *Server) currentCategoryLabels(provider cloudfile.Provider, categories *config.CategoriesConfig, rootRef string) *categoryTree {
 	if rootRef == "" {
 		return nil
 	}
@@ -547,8 +547,8 @@ func currentCategoryLabels(provider cloudfile.Provider, categories *config.Categ
 
 // fetchTmdbInfoForClassification 分类判定取 TMDB 最新详情（缓存最多滞后一个 TTL，
 // 与批量重新归类的执行判定同标准）；最新请求失败时回退本地缓存条目。
-func fetchTmdbInfoForClassification(tmdbID int64, mediaType string) (map[string]any, error) {
-	if client := RT().GetTmdbClient(); client != nil {
+func (s *Server) fetchTmdbInfoForClassification(tmdbID int64, mediaType string) (map[string]any, error) {
+	if client := s.rt.GetTmdbClient(); client != nil {
 		mtype := mediaparser.MediaMovie
 		if mediaType == "tv" {
 			mtype = mediaparser.MediaTV
@@ -557,7 +557,7 @@ func fetchTmdbInfoForClassification(tmdbID int64, mediaType string) (map[string]
 			return info, nil
 		}
 	}
-	if ls := RT().GetLibraryStore(); ls != nil {
+	if ls := s.rt.GetLibraryStore(); ls != nil {
 		if entry := ls.GetTmdbEntry(mediaType, tmdbID); entry != nil && entry.RawJSON != nil {
 			return entry.RawJSON, nil
 		}

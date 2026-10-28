@@ -28,8 +28,8 @@ type libraryMediaRef struct {
 }
 
 // loadLibraryMediaRef 读取库条目关键字段（不存在返回 nil）。
-func loadLibraryMediaRef(folderID string) *libraryMediaRef {
-	item := RT().GetLibraryStore().GetLibraryItemByFolderID(folderID)
+func (s *Server) loadLibraryMediaRef(folderID string) *libraryMediaRef {
+	item := s.rt.GetLibraryStore().GetLibraryItemByFolderID(folderID)
 	if item == nil {
 		return nil
 	}
@@ -46,11 +46,11 @@ func loadLibraryMediaRef(folderID string) *libraryMediaRef {
 
 // listMatchedSubscriptions 查条目匹配的订阅（含已停用，未关联 TMDB 时恒为空）。
 // 停用订阅也须纳入：否则停用订阅指向的媒体被删后将永久残留。
-func listMatchedSubscriptions(ref *libraryMediaRef) []*store.SubscriptionRecord {
+func (s *Server) listMatchedSubscriptions(ref *libraryMediaRef) []*store.SubscriptionRecord {
 	if ref == nil || ref.TmdbID <= 0 {
 		return nil
 	}
-	rssStore := RT().GetRSSStore()
+	rssStore := s.rt.GetRSSStore()
 	return rssStore.ListSubscriptionsByTmdb(ref.MediaType, ref.TmdbID)
 }
 
@@ -111,8 +111,8 @@ func removeStrmByFileIDs(st *store.StrmStore, fileIDs map[string]bool) int {
 
 // recordDeletionIngest 追加 status='deleted' 的删除日志
 // （title/tmdb_id/drive_folder_id 照抄条目字段，不改动原入库记录）。
-func recordDeletionIngest(ref *libraryMediaRef) {
-	ingest := RT().GetIngestStore()
+func (s *Server) recordDeletionIngest(ref *libraryMediaRef) {
+	ingest := s.rt.GetIngestStore()
 	if _, err := ingest.RecordIngest(store.IngestRecord{
 		MediaType:     ref.MediaType,
 		TmdbID:        ref.TmdbID,
@@ -128,9 +128,9 @@ func recordDeletionIngest(ref *libraryMediaRef) {
 }
 
 // cancelMatchedSubscriptions 逐条删除匹配的订阅（含已停用；命中记录随外键级联），返回取消数量。
-func cancelMatchedSubscriptions(subs []*store.SubscriptionRecord) int {
+func (s *Server) cancelMatchedSubscriptions(subs []*store.SubscriptionRecord) int {
 	cancelled := 0
-	rssStore := RT().GetRSSStore()
+	rssStore := s.rt.GetRSSStore()
 	for _, sub := range subs {
 		if !rssStore.DeleteSubscription(sub.ID) {
 			continue
@@ -156,13 +156,13 @@ func subscriptionSummaries(subs []*store.SubscriptionRecord) []map[string]any {
 }
 
 // handleLibraryMediaPreview GET /api/library/media/{folderID} 删除预览。
-func handleLibraryMediaPreview(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleLibraryMediaPreview(w http.ResponseWriter, r *http.Request) {
 	folderID := r.PathValue("folderID")
 	if folderID == "" {
 		writeJSONError(w, http.StatusBadRequest, "缺少 drive_folder_id")
 		return
 	}
-	ref := loadLibraryMediaRef(folderID)
+	ref := s.loadLibraryMediaRef(folderID)
 	if ref == nil {
 		writeJSONError(w, http.StatusNotFound, "媒体库条目不存在")
 		return
@@ -172,13 +172,13 @@ func handleLibraryMediaPreview(w http.ResponseWriter, r *http.Request) {
 		"title":           ref.Title,
 		"media_type":      ref.MediaType,
 		"tmdb_id":         ref.TmdbID,
-		"subscriptions":   subscriptionSummaries(listMatchedSubscriptions(ref)),
+		"subscriptions":   subscriptionSummaries(s.listMatchedSubscriptions(ref)),
 	}
 	// strm_count 仅在可准确统计时返回：Provider 不可用或目录无法遍历
 	// （含目录已被外部删除）时省略，避免前端展示误导性的「0 个」
-	if provider := RT().GetStorageProvider(); provider != nil {
+	if provider := s.rt.GetStorageProvider(); provider != nil {
 		if fileIDs, exists, err := collectFolderFileIDs(provider, folderID); err == nil && exists {
-			if st := RT().GetStrmStore(); st != nil {
+			if st := s.rt.GetStrmStore(); st != nil {
 				resp["strm_count"] = len(listStrmFilesByFileIDs(st, fileIDs))
 			}
 		}
@@ -190,25 +190,25 @@ func handleLibraryMediaPreview(w http.ResponseWriter, r *http.Request) {
 // 流程（网盘删除失败即中止、本地一概不动；目录已不存在视为成功继续）：
 // 收集网盘文件 → 删网盘目录 → 清 STRM → 删库条目 → 记删除日志
 // → 可选取消订阅 → STRM 对账兜底。
-func handleLibraryMediaDelete(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleLibraryMediaDelete(w http.ResponseWriter, r *http.Request) {
 	folderID := r.PathValue("folderID")
 	if folderID == "" {
 		writeJSONError(w, http.StatusBadRequest, "缺少 drive_folder_id")
 		return
 	}
-	libStore := RT().GetLibraryStore()
+	libStore := s.rt.GetLibraryStore()
 	// 1. 删前读出条目与匹配订阅（删除后即查不到）
-	ref := loadLibraryMediaRef(folderID)
+	ref := s.loadLibraryMediaRef(folderID)
 	if ref == nil {
 		writeJSONError(w, http.StatusNotFound, "媒体库条目不存在")
 		return
 	}
-	subs := listMatchedSubscriptions(ref)
+	subs := s.listMatchedSubscriptions(ref)
 
 	appLog("library", "delete_start", "INFO", "开始移出媒体库："+ref.Title,
 		map[string]any{"folder_id": folderID, "media_type": ref.MediaType, "tmdb_id": ref.TmdbID})
 
-	provider := RT().GetStorageProvider()
+	provider := s.rt.GetStorageProvider()
 	if provider == nil {
 		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
 		return
@@ -246,7 +246,7 @@ func handleLibraryMediaDelete(w http.ResponseWriter, r *http.Request) {
 
 	// 4. 按 FileID 集合清理 STRM（本地文件 + 记录）
 	removedStrm := 0
-	if st := RT().GetStrmStore(); st != nil {
+	if st := s.rt.GetStrmStore(); st != nil {
 		removedStrm = removeStrmByFileIDs(st, fileIDs)
 	}
 	appLog("library", "delete_strm", "SUCCESS", fmt.Sprintf("已清理 STRM %d 条", removedStrm),
@@ -256,11 +256,11 @@ func handleLibraryMediaDelete(w http.ResponseWriter, r *http.Request) {
 	appLog("library", "delete_item", "SUCCESS", "库条目已删除",
 		map[string]any{"folder_id": folderID})
 	// 6. 追加删除日志
-	recordDeletionIngest(ref)
+	s.recordDeletionIngest(ref)
 	// 7. 可选联动取消匹配订阅
 	cancelledSubs := 0
 	if r.URL.Query().Get("cancel_subscription") == "true" {
-		cancelledSubs = cancelMatchedSubscriptions(subs)
+		cancelledSubs = s.cancelMatchedSubscriptions(subs)
 		if cancelledSubs > 0 {
 			appLog("library", "delete_subs", "SUCCESS", fmt.Sprintf("已联动取消订阅 %d 条", cancelledSubs),
 				map[string]any{"folder_id": folderID})

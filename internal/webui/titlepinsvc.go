@@ -26,8 +26,8 @@ type titlePinItem struct {
 	FolderIDs    []string `json:"folder_ids"`
 }
 
-func handleListTitlePins(w http.ResponseWriter, _ *http.Request) {
-	ls := RT().GetLibraryStore()
+func (s *Server) handleListTitlePins(w http.ResponseWriter, _ *http.Request) {
+	ls := s.rt.GetLibraryStore()
 	pins, err := ls.ListTitlePins()
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
@@ -68,7 +68,7 @@ func handleListTitlePins(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
-func handleAdoptTitlePin(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAdoptTitlePin(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		MediaType string `json:"media_type"`
 		TmdbID    int64  `json:"tmdb_id"`
@@ -81,15 +81,15 @@ func handleAdoptTitlePin(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "media_type 或 tmdb_id 无效")
 		return
 	}
-	ls := RT().GetLibraryStore()
-	provider := RT().GetStorageProvider()
+	ls := s.rt.GetLibraryStore()
+	provider := s.rt.GetStorageProvider()
 	if provider == nil {
 		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
 		return
 	}
 
 	// 1. 取 TMDB 当前译名（实时优先，缓存兜底）
-	title, year, err := fetchCurrentTmdbTitle(body.MediaType, body.TmdbID)
+	title, year, err := s.fetchCurrentTmdbTitle(body.MediaType, body.TmdbID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, err.Error())
 		return
@@ -145,7 +145,7 @@ func handleAdoptTitlePin(w http.ResponseWriter, r *http.Request) {
 // handleDeleteTitlePin 解除整理名称固定（POST /api/title-pins:delete）。
 // 仅删除固定名称记录，网盘目录不受影响；下次整理将重新确定名称
 // （最早入库记录 → TMDB 匹配结果）。
-func handleDeleteTitlePin(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleDeleteTitlePin(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		MediaType string `json:"media_type"`
 		TmdbID    int64  `json:"tmdb_id"`
@@ -158,7 +158,7 @@ func handleDeleteTitlePin(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "media_type 或 tmdb_id 无效")
 		return
 	}
-	ls := RT().GetLibraryStore()
+	ls := s.rt.GetLibraryStore()
 	exists, err := ls.DeleteTitlePin(body.MediaType, body.TmdbID)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
@@ -175,8 +175,8 @@ func handleDeleteTitlePin(w http.ResponseWriter, r *http.Request) {
 }
 
 // fetchCurrentTmdbTitle 实时获取 TMDB 当前译名与年份（缓存兜底）。
-func fetchCurrentTmdbTitle(mediaType string, tmdbID int64) (string, string, error) {
-	if client := RT().GetTmdbClient(); client != nil {
+func (s *Server) fetchCurrentTmdbTitle(mediaType string, tmdbID int64) (string, string, error) {
+	if client := s.rt.GetTmdbClient(); client != nil {
 		mtype := mediaparser.MediaTypeFromAgent(mediaType)
 		if detail := client.GetByID(mtype, int(tmdbID)); detail != nil {
 			title := firstNonEmptyStr(jsonx.Str(detail, "name"), jsonx.Str(detail, "title"))
@@ -186,7 +186,7 @@ func fetchCurrentTmdbTitle(mediaType string, tmdbID int64) (string, string, erro
 			}
 		}
 	}
-	if entry := RT().GetLibraryStore().GetTmdbEntry(mediaType, tmdbID); entry != nil && entry.Title != "" {
+	if entry := s.rt.GetLibraryStore().GetTmdbEntry(mediaType, tmdbID); entry != nil && entry.Title != "" {
 		date := entry.FirstAirDate
 		if mediaType == "movie" {
 			date = entry.ReleaseDate

@@ -48,8 +48,8 @@ func fetchTmdbInfoWithCredits(client *tmdb.Client, path, extraKeys string) map[s
 }
 
 // fetchTmdbInfoForRefresh 拉取刷新用的详情（含导演/演员提取）。
-func fetchTmdbInfoForRefresh(tmdbID int64, mediaType string) (map[string]any, error) {
-	client := RT().GetTmdbClient()
+func (s *Server) fetchTmdbInfoForRefresh(tmdbID int64, mediaType string) (map[string]any, error) {
+	client := s.rt.GetTmdbClient()
 	if client == nil {
 		return nil, fmt.Errorf("TMDB 客户端不可用")
 	}
@@ -134,8 +134,8 @@ func collectDriveEpisodes(client cloudfile.Provider, driveFolderID string) map[e
 		}
 		for _, file := range seasonFiles {
 			if file.IsVideo() {
-				if s, e, ok := ParseEpisodeFromFilename(file.Name); ok && s == seasonNum {
-					episodes[epKey{s, e}] = true
+				if season, e, ok := ParseEpisodeFromFilename(file.Name); ok && season == seasonNum {
+					episodes[epKey{season, e}] = true
 				}
 			}
 		}
@@ -144,7 +144,7 @@ func collectDriveEpisodes(client cloudfile.Provider, driveFolderID string) map[e
 }
 
 // buildItemUpdates 根据新 TMDB 信息构造库条目更新。
-func buildItemUpdates(info map[string]any, mediaType, driveFolderID string, client cloudfile.Provider) map[string]any {
+func (s *Server) buildItemUpdates(info map[string]any, mediaType, driveFolderID string, client cloudfile.Provider) map[string]any {
 	tmdbID := jsonx.Int(info, "tmdb_id", jsonx.Int(info, "id", 0))
 	titleKey, origKey := "title", "original_title"
 	if mediaType == "tv" {
@@ -157,10 +157,10 @@ func buildItemUpdates(info map[string]any, mediaType, driveFolderID string, clie
 		"rating":   roundTo1F(jsonx.Float(info, "vote_average", 0)),
 	}
 	if p := jsonx.Str(info, "poster_path"); p != "" {
-		updates["poster_url"] = tmdbImageURL(p, "w500")
+		updates["poster_url"] = s.rt.tmdbImageURL(p, "w500")
 	}
 	if b := jsonx.Str(info, "backdrop_path"); b != "" {
-		updates["backdrop_url"] = tmdbImageURL(b, "")
+		updates["backdrop_url"] = s.rt.tmdbImageURL(b, "")
 	}
 	if mediaType == "tv" {
 		date := jsonx.Str(info, "first_air_date")
@@ -176,7 +176,7 @@ func buildItemUpdates(info map[string]any, mediaType, driveFolderID string, clie
 			if client != nil {
 				driveEpisodes = collectDriveEpisodes(client, driveFolderID)
 			}
-			seasonsStatus, totalEps, inLibEps := BuildSeasonsStatus(tmdbID, info, driveEpisodes, false)
+			seasonsStatus, totalEps, inLibEps := s.rt.BuildSeasonsStatus(tmdbID, info, driveEpisodes, false)
 			if len(seasonsStatus) > 0 {
 				updates["seasons"] = seasonsToAny(seasonsStatus)
 			}
@@ -202,8 +202,8 @@ func seasonsToAny(seasons []SeasonStatus) []any {
 }
 
 // doRefreshItem 刷新单条媒体元数据（拉取 TMDB 最新信息并构造库记录更新）。
-func doRefreshItem(tmdbID int64, mediaType, driveFolderID, title, year string) (map[string]any, error) {
-	cfg := RT().GetConfig()
+func (s *Server) doRefreshItem(tmdbID int64, mediaType, driveFolderID, title, year string) (map[string]any, error) {
+	cfg := s.rt.GetConfig()
 	if tmdbID <= 0 {
 		if title == "" {
 			return nil, fmt.Errorf("该媒体项没有 TMDB ID 且未提供标题，无法搜索")
@@ -211,7 +211,7 @@ func doRefreshItem(tmdbID int64, mediaType, driveFolderID, title, year string) (
 		if !cfg.IsTmdbReady() {
 			return nil, fmt.Errorf("TMDB API Key 未配置，无法搜索")
 		}
-		client := RT().GetTmdbClient()
+		client := s.rt.GetTmdbClient()
 		mtype := mediaparser.MediaMovie
 		if mediaType == "tv" {
 			mtype = mediaparser.MediaTV
@@ -223,19 +223,19 @@ func doRefreshItem(tmdbID int64, mediaType, driveFolderID, title, year string) (
 		tmdbID = jsonx.Int(found, "tmdb_id", jsonx.Int(found, "id", 0))
 	}
 
-	info, err := fetchTmdbInfoForRefresh(tmdbID, mediaType)
+	info, err := s.fetchTmdbInfoForRefresh(tmdbID, mediaType)
 	if err != nil {
 		return nil, err
 	}
 
-	updates := buildItemUpdates(info, mediaType, driveFolderID, RT().GetStorageProvider())
+	updates := s.buildItemUpdates(info, mediaType, driveFolderID, s.rt.GetStorageProvider())
 	return map[string]any{
 		"ok": true, "tmdb_id": tmdbID, "updates": updates,
 	}, nil
 }
 
 // persistLibraryItem 更新库条目并返回最新数据。
-func persistLibraryItem(driveFolderID string, result map[string]any) map[string]any {
+func (s *Server) persistLibraryItem(driveFolderID string, result map[string]any) map[string]any {
 	updates, _ := result["updates"].(map[string]any)
 	if len(updates) == 0 {
 		if id := jsonx.Int(result, "tmdb_id", 0); id > 0 {
@@ -245,7 +245,7 @@ func persistLibraryItem(driveFolderID string, result map[string]any) map[string]
 	if len(updates) == 0 || driveFolderID == "" {
 		return nil
 	}
-	libStore := RT().GetLibraryStore()
+	libStore := s.rt.GetLibraryStore()
 	if !libStore.PatchItem(driveFolderID, updates) {
 		return nil
 	}
@@ -362,12 +362,12 @@ func renameTvFiles(provider cloudfile.Provider, files []cloudfile.CloudFile, tit
 			}
 		}
 		for _, file := range videos {
-			s, e, ok := ParseEpisodeFromFilename(file.Name)
-			if !ok || s != seasonNum {
+			season, e, ok := ParseEpisodeFromFilename(file.Name)
+			if !ok || season != seasonNum {
 				errs = append(errs, fmt.Sprintf("无法识别季集，跳过改名：%s", file.Name))
 				continue
 			}
-			newStem := fmt.Sprintf("%s - S%02dE%02d", safeFilename(title), s, e)
+			newStem := fmt.Sprintf("%s - S%02dE%02d", safeFilename(title), season, e)
 			done, err := renameMediaFile(provider, file, newStem+file.Extension())
 			if err != nil {
 				errs = append(errs, fmt.Sprintf("改名失败 %s：%v", file.Name, err))
@@ -431,14 +431,14 @@ func fileStemOf(name string) string {
 // （详情走 TMDB 客户端缓存）。入库时间与原始文件名是历史事实，保留不动。
 // 记录页与「入库历史 → TMDB」识别回退（resolveMediaIdentity）都随修正同步，
 // 否则旧记录会把同名再次下载重新识别到错误条目上。
-func rewriteIngestHistory(mediaType, driveFolderID string, tmdbID int64) (int, error) {
-	ingest := RT().GetIngestStore()
+func (s *Server) rewriteIngestHistory(mediaType, driveFolderID string, tmdbID int64) (int, error) {
+	ingest := s.rt.GetIngestStore()
 	rows := ingest.ListByFolder(mediaType, driveFolderID)
 	if len(rows) == 0 {
 		return 0, nil
 	}
 	// 复用修正识别刚拉取的详情缓存（零额外请求）
-	info, err := fetchTmdbInfoForRefresh(tmdbID, mediaType)
+	info, err := s.fetchTmdbInfoForRefresh(tmdbID, mediaType)
 	if err != nil {
 		return 0, err
 	}
@@ -450,7 +450,7 @@ func rewriteIngestHistory(mediaType, driveFolderID string, tmdbID int64) (int, e
 	originalTitle := jsonx.Str(info, origKey)
 	year := firstN4Str(jsonx.Str(info, dateKey))
 	posterPath := jsonx.Str(info, "poster_path")
-	client := RT().GetTmdbClient()
+	client := s.rt.GetTmdbClient()
 	for _, row := range rows {
 		episodeTitle, _ := row["episode_title"].(string)
 		if mediaType == "tv" && client != nil {
@@ -474,13 +474,13 @@ func rewriteIngestHistory(mediaType, driveFolderID string, tmdbID int64) (int, e
 // reclassifyLibraryFolder 修正识别后按新 TMDB 信息重新归类：
 // 解析分类目录链（媒体库根/一级/二级），目录不在新分类下时移动过去（目录 ID 不变）。
 // 分类判定取 TMDB 最新详情（与修正识别弹窗展示的应属分类同标准）。
-func reclassifyLibraryFolder(provider cloudfile.Provider, driveFolderID, mediaType string, tmdbID int64) (map[string]any, error) {
-	categories := RT().GetCategories()
-	rootRef := strings.TrimSpace(RT().GetConfig().ActiveRootFolderID())
+func (s *Server) reclassifyLibraryFolder(provider cloudfile.Provider, driveFolderID, mediaType string, tmdbID int64) (map[string]any, error) {
+	categories := s.rt.GetCategories()
+	rootRef := strings.TrimSpace(s.rt.GetConfig().ActiveRootFolderID())
 	if categories == nil || rootRef == "" {
 		return map[string]any{"moved": false}, nil
 	}
-	info, err := fetchTmdbInfoForClassification(tmdbID, mediaType)
+	info, err := s.fetchTmdbInfoForClassification(tmdbID, mediaType)
 	if err != nil {
 		return nil, err
 	}
@@ -488,7 +488,7 @@ func reclassifyLibraryFolder(provider cloudfile.Provider, driveFolderID, mediaTy
 	if !ok {
 		return nil, fmt.Errorf("媒体库根目录 %q 不存在", rootRef)
 	}
-	targetParent, category, err := classifyTargetParent(provider, categories, rootID, mediaType == "tv", info)
+	targetParent, category, err := s.classifyTargetParent(provider, categories, rootID, mediaType == "tv", info)
 	if err != nil {
 		return nil, err
 	}
@@ -502,7 +502,7 @@ func reclassifyLibraryFolder(provider cloudfile.Provider, driveFolderID, mediaTy
 	if _, err := provider.MoveFile(driveFolderID, targetParent, ""); err != nil {
 		return nil, err
 	}
-	if ls := RT().GetLibraryStore(); ls != nil {
+	if ls := s.rt.GetLibraryStore(); ls != nil {
 		ls.UpdateMediaParentID(driveFolderID, targetParent)
 	}
 	return map[string]any{"moved": true, "category": category}, nil
@@ -519,7 +519,7 @@ type refreshItemBody struct {
 	RenameFolder  bool   `json:"rename_folder"`
 }
 
-func handleRefreshItem(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleRefreshItem(w http.ResponseWriter, r *http.Request) {
 	var body refreshItemBody
 	if err := jsonDecodeBody(r, &body); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "请求体格式错误")
@@ -529,7 +529,7 @@ func handleRefreshItem(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "drive_folder_id 不能为空")
 		return
 	}
-	result, err := doRefreshItem(body.TmdbID, body.MediaType, body.DriveFolderID, body.Title, body.Year)
+	result, err := s.doRefreshItem(body.TmdbID, body.MediaType, body.DriveFolderID, body.Title, body.Year)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, err.Error())
 		return
@@ -539,13 +539,13 @@ func handleRefreshItem(w http.ResponseWriter, r *http.Request) {
 			"tmdb_id": body.TmdbID, "media_type": body.MediaType,
 			"drive_folder_id": body.DriveFolderID,
 		})
-	if item := persistLibraryItem(body.DriveFolderID, result); item != nil {
+	if item := s.persistLibraryItem(body.DriveFolderID, result); item != nil {
 		result["item"] = item
 	}
 	writeJSON(w, http.StatusOK, result)
 }
 
-func handleReidentifyItem(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleReidentifyItem(w http.ResponseWriter, r *http.Request) {
 	var body refreshItemBody
 	if err := jsonDecodeBody(r, &body); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "请求体格式错误")
@@ -559,17 +559,17 @@ func handleReidentifyItem(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "tmdb_id 无效")
 		return
 	}
-	result, err := doRefreshItem(body.TmdbID, body.MediaType, body.DriveFolderID, body.Title, body.Year)
+	result, err := s.doRefreshItem(body.TmdbID, body.MediaType, body.DriveFolderID, body.Title, body.Year)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	if item := persistLibraryItem(body.DriveFolderID, result); item != nil {
+	if item := s.persistLibraryItem(body.DriveFolderID, result); item != nil {
 		result["item"] = item
 	}
 	// 入库历史改写到新身份（与库条目同级的一致性修正，不受重命名开关约束）
 	historyErrors := []string{}
-	if n, err := rewriteIngestHistory(body.MediaType, body.DriveFolderID, body.TmdbID); err != nil {
+	if n, err := s.rewriteIngestHistory(body.MediaType, body.DriveFolderID, body.TmdbID); err != nil {
 		historyErrors = append(historyErrors, "入库记录改写失败："+err.Error())
 	} else if n > 0 {
 		result["history_rewritten"] = n
@@ -584,14 +584,14 @@ func handleReidentifyItem(w http.ResponseWriter, r *http.Request) {
 	if body.RenameFolder {
 		updates, _ := result["updates"].(map[string]any)
 		if renameResult, err := renameLibraryFolder(
-			RT().GetStorageProvider(), body.DriveFolderID, body.MediaType, updates); err != nil {
+			s.rt.GetStorageProvider(), body.DriveFolderID, body.MediaType, updates); err != nil {
 			renameErrors = append(renameErrors, err.Error())
 		} else {
 			renamed, _ = renameResult["renamed"].(bool)
 			folderName, _ = renameResult["folder_name"].(string)
 		}
 		// 目录内媒体文件同步改成标准命名（跟随新识别的标题/季集）
-		n, fileErrs := renameLibraryFiles(RT().GetStorageProvider(), body.DriveFolderID, body.MediaType, updates)
+		n, fileErrs := renameLibraryFiles(s.rt.GetStorageProvider(), body.DriveFolderID, body.MediaType, updates)
 		filesRenamed = n
 		renameErrors = append(renameErrors, fileErrs...)
 	}
@@ -608,7 +608,7 @@ func handleReidentifyItem(w http.ResponseWriter, r *http.Request) {
 	category := ""
 	reclassifyError := ""
 	if body.TmdbID > 0 {
-		if r, err := reclassifyLibraryFolder(RT().GetStorageProvider(), body.DriveFolderID, body.MediaType, body.TmdbID); err != nil {
+		if r, err := s.reclassifyLibraryFolder(s.rt.GetStorageProvider(), body.DriveFolderID, body.MediaType, body.TmdbID); err != nil {
 			reclassifyError = err.Error()
 		} else {
 			reclassified, _ = r["moved"].(bool)
@@ -632,8 +632,8 @@ func handleReidentifyItem(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-func handleCacheStats(w http.ResponseWriter, _ *http.Request) {
-	cache := RT().GetTmdbCache()
+func (s *Server) handleCacheStats(w http.ResponseWriter, _ *http.Request) {
+	cache := s.rt.GetTmdbCache()
 	if cache == nil {
 		writeJSON(w, http.StatusOK, map[string]int64{})
 		return
@@ -641,8 +641,8 @@ func handleCacheStats(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, cache.Stats())
 }
 
-func handleCacheEvict(w http.ResponseWriter, _ *http.Request) {
-	cache := RT().GetTmdbCache()
+func (s *Server) handleCacheEvict(w http.ResponseWriter, _ *http.Request) {
+	cache := s.rt.GetTmdbCache()
 	if cache == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"evicted": 0})
 		return
@@ -653,32 +653,32 @@ func handleCacheEvict(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func handleHealth(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func handleTmdbSearch(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleTmdbSearch(w http.ResponseWriter, r *http.Request) {
 	keyword := r.URL.Query().Get("keyword")
-	cfg := RT().GetConfig()
+	cfg := s.rt.GetConfig()
 	if cfg.Tmdb.APIKey == "" {
 		writeJSONError(w, http.StatusBadRequest, "TMDB API Key 未配置")
 		return
 	}
-	client := RT().GetTmdbClient()
+	client := s.rt.GetTmdbClient()
 	results := client.SearchRawMulti(keyword)
 	serialized := []map[string]any{}
 	for _, item := range results {
 		if mt := jsonx.Str(item, "media_type"); mt != "movie" && mt != "tv" {
 			continue
 		}
-		if s := RT().serializeTmdbResult(item); s != nil {
-			serialized = append(serialized, s)
+		if serializedItem := s.rt.serializeTmdbResult(item); serializedItem != nil {
+			serialized = append(serialized, serializedItem)
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "results": serialized})
 }
 
-func handleTmdbDetail(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleTmdbDetail(w http.ResponseWriter, r *http.Request) {
 	tmdbID, err := strconv.ParseInt(r.PathValue("tmdbID"), 10, 64)
 	if err != nil || tmdbID <= 0 {
 		writeJSONError(w, http.StatusBadRequest, "tmdb_id 无效")
@@ -689,13 +689,13 @@ func handleTmdbDetail(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "media_type 必须是 movie 或 tv")
 		return
 	}
-	libStore := RT().GetLibraryStore()
+	libStore := s.rt.GetLibraryStore()
 	joined := libStore.GetJoinedMediaItem(mediaType, tmdbID)
 	if joined != nil && (mediaType != "tv" || joined["seasons"] != nil) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "detail": joined})
 		return
 	}
-	client := RT().GetTmdbClient()
+	client := s.rt.GetTmdbClient()
 	if client == nil {
 		writeJSONError(w, http.StatusInternalServerError, "TMDB API Key 未配置")
 		return
@@ -712,23 +712,23 @@ func handleTmdbDetail(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "TMDB 详情获取失败")
 		return
 	}
-	serialized := RT().serializeTmdbResult(raw)
+	serialized := s.rt.serializeTmdbResult(raw)
 	if mediaType == "tv" && raw["seasons"] != nil {
-		seasonsStatus, _, _ := BuildSeasonsStatus(tmdbID, raw, map[epKey]bool{}, true)
+		seasonsStatus, _, _ := s.rt.BuildSeasonsStatus(tmdbID, raw, map[epKey]bool{}, true)
 		serialized["seasons"] = seasonsToAny(seasonsStatus)
 	}
 	serialized["in_library"] = false
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "detail": serialized})
 }
 
-func handleTmdbAlternativeNames(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleTmdbAlternativeNames(w http.ResponseWriter, r *http.Request) {
 	tmdbID, err := strconv.ParseInt(r.PathValue("tmdbID"), 10, 64)
 	if err != nil || tmdbID <= 0 {
 		writeJSONError(w, http.StatusBadRequest, "tmdb_id 无效")
 		return
 	}
 	mediaType := r.URL.Query().Get("media_type")
-	client := RT().GetTmdbClient()
+	client := s.rt.GetTmdbClient()
 	if client == nil {
 		writeJSONError(w, http.StatusInternalServerError, "TMDB API Key 未配置")
 		return
@@ -767,7 +767,7 @@ func handleTmdbAlternativeNames(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "alternative_names": result})
 }
 
-func handleScraperSearch(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleScraperSearch(w http.ResponseWriter, r *http.Request) {
 	factory := scraper.DefaultFactory()
 	results := factory.SearchAll(r.URL.Query().Get("keyword"))
 	grouped := map[string][]map[string]any{}
@@ -797,11 +797,11 @@ func handleScraperSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "results": aggregate})
 }
 
-func handleScraperSites(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleScraperSites(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "sites": scraper.DefaultFactory().ListSites()})
 }
 
-func handleScraperEpisodes(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleScraperEpisodes(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	site := q.Get("site")
 	mediaID := q.Get("media_id")
@@ -823,7 +823,7 @@ func handleScraperEpisodes(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleBangumiCalendar 代理 Bangumi 日历 API（解决移动端 CORS）。
-func handleBangumiCalendar(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleBangumiCalendar(w http.ResponseWriter, _ *http.Request) {
 	client := &http.Client{Timeout: 15 * time.Second}
 	req, _ := http.NewRequest(http.MethodGet, "https://api.bgm.tv/calendar", nil)
 	req.Header.Set("User-Agent", "Meta2Cloud/1.0 (https://github.com/BenZinaDaze/Meta2Cloud)")

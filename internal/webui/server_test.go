@@ -1244,7 +1244,7 @@ func TestScanCategoryPassthrough(t *testing.T) {
 		},
 	})
 
-	shows := ScanTVShows(fp.provider(), RT().GetConfig(), false)
+	shows := RT().ScanTVShows(fp.provider(), RT().GetConfig(), false)
 	if len(shows) != 1 {
 		t.Fatalf("shows = %d, want 1（分类目录应透传）", len(shows))
 	}

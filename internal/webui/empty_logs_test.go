@@ -236,7 +236,7 @@ func TestBuildSeasonsTotalNotStale(t *testing.T) {
 	for i := 1; i <= 12; i++ {
 		drive[epKey{1, i}] = true
 	}
-	seasons, total, inLib := BuildSeasonsStatus(309163, tmdbInfo, drive, false)
+	seasons, total, inLib := RT().BuildSeasonsStatus(309163, tmdbInfo, drive, false)
 	if total != 12 {
 		t.Errorf("total = %d, want 12(季详情 12 集 > 主详情旧值 7)", total)
 	}
@@ -261,7 +261,7 @@ func TestBuildSeasonsTotalNotStale(t *testing.T) {
 	c2.SetTestBaseURL(tmdbServer2.URL)
 	RT().SetTmdbClientForTest(c2)
 
-	seasons2, total2, inLib2 := BuildSeasonsStatus(309164, tmdbInfo, drive, false)
+	seasons2, total2, inLib2 := RT().BuildSeasonsStatus(309164, tmdbInfo, drive, false)
 	if total2 != 12 || inLib2 != 12 {
 		t.Errorf("场景2: total=%d inLib=%d, want 12/12(TMDB 未登记的 8-12 集应补占位)", total2, inLib2)
 	}
