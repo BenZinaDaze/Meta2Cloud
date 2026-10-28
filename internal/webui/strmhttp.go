@@ -45,13 +45,6 @@ const (
 	strmNegativeCacheTTL = 30 * time.Second // 失败负缓存时长
 )
 
-// 测试可注入
-var (
-	strmFetchWait = strmFetchWaitTimeout
-	strmNegTTL    = strmNegativeCacheTTL
-	strmFetchSem  = make(chan struct{}, strmFetchConcurrency)
-)
-
 // negativeEntry 负缓存条目：短时间内的重复失败直接按同状态返回。
 type negativeEntry struct {
 	status int
@@ -59,43 +52,38 @@ type negativeEntry struct {
 	until  time.Time
 }
 
-var (
-	strmNegMu sync.Mutex
-	strmNeg   = map[string]negativeEntry{}
-)
-
 func (s *Server) strmNegativeGet(pickCode string) (negativeEntry, bool) {
-	strmNegMu.Lock()
-	defer strmNegMu.Unlock()
-	e, ok := strmNeg[pickCode]
+	s.rt.strmNegMu.Lock()
+	defer s.rt.strmNegMu.Unlock()
+	e, ok := s.rt.strmNeg[pickCode]
 	if ok && time.Now().After(e.until) {
-		delete(strmNeg, pickCode)
+		delete(s.rt.strmNeg, pickCode)
 		return negativeEntry{}, false
 	}
 	return e, ok
 }
 
 func (s *Server) strmNegativeSet(pickCode string, status int, msg string) {
-	strmNegMu.Lock()
-	defer strmNegMu.Unlock()
-	if len(strmNeg) > 1024 {
+	s.rt.strmNegMu.Lock()
+	defer s.rt.strmNegMu.Unlock()
+	if len(s.rt.strmNeg) > 1024 {
 		now := time.Now()
-		for k, v := range strmNeg {
+		for k, v := range s.rt.strmNeg {
 			if now.After(v.until) {
-				delete(strmNeg, k)
+				delete(s.rt.strmNeg, k)
 			}
 		}
 	}
-	strmNeg[pickCode] = negativeEntry{status: status, msg: msg, until: time.Now().Add(strmNegTTL)}
+	s.rt.strmNeg[pickCode] = negativeEntry{status: status, msg: msg, until: time.Now().Add(s.rt.strmNegTTL)}
 }
 
 // resetStrmLimiter 测试用：清空直链缓存、负缓存与信号量。
-func resetStrmLimiter() {
-	strmLinkCache.clear()
-	strmNegMu.Lock()
-	strmNeg = map[string]negativeEntry{}
-	strmNegMu.Unlock()
-	strmFetchSem = make(chan struct{}, strmFetchConcurrency)
+func (rt *Runtime) resetStrmLimiter() {
+	rt.strmLinkCache.clear()
+	rt.strmNegMu.Lock()
+	rt.strmNeg = map[string]negativeEntry{}
+	rt.strmNegMu.Unlock()
+	rt.strmFetchSem = make(chan struct{}, strmFetchConcurrency)
 }
 
 // directLink 缓存的直链条目。
@@ -111,8 +99,6 @@ type directLinkCache struct {
 	mu      sync.Mutex
 	entries map[string]directLink
 }
-
-var strmLinkCache = &directLinkCache{entries: map[string]directLink{}}
 
 func (c *directLinkCache) get(pickCode, ua string) (directLink, bool) {
 	c.mu.Lock()
@@ -216,7 +202,7 @@ func (s *Server) handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 	// UA 必须透传：115 直链与 UA 绑定
 	ua := r.Header.Get("User-Agent")
 
-	if link, ok := strmLinkCache.get(pickCode, ua); ok {
+	if link, ok := s.rt.strmLinkCache.get(pickCode, ua); ok {
 		s.strmRedirect(w, r, link)
 		recordPlayback(true, http.StatusFound, "", link.fileName)
 		return
@@ -239,10 +225,10 @@ func (s *Server) handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 
 	// 全局并发上限 + 排队超时：刮削扫描风暴时快速失败，不堆积
 	select {
-	case strmFetchSem <- struct{}{}:
-		defer func() { <-strmFetchSem }()
+	case s.rt.strmFetchSem <- struct{}{}:
+		defer func() { <-s.rt.strmFetchSem }()
 		// 双检：排队期间同 pickcode+UA 可能已被其他请求取到
-		if link, ok := strmLinkCache.get(pickCode, ua); ok {
+		if link, ok := s.rt.strmLinkCache.get(pickCode, ua); ok {
 			s.strmRedirect(w, r, link)
 			recordPlayback(true, http.StatusFound, "", link.fileName)
 			return
@@ -256,7 +242,7 @@ func (s *Server) handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		expires := directURLExpiry(rawURL)
-		strmLinkCache.set(pickCode, ua, rawURL, expires)
+		s.rt.strmLinkCache.set(pickCode, ua, rawURL, expires)
 
 		fileName := query.Get("file_name")
 		if fileName == "" {
@@ -266,7 +252,7 @@ func (s *Server) handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 		recordPlayback(false, http.StatusFound, "", fileName)
 		return
 
-	case <-time.After(strmFetchWait):
+	case <-time.After(s.rt.strmFetchWait):
 		w.Header().Set("Retry-After", "10")
 		recordPlayback(false, http.StatusServiceUnavailable, "直链获取排队超时", query.Get("file_name"))
 		writeJSONError(w, http.StatusServiceUnavailable, "直链获取排队超时（扫描限流中），请稍后重试")

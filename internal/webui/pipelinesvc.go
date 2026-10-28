@@ -8,18 +8,10 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"meta2cloud/internal/pipeline"
 	"meta2cloud/internal/webui/store"
-)
-
-var (
-	pipelineMu         sync.Mutex
-	pipelineDebounce   *time.Timer
-	pipelineRunning    bool
-	pipelineRunCounter int
 )
 
 // appLog 写应用日志（库不可用时静默）。
@@ -87,26 +79,22 @@ func (a duplicateFolderAdapter) DuplicateFolderGroups() []pipeline.DuplicateFold
 }
 
 // runID 生成短运行 ID。
-func newRunID() string {
-	pipelineMu.Lock()
-	pipelineRunCounter++
-	n := pipelineRunCounter
-	pipelineMu.Unlock()
-	return fmt.Sprintf("run%06d", n)
+func (rt *Runtime) newRunID() string {
+	return fmt.Sprintf("run%06d", rt.pipelineRunCounter)
 }
 
 // doRunPipeline 执行整理流程并刷新媒体库。
 func (rt *Runtime) doRunPipeline() {
-	pipelineMu.Lock()
-	if pipelineRunning {
-		pipelineMu.Unlock()
+	rt.pipelineMu.Lock()
+	if rt.pipelineRunning {
+		rt.pipelineMu.Unlock()
 		return
 	}
-	pipelineDebounce = nil
-	pipelineRunning = true
-	pipelineMu.Unlock()
+	rt.pipelineDebounce = nil
+	rt.pipelineRunning = true
+	rt.pipelineMu.Unlock()
 
-	runID := newRunID()
+	runID := rt.newRunID()
 	rt.appLog("pipeline", "pipeline_start", "INFO", "整理流程启动", map[string]any{"runId": runID})
 
 	cfg := rt.GetConfig()
@@ -115,9 +103,9 @@ func (rt *Runtime) doRunPipeline() {
 		rt.appLog("pipeline", "pipeline_exception", "ERROR", "整理流程执行异常", map[string]any{
 			"runId": runID, "error": "存储 Provider 不可用",
 		})
-		pipelineMu.Lock()
-		pipelineRunning = false
-		pipelineMu.Unlock()
+		rt.pipelineMu.Lock()
+		rt.pipelineRunning = false
+		rt.pipelineMu.Unlock()
 		return
 	}
 
@@ -154,28 +142,28 @@ func (rt *Runtime) doRunPipeline() {
 		}()
 		rt.RefreshLibrary(true)
 	}()
-	pipelineMu.Lock()
-	pipelineRunning = false
-	pipelineMu.Unlock()
+	rt.pipelineMu.Lock()
+	rt.pipelineRunning = false
+	rt.pipelineMu.Unlock()
 }
 
 // SchedulePipeline 调度整理流程（debounce>0 时防抖合并）。
 // 返回是否受理（已在运行且无防抖时拒绝）。
 func (rt *Runtime) SchedulePipeline(debounce int) bool {
-	pipelineMu.Lock()
-	defer pipelineMu.Unlock()
+	rt.pipelineMu.Lock()
+	defer rt.pipelineMu.Unlock()
 	if debounce > 0 {
-		if pipelineDebounce != nil {
-			pipelineDebounce.Stop()
+		if rt.pipelineDebounce != nil {
+			rt.pipelineDebounce.Stop()
 			log.Printf("整理流程防抖计时器已重置 | 防抖：%d 秒", debounce)
 		} else {
 			rt.appLog("pipeline", "pipeline_schedule", "INFO", "检测到媒体变化，等待稳定后开始整理",
 				map[string]any{"debounceSeconds": debounce})
 		}
-		pipelineDebounce = time.AfterFunc(time.Duration(debounce)*time.Second, rt.doRunPipeline)
+		rt.pipelineDebounce = time.AfterFunc(time.Duration(debounce)*time.Second, rt.doRunPipeline)
 		return true
 	}
-	if pipelineRunning {
+	if rt.pipelineRunning {
 		rt.appLog("pipeline", "pipeline_skip_running", "WARNING", "整理流程已在运行，跳过本次触发", nil)
 		return false
 	}
@@ -186,9 +174,9 @@ func (rt *Runtime) SchedulePipeline(debounce int) bool {
 
 // PipelineStatusPayload 当前调度状态。
 func (rt *Runtime) PipelineStatusPayload() map[string]any {
-	pipelineMu.Lock()
-	defer pipelineMu.Unlock()
-	return map[string]any{"running": pipelineRunning, "debounce": pipelineDebounce != nil}
+	rt.pipelineMu.Lock()
+	defer rt.pipelineMu.Unlock()
+	return map[string]any{"running": rt.pipelineRunning, "debounce": rt.pipelineDebounce != nil}
 }
 
 // ── HTTP 处理器 ─────────────────────────────────────────────

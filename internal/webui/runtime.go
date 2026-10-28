@@ -51,11 +51,24 @@ type Runtime struct {
 	plexClient  *plexserver.Client
 	traktSync   *store.TraktSyncStore
 
+	// ── STRM 直链缓存/负缓存/并发信号量（见 strmhttp.go）──
+	strmLinkCache *directLinkCache
+	strmNegMu     sync.Mutex
+	strmNeg       map[string]negativeEntry
+	strmFetchSem  chan struct{}
+	strmFetchWait time.Duration // 测试可调
+	strmNegTTL    time.Duration
+
+	// ── 整理管线单飞调度状态（见 pipelinesvc.go）──
+	pipelineMu         sync.Mutex
+	pipelineDebounce   *time.Timer
+	pipelineRunning    bool
+	pipelineRunCounter int
 
 	// ── 观看同步运行态（scrobble / SSE / 会话轮询 / 双向同步；见 scrobble.go 等）──
 	sessionScrobbleMu   sync.Mutex
 	sessionScrobbleByID map[string]*sessionScrobble
-	traktSSEState struct {
+	traktSSEState       struct {
 		mu          sync.Mutex
 		connected   bool
 		lastEventAt time.Time
@@ -65,7 +78,7 @@ type Runtime struct {
 	traktSSEWatcher     *watcherState
 	traktSessionOnce    sync.Once
 	traktSSEOnce        sync.Once
-	traktSyncState struct {
+	traktSyncState      struct {
 		mu      sync.Mutex
 		running bool
 	}
@@ -136,6 +149,11 @@ func InitRuntime(rootDir string) *Runtime {
 	// health 钩子默认实现（包级 init 环依赖已随钩子入字段消除）
 	rt.broadcaster = wsBroadcaster{conns: map[chan map[string]any]bool{}}
 	rt.sessionScrobbleByID = map[string]*sessionScrobble{}
+	rt.strmLinkCache = &directLinkCache{entries: map[string]directLink{}}
+	rt.strmNeg = map[string]negativeEntry{}
+	rt.strmFetchSem = make(chan struct{}, strmFetchConcurrency)
+	rt.strmFetchWait = strmFetchWaitTimeout
+	rt.strmNegTTL = strmNegativeCacheTTL
 	rt.traktWatcher = &watcherState{stopCh: make(chan struct{})}
 	rt.traktSessionWatcher = &watcherState{stopCh: make(chan struct{})}
 	rt.traktSSEWatcher = &watcherState{stopCh: make(chan struct{})}
