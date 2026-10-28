@@ -54,11 +54,6 @@ func DefaultCategories() *CategoriesConfig {
 	}
 }
 
-// CategoriesPath 由主配置路径推导分类配置路径（同目录）。
-func CategoriesPath(configPath string) string {
-	return filepath.Join(filepath.Dir(configPath), CategoriesFilename)
-}
-
 // LoadCategories 读取分类配置；文件不存在返回 (nil, os.ErrNotExist) = 未启用。
 func LoadCategories(path string) (*CategoriesConfig, error) {
 	data, err := os.ReadFile(path)

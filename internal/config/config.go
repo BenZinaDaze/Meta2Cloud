@@ -27,12 +27,6 @@ const SecretsFilename = "secrets.yaml"
 // ParseError 配置解析错误。
 type ParseError struct{ msg string }
 
-func (e *ParseError) Error() string { return e.msg }
-
-func parseErr(format string, args ...any) error {
-	return &ParseError{msg: fmt.Sprintf(format, args...)}
-}
-
 // normalizeImageBaseURL 规范化 TMDB 图片根地址。
 func normalizeImageBaseURL(baseURL string) string {
 	value := strings.TrimRight(strings.TrimSpace(baseURL), "/")

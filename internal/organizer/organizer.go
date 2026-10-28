@@ -50,45 +50,6 @@ func (o *MediaOrganizer) FolderPathForMeta(meta *mediaparser.MetaBase) string {
 	return o.buildPath(meta)
 }
 
-// FolderPathForPath 根据文件路径（合并父目录信息）计算目标文件夹路径字符串。
-func (o *MediaOrganizer) FolderPathForPath(path string) string {
-	meta := mediaparser.MetaInfoPath(path, nil, nil)
-	return o.buildPath(meta)
-}
-
-// EnsureFolderFor 根据文件名在云存储中按需创建文件夹（幂等），返回叶子文件夹。
-// 解析失败时返回 nil。
-func (o *MediaOrganizer) EnsureFolderFor(name string, isfile bool) *cloudfile.CloudFile {
-	meta := mediaparser.MetaInfo(name, "", isfile, nil, nil)
-	folder, err := o.ensureFolders(meta, name)
-	if err != nil {
-		log.Printf("[organizer] 创建文件夹失败 %q: %v", name, err)
-		return nil
-	}
-	return folder
-}
-
-// EnsureFolderForMeta 直接通过 MetaInfo 在云存储中按需创建文件夹（幂等）。
-func (o *MediaOrganizer) EnsureFolderForMeta(meta *mediaparser.MetaBase, label string) *cloudfile.CloudFile {
-	folder, err := o.ensureFolders(meta, label)
-	if err != nil {
-		log.Printf("[organizer] 创建文件夹失败 %q: %v", label, err)
-		return nil
-	}
-	return folder
-}
-
-// EnsureFolderForPath 根据文件路径（合并父目录信息）在云存储中按需创建文件夹（幂等）。
-func (o *MediaOrganizer) EnsureFolderForPath(path string) *cloudfile.CloudFile {
-	meta := mediaparser.MetaInfoPath(path, nil, nil)
-	folder, err := o.ensureFolders(meta, path)
-	if err != nil {
-		log.Printf("[organizer] 创建文件夹失败 %q: %v", path, err)
-		return nil
-	}
-	return folder
-}
-
 // ── 内部实现 ────────────────────────────────────────────────
 
 // buildPath 根据 MetaBase 拼装路径字符串（不含根目录）。
@@ -113,20 +74,6 @@ func (o *MediaOrganizer) buildPath(meta *mediaparser.MetaBase) string {
 	return top
 }
 
-// EnsureFolderUnder 在指定基准目录下按需创建目录链（电影一层；剧集含 Season），返回叶子目录。
-// 供分类布局使用：baseID 为分类目录链（媒体库根/一级/二级）解析出的基准目录。
-func (o *MediaOrganizer) EnsureFolderUnder(baseID string, meta *mediaparser.MetaBase, label string) *cloudfile.CloudFile {
-	if baseID == "" {
-		return nil
-	}
-	folder, _, err := o.ensureFoldersUnder(baseID, meta, label)
-	if err != nil {
-		log.Printf("[organizer] 创建文件夹失败 %q: %v", label, err)
-		return nil
-	}
-	return folder
-}
-
 // EnsureFolderWithChainUnder 幂等创建目录链，返回「叶子目录 + 自基准之下到叶子的链条」。
 // 链条节点（剧名/Season）含 ID 与实际目录名，供 STRM 钩子免网络计算相对路径。
 func (o *MediaOrganizer) EnsureFolderWithChainUnder(baseID string, meta *mediaparser.MetaBase, label string) ([]cloudfile.CloudFile, *cloudfile.CloudFile) {
@@ -149,17 +96,6 @@ func (o *MediaOrganizer) EnsureFolderWithChainForMeta(meta *mediaparser.MetaBase
 		return nil, nil
 	}
 	return chain, folder
-}
-
-// ensureFolders 在云存储中幂等创建目录链，返回叶子文件夹。
-func (o *MediaOrganizer) ensureFolders(meta *mediaparser.MetaBase, label string) (*cloudfile.CloudFile, error) {
-	if meta == nil || meta.Name() == "" {
-		return nil, fmt.Errorf("解析失败，跳过：%q", label)
-	}
-
-	// 基准目录：媒体库根（分类布局下由管线传入分类目录链）
-	folder, _, err := o.ensureFoldersUnder(o.rootID, meta, label)
-	return folder, err
 }
 
 // ensureFoldersUnder 在指定基准目录下幂等创建目录链。
@@ -212,4 +148,10 @@ func (o *MediaOrganizer) ensureFoldersUnder(baseID string, meta *mediaparser.Met
 	}
 	chain = append(chain, cloudfile.CloudFile{ID: seasonFolder.ID, Name: seasonFolder.Name, FileType: cloudfile.TypeFolder})
 	return &seasonFolder, chain, nil
+}
+
+// FolderPathForPath 根据文件路径（合并父目录信息）计算目标文件夹路径字符串。
+func (o *MediaOrganizer) FolderPathForPath(path string) string {
+	meta := mediaparser.MetaInfoPath(path, nil, nil)
+	return o.buildPath(meta)
 }

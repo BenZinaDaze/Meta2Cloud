@@ -167,30 +167,6 @@ func GetOrCreateFolder(p Provider, name string, parentID string) (CloudFile, err
 	return p.CreateFolder(name, parentID)
 }
 
-// ListMediaFiles 列举文件夹内所有视频文件（默认实现语义：列举后过滤）。
-func ListMediaFiles(p Provider, folderID string) ([]CloudFile, error) {
-	files, err := p.ListFiles(folderID, 1000)
-	if err != nil {
-		return nil, err
-	}
-	var out []CloudFile
-	for _, f := range files {
-		if f.IsVideo() {
-			out = append(out, f)
-		}
-	}
-	return out, nil
-}
-
-// Exists 检查指定名称的文件是否存在。
-func Exists(p Provider, name string, folderID string) (bool, error) {
-	found, err := p.FindFile(name, folderID)
-	if err != nil {
-		return false, err
-	}
-	return found != nil, nil
-}
-
 // WalkAll 递归遍历文件夹，对每个条目调用 fn（含目录本身）。
 // 目录项先回调自身，再递归进入子目录（与 Python 版 yield 顺序一致）。
 // 返回 fn 的第一个错误即停止。maxDepth 限制递归深度。

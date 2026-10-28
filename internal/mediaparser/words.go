@@ -36,12 +36,6 @@ func NewWordsMatcher(customWords []string) *WordsMatcher {
 	return &WordsMatcher{wordList: words}
 }
 
-// Prepare 预处理标题。返回 (处理后的标题, 命中的词条列表)。
-func (wm *WordsMatcher) Prepare(title string) (string, []string) {
-	newTitle, _, applied := wm.PrepareWithSubtitle(title, "")
-	return newTitle, applied
-}
-
 // PrepareWithSubtitle 预处理标题与副标题：集偏移在标题未命中时可跨字段作用于副标题。
 func (wm *WordsMatcher) PrepareWithSubtitle(title, subtitle string) (string, string, []string) {
 	if title == "" || len(wm.wordList) == 0 {
@@ -604,4 +598,10 @@ func IsAnime(title string) bool {
 		return false
 	}
 	return animeFormatRe.MatchString(title)
+}
+
+// Prepare 预处理标题。返回 (处理后的标题, 命中的词条列表)。
+func (wm *WordsMatcher) Prepare(title string) (string, []string) {
+	newTitle, _, applied := wm.PrepareWithSubtitle(title, "")
+	return newTitle, applied
 }

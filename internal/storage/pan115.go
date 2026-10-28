@@ -519,9 +519,6 @@ func (p *Pan115Provider) GetOrCreateFolder(name string, parentID string) (cloudf
 // SetCookie 设置 Cookie 用于 Web API 认证。
 func (p *Pan115Provider) SetCookie(cookie string) { p.client().SetCookie(cookie) }
 
-// ParseShareURL 解析分享链接，返回 (shareCode, password)。
-func ParseShareURL(shareURL string) (string, string) { return u115.ParseShareURL(shareURL) }
-
 // GetShareInfo 获取分享链接信息。
 func (p *Pan115Provider) GetShareInfo(shareCode, receiveCode, cid string) (u115.ShareInfo, []u115.ShareItem, error) {
 	return p.client().GetShareInfo(shareCode, receiveCode, cid, 0, 100)

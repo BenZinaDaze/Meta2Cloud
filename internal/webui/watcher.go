@@ -538,18 +538,6 @@ func U115AutoOrganizeStatusPayload() map[string]any {
 	}
 }
 
-// RSSSubscriptionStatusPayload RSS 订阅轮询状态。
-func RSSSubscriptionStatusPayload() map[string]any {
-	summary := SubscriptionsStatusPayload()
-	rssWatcher.mu.Lock()
-	defer rssWatcher.mu.Unlock()
-	summary["watcher_alive"] = watcherAlive(rssWatcher)
-	summary["last_polled_at"] = rssWatcher.lastPolledAt
-	summary["last_poll_error"] = rssWatcher.lastPollError
-	summary["last_summary"] = rssWatcher.lastSummary
-	return summary
-}
-
 func watcherAlive(w *watcherState) bool {
 	select {
 	case <-w.stopCh:

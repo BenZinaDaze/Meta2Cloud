@@ -151,11 +151,6 @@ func (s *StrmStore) GetStrmFileByLocalPath(localPath string) *StrmFile {
 	return scanStrmFile(s.db.QueryRow(strmFileSelect+" WHERE local_path = ?", localPath))
 }
 
-// GetStrmFileByPickCode 按网盘 pick_code 读取（一条）。
-func (s *StrmStore) GetStrmFileByPickCode(pickCode string) *StrmFile {
-	return scanStrmFile(s.db.QueryRow(strmFileSelect+" WHERE pick_code = ? LIMIT 1", pickCode))
-}
-
 // CountStrmFiles 映射总数。
 func (s *StrmStore) CountStrmFiles() int {
 	var n int

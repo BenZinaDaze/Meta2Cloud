@@ -245,16 +245,6 @@ func IsAllChinese(s string) bool {
 	return true
 }
 
-// IsJapanese 判断是否含有日文假名。
-func IsJapanese(s string) bool {
-	for _, ch := range s {
-		if (ch >= 0x3040 && ch <= 0x309F) || (ch >= 0x30A0 && ch <= 0x30FF) {
-			return true
-		}
-	}
-	return false
-}
-
 // StrTitle 大写每个单词首字母。
 func StrTitle(s string) string {
 	if s == "" {

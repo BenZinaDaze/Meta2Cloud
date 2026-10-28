@@ -84,19 +84,6 @@ func WithToken(t Token) Option { return func(c *Client) { c.token = &t } }
 // WithTokenPath 设置 token 持久化路径。
 func WithTokenPath(p string) Option { return func(c *Client) { c.TokenPath = p } }
 
-// WithOnTokenUpdated 设置 token 更新回调。
-func WithOnTokenUpdated(fn func(c *Client, t Token)) Option {
-	return func(c *Client) { c.OnTokenUpdated = fn }
-}
-
-// WithTimeout 设置 HTTP 超时（秒）。
-func WithTimeout(seconds int) Option {
-	return func(c *Client) { c.HTTP.Timeout = time.Duration(seconds) * time.Second }
-}
-
-// WithUserAgent 覆盖默认 User-Agent。
-func WithUserAgent(ua string) Option { return func(c *Client) { c.userAgent = ua } }
-
 // WithQPS 设置全项目共享的请求 QPS。
 func WithQPS(qps float64) Option { return func(c *Client) { c.qps = qps } }
 
@@ -915,49 +902,6 @@ func fileDir(p string) string {
 }
 
 // ── 上传前置接口 ────────────────────────────────────────────
-
-// ComputeUploadHashes 计算上传所需全量与 128MB 前缀 SHA1。
-func ComputeUploadHashes(filePath string) (UploadHashes, error) {
-	fh, err := os.Open(filePath)
-	if err != nil {
-		return UploadHashes{}, err
-	}
-	defer fh.Close()
-
-	sha1All := sha1.New()
-	sha1Pre := sha1.New()
-	buf := make([]byte, 1024*1024)
-	var size int64
-	remainingPre := int64(preidSize)
-
-	for {
-		n, readErr := fh.Read(buf)
-		if n > 0 {
-			chunk := buf[:n]
-			size += int64(n)
-			sha1All.Write(chunk)
-			if remainingPre > 0 {
-				feed := chunk
-				if int64(len(feed)) > remainingPre {
-					feed = feed[:remainingPre]
-				}
-				sha1Pre.Write(feed)
-				remainingPre -= int64(len(feed))
-			}
-		}
-		if readErr == io.EOF {
-			break
-		}
-		if readErr != nil {
-			return UploadHashes{}, readErr
-		}
-	}
-	return UploadHashes{
-		FileSize: size,
-		FileID:   hex.EncodeToString(sha1All.Sum(nil)),
-		PreID:    hex.EncodeToString(sha1Pre.Sum(nil)),
-	}, nil
-}
 
 // ComputeUploadHashesBytes 直接对内存数据计算上传特征值（字幕等小文件免落盘）。
 func ComputeUploadHashesBytes(data []byte) UploadHashes {

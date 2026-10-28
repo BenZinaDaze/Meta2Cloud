@@ -167,11 +167,6 @@ func WithToken(t Token) Option { return func(c *Client) { c.token = &t } }
 // WithTokenPath 设置 token 持久化路径。
 func WithTokenPath(p string) Option { return func(c *Client) { c.TokenPath = p } }
 
-// WithTimeout 设置 HTTP 超时（秒）。
-func WithTimeout(seconds int) Option {
-	return func(c *Client) { c.HTTP.Timeout = time.Duration(seconds) * time.Second }
-}
-
 // WithHTTPClient 注入自定义 http.Client（测试用）。
 func WithHTTPClient(hc *http.Client) Option { return func(c *Client) { c.HTTP = hc } }
 

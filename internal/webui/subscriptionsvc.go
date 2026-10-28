@@ -471,20 +471,6 @@ func PollSubscriptionsOnce() map[string]any {
 	}
 }
 
-// SubscriptionsStatusPayload 订阅状态。
-func SubscriptionsStatusPayload() map[string]any {
-	pollCron := RT().GetConfig().Rss.PollCron
-	rssStore := RT().GetRSSStore()
-	if rssStore == nil {
-		return map[string]any{"enabled_count": 0, "total_count": 0, "poll_cron": pollCron}
-	}
-	return map[string]any{
-		"enabled_count": len(rssStore.ListEnabledSubscriptions()),
-		"total_count":   len(rssStore.ListSubscriptions()),
-		"poll_cron":     pollCron,
-	}
-}
-
 // detectSiteFromURL 从 RSS URL 识别站点。
 func detectSiteFromURL(rssURL string) (string, error) {
 	parsed, err := url.Parse(rssURL)

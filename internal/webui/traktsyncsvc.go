@@ -392,7 +392,6 @@ func enrichRunItemTitles(items []store.TraktSyncRunItem) {
 		}
 	}
 }
-func TraktSyncStatusPayload() map[string]any { return traktSyncStatusPayload() }
 
 var (
 	_ syncengine.ShadowStore = (*store.TraktSyncStore)(nil)

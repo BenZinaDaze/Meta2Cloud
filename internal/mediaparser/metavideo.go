@@ -252,15 +252,6 @@ func firstSubmatch(sub []string) string {
 	return ""
 }
 
-// allSubmatchFirsts 对 findall 的每一项取第一个非空组。
-func allSubmatchFirsts(re *regexp.Regexp, token string) []string {
-	var out []string
-	for _, sub := range re.FindAllStringSubmatch(token, -1) {
-		out = append(out, firstSubmatch(sub))
-	}
-	return out
-}
-
 func isRomanNumeral(token string) bool {
 	if token == "" {
 		return false

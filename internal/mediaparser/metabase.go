@@ -655,6 +655,3 @@ func (m *MetaBase) initEpisodeRangeFin(titleText string) {
 		m.subtitleFlag = true
 	}
 }
-
-// SubtitleParsed 副标题是否命中季集信息。
-func (m *MetaBase) SubtitleParsed() bool { return m.subtitleFlag }
