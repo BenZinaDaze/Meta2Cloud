@@ -55,13 +55,13 @@ func mergedConfigDict() map[string]any {
 	return parsed
 }
 
-// secretMaskPlaceholder 读接口对敏感值的掩码占位符：配置页原样回传保存 = 保持
-// 现有值不变（写接口据占位符从现有文件补齐）；清空 = 移除；其他值 = 更新。
+// secretMaskPlaceholder 读接口对 JWT 签名密钥的掩码占位符：配置页原样回传
+// 保存 = 保持现有值不变（写接口据占位符从现有文件补齐）；清空 = 移除。
 const secretMaskPlaceholder = "__MASKED__"
 
-// maskConfigForRead 读接口不回传敏感值：密码明文与哈希清空/删除（留空保存 =
-// 保持现有密码），其余敏感键（cookie/token/密钥等，见 config.SecretKeys）
-// 已配置的替换为占位符，避免 JWT 签名密钥、115 Cookie 等凭据外泄到前端。
+// maskConfigForRead 读接口脱敏范围：密码明文/哈希不回传（留空保存=保持现有
+// 密码），webui.secret_key（JWT 签名密钥，前端无输入项）显示占位符——泄露后
+// 可自签 token 且改密码无法吊销。其余敏感键明文回显，便于管理员查看与复制。
 func maskConfigForRead(m map[string]any) {
 	if sec, ok := m["webui"].(map[string]any); ok {
 		sec["password"] = ""
@@ -523,7 +523,7 @@ func writeYAMLMap(path string, data map[string]any) error {
 // writeMainConfigFiles 保存主配置：敏感键拆入 secrets.yaml（0600），其余写主配置。
 // webui.password 非空 = 设置新密码（哈希后入 secrets.yaml，明文永不落盘）；
 // 为空或缺失 = 保持现有密码（读接口不回传密码值，这里从现有文件补齐，防止整体替换保存时丢失）。
-// 其余敏感键读到掩码占位符（读接口掩码原样回传）时同样从现有文件补齐。
+// webui.secret_key 读到掩码占位符（读接口掩码原样回传）时同样从现有文件补齐。
 func writeMainConfigFiles(payload map[string]any) error {
 	existing := mergedConfigDict()
 	config.RestoreMaskedSecrets(payload, existing, secretMaskPlaceholder)

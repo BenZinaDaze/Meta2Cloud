@@ -763,13 +763,19 @@ func SplitSecrets(payload map[string]any) map[string]any {
 	return secrets
 }
 
-// MaskSecretValues 将 m 中已配置（非空字符串）的敏感键值替换为 placeholder，
-// 用于配置读接口：敏感值不出后端（webui 密码两项除外，由调用方清空/删除处理）。
+// MaskedReadKeys 配置读接口仍掩码的敏感键：仅 webui.secret_key（JWT 签名密钥）。
+// 它在前端配置页没有输入项（掩码不影响界面），泄露代价不可逆（可自签任意
+// token，修改密码也无法吊销）。其余敏感键（cookie/bot_token/api_key/
+// webhook_secret 等）明文回显：管理员需要查看与复制（如 webhook_secret
+// 要填进 *arr），属自部署单用户工具的预期可见性。
+var MaskedReadKeys = map[string]bool{
+	"webui.secret_key": true,
+}
+
+// MaskSecretValues 将 m 中已配置（非空字符串）的掩码键值替换为 placeholder，
+// 用于配置读接口。
 func MaskSecretValues(m map[string]any, placeholder string) {
-	for path := range SecretKeys {
-		if path == "webui.password" || path == "webui.password_hash" {
-			continue
-		}
+	for path := range MaskedReadKeys {
 		section, key := splitKeyPath(path)
 		sec, ok := m[section].(map[string]any)
 		if !ok {
@@ -781,14 +787,11 @@ func MaskSecretValues(m map[string]any, placeholder string) {
 	}
 }
 
-// RestoreMaskedSecrets 写接口配套还原：payload 中等于占位符的敏感键（读接口掩码
-// 原样回传的场景）替换为 existing 中的现有值，现有值也为空时删除该键。
-// 其余值原样保留：空串 = 清除该敏感项，非占位符新值 = 更新。
+// RestoreMaskedSecrets 写接口配套还原：payload 中等于占位符的掩码键（读接口
+// 掩码原样回传的场景）替换为 existing 中的现有值，现有值也为空时删除该键。
+// 其余值原样保留：空串 = 清除该键，非占位符新值 = 更新。
 func RestoreMaskedSecrets(payload, existing map[string]any, placeholder string) {
-	for path := range SecretKeys {
-		if path == "webui.password" || path == "webui.password_hash" {
-			continue
-		}
+	for path := range MaskedReadKeys {
 		section, key := splitKeyPath(path)
 		sec, ok := payload[section].(map[string]any)
 		if !ok {

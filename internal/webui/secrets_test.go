@@ -77,14 +77,15 @@ func TestLoginMigratesPlaintextPassword(t *testing.T) {
 }
 
 // TestSaveConfigSplitsSecrets 配置保存：敏感键入 secrets.yaml（0600），
-// 主配置不含敏感值；新密码哈希生效；读接口敏感值全部掩码。
+// 主配置不含敏感值；新密码哈希生效；读接口仅密码与 JWT 密钥不回传，
+// 其余敏感键（cookie/api_key 等）明文回显便于查看。
 func TestSaveConfigSplitsSecrets(t *testing.T) {
 	ts := newTestServer(t)
 	_, out := login(t, ts, "admin", "secret123")
 	token, _ := out["token"].(string)
 
 	payload := map[string]any{
-		"webui": map[string]any{"username": "admin", "password": "新密码456", "token_expire_hours": 24},
+		"webui": map[string]any{"username": "admin", "password": "新密码456", "token_expire_hours": 24, "secret_key": "jwt-signing-secret"},
 		"u115":  map[string]any{"cookie": "UID=1; CID=2; SEID=3", "qps": 3},
 		"tmdb":  map[string]any{"api_key": "test-key"},
 	}
@@ -117,18 +118,21 @@ func TestSaveConfigSplitsSecrets(t *testing.T) {
 		t.Errorf("旧密码应 401, got %d", code)
 	}
 
-	// 读接口：敏感值不回传（cookie/api_key 显示掩码占位符）；密码与哈希不回传
+	// 读接口：cookie/api_key 明文回显；密码与 JWT 密钥不回传
 	code, cfgOut := authedJSON(t, ts, http.MethodGet, "/api/config/main", token, nil)
 	if code != http.StatusOK {
 		t.Fatalf("读取配置失败: %d", code)
 	}
-	if got := cfgOut["u115"].(map[string]any)["cookie"]; got != secretMaskPlaceholder {
-		t.Errorf("cookie 回显 = %v, want 掩码占位符", got)
+	if got := cfgOut["u115"].(map[string]any)["cookie"]; got != "UID=1; CID=2; SEID=3" {
+		t.Errorf("cookie 回显 = %v, want 原文", got)
 	}
-	if got := cfgOut["tmdb"].(map[string]any)["api_key"]; got != secretMaskPlaceholder {
-		t.Errorf("api_key 回显 = %v, want 掩码占位符", got)
+	if got := cfgOut["tmdb"].(map[string]any)["api_key"]; got != "test-key" {
+		t.Errorf("api_key 回显 = %v, want 原文", got)
 	}
 	webuiSec := cfgOut["webui"].(map[string]any)
+	if got := webuiSec["secret_key"]; got != secretMaskPlaceholder {
+		t.Errorf("secret_key 回显 = %v, want 掩码占位符", got)
+	}
 	if pw, _ := webuiSec["password"].(string); pw != "" {
 		t.Errorf("密码不应回传, got %q", pw)
 	}
@@ -137,16 +141,16 @@ func TestSaveConfigSplitsSecrets(t *testing.T) {
 	}
 }
 
-// TestSaveConfigSecretMaskRoundTrip 掩码占位符原样回传保存 = 敏感值保持不变；
-// 清空保存 = 移除该敏感项。
+// TestSaveConfigSecretMaskRoundTrip JWT 密钥掩码占位符原样回传保存 = 保持不变；
+// 清空保存 = 移除。
 func TestSaveConfigSecretMaskRoundTrip(t *testing.T) {
 	ts := newTestServer(t)
 	_, out := login(t, ts, "admin", "secret123")
 	token, _ := out["token"].(string)
 
 	payload := map[string]any{
-		"webui": map[string]any{"username": "admin", "token_expire_hours": 24},
-		"u115":  map[string]any{"cookie": "UID=1; CID=2; SEID=3", "qps": 3},
+		"webui": map[string]any{"username": "admin", "token_expire_hours": 24, "secret_key": "jwt-signing-secret"},
+		"tmdb":  map[string]any{"api_key": "test-key"},
 	}
 	if code, resp := authedJSON(t, ts, http.MethodPut, "/api/config/main", token, map[string]any{"data": payload}); code != http.StatusOK {
 		t.Fatalf("保存配置失败: %d %v", code, resp)
@@ -154,26 +158,26 @@ func TestSaveConfigSecretMaskRoundTrip(t *testing.T) {
 
 	// 读接口返回占位符；原样回传保存 → 现有值不变
 	_, cfgOut := authedJSON(t, ts, http.MethodGet, "/api/config/main", token, nil)
-	masked := cfgOut["u115"].(map[string]any)["cookie"]
+	masked := cfgOut["webui"].(map[string]any)["secret_key"]
 	if masked != secretMaskPlaceholder {
-		t.Fatalf("cookie 读回 = %v, want %s", masked, secretMaskPlaceholder)
+		t.Fatalf("secret_key 读回 = %v, want %s", masked, secretMaskPlaceholder)
 	}
-	payload["u115"].(map[string]any)["cookie"] = masked
+	payload["webui"].(map[string]any)["secret_key"] = masked
 	if code, resp := authedJSON(t, ts, http.MethodPut, "/api/config/main", token, map[string]any{"data": payload}); code != http.StatusOK {
 		t.Fatalf("占位符保存失败: %d %v", code, resp)
 	}
 	secretsData, _ := os.ReadFile(filepath.Join(RT().RootDir, "config", "secrets.yaml"))
-	if !strings.Contains(string(secretsData), "UID=1; CID=2; SEID=3") {
-		t.Error("占位符保存后 cookie 被改动")
+	if !strings.Contains(string(secretsData), "jwt-signing-secret") {
+		t.Error("占位符保存后 secret_key 被改动")
 	}
 
-	// 清空保存 → 移除
-	payload["u115"].(map[string]any)["cookie"] = ""
+	// 清空保存 → 移除（回退到 .jwt_secret 文件机制）
+	payload["webui"].(map[string]any)["secret_key"] = ""
 	if code, resp := authedJSON(t, ts, http.MethodPut, "/api/config/main", token, map[string]any{"data": payload}); code != http.StatusOK {
 		t.Fatalf("清空保存失败: %d %v", code, resp)
 	}
-	if got := RT().GetConfig().U115.Cookie; got != "" {
-		t.Errorf("清空保存后 cookie 应为空, got %q", got)
+	if got := RT().GetConfig().WebUI.SecretKey; got != "" {
+		t.Errorf("清空保存后 secret_key 应为空, got %q", got)
 	}
 }
 
