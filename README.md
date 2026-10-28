@@ -197,7 +197,7 @@ strm:
 
 ### 自动触发整理
 
-外部下载工具完成后可 webhook 触发整理：
+外部下载工具完成后可 webhook 触发整理（密钥首次启动自动生成，可在 `config/secrets.yaml` 的 `webui.webhook_secret` 查看）：
 
 ```bash
 curl -X POST http://localhost:38765/trigger \

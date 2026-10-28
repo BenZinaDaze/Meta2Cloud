@@ -55,13 +55,19 @@ func mergedConfigDict() map[string]any {
 	return parsed
 }
 
-// maskPasswordFields 读接口不回传密码（明文与哈希都不出后端）：
-// 配置页密码框留空表示保持不变，写接口据此从现有文件补齐。
-func maskPasswordFields(m map[string]any) {
+// secretMaskPlaceholder 读接口对敏感值的掩码占位符：配置页原样回传保存 = 保持
+// 现有值不变（写接口据占位符从现有文件补齐）；清空 = 移除；其他值 = 更新。
+const secretMaskPlaceholder = "__MASKED__"
+
+// maskConfigForRead 读接口不回传敏感值：密码明文与哈希清空/删除（留空保存 =
+// 保持现有密码），其余敏感键（cookie/token/密钥等，见 config.SecretKeys）
+// 已配置的替换为占位符，避免 JWT 签名密钥、115 Cookie 等凭据外泄到前端。
+func maskConfigForRead(m map[string]any) {
 	if sec, ok := m["webui"].(map[string]any); ok {
 		sec["password"] = ""
 		delete(sec, "password_hash")
 	}
+	config.MaskSecretValues(m, secretMaskPlaceholder)
 }
 
 // readMergedConfigDict 主配置 + 敏感配置 + 解析规则合并。
@@ -72,7 +78,7 @@ func readMergedConfigDict() map[string]any {
 		rules = section
 	}
 	parsed["parser"] = extractParserRules(map[string]any{"parser": rules})
-	maskPasswordFields(parsed)
+	maskConfigForRead(parsed)
 	return parsed
 }
 
@@ -517,7 +523,10 @@ func writeYAMLMap(path string, data map[string]any) error {
 // writeMainConfigFiles 保存主配置：敏感键拆入 secrets.yaml（0600），其余写主配置。
 // webui.password 非空 = 设置新密码（哈希后入 secrets.yaml，明文永不落盘）；
 // 为空或缺失 = 保持现有密码（读接口不回传密码值，这里从现有文件补齐，防止整体替换保存时丢失）。
+// 其余敏感键读到掩码占位符（读接口掩码原样回传）时同样从现有文件补齐。
 func writeMainConfigFiles(payload map[string]any) error {
+	existing := mergedConfigDict()
+	config.RestoreMaskedSecrets(payload, existing, secretMaskPlaceholder)
 	secrets := config.SplitSecrets(payload)
 	if _, hasWebUI := payload["webui"]; hasWebUI {
 		sec, _ := secrets["webui"].(map[string]any)
@@ -537,10 +546,10 @@ func writeMainConfigFiles(payload map[string]any) error {
 			sec["password_hash"] = hash
 		} else {
 			delete(sec, "password")
-			existing := jsonx.Map(mergedConfigDict(), "webui")
-			if h, _ := existing["password_hash"].(string); h != "" {
+			existingWebUI := jsonx.Map(existing, "webui")
+			if h, _ := existingWebUI["password_hash"].(string); h != "" {
 				sec["password_hash"] = h
-			} else if p, _ := existing["password"].(string); p != "" {
+			} else if p, _ := existingWebUI["password"].(string); p != "" {
 				sec["password"] = p // 旧版明文原样保留，待下次登录自动迁移
 			}
 		}
@@ -625,7 +634,7 @@ func handleReadMainConfig(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	parsed := mergedConfigDict()
-	maskPasswordFields(parsed)
+	maskConfigForRead(parsed)
 	writeJSON(w, http.StatusOK, parsed)
 }
 

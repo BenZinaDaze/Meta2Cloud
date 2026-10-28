@@ -511,7 +511,10 @@ func EnsureDefaultFiles(configPath, secretsPath, rulesPath, categoriesPath strin
 		def := Default()
 		// 首次生成：随机初始密码打印在启动日志，密码只写入 secrets.yaml（哈希优先，避免空密码锁死）
 		plain := randomPassword(10)
-		secretsWebUI := map[string]any{}
+		secretsWebUI := map[string]any{
+			// /trigger 豁免 JWT 认证，首启即生成密钥，避免默认裸奔
+			"webhook_secret": randomPassword(32),
+		}
 		if hash, err := HashPassword(plain); err == nil {
 			secretsWebUI["password_hash"] = hash
 		} else {
@@ -543,9 +546,49 @@ func EnsureDefaultFiles(configPath, secretsPath, rulesPath, categoriesPath strin
 		}
 	}
 	if _, err := os.Stat(categoriesPath); os.IsNotExist(err) {
-		return SaveCategories(categoriesPath, DefaultCategories())
+		if err := SaveCategories(categoriesPath, DefaultCategories()); err != nil {
+			return err
+		}
 	}
+	// 既有安装：webhook 密钥缺失时补生成（首启分支已写入，这里直接跳过）
+	EnsureWebhookSecret(configPath, secretsPath)
 	return nil
+}
+
+// EnsureWebhookSecret 确保存在 /trigger webhook 密钥：主配置与 secrets.yaml 均无
+// webui.webhook_secret 键时自动生成写入 secrets.yaml。该接口豁免 JWT 认证，
+// 无密钥时任何可达请求都能触发整理（搬动网盘文件、消耗 115 配额）。
+// 键存在但为空视为用户主动停用外部触发（服务端仍限制仅本机可触发），不补写。
+func EnsureWebhookSecret(configPath, secretsPath string) {
+	if hasWebhookSecretKey(configPath) || hasWebhookSecretKey(secretsPath) {
+		return
+	}
+	secrets := map[string]any{}
+	if data, err := os.ReadFile(secretsPath); err == nil {
+		secrets = unmarshalYAMLMap(data)
+	}
+	sec, _ := secrets["webui"].(map[string]any)
+	if sec == nil {
+		sec = map[string]any{}
+		secrets["webui"] = sec
+	}
+	sec["webhook_secret"] = randomPassword(32)
+	if err := SaveSecrets(secretsPath, secrets); err != nil {
+		log.Printf("webhook 密钥自动生成失败：%v", err)
+		return
+	}
+	log.Printf("已自动生成 /trigger webhook 密钥（webui.webhook_secret → %s）；外部触发需携带请求头 X-Webhook-Secret 或查询参数 secret", secretsPath)
+}
+
+// hasWebhookSecretKey 判断 YAML 文件中是否显式存在 webui.webhook_secret 键（空值也算存在）。
+func hasWebhookSecretKey(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	sec, _ := unmarshalYAMLMap(data)["webui"].(map[string]any)
+	_, ok := sec["webhook_secret"]
+	return ok
 }
 
 // randomPassword 生成易读随机密码（去除易混字符 0/O/1/l/I）。
@@ -658,6 +701,7 @@ func parseRss(m map[string]any) Rss {
 // 这些键的值持久化在 secrets.yaml（0600）而非主配置；读取时 secrets.yaml 优先，
 // 主配置中的同名键仅作旧配置兼容（保存时自动搬迁）。
 var SecretKeys = map[string]bool{
+	"tmdb.api_key":         true,
 	"u115.cookie":          true,
 	"telegram.bot_token":   true,
 	"mediavault.api_key":   true,
@@ -717,6 +761,50 @@ func SplitSecrets(payload map[string]any) map[string]any {
 		dst[key] = v
 	}
 	return secrets
+}
+
+// MaskSecretValues 将 m 中已配置（非空字符串）的敏感键值替换为 placeholder，
+// 用于配置读接口：敏感值不出后端（webui 密码两项除外，由调用方清空/删除处理）。
+func MaskSecretValues(m map[string]any, placeholder string) {
+	for path := range SecretKeys {
+		if path == "webui.password" || path == "webui.password_hash" {
+			continue
+		}
+		section, key := splitKeyPath(path)
+		sec, ok := m[section].(map[string]any)
+		if !ok {
+			continue
+		}
+		if v, ok := sec[key].(string); ok && v != "" {
+			sec[key] = placeholder
+		}
+	}
+}
+
+// RestoreMaskedSecrets 写接口配套还原：payload 中等于占位符的敏感键（读接口掩码
+// 原样回传的场景）替换为 existing 中的现有值，现有值也为空时删除该键。
+// 其余值原样保留：空串 = 清除该敏感项，非占位符新值 = 更新。
+func RestoreMaskedSecrets(payload, existing map[string]any, placeholder string) {
+	for path := range SecretKeys {
+		if path == "webui.password" || path == "webui.password_hash" {
+			continue
+		}
+		section, key := splitKeyPath(path)
+		sec, ok := payload[section].(map[string]any)
+		if !ok {
+			continue
+		}
+		v, ok := sec[key].(string)
+		if !ok || v != placeholder {
+			continue
+		}
+		existingSec, _ := existing[section].(map[string]any)
+		if cur, _ := existingSec[key].(string); cur != "" {
+			sec[key] = cur
+		} else {
+			delete(sec, key)
+		}
+	}
 }
 
 // SaveSecrets 写出敏感配置文件（权限 0600，仅属主可读写）。

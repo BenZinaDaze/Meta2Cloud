@@ -5,7 +5,9 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -191,6 +193,16 @@ func PipelineStatusPayload() map[string]any {
 
 // ── HTTP 处理器 ─────────────────────────────────────────────
 
+// isLoopbackRequest 判断请求是否来自本机（webhook 未配置密钥时的兜底限制，
+// 防止整理流水线被局域网内任意请求触发）。
+func isLoopbackRequest(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	return host == "127.0.0.1" || host == "::1" || strings.EqualFold(host, "localhost")
+}
+
 func handleTriggerWebhook(w http.ResponseWriter, r *http.Request) {
 	cfg := RT().GetConfig()
 	if ws := cfg.WebUI.WebhookSecret; ws != "" {
@@ -202,6 +214,10 @@ func handleTriggerWebhook(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusForbidden, "Invalid webhook secret")
 			return
 		}
+	} else if !isLoopbackRequest(r) {
+		// 未配置密钥（旧配置升级前）时仅允许本机触发；密钥由启动时自动生成（config.EnsureWebhookSecret）
+		writeJSONError(w, http.StatusForbidden, "未配置 webhook 密钥，仅允许本机触发；请在 WebUI 配置页设置 webui.webhook_secret")
+		return
 	}
 	debounce := cfg.Telegram.DebounceSeconds
 	log.Printf("收到整理触发请求 | 来源：webhook，防抖：%d 秒", debounce)

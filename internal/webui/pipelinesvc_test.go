@@ -6,12 +6,27 @@
 package webui
 
 import (
+	"net/http"
 	"path/filepath"
 	"testing"
 
 	"meta2cloud/internal/pipeline"
 	"meta2cloud/internal/webui/store"
 )
+
+// TestIsLoopbackRequest 环回地址判定（webhook 未配置密钥时的兜底限制）。
+func TestIsLoopbackRequest(t *testing.T) {
+	for _, addr := range []string{"127.0.0.1:8080", "[::1]:9000", "localhost:1"} {
+		if !isLoopbackRequest(&http.Request{RemoteAddr: addr}) {
+			t.Errorf("isLoopbackRequest(%q) = false, want true", addr)
+		}
+	}
+	for _, addr := range []string{"192.168.1.5:80", "10.0.0.2:1234", "8.8.8.8:53"} {
+		if isLoopbackRequest(&http.Request{RemoteAddr: addr}) {
+			t.Errorf("isLoopbackRequest(%q) = true, want false", addr)
+		}
+	}
+}
 
 // TestIngestStoreAdapterRecords 验证适配器把 pipeline.IngestRecord
 // 正确写入 SQLite，且字段（含季/集、文件夹 ID）不丢。

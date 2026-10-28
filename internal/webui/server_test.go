@@ -307,24 +307,97 @@ func TestIngestEndpointsEmpty(t *testing.T) {
 	}
 }
 
+// webhookSecretFromSecrets 读取启动时自动生成的 webhook 密钥（secrets.yaml）。
+func webhookSecretFromSecrets(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(RT().RootDir, "config", "secrets.yaml"))
+	if err != nil {
+		t.Fatalf("secrets.yaml 未生成: %v", err)
+	}
+	var out struct {
+		WebUI struct {
+			WebhookSecret string `yaml:"webhook_secret"`
+		} `yaml:"webui"`
+	}
+	if err := yaml.Unmarshal(data, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.WebUI.WebhookSecret == "" {
+		t.Fatal("webhook_secret 未自动生成")
+	}
+	return out.WebUI.WebhookSecret
+}
+
 func TestPipelineStatusAndWebhook(t *testing.T) {
 	ts, token := newScanServer(t)
 	code, status := authedGet(t, ts, token, "/api/pipeline/status")
 	if code != 200 || status["running"] != false {
 		t.Fatalf("status = %v %v", code, status)
 	}
-	// webhook 无密钥配置 → 直接触发
+	// webhook 密钥启动时自动生成：无密钥 / 错误密钥 → 403
+	secret := webhookSecretFromSecrets(t)
 	resp, err := http.Post(ts.URL+"/trigger", "application/json", bytes.NewReader([]byte("{}")))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var out map[string]any
-	json.NewDecoder(resp.Body).Decode(&out)
 	resp.Body.Close()
-	if resp.StatusCode != 200 || out["status"] != "triggered" {
-		t.Errorf("webhook = %d %v", resp.StatusCode, out)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("无密钥 webhook = %d, want 403", resp.StatusCode)
+	}
+	// 正确密钥 → 触发
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/trigger", bytes.NewReader([]byte("{}")))
+	req.Header.Set("X-Webhook-Secret", secret)
+	resp2, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	json.NewDecoder(resp2.Body).Decode(&out)
+	resp2.Body.Close()
+	if resp2.StatusCode != 200 || out["status"] != "triggered" {
+		t.Errorf("webhook = %d %v", resp2.StatusCode, out)
 	}
 	// 等待后台流程完成（无 TMDB 配置，流程会快速结束）
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		_, st := authedGet(t, ts, token, "/api/pipeline/status")
+		if st["running"] == false {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// TestTriggerWebhookEmptySecretLoopbackOnly 显式配置空 webhook 密钥：
+// 不自动补生成，仅本机（环回来源）请求可触发。
+func TestTriggerWebhookEmptySecretLoopbackOnly(t *testing.T) {
+	rootDir := t.TempDir()
+	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
+	cfgYAML := "webui:\n  username: admin\n  password: secret123\n  webhook_secret: \"\"\n"
+	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
+	ResetJWTSecretCache()
+	InitRuntime(rootDir)
+	server := NewServer()
+	t.Cleanup(server.Close)
+	ts := httptest.NewServer(server.Handler())
+	t.Cleanup(ts.Close)
+
+	// 密钥键存在但为空 → 视为用户主动停用外部触发，不补生成
+	if _, err := os.Stat(filepath.Join(rootDir, "config", "secrets.yaml")); !os.IsNotExist(err) {
+		t.Error("空 webhook_secret 不应触发生成 secrets.yaml")
+	}
+	// httptest 客户端来源为 127.0.0.1（环回）→ 放行
+	_, out := login(t, ts, "admin", "secret123")
+	token, _ := out["token"].(string)
+	resp, err := http.Post(ts.URL+"/trigger", "application/json", bytes.NewReader([]byte("{}")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Errorf("环回触发 = %d, want 200", resp.StatusCode)
+	}
+	// 等待后台整理完成，避免流程继续写临时目录导致 TempDir 清理失败
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		_, st := authedGet(t, ts, token, "/api/pipeline/status")

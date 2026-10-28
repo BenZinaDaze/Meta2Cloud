@@ -88,14 +88,14 @@ func VerifyToken(tokenStr string) string {
 }
 
 // authMiddleware 认证中间件：
-// 豁免 /api/auth:login、/api/logs/live（WS 自带 token 校验）、/trigger*、
-// 以及非 /api/ 路径（静态资源等）。
+// 豁免 /api/auth:login、/api/logs/live（WS 自带 token 校验）、/trigger
+// （webhook 端点，handleTriggerWebhook 自行校验密钥/来源）、以及非 /api/ 路径（静态资源等）。
 // 注：Python/FastAPI 的 HTTP 中间件天然不拦截 WebSocket，Go 的升级请求
 // 仍是 HTTP 请求，因此必须显式豁免。
 func authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		if path == "/api/auth:login" || path == "/api/logs/live" || strings.HasPrefix(path, "/trigger") || !strings.HasPrefix(path, "/api/") {
+		if path == "/api/auth:login" || path == "/api/logs/live" || path == "/trigger" || !strings.HasPrefix(path, "/api/") {
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -23,8 +23,9 @@ webui:
   # Token 有效期（小时），范围 1–8760，默认 24
   token_expire_hours: 24
 
-  # /trigger webhook 端点的密钥（留空则不校验，适合内网部署）
-  # 调用时在请求头 X-Webhook-Secret 中携带
+  # /trigger webhook 端点的密钥：首次启动自动生成（存于 secrets.yaml），
+  # 调用时在请求头 X-Webhook-Secret 或查询参数 secret 中携带。
+  # 显式置空 = 停用外部触发，仅本机（环回地址）请求可触发
   webhook_secret: ""
 
   # 日志保留天数（范围 1–365，默认 7）
