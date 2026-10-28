@@ -771,6 +771,10 @@ func TestPushTorrentLinkAddsBTTask(t *testing.T) {
 		w.Write(torrentBytes)
 	}))
 	t.Cleanup(torrentSite.Close)
+	// 种子源为本地 httptest（环回地址）：放行外呼校验（生产路径由 TestValidateOutboundURL 覆盖）
+	oldValidateTorrentURL := torrentURLValidator
+	torrentURLValidator = func(string) error { return nil }
+	t.Cleanup(func() { torrentURLValidator = oldValidateTorrentURL })
 
 	// mock 115 API：记录 add_task_bt 参数
 	var btForm url.Values
