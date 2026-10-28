@@ -96,6 +96,9 @@ else
     go vet ./...
     go test ./internal/... -count=1
 
+    echo "🧪 前端测试..."
+    (cd frontend && npm run test >/dev/null)
+
     echo "🧪 前端构建..."
     # 显式传入版本号：此时 $TAG 尚未创建，git describe 回退只能取到上一版 tag，
     # 本机 dist 会烘焙旧版本号（Docker/CI 构建已由 Dockerfile 的 APP_VERSION 覆盖）
