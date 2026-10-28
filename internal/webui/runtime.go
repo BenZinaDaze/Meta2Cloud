@@ -51,6 +51,30 @@ type Runtime struct {
 	plexClient  *plexserver.Client
 	traktSync   *store.TraktSyncStore
 
+	// ── 健康状态机（见 health.go）──
+	healthNow      func() time.Time // 测试可替换
+	healthMu       sync.Mutex
+	healthServices map[string]*serviceHealth
+
+	// ── 重新分类进度与分类树缓存（见 reclassifysvc.go）──
+	reclassifyMu   sync.Mutex
+	reclassifyRun  reclassifyProgress
+	classTreeMu    sync.Mutex
+	classTreeCache *categoryTree
+
+	// ── cron 调度器（见 watcher.go）──
+	schedulesStopped atomic.Bool
+	traktCronLoop    *cronLoop
+	strmCronLoop     *cronLoop
+	u115CronLoop     *cronLoop
+	rssCronLoop      *cronLoop
+
+	// ── 订阅 TMDB 缓存预取去重（见 subscriptionsvc.go）──
+	subscriptionTmdbCachePrefetching sync.Map
+
+	// ── 种子链接外呼校验钩子（测试可替换；见 u115svc.go）──
+	torrentURLValidator func(string) error
+
 	// ── STRM 直链缓存/负缓存/并发信号量（见 strmhttp.go）──
 	strmLinkCache *directLinkCache
 	strmNegMu     sync.Mutex
@@ -154,6 +178,13 @@ func InitRuntime(rootDir string) *Runtime {
 	rt.strmFetchSem = make(chan struct{}, strmFetchConcurrency)
 	rt.strmFetchWait = strmFetchWaitTimeout
 	rt.strmNegTTL = strmNegativeCacheTTL
+	rt.healthNow = time.Now
+	rt.healthServices = map[string]*serviceHealth{}
+	rt.traktCronLoop = &cronLoop{name: "观看同步"}
+	rt.strmCronLoop = &cronLoop{name: "STRM 定时同步"}
+	rt.u115CronLoop = &cronLoop{name: "115 自动整理"}
+	rt.rssCronLoop = &cronLoop{name: "订阅轮询"}
+	rt.torrentURLValidator = validateOutboundURL
 	rt.traktWatcher = &watcherState{stopCh: make(chan struct{})}
 	rt.traktSessionWatcher = &watcherState{stopCh: make(chan struct{})}
 	rt.traktSSEWatcher = &watcherState{stopCh: make(chan struct{})}

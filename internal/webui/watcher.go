@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -227,9 +226,6 @@ func (s *rssHealthState) update(summary map[string]any) (report, ok bool, reason
 
 // ── cron 调度管理（开关开启才存在执行循环）──────────────────
 
-// schedulesStopped 全局停止后不再随配置变更重启（测试/关机路径）。
-var schedulesStopped atomic.Bool
-
 // cronLoop 单个功能的 cron 调度生命周期管理：开关开启才启动执行循环，
 // 关闭即停（睡眠中的循环经 stop 立即退出，不等到触发点）。
 type cronLoop struct {
@@ -283,23 +279,16 @@ func (m *cronLoop) halt() {
 	m.mu.Unlock()
 }
 
-var (
-	traktCronLoop = &cronLoop{name: "观看同步"}
-	strmCronLoop  = &cronLoop{name: "STRM 定时同步"}
-	u115CronLoop  = &cronLoop{name: "115 自动整理"}
-	rssCronLoop   = &cronLoop{name: "订阅轮询"}
-)
-
 // ApplyWatchSchedules 依当前配置启停各 cron 调度（配置变更检测点调用，幂等）：
 // 开关开启才存在执行循环，关闭即停。
 func (rt *Runtime) ApplyWatchSchedules(cfg *config.Config) {
-	if schedulesStopped.Load() {
+	if rt.schedulesStopped.Load() {
 		return
 	}
-	traktCronLoop.apply(cfg.Trakt.Enabled && cfg.Trakt.SyncCron != "", rt.runTraktCron)
-	strmCronLoop.apply(cfg.Strm.Enabled && cfg.ActiveStorageName() == "pan115" && cfg.Strm.SyncCron != "", rt.runStrmCron)
-	u115CronLoop.apply(cfg.ActiveStorageName() == "pan115" && cfg.U115.AutoOrganizeEnabled && cfg.U115.DownloadFolderID != "" && cfg.U115.AutoOrganizeCron != "", rt.runU115Cron)
-	rssCronLoop.apply(rt.getSubscriptionPollCron() != "", rt.runRSSCron)
+	rt.traktCronLoop.apply(cfg.Trakt.Enabled && cfg.Trakt.SyncCron != "", rt.runTraktCron)
+	rt.strmCronLoop.apply(cfg.Strm.Enabled && cfg.ActiveStorageName() == "pan115" && cfg.Strm.SyncCron != "", rt.runStrmCron)
+	rt.u115CronLoop.apply(cfg.ActiveStorageName() == "pan115" && cfg.U115.AutoOrganizeEnabled && cfg.U115.DownloadFolderID != "" && cfg.U115.AutoOrganizeCron != "", rt.runU115Cron)
+	rt.rssCronLoop.apply(rt.getSubscriptionPollCron() != "", rt.runRSSCron)
 }
 
 // runTraktCron 观看同步 cron 执行器。配对未完成（token 等不随配置文件变更）
@@ -484,11 +473,11 @@ func (rt *Runtime) StartupBackgroundWatchers() {
 // 注意：停止后当前进程内 cron 调度不会随配置变更重启；
 // 生产环境进程生命周期即线程生命周期，不受影响。
 func (rt *Runtime) StopBackgroundWatchers() {
-	schedulesStopped.Store(true)
-	traktCronLoop.halt()
-	strmCronLoop.halt()
-	u115CronLoop.halt()
-	rssCronLoop.halt()
+	rt.schedulesStopped.Store(true)
+	rt.traktCronLoop.halt()
+	rt.strmCronLoop.halt()
+	rt.u115CronLoop.halt()
+	rt.rssCronLoop.halt()
 	for _, w := range []*watcherState{u115AutoWatcher, rssWatcher, strmWatcher, traktWatcher, traktSessionWatcher, traktSSEWatcher} {
 		w.mu.Lock()
 		if !w.stopped {

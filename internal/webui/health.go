@@ -7,15 +7,11 @@ import (
 	"fmt"
 	"html"
 	"strings"
-	"sync"
 	"time"
 )
 
 // healthNotifyCooldown 同一服务持续失效时的重复提醒冷却（1 天）。
 const healthNotifyCooldown = 24 * time.Hour
-
-// healthNow 当前时刻（包级变量，测试可替换）。
-var healthNow = time.Now
 
 // serviceHealth 单服务健康状态。
 type serviceHealth struct {
@@ -23,12 +19,6 @@ type serviceHealth struct {
 	reason     string
 	notifiedAt time.Time // 最近一次失效通知时刻（冷却用）
 }
-
-// healthMu 保护 serviceHealths；u115 轮询、STRM 同步、SSE/同步循环等多线程并发调用。
-var (
-	healthMu       sync.Mutex
-	healthServices = map[string]*serviceHealth{}
-)
 
 // healthLogCategory 服务名 → 应用日志 category（保证「日志」页可按服务过滤）。
 var healthLogCategory = map[string]string{
@@ -48,20 +38,20 @@ func (rt *Runtime) NotifyServiceHealth(service string, ok bool, reason string) {
 	if category == "" {
 		category = "u115"
 	}
-	healthMu.Lock()
-	st := healthServices[service]
+	rt.healthMu.Lock()
+	st := rt.healthServices[service]
 	if st == nil {
 		st = &serviceHealth{}
-		healthServices[service] = st
+		rt.healthServices[service] = st
 	}
 	if ok {
 		if !st.failing { // 持续正常：无操作
-			healthMu.Unlock()
+			rt.healthMu.Unlock()
 			return
 		}
 		st.failing = false
 		st.reason = ""
-		healthMu.Unlock()
+		rt.healthMu.Unlock()
 		rt.appLog(category, "health_recovered", "INFO",
 			fmt.Sprintf("%s 配置已恢复正常", service), nil)
 		rt.sendHealthTelegram(category, service, fmt.Sprintf("✅ %s 已恢复", service))
@@ -70,13 +60,13 @@ func (rt *Runtime) NotifyServiceHealth(service string, ok bool, reason string) {
 	// 失效观测：失败边沿立即通知，持续失效按冷却每日提醒一次（原因始终更新）
 	wasFailing := st.failing
 	st.reason = reason
-	now := healthNow()
+	now := rt.healthNow()
 	notify := !wasFailing || now.Sub(st.notifiedAt) >= healthNotifyCooldown
 	if notify {
 		st.failing = true
 		st.notifiedAt = now
 	}
-	healthMu.Unlock()
+	rt.healthMu.Unlock()
 	if !notify {
 		return
 	}

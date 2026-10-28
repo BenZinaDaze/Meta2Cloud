@@ -14,7 +14,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"meta2cloud/internal/cloudfile"
@@ -45,15 +44,10 @@ func reclassifyFailures(state *reclassifyProgress, reason string) {
 	}
 }
 
-var (
-	reclassifyMu  sync.Mutex
-	reclassifyRun reclassifyProgress
-)
-
-func reclassifyState() reclassifyProgress {
-	reclassifyMu.Lock()
-	defer reclassifyMu.Unlock()
-	return reclassifyRun
+func (rt *Runtime) reclassifyState() reclassifyProgress {
+	rt.reclassifyMu.Lock()
+	defer rt.reclassifyMu.Unlock()
+	return rt.reclassifyRun
 }
 
 // resolveCategoryFor 按规则解析分类；info 缺失（无缓存）时走兜底规则。
@@ -216,18 +210,18 @@ func (s *Server) handleCategoriesReclassify(w http.ResponseWriter, _ *http.Reque
 		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
 		return
 	}
-	reclassifyMu.Lock()
-	if reclassifyRun.Running {
-		reclassifyMu.Unlock()
-		writeJSON(w, http.StatusConflict, map[string]any{"started": false, "state": reclassifyRun})
+	s.rt.reclassifyMu.Lock()
+	if s.rt.reclassifyRun.Running {
+		s.rt.reclassifyMu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]any{"started": false, "state": s.rt.reclassifyRun})
 		return
 	}
 	plan := s.buildReclassifyPlan(categories, ls)
-	reclassifyRun = reclassifyProgress{
+	s.rt.reclassifyRun = reclassifyProgress{
 		Running: true, Total: len(plan.Items),
 		StartedAt: time.Now().UTC().Format(time.RFC3339),
 	}
-	reclassifyMu.Unlock()
+	s.rt.reclassifyMu.Unlock()
 
 	go s.runReclassify(provider, ls, categories, rootRef, plan)
 	writeJSON(w, http.StatusOK, map[string]any{"started": true, "total": len(plan.Items)})
@@ -237,19 +231,19 @@ func (s *Server) runReclassify(provider cloudfile.Provider, ls *store.LibrarySto
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("[reclassify] panic：%v", r)
-			reclassifyMu.Lock()
-			reclassifyRun.Running = false
-			reclassifyRun.Error = fmt.Sprintf("内部异常：%v", r)
-			reclassifyMu.Unlock()
+			s.rt.reclassifyMu.Lock()
+			s.rt.reclassifyRun.Running = false
+			s.rt.reclassifyRun.Error = fmt.Sprintf("内部异常：%v", r)
+			s.rt.reclassifyMu.Unlock()
 		}
 	}()
 
 	rootID, ok := cloudfile.ResolveFolderRefOrPath(provider, rootRef)
 	if !ok {
-		reclassifyMu.Lock()
-		reclassifyRun.Running = false
-		reclassifyRun.Error = "媒体库根目录不存在：" + rootRef
-		reclassifyMu.Unlock()
+		s.rt.reclassifyMu.Lock()
+		s.rt.reclassifyRun.Running = false
+		s.rt.reclassifyRun.Error = "媒体库根目录不存在：" + rootRef
+		s.rt.reclassifyMu.Unlock()
 		return
 	}
 
@@ -309,9 +303,9 @@ func (s *Server) runReclassify(provider cloudfile.Provider, ls *store.LibrarySto
 		if err != nil {
 			reason := fmt.Sprintf("创建分类目录 %s 失败：%v", it.Category, err)
 			log.Printf("[reclassify] %s", reason)
-			reclassifyMu.Lock()
-			reclassifyFailures(&reclassifyRun, reason)
-			reclassifyMu.Unlock()
+			s.rt.reclassifyMu.Lock()
+			reclassifyFailures(&s.rt.reclassifyRun, reason)
+			s.rt.reclassifyMu.Unlock()
 			continue
 		}
 		parentByCategory[it.Category] = parent
@@ -336,11 +330,11 @@ func (s *Server) runReclassify(provider cloudfile.Provider, ls *store.LibrarySto
 			cur = it.ParentID
 		}
 		processed := func() {
-			reclassifyMu.Lock()
-			reclassifyRun.Processed++
-			reclassifyRun.Moved = moved
-			reclassifyRun.Failed = failed
-			reclassifyMu.Unlock()
+			s.rt.reclassifyMu.Lock()
+			s.rt.reclassifyRun.Processed++
+			s.rt.reclassifyRun.Moved = moved
+			s.rt.reclassifyRun.Failed = failed
+			s.rt.reclassifyMu.Unlock()
 		}
 		if cur == target {
 			processed()
@@ -350,9 +344,9 @@ func (s *Server) runReclassify(provider cloudfile.Provider, ls *store.LibrarySto
 			failed++
 			reason := fmt.Sprintf("%s：%v", it.Title, err)
 			log.Printf("[reclassify] 移动失败 %s", reason)
-			reclassifyMu.Lock()
-			reclassifyFailures(&reclassifyRun, reason)
-			reclassifyMu.Unlock()
+			s.rt.reclassifyMu.Lock()
+			reclassifyFailures(&s.rt.reclassifyRun, reason)
+			s.rt.reclassifyMu.Unlock()
 		} else {
 			moved++
 			curByID[it.FolderID] = target
@@ -364,11 +358,11 @@ func (s *Server) runReclassify(provider cloudfile.Provider, ls *store.LibrarySto
 				note = it.Title + "：" + from + " → " + it.Category
 			}
 			log.Printf("[reclassify] 已归位 %s", note)
-			reclassifyMu.Lock()
-			if len(reclassifyRun.Moves) < 50 {
-				reclassifyRun.Moves = append(reclassifyRun.Moves, note)
+			s.rt.reclassifyMu.Lock()
+			if len(s.rt.reclassifyRun.Moves) < 50 {
+				s.rt.reclassifyRun.Moves = append(s.rt.reclassifyRun.Moves, note)
 			}
-			reclassifyMu.Unlock()
+			s.rt.reclassifyMu.Unlock()
 		}
 		processed()
 		if moved > 0 && moved%20 == 0 {
@@ -376,17 +370,17 @@ func (s *Server) runReclassify(provider cloudfile.Provider, ls *store.LibrarySto
 		}
 	}
 
-	reclassifyMu.Lock()
-	reclassifyRun.Running = false
-	reclassifyRun.Moved = moved
-	reclassifyRun.Failed = failed
-	reclassifyRun.FinishedAt = time.Now().UTC().Format(time.RFC3339)
-	runErrors := append([]string{}, reclassifyRun.Errors...)
-	if reclassifyRun.Error != "" {
-		runErrors = append(runErrors, reclassifyRun.Error)
+	s.rt.reclassifyMu.Lock()
+	s.rt.reclassifyRun.Running = false
+	s.rt.reclassifyRun.Moved = moved
+	s.rt.reclassifyRun.Failed = failed
+	s.rt.reclassifyRun.FinishedAt = time.Now().UTC().Format(time.RFC3339)
+	runErrors := append([]string{}, s.rt.reclassifyRun.Errors...)
+	if s.rt.reclassifyRun.Error != "" {
+		runErrors = append(runErrors, s.rt.reclassifyRun.Error)
 	}
-	runMoves := append([]string{}, reclassifyRun.Moves...)
-	reclassifyMu.Unlock()
+	runMoves := append([]string{}, s.rt.reclassifyRun.Moves...)
+	s.rt.reclassifyMu.Unlock()
 
 	s.rt.TriggerStrmSync("reclassify")
 	level := "SUCCESS"
@@ -428,7 +422,7 @@ func walkAllFolders(provider cloudfile.Provider, folderID string, parentMap map[
 
 // handleCategoriesReclassifyStatus 归位进度查询。
 func (s *Server) handleCategoriesReclassifyStatus(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, reclassifyState())
+	writeJSON(w, http.StatusOK, s.rt.reclassifyState())
 }
 
 // handleMediaClassification 单媒体分类核对：当前分类（库中 parent_id 记录 → 分类树标签）
@@ -457,7 +451,7 @@ func (s *Server) handleMediaClassification(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	rootRef := strings.TrimSpace(s.rt.GetConfig().ActiveRootFolderID())
-	tree := currentCategoryLabels(provider, categories, rootRef)
+	tree := s.rt.currentCategoryLabels(provider, categories, rootRef)
 	if tree == nil {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"available": false, "error": "分类目录定位失败（接口限流或目录不存在）",
@@ -487,22 +481,17 @@ type categoryTree struct {
 	at      time.Time
 }
 
-var (
-	classTreeMu    sync.Mutex
-	classTreeCache *categoryTree
-)
-
 // currentCategoryLabels 枚举媒体库根下的分类树建 ID→标签映射。
 // 短 TTL 缓存：分类目录很少变动，避免修正识别弹窗每次都重新枚举耗 QPS；
 // 分类规则改动后标签最多滞后 5 分钟。
-func currentCategoryLabels(provider cloudfile.Provider, categories *config.CategoriesConfig, rootRef string) *categoryTree {
+func (rt *Runtime) currentCategoryLabels(provider cloudfile.Provider, categories *config.CategoriesConfig, rootRef string) *categoryTree {
 	if rootRef == "" {
 		return nil
 	}
-	classTreeMu.Lock()
-	defer classTreeMu.Unlock()
-	if classTreeCache != nil && classTreeCache.rootRef == rootRef && time.Since(classTreeCache.at) < 5*time.Minute {
-		return classTreeCache
+	rt.classTreeMu.Lock()
+	defer rt.classTreeMu.Unlock()
+	if rt.classTreeCache != nil && rt.classTreeCache.rootRef == rootRef && time.Since(rt.classTreeCache.at) < 5*time.Minute {
+		return rt.classTreeCache
 	}
 	rootID, ok := cloudfile.ResolveFolderRefOrPath(provider, rootRef)
 	if !ok {
@@ -541,7 +530,7 @@ func currentCategoryLabels(provider cloudfile.Provider, categories *config.Categ
 			}
 		}
 	}
-	classTreeCache = tree
+	rt.classTreeCache = tree
 	return tree
 }
 

@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"meta2cloud/internal/webui/store"
@@ -267,13 +266,6 @@ type loginFailState struct {
 	lastFailure time.Time
 	lockedUntil time.Time
 }
-
-// loginLimiter 登录暴力破解防护：连续失败达到上限后按 IP 锁定一段时间。
-// 不信任 X-Forwarded-For（可伪造），与本机触发判定同口径只看 RemoteAddr。
-var loginLimiter = struct {
-	mu      sync.Mutex
-	entries map[string]*loginFailState
-}{entries: map[string]*loginFailState{}}
 
 // resetLoginLimiter 清空限速状态（测试隔离用）。
 func (rt *Runtime) resetLoginLimiter() {

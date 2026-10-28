@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"meta2cloud/internal/jsonx"
@@ -814,8 +813,7 @@ func (s *Server) handleSubscriptionPostOp(w http.ResponseWriter, r *http.Request
 	writeJSONError(w, http.StatusNotFound, "未知操作")
 }
 
-// subscriptionTmdbCachePrefetching 防止列表并发重复拉取详情。
-var subscriptionTmdbCachePrefetching sync.Map
+// rt.subscriptionTmdbCachePrefetching 防止列表并发重复拉取详情。
 
 // ensureSubscriptionTmdbCache 确保订阅关联的 TMDB 详情已入实体缓存。
 // parse-rss 搜索命中不会写库(与 Python 一致)，导致卡片标题回退到 RSS 原名；
@@ -833,10 +831,10 @@ func (s *Server) ensureSubscriptionTmdbCache(mediaType string, tmdbID int64) boo
 		return false // 已有缓存
 	}
 	key := fmt.Sprintf("%s:%d", mediaType, tmdbID)
-	if _, busy := subscriptionTmdbCachePrefetching.LoadOrStore(key, true); busy {
+	if _, busy := s.rt.subscriptionTmdbCachePrefetching.LoadOrStore(key, true); busy {
 		return false
 	}
-	defer subscriptionTmdbCachePrefetching.Delete(key)
+	defer s.rt.subscriptionTmdbCachePrefetching.Delete(key)
 	path := fmt.Sprintf("/movie/%d", tmdbID)
 	if mediaType == "tv" {
 		path = fmt.Sprintf("/tv/%d", tmdbID)

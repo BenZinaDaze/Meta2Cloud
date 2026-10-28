@@ -776,10 +776,6 @@ func TestPushTorrentLinkAddsBTTask(t *testing.T) {
 		w.Write(torrentBytes)
 	}))
 	t.Cleanup(torrentSite.Close)
-	// 种子源为本地 httptest（环回地址）：放行外呼校验（生产路径由 TestValidateOutboundURL 覆盖）
-	oldValidateTorrentURL := torrentURLValidator
-	torrentURLValidator = func(string) error { return nil }
-	t.Cleanup(func() { torrentURLValidator = oldValidateTorrentURL })
 
 	// mock 115 API：记录 add_task_bt 参数
 	var btForm url.Values
@@ -813,6 +809,10 @@ func TestPushTorrentLinkAddsBTTask(t *testing.T) {
 	tokenData := fmt.Sprintf(`{"access_token":"at","refresh_token":"rt","expires_in":3600,"refresh_time":%d}`, time.Now().Unix())
 	os.WriteFile(filepath.Join(rootDir, "config", "115-token.json"), []byte(tokenData), 0o600)
 	rt := InitRuntime(rootDir)
+	// 种子源为本地 httptest（环回地址）：放行外呼校验（生产路径由 TestValidateOutboundURL 覆盖）
+	oldValidateTorrentURL := rt.torrentURLValidator
+	rt.torrentURLValidator = func(string) error { return nil }
+	t.Cleanup(func() { rt.torrentURLValidator = oldValidateTorrentURL })
 	rt.ResetJWTSecretCache()
 
 	client := u115.NewClient("cid",

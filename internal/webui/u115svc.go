@@ -579,13 +579,12 @@ func (rt *Runtime) isTorrentLink(rawURL string) bool {
 	return strings.HasSuffix(strings.ToLower(parsed.Path), ".torrent")
 }
 
-// torrentURLValidator 种子链接外呼校验（包级变量，测试可替换以使用本地 httptest 服务器）。
-var torrentURLValidator = validateOutboundURL
+// rt.torrentURLValidator 种子链接外呼校验（包级变量，测试可替换以使用本地 httptest 服务器）。
 
 // fetchTorrentContent 下载种子文件内容（bencode 字典以 'd' 开头）。
 // URL 可能源自 RSS 条目等外部内容：仅允许 http/https 公网地址（防 SSRF 探测内网）。
 func (rt *Runtime) fetchTorrentContent(torrentURL string) ([]byte, error) {
-	if err := torrentURLValidator(torrentURL); err != nil {
+	if err := rt.torrentURLValidator(torrentURL); err != nil {
 		return nil, fmt.Errorf("种子链接被拒绝：%v", err)
 	}
 	req, err := http.NewRequest(http.MethodGet, torrentURL, nil)
