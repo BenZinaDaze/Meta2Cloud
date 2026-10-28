@@ -450,7 +450,7 @@ func (rt *Runtime) CredentialsMatch(username, password string) bool {
 	}
 	passOK := cfg.WebUI.Password != "" && subtle.ConstantTimeCompare([]byte(password), []byte(cfg.WebUI.Password)) == 1
 	if userOK && passOK {
-		migratePlaintextPassword(password)
+		rt.migratePlaintextPassword(password)
 	}
 	return userOK && passOK
 }

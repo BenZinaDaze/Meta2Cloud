@@ -71,9 +71,9 @@ func maskConfigForRead(m map[string]any) {
 }
 
 // readMergedConfigDict 主配置 + 敏感配置 + 解析规则合并。
-func readMergedConfigDict() map[string]any {
+func (s *Server) readMergedConfigDict() map[string]any {
 	parsed := mergedConfigDict()
-	rules := readYAMLMap(RT().rulesPath)
+	rules := readYAMLMap(s.rt.rulesPath)
 	if section, ok := rules["parser"].(map[string]any); ok {
 		rules = section
 	}
@@ -196,7 +196,7 @@ func extractAlternativeNamesWithLang(info map[string]any) []map[string]string {
 }
 
 // serializeTmdbResult TMDB 详情 → 前端载荷。
-func serializeTmdbResult(info map[string]any) map[string]any {
+func (rt *Runtime) serializeTmdbResult(info map[string]any) map[string]any {
 	if info == nil {
 		return nil
 	}
@@ -213,7 +213,7 @@ func serializeTmdbResult(info map[string]any) map[string]any {
 	if len(releaseDate) >= 4 {
 		year = releaseDate[:4]
 	}
-	cfg := RT().GetConfig()
+	cfg := rt.GetConfig()
 	baseURL := cfg.TmdbImageBaseURL()
 
 	genres := []string{}
@@ -294,12 +294,12 @@ func roundTo1F(v float64) float64 {
 }
 
 // parserTestPayload 解析测试。
-func parserTestPayload(filename string, skipTmdb bool) (map[string]any, string, int) {
+func (s *Server) parserTestPayload(filename string, skipTmdb bool) (map[string]any, string, int) {
 	filename = strings.TrimSpace(filename)
 	if filename == "" {
 		return nil, "文件名不能为空", http.StatusBadRequest
 	}
-	cfg := RT().GetConfig()
+	cfg := s.rt.GetConfig()
 	matcher := mediaparser.NewReleaseGroupsMatcher(cfg.Parser.CustomReleaseGroups)
 
 	var meta *mediaparser.MetaBase
@@ -315,9 +315,9 @@ func parserTestPayload(filename string, skipTmdb bool) (map[string]any, string, 
 		return payload, "", 0
 	}
 	var tmdbPayload map[string]any
-	if client := RT().GetTmdbClient(); client != nil {
+	if client := s.rt.GetTmdbClient(); client != nil {
 		if found := client.Recognize(meta); found != nil {
-			tmdbPayload = serializeTmdbResult(found)
+			tmdbPayload = s.rt.serializeTmdbResult(found)
 			if id := jsonx.Int(found, "tmdb_id", jsonx.Int(found, "id", 0)); id != 0 && meta.TmdbID == 0 {
 				payload["tmdbid"] = id
 			}
@@ -325,7 +325,7 @@ func parserTestPayload(filename string, skipTmdb bool) (map[string]any, string, 
 				payload["year"] = y
 			}
 			// 分类解析（分类布局启用时，与整理管线同一套规则）
-			if cats := RT().GetCategories(); cats != nil {
+			if cats := s.rt.GetCategories(); cats != nil {
 				isTV := meta.Type == mediaparser.MediaTV
 				var genreIDs []int
 				if genres, ok := found["genres"].([]any); ok {
@@ -524,7 +524,7 @@ func writeYAMLMap(path string, data map[string]any) error {
 // webui.password 非空 = 设置新密码（哈希后入 secrets.yaml，明文永不落盘）；
 // 为空或缺失 = 保持现有密码（读接口不回传密码值，这里从现有文件补齐，防止整体替换保存时丢失）。
 // webui.secret_key 读到掩码占位符（读接口掩码原样回传）时同样从现有文件补齐。
-func writeMainConfigFiles(payload map[string]any) error {
+func (s *Server) writeMainConfigFiles(payload map[string]any) error {
 	existing := mergedConfigDict()
 	config.RestoreMaskedSecrets(payload, existing, secretMaskPlaceholder)
 	secrets := config.SplitSecrets(payload)
@@ -555,21 +555,20 @@ func writeMainConfigFiles(payload map[string]any) error {
 		}
 	}
 	// 先写 secrets（0600）再写主配置：主配置写失败时 secrets 已生效，重载后取 secrets 值
-	if err := config.SaveSecrets(RT().secretsPath, secrets); err != nil {
+	if err := config.SaveSecrets(s.rt.secretsPath, secrets); err != nil {
 		return err
 	}
-	return writeYAMLMap(RT().configPath, payload)
+	return writeYAMLMap(s.rt.configPath, payload)
 }
 
 // migratePlaintextPassword 旧版明文密码迁移：bcrypt 哈希写入 secrets.yaml 并从主配置移除明文。
 // 迁移失败仅记日志，不影响本次登录（下次登录重试）。
-func migratePlaintextPassword(password string) {
+func (rt *Runtime) migratePlaintextPassword(password string) {
 	hash, err := config.HashPassword(password)
 	if err != nil {
 		log.Printf("明文密码迁移失败：%v", err)
 		return
 	}
-	rt := RT()
 	main := readYAMLMap(rt.configPath)
 	if sec, ok := main["webui"].(map[string]any); ok {
 		delete(sec, "password")
@@ -599,8 +598,7 @@ func migratePlaintextPassword(password string) {
 }
 
 // invalidateRuntimeCache 保存配置后清空运行时缓存。
-func invalidateRuntimeCache() {
-	rt := RT()
+func (rt *Runtime) invalidateRuntimeCache() {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	rt.cfg = nil
@@ -614,23 +612,23 @@ func invalidateRuntimeCache() {
 
 // ── HTTP 处理器 ─────────────────────────────────────────────
 
-func requireConfigFile(w http.ResponseWriter) bool {
-	if _, err := os.Stat(RT().configPath); err != nil {
+func (s *Server) requireConfigFile(w http.ResponseWriter) bool {
+	if _, err := os.Stat(s.rt.configPath); err != nil {
 		writeJSONError(w, http.StatusNotFound, "config.yaml 不存在")
 		return false
 	}
 	return true
 }
 
-func handleReadConfig(w http.ResponseWriter, _ *http.Request) {
-	if !requireConfigFile(w) {
+func (s *Server) handleReadConfig(w http.ResponseWriter, _ *http.Request) {
+	if !s.requireConfigFile(w) {
 		return
 	}
-	writeJSON(w, http.StatusOK, readMergedConfigDict())
+	writeJSON(w, http.StatusOK, s.readMergedConfigDict())
 }
 
-func handleReadMainConfig(w http.ResponseWriter, _ *http.Request) {
-	if !requireConfigFile(w) {
+func (s *Server) handleReadMainConfig(w http.ResponseWriter, _ *http.Request) {
+	if !s.requireConfigFile(w) {
 		return
 	}
 	parsed := mergedConfigDict()
@@ -638,17 +636,17 @@ func handleReadMainConfig(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, parsed)
 }
 
-func handleReadParserRules(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, extractParserRules(map[string]any{"parser": readYAMLMap(RT().rulesPath)}))
+func (s *Server) handleReadParserRules(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, extractParserRules(map[string]any{"parser": readYAMLMap(s.rt.rulesPath)}))
 }
 
-func handleParserTest(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleParserTest(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Filename string `json:"filename"`
 	}
 	_ = jsonDecodeBody(r, &body)
 	skipTmdb := r.URL.Query().Get("skip_tmdb") == "true"
-	payload, errMsg, status := parserTestPayload(body.Filename, skipTmdb)
+	payload, errMsg, status := s.parserTestPayload(body.Filename, skipTmdb)
 	if errMsg != "" {
 		writeJSONError(w, status, errMsg)
 		return
@@ -656,7 +654,7 @@ func handleParserTest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, payload)
 }
 
-func handleWriteConfig(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleWriteConfig(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Data map[string]any `json:"data"`
 	}
@@ -674,20 +672,20 @@ func handleWriteConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	parserRules := extractParserRules(payload)
 	delete(payload, "parser")
-	if err := writeMainConfigFiles(payload); err != nil {
+	if err := s.writeMainConfigFiles(payload); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := writeYAMLMap(RT().rulesPath, parserRules); err != nil {
+	if err := writeYAMLMap(s.rt.rulesPath, parserRules); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	invalidateRuntimeCache()
+	s.rt.invalidateRuntimeCache()
 	appLog("system", "config_updated", "SUCCESS", "配置文件已更新", nil)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "配置已保存"})
 }
 
-func handleWriteMainConfig(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleWriteMainConfig(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Data map[string]any `json:"data"`
 	}
@@ -704,16 +702,16 @@ func handleWriteMainConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	delete(payload, "parser")
-	if err := writeMainConfigFiles(payload); err != nil {
+	if err := s.writeMainConfigFiles(payload); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	invalidateRuntimeCache()
+	s.rt.invalidateRuntimeCache()
 	appLog("system", "main_config_updated", "SUCCESS", "主配置文件已更新", nil)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "主配置已保存"})
 }
 
-func handleWriteParserRules(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleWriteParserRules(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Data map[string]any `json:"data"`
 	}
@@ -722,11 +720,11 @@ func handleWriteParserRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rules := extractParserRules(map[string]any{"parser": body.Data})
-	if err := writeYAMLMap(RT().rulesPath, rules); err != nil {
+	if err := writeYAMLMap(s.rt.rulesPath, rules); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	invalidateRuntimeCache()
+	s.rt.invalidateRuntimeCache()
 	appLog("system", "parser_rules_updated", "SUCCESS", "文件名识别规则已更新", nil)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "识别规则已保存"})
 }

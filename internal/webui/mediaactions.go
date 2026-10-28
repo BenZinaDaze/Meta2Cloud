@@ -671,7 +671,7 @@ func handleTmdbSearch(w http.ResponseWriter, r *http.Request) {
 		if mt := jsonx.Str(item, "media_type"); mt != "movie" && mt != "tv" {
 			continue
 		}
-		if s := serializeTmdbResult(item); s != nil {
+		if s := RT().serializeTmdbResult(item); s != nil {
 			serialized = append(serialized, s)
 		}
 	}
@@ -712,7 +712,7 @@ func handleTmdbDetail(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "TMDB 详情获取失败")
 		return
 	}
-	serialized := serializeTmdbResult(raw)
+	serialized := RT().serializeTmdbResult(raw)
 	if mediaType == "tv" && raw["seasons"] != nil {
 		seasonsStatus, _, _ := BuildSeasonsStatus(tmdbID, raw, map[epKey]bool{}, true)
 		serialized["seasons"] = seasonsToAny(seasonsStatus)

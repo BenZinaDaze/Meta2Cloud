@@ -78,13 +78,13 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("POST /api/pipeline/trigger", handlePipelineTrigger)
 
 	// config
-	m.HandleFunc("GET /api/config", handleReadConfig)
-	m.HandleFunc("GET /api/config/main", handleReadMainConfig)
-	m.HandleFunc("GET /api/config/parser-rules", handleReadParserRules)
-	m.HandleFunc("POST /api/parser/test", handleParserTest)
-	m.HandleFunc("PUT /api/config", handleWriteConfig)
-	m.HandleFunc("PUT /api/config/main", handleWriteMainConfig)
-	m.HandleFunc("PUT /api/config/parser-rules", handleWriteParserRules)
+	m.HandleFunc("GET /api/config", s.handleReadConfig)
+	m.HandleFunc("GET /api/config/main", s.handleReadMainConfig)
+	m.HandleFunc("GET /api/config/parser-rules", s.handleReadParserRules)
+	m.HandleFunc("POST /api/parser/test", s.handleParserTest)
+	m.HandleFunc("PUT /api/config", s.handleWriteConfig)
+	m.HandleFunc("PUT /api/config/main", s.handleWriteMainConfig)
+	m.HandleFunc("PUT /api/config/parser-rules", s.handleWriteParserRules)
 
 	// mediavault / tmdb season
 	m.HandleFunc("POST /api/mediavault/test", handleMediavaultTest)
