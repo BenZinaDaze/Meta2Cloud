@@ -398,21 +398,6 @@ func (rt *Runtime) SetCategories(c *config.CategoriesConfig) error {
 	return nil
 }
 
-// getLibraryStoreLocked 媒体实体库单例（需已持锁）。
-func (rt *Runtime) getLibraryStoreLocked() *store.LibraryStore {
-	if rt.library == nil {
-		dbPath := filepath.Join(rt.RootDir, "config", "data", "library.db")
-		s, err := store.OpenLibraryStore(dbPath)
-		if err != nil {
-			log.Printf("媒体实体库初始化失败：%v", err)
-			return nil
-		}
-		rt.library = s
-	}
-	rt.library.ImageBaseURL = rt.getConfigLocked().TmdbImageBaseURL
-	return rt.library
-}
-
 // GetLibraryStore 媒体实体库单例（InitRuntime 时打开，失败则启动中止）。
 func (rt *Runtime) GetLibraryStore() *store.LibraryStore {
 	rt.mu.Lock()
