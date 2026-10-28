@@ -3,11 +3,13 @@ package pipeline
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -17,6 +19,16 @@ import (
 	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/tmdb"
 )
+
+// redactURLError 去掉 *url.Error 携带的完整 URL（路径含 bot token），只保留底层错误，
+// 防止请求失败时凭据随错误日志与上层调用方日志外泄。
+func redactURLError(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return ue.Err
+	}
+	return err
+}
 
 // notifyItem Telegram 入库通知条目。
 type notifyItem struct {
@@ -383,7 +395,7 @@ func SendTelegramPhoto(tg config.Telegram, imageURL, caption string) error {
 func postTelegram(tg config.Telegram, method string, payload map[string]any, timeoutSecs int) error {
 	resp, err := postJSON(fmt.Sprintf("https://api.telegram.org/bot%s/%s", tg.BotToken, method), payload, timeoutSecs)
 	if err != nil {
-		err = fmt.Errorf("请求异常：%w", err)
+		err = fmt.Errorf("请求异常：%w", redactURLError(err))
 		log.Printf("Telegram %s %v", method, err)
 		return err
 	}

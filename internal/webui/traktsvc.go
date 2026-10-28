@@ -58,7 +58,11 @@ func savePlexAuth(path string, auth *plexAuthJSON) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o600)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return err
+	}
+	// WriteFile 的 perm 仅对新建文件生效，已存在文件显式收紧
+	return os.Chmod(path, 0o600)
 }
 
 // ensurePlexAuthLocked 确保 client_identifier 存在（需已持 rt.mu；只做文件 I/O）。

@@ -3,6 +3,7 @@ package tmdb
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -17,6 +18,16 @@ import (
 	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/mediaparser"
 )
+
+// redactURLError 去掉 *url.Error 携带的完整 URL（query 含 api_key），只保留底层错误，
+// 防止 DNS/超时等失败时凭据随错误日志外泄。
+func redactURLError(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return ue.Err
+	}
+	return err
+}
 
 func decodeJSON(raw []byte, out *map[string]any) error {
 	return json.Unmarshal(raw, out)
@@ -592,7 +603,7 @@ func (c *Client) get(path string, extraParams map[string]string, useCache bool) 
 		req.Header.Set("Accept", "application/json")
 		resp, err := c.hc.Do(req)
 		if err != nil {
-			log.Printf("TMDB 请求失败 [%s %d]: %v", path, attempt+1, err)
+			log.Printf("TMDB 请求失败 [%s %d]: %v", path, attempt+1, redactURLError(err))
 			if attempt < 2 {
 				time.Sleep(2 * time.Second)
 			}

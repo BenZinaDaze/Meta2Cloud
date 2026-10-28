@@ -268,7 +268,11 @@ func SaveToken(token Token, tokenPath string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(tokenPath, data, 0o600)
+	if err := os.WriteFile(tokenPath, data, 0o600); err != nil {
+		return err
+	}
+	// WriteFile 的 perm 仅对新建文件生效，已存在文件（历史版本可能 0644）显式收紧
+	return os.Chmod(tokenPath, 0o600)
 }
 
 // LoadToken 从本地 JSON 文件读取 token，不存在返回 (zero, false), nil。
@@ -280,6 +284,8 @@ func LoadToken(tokenPath string) (Token, bool, error) {
 		}
 		return Token{}, false, err
 	}
+	// 自愈历史遗留的宽松权限（凭据文件应仅属主可读）
+	_ = os.Chmod(tokenPath, 0o600)
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return Token{}, false, err
