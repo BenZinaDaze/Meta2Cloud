@@ -12,22 +12,22 @@ import (
 	"meta2cloud/internal/u115"
 )
 
-func providerRootID() string {
-	if RT().GetConfig().ActiveStorageName() == "pan115" {
+func (s *Server) providerRootID() string {
+	if s.rt.GetConfig().ActiveStorageName() == "pan115" {
 		return "0"
 	}
 	return "root"
 }
 
-func normalizeFileManagerFolderID(folderID string) string {
-	rootID := providerRootID()
+func (s *Server) normalizeFileManagerFolderID(folderID string) string {
+	rootID := s.providerRootID()
 	if folderID == "" || folderID == "root" {
 		return rootID
 	}
 	return folderID
 }
 
-func cloudFileToResponse(f cloudfile.CloudFile) map[string]any {
+func (s *Server) cloudFileToResponse(f cloudfile.CloudFile) map[string]any {
 	fileType := "file"
 	if f.IsFolder() {
 		fileType = "folder"
@@ -45,28 +45,28 @@ func cloudFileToResponse(f cloudfile.CloudFile) map[string]any {
 	}
 }
 
-func breadcrumb(id, name string) map[string]string {
+func (s *Server) breadcrumb(id, name string) map[string]string {
 	return map[string]string{"id": id, "name": name}
 }
 
-func buildFolderPath(folderID, rootID, folderName string) []map[string]string {
-	path := []map[string]string{breadcrumb(rootID, "根目录")}
+func (s *Server) buildFolderPath(folderID, rootID, folderName string) []map[string]string {
+	path := []map[string]string{s.breadcrumb(rootID, "根目录")}
 	if folderID != rootID {
 		if folderName != "" {
-			path = append(path, breadcrumb(folderID, folderName))
+			path = append(path, s.breadcrumb(folderID, folderName))
 		} else {
-			path = append(path, breadcrumb(folderID, folderID))
+			path = append(path, s.breadcrumb(folderID, folderID))
 		}
 	}
 	return path
 }
 
 // buildPath 从文件向上追溯构建完整路径面包屑（深度上限防数据成环时死循环）。
-func buildPath(provider cloudfile.Provider, file cloudfile.CloudFile, rootID string) []map[string]string {
+func (s *Server) buildPath(provider cloudfile.Provider, file cloudfile.CloudFile, rootID string) []map[string]string {
 	var path []map[string]string
 	current := file
 	for depth := 0; depth < 64; depth++ {
-		path = append([]map[string]string{breadcrumb(current.ID, current.Name)}, path...)
+		path = append([]map[string]string{s.breadcrumb(current.ID, current.Name)}, path...)
 		if current.ParentID != "" && current.ParentID != rootID {
 			parent, err := provider.GetFile(current.ParentID)
 			if err != nil {
@@ -77,13 +77,13 @@ func buildPath(provider cloudfile.Provider, file cloudfile.CloudFile, rootID str
 			break
 		}
 	}
-	return append([]map[string]string{breadcrumb(rootID, "根目录")}, path...)
+	return append([]map[string]string{s.breadcrumb(rootID, "根目录")}, path...)
 }
 
 // ── HTTP 处理器 ─────────────────────────────────────────────
 
-func handleListFiles(w http.ResponseWriter, r *http.Request) {
-	provider := RT().GetStorageProvider()
+func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
+	provider := s.rt.GetStorageProvider()
 	if provider == nil {
 		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
 		return
@@ -92,9 +92,9 @@ func handleListFiles(w http.ResponseWriter, r *http.Request) {
 	folderID := q.Get("folder_id")
 	folderName := q.Get("folder_name")
 	search := q.Get("search")
-	providerName := RT().GetConfig().ActiveStorageName()
-	rootID := providerRootID()
-	normalized := normalizeFileManagerFolderID(folderID)
+	providerName := s.rt.GetConfig().ActiveStorageName()
+	rootID := s.providerRootID()
+	normalized := s.normalizeFileManagerFolderID(folderID)
 
 	items, err := provider.ListFiles(normalized, 1000)
 	if err != nil {
@@ -107,21 +107,21 @@ func handleListFiles(w http.ResponseWriter, r *http.Request) {
 		var filtered []map[string]any
 		for _, f := range items {
 			if strings.Contains(strings.ToLower(f.Name), needle) {
-				filtered = append(filtered, cloudFileToResponse(f))
+				filtered = append(filtered, s.cloudFileToResponse(f))
 			}
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"items": filtered, "folder_id": normalized,
 			"folder_name": "搜索结果: " + search, "parent_id": nil,
 			"provider": providerName, "root_id": rootID,
-			"path": []map[string]string{breadcrumb(rootID, "根目录")},
+			"path": []map[string]string{s.breadcrumb(rootID, "根目录")},
 		})
 		return
 	}
 
 	responseItems := make([]map[string]any, 0, len(items))
 	for _, f := range items {
-		responseItems = append(responseItems, cloudFileToResponse(f))
+		responseItems = append(responseItems, s.cloudFileToResponse(f))
 	}
 	displayName := folderName
 	if displayName == "" {
@@ -135,29 +135,29 @@ func handleListFiles(w http.ResponseWriter, r *http.Request) {
 		"items": responseItems, "folder_id": normalized,
 		"folder_name": displayName, "parent_id": parentID,
 		"provider": providerName, "root_id": rootID,
-		"path": buildFolderPath(normalized, rootID, folderName),
+		"path": s.buildFolderPath(normalized, rootID, folderName),
 	})
 }
 
-func handleGetFile(w http.ResponseWriter, r *http.Request) {
-	provider := RT().GetStorageProvider()
+func (s *Server) handleGetFile(w http.ResponseWriter, r *http.Request) {
+	provider := s.rt.GetStorageProvider()
 	fileID := r.PathValue("fileID")
 	file, err := provider.GetFile(fileID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	response := cloudFileToResponse(file)
+	response := s.cloudFileToResponse(file)
 	var path []map[string]string
 	if r.URL.Query().Get("include_path") == "true" {
-		path = buildPath(provider, file, providerRootID())
+		path = s.buildPath(provider, file, s.providerRootID())
 	}
 	response["path"] = path
 	writeJSON(w, http.StatusOK, response)
 }
 
-func handleCreateFile(w http.ResponseWriter, r *http.Request) {
-	provider := RT().GetStorageProvider()
+func (s *Server) handleCreateFile(w http.ResponseWriter, r *http.Request) {
+	provider := s.rt.GetStorageProvider()
 	var body struct {
 		Name     string `json:"name"`
 		ParentID string `json:"parent_id"`
@@ -166,16 +166,16 @@ func handleCreateFile(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "name 不能为空")
 		return
 	}
-	folder, err := provider.CreateFolder(body.Name, normalizeFileManagerFolderID(body.ParentID))
+	folder, err := provider.CreateFolder(body.Name, s.normalizeFileManagerFolderID(body.ParentID))
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, cloudFileToResponse(folder))
+	writeJSON(w, http.StatusOK, s.cloudFileToResponse(folder))
 }
 
-func handleUpdateFile(w http.ResponseWriter, r *http.Request) {
-	provider := RT().GetStorageProvider()
+func (s *Server) handleUpdateFile(w http.ResponseWriter, r *http.Request) {
+	provider := s.rt.GetStorageProvider()
 	fileID := r.PathValue("fileID")
 	var body struct {
 		Name     string `json:"name"`
@@ -199,11 +199,11 @@ func handleUpdateFile(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, cloudFileToResponse(file))
+	writeJSON(w, http.StatusOK, s.cloudFileToResponse(file))
 }
 
-func handleDeleteFile(w http.ResponseWriter, r *http.Request) {
-	provider := RT().GetStorageProvider()
+func (s *Server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
+	provider := s.rt.GetStorageProvider()
 	if err := provider.DeleteFile(r.PathValue("fileID")); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -211,8 +211,8 @@ func handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func handleFileBatch(w http.ResponseWriter, r *http.Request) {
-	provider := RT().GetStorageProvider()
+func (s *Server) handleFileBatch(w http.ResponseWriter, r *http.Request) {
+	provider := s.rt.GetStorageProvider()
 	var body struct {
 		Action   string   `json:"action"`
 		FileIDs  []string `json:"file_ids"`

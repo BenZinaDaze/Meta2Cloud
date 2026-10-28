@@ -49,9 +49,9 @@ func extractParserRules(data map[string]any) map[string]any {
 }
 
 // mergedConfigDict 主配置 + 敏感配置合并（secrets.yaml 值优先）。
-func mergedConfigDict() map[string]any {
-	parsed := readYAMLMap(RT().configPath)
-	config.MergeSecrets(parsed, readYAMLMap(RT().secretsPath))
+func (rt *Runtime) mergedConfigDict() map[string]any {
+	parsed := readYAMLMap(rt.configPath)
+	config.MergeSecrets(parsed, readYAMLMap(rt.secretsPath))
 	return parsed
 }
 
@@ -72,7 +72,7 @@ func maskConfigForRead(m map[string]any) {
 
 // readMergedConfigDict 主配置 + 敏感配置 + 解析规则合并。
 func (s *Server) readMergedConfigDict() map[string]any {
-	parsed := mergedConfigDict()
+	parsed := s.rt.mergedConfigDict()
 	rules := readYAMLMap(s.rt.rulesPath)
 	if section, ok := rules["parser"].(map[string]any); ok {
 		rules = section
@@ -525,7 +525,7 @@ func writeYAMLMap(path string, data map[string]any) error {
 // 为空或缺失 = 保持现有密码（读接口不回传密码值，这里从现有文件补齐，防止整体替换保存时丢失）。
 // webui.secret_key 读到掩码占位符（读接口掩码原样回传）时同样从现有文件补齐。
 func (s *Server) writeMainConfigFiles(payload map[string]any) error {
-	existing := mergedConfigDict()
+	existing := s.rt.mergedConfigDict()
 	config.RestoreMaskedSecrets(payload, existing, secretMaskPlaceholder)
 	secrets := config.SplitSecrets(payload)
 	if _, hasWebUI := payload["webui"]; hasWebUI {
@@ -631,7 +631,7 @@ func (s *Server) handleReadMainConfig(w http.ResponseWriter, _ *http.Request) {
 	if !s.requireConfigFile(w) {
 		return
 	}
-	parsed := mergedConfigDict()
+	parsed := s.rt.mergedConfigDict()
 	maskConfigForRead(parsed)
 	writeJSON(w, http.StatusOK, parsed)
 }

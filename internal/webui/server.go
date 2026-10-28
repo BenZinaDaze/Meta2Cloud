@@ -94,12 +94,12 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("GET /api/tmdb/tv/{tmdbID}/season/{season}", handleTmdbSeasonDetail)
 
 	// file manager
-	m.HandleFunc("GET /api/files", handleListFiles)
-	m.HandleFunc("GET /api/files/{fileID}", handleGetFile)
-	m.HandleFunc("POST /api/files", handleCreateFile)
-	m.HandleFunc("PATCH /api/files/{fileID}", handleUpdateFile)
-	m.HandleFunc("DELETE /api/files/{fileID}", handleDeleteFile)
-	m.HandleFunc("POST /api/files/batch", handleFileBatch)
+	m.HandleFunc("GET /api/files", s.handleListFiles)
+	m.HandleFunc("GET /api/files/{fileID}", s.handleGetFile)
+	m.HandleFunc("POST /api/files", s.handleCreateFile)
+	m.HandleFunc("PATCH /api/files/{fileID}", s.handleUpdateFile)
+	m.HandleFunc("DELETE /api/files/{fileID}", s.handleDeleteFile)
+	m.HandleFunc("POST /api/files/batch", s.handleFileBatch)
 
 	// media actions / tmdb / scraper / bangumi
 	m.HandleFunc("POST /api/library:refresh-item", handleRefreshItem)
