@@ -41,6 +41,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 		t.Fatal(err)
 	}
 	ResetJWTSecretCache()
+	resetLoginLimiterForTest()
 	InitRuntime(rootDir)
 	server := NewServer()
 	t.Cleanup(server.Close)
@@ -183,6 +184,7 @@ func newScanServer(t *testing.T) (*httptest.Server, string) {
 	cfgYAML := "webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n"
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
 	ResetJWTSecretCache()
+	resetLoginLimiterForTest()
 	InitRuntime(rootDir)
 
 	// 构造假网盘（分类布局）：媒体库根/电影/电影 (2010)；媒体库根/剧集/剧 (2008)/Season 01/S01E01
@@ -405,6 +407,20 @@ func TestTriggerWebhookEmptySecretLoopbackOnly(t *testing.T) {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// TestLoginRateLimit 登录连续失败达到上限后按 IP 锁定，锁定期内正确密码也被拒。
+func TestLoginRateLimit(t *testing.T) {
+	ts := newTestServer(t)
+	t.Cleanup(resetLoginLimiterForTest) // 解除 127.0.0.1 锁定，避免影响后续测试
+	for i := 0; i < loginMaxFailures; i++ {
+		if code, _ := login(t, ts, "admin", "错误密码"); code != http.StatusUnauthorized {
+			t.Fatalf("第 %d 次失败登录 = %d, want 401", i+1, code)
+		}
+	}
+	if code, _ := login(t, ts, "admin", "secret123"); code != http.StatusTooManyRequests {
+		t.Errorf("锁定后正确密码 = %d, want 429", code)
 	}
 }
 

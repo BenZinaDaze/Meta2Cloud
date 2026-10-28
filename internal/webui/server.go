@@ -6,11 +6,15 @@ package webui
 
 import (
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"meta2cloud/internal/webui/store"
 )
@@ -254,7 +258,91 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
+// ── 登录失败限速（内存级，按来源 IP）────────────────────────
+
+const (
+	loginMaxFailures  = 5                // 窗口内连续失败上限，达到即锁定
+	loginFailWindow   = 15 * time.Minute // 失败计数窗口（窗口外的旧失败不再累计）
+	loginLockDuration = 10 * time.Minute // 锁定时长
+)
+
+type loginFailState struct {
+	failures    int
+	lastFailure time.Time
+	lockedUntil time.Time
+}
+
+// loginLimiter 登录暴力破解防护：连续失败达到上限后按 IP 锁定一段时间。
+// 不信任 X-Forwarded-For（可伪造），与本机触发判定同口径只看 RemoteAddr。
+var loginLimiter = struct {
+	mu      sync.Mutex
+	entries map[string]*loginFailState
+}{entries: map[string]*loginFailState{}}
+
+// resetLoginLimiterForTest 清空限速状态（测试隔离用）。
+func resetLoginLimiterForTest() {
+	loginLimiter.mu.Lock()
+	defer loginLimiter.mu.Unlock()
+	loginLimiter.entries = map[string]*loginFailState{}
+}
+
+// loginLockedRemaining 返回该 IP 登录锁定的剩余时长（0 = 未锁定）。
+func loginLockedRemaining(ip string) time.Duration {
+	loginLimiter.mu.Lock()
+	defer loginLimiter.mu.Unlock()
+	st, ok := loginLimiter.entries[ip]
+	if !ok {
+		return 0
+	}
+	if remain := time.Until(st.lockedUntil); remain > 0 {
+		return remain
+	}
+	return 0
+}
+
+// recordLoginFailure 记一次登录失败；窗口外首次失败重置计数。
+func recordLoginFailure(ip string) {
+	loginLimiter.mu.Lock()
+	defer loginLimiter.mu.Unlock()
+	st := loginLimiter.entries[ip]
+	if st == nil || time.Since(st.lastFailure) > loginFailWindow {
+		st = &loginFailState{}
+		loginLimiter.entries[ip] = st
+	}
+	st.failures++
+	st.lastFailure = time.Now()
+	if st.failures >= loginMaxFailures {
+		st.lockedUntil = time.Now().Add(loginLockDuration)
+		st.failures = 0
+	}
+	// 条目过多时清理彻底过期的，防内存无限增长
+	if len(loginLimiter.entries) > 1024 {
+		now := time.Now()
+		for k, v := range loginLimiter.entries {
+			if now.After(v.lockedUntil) && now.Sub(v.lastFailure) > loginFailWindow {
+				delete(loginLimiter.entries, k)
+			}
+		}
+	}
+}
+
+// resetLoginFailures 登录成功后清除该 IP 的失败计数。
+func resetLoginFailures(ip string) {
+	loginLimiter.mu.Lock()
+	defer loginLimiter.mu.Unlock()
+	delete(loginLimiter.entries, ip)
+}
+
 func handleAuthLogin(w http.ResponseWriter, r *http.Request) {
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		ip = r.RemoteAddr
+	}
+	if remain := loginLockedRemaining(ip); remain > 0 {
+		writeJSONError(w, http.StatusTooManyRequests,
+			fmt.Sprintf("登录尝试次数过多，请 %d 分钟后再试", int(remain.Minutes())+1))
+		return
+	}
 	var body loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "请求体格式错误")
@@ -266,9 +354,11 @@ func handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !RT().CredentialsMatch(body.Username, body.Password) {
+		recordLoginFailure(ip)
 		writeJSONError(w, http.StatusUnauthorized, "用户名或密码错误")
 		return
 	}
+	resetLoginFailures(ip)
 	token, err := CreateToken(body.Username, cfg.WebUI.TokenExpireHours)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "Token 生成失败")
