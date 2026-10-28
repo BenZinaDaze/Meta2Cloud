@@ -278,51 +278,25 @@ func (rt *Runtime) GetStorageProvider() cloudfile.Provider {
 	if rt.provider == nil {
 		cfg := rt.getConfigLocked()
 		if cfg.ActiveStorageName() == "pan115" {
-			client := rt.getU115ClientLocked()
-			if client == nil {
+			if rt.getU115ClientLocked() == nil {
 				return nil
 			}
-			p := storage.NewPan115ProviderWithGetter(func() *u115.Client {
-				rt.mu.Lock()
-				defer rt.mu.Unlock()
-				return rt.getU115ClientLocked()
-			})
-			// 根目录解析缓存（随 Provider 重建而失效）：GetFile 每次都要取根目录，
-			// 短 TTL 缓存避免重复解析消耗 QPS。
-			type rootResolveEntry struct {
-				id string
-				at time.Time
-			}
-			var (
-				rootCacheMu sync.Mutex
-				rootCache   = map[string]rootResolveEntry{}
-			)
-			p.LookupRoots = func() []string {
-				// 配置值为目录名/相对路径（兼容旧 ID），查询时解析为目录 ID；
-				// 延迟到 GetFile 时执行，此时 Provider 已初始化完毕。
-				// 只能走纯路径解析：回退 GetFile 会在 GetFile → managedLookupRoots
-				// → 本闭包间成环，名字解析失败（如 115 冷却）时无限递归栈溢出。
-				c := RT().GetConfig()
-				refs := []string{
-					c.ActiveRootFolderID(), c.ActiveScanFolderID(),
-					c.U115.RootFolderID, c.U115.DownloadFolderID,
-				}
-				rootCacheMu.Lock()
-				defer rootCacheMu.Unlock()
-				now := time.Now()
-				ids := make([]string, 0, len(refs))
-				for _, ref := range refs {
-					if e, ok := rootCache[ref]; ok && now.Sub(e.at) < time.Minute {
-						ids = append(ids, e.id)
-						continue
+			// 根目录引用（配置值为目录名/相对路径，兼容旧 ID）与解析缓存的装配
+			// 细节见 storage.NewPan115ManagedProvider
+			rt.provider = storage.NewPan115ManagedProvider(
+				func() *u115.Client {
+					rt.mu.Lock()
+					defer rt.mu.Unlock()
+					return rt.getU115ClientLocked()
+				},
+				func() []string {
+					c := RT().GetConfig()
+					return []string{
+						c.ActiveRootFolderID(), c.ActiveScanFolderID(),
+						c.U115.RootFolderID, c.U115.DownloadFolderID,
 					}
-					id := resolveFolderRefPathOnly(p, ref)
-					rootCache[ref] = rootResolveEntry{id: id, at: now}
-					ids = append(ids, id)
-				}
-				return ids
-			}
-			rt.provider = p
+				},
+			)
 		} else {
 			p, err := storage.GetProvider(cfg.ActiveStorageName(), cfg)
 			if err != nil {
