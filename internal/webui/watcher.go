@@ -344,10 +344,10 @@ func runTraktCron(stop <-chan struct{}) {
 			continue
 		}
 		readyWarned = false
-		if ready, halted := waitPlexReachable(stop); halted {
+		if ready, halted := RT().waitPlexReachable(stop); halted {
 			return
 		} else if ready {
-			TriggerTraktSync(triggerSchedule)
+			RT().TriggerTraktSync(triggerSchedule)
 		}
 	}
 }
@@ -473,8 +473,8 @@ func runRSSCron(stop <-chan struct{}) {
 // StartupBackgroundWatchers 启动全部后台任务：非 cron 类监听线程常驻，
 // cron 类调度由配置变更检测按开关启停（见 ApplyWatchSchedules）。
 func StartupBackgroundWatchers() {
-	ensureTraktSessionLoop()
-	ensureTraktSSELoop()
+	RT().ensureTraktSessionLoop()
+	RT().ensureTraktSSELoop()
 	ApplyWatchSchedules(RT().GetConfig())
 }
 

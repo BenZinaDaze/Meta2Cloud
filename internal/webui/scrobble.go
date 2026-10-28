@@ -20,7 +20,7 @@ import (
 const sessionMaxMisses = 2
 
 // displayOrKey 日志展示名：优先媒体标题，缺失时回退机器键。
-func displayOrKey(key watched.MediaKey, title string) string {
+func (rt *Runtime) displayOrKey(key watched.MediaKey, title string) string {
 	if title != "" {
 		return title
 	}
@@ -28,7 +28,7 @@ func displayOrKey(key watched.MediaKey, title string) string {
 }
 
 // sessionDisplayTitle 会话条目的可读标题。
-func sessionDisplayTitle(item *plexserver.Metadata) string {
+func (rt *Runtime) sessionDisplayTitle(item *plexserver.Metadata) string {
 	if item.Type == "episode" && item.GrandparentTitle != "" {
 		return fmt.Sprintf("%s S%02dE%02d「%s」", item.GrandparentTitle, item.ParentIndex, item.Index, item.Title)
 	}
@@ -36,15 +36,15 @@ func sessionDisplayTitle(item *plexserver.Metadata) string {
 }
 
 // sessionScrobbleGate 会话 scrobble 的公共门控：→Trakt 方向开关 + 媒体忽略。
-func sessionScrobbleGate(syncStore *store.TraktSyncStore, key watched.MediaKey) bool {
-	if !RT().GetConfig().Trakt.SyncToTrakt {
+func (rt *Runtime) sessionScrobbleGate(syncStore *store.TraktSyncStore, key watched.MediaKey) bool {
+	if !rt.GetConfig().Trakt.SyncToTrakt {
 		return false
 	}
 	return !syncStore.IsIgnoredKey(key)
 }
 
 // scrobbleIDs 组 scrobble 载荷 ID（映射表补全多 ID；无记录时回带键自身锚）。
-func scrobbleIDs(mapper watched.IDMapper, key watched.MediaKey) watched.MediaIDs {
+func (rt *Runtime) scrobbleIDs(mapper watched.IDMapper, key watched.MediaKey) watched.MediaIDs {
 	ids := mapper.IDsOf(key)
 	if ids.TMDB == 0 && ids.TVDB == 0 && ids.IMDB == "" {
 		if key.TVDBID > 0 {
@@ -57,7 +57,7 @@ func scrobbleIDs(mapper watched.IDMapper, key watched.MediaKey) watched.MediaIDs
 }
 
 // scrobbleProgress 播放进度百分比（0~100）；时长未知返回 false（无法上报）。
-func scrobbleProgress(offsetMS, durationMS int64) (float64, bool) {
+func (rt *Runtime) scrobbleProgress(offsetMS, durationMS int64) (float64, bool) {
 	if durationMS <= 0 {
 		return 0, false
 	}
@@ -95,7 +95,7 @@ var (
 	sessionScrobbleByID = map[string]*sessionScrobble{}
 )
 
-func scrobbleStateFor(sessionKey string) *sessionScrobble {
+func (rt *Runtime) scrobbleStateFor(sessionKey string) *sessionScrobble {
 	sessionScrobbleMu.Lock()
 	defer sessionScrobbleMu.Unlock()
 	st := sessionScrobbleByID[sessionKey]
@@ -106,7 +106,7 @@ func scrobbleStateFor(sessionKey string) *sessionScrobble {
 	return st
 }
 
-func dropScrobbleState(sessionKey string) {
+func (rt *Runtime) dropScrobbleState(sessionKey string) {
 	sessionScrobbleMu.Lock()
 	delete(sessionScrobbleByID, sessionKey)
 	sessionScrobbleMu.Unlock()
@@ -116,8 +116,8 @@ func dropScrobbleState(sessionKey string) {
 // 由 finishSession 负责（计次与否由 Trakt 服务端裁定）。Trakt 的 pause 仅
 // 接受 1%~80% 进度：<1% 尚无进度可存（跳过上报），≥80% 官方语义为「应改用
 // stop」，按已看完收尾处理。
-func scrobbleTransition(source string, syncStore *store.TraktSyncStore, traktClient *trakt.Client, mapper watched.IDMapper, key watched.MediaKey, title, state string, progress float64, sessionKey string) {
-	st := scrobbleStateFor(sessionKey)
+func (rt *Runtime) scrobbleTransition(source string, syncStore *store.TraktSyncStore, traktClient *trakt.Client, mapper watched.IDMapper, key watched.MediaKey, title, state string, progress float64, sessionKey string) {
+	st := rt.scrobbleStateFor(sessionKey)
 	switch state {
 	case "playing":
 		if st.lastSent == "playing" {
@@ -128,7 +128,7 @@ func scrobbleTransition(source string, syncStore *store.TraktSyncStore, traktCli
 		if st.lastSent == "finished" && progress >= 80 {
 			return
 		}
-		if scrobbleCall(mapper, traktClient, trakt.ScrobbleStart, key, title, progress) {
+		if rt.scrobbleCall(mapper, traktClient, trakt.ScrobbleStart, key, title, progress) {
 			st.lastSent = "playing"
 		}
 	case "paused":
@@ -140,13 +140,13 @@ func scrobbleTransition(source string, syncStore *store.TraktSyncStore, traktCli
 			// Trakt 不接受 >80% 的 pause（官方提示改用 stop）：进度已过计次线，
 			// 视同看完直接按收尾上报；置终态避免暂停期间后续 paused 事件反复收尾
 			st.lastSent = "finished"
-			finishSession(syncStore, traktClient, mapper, key, title, source, progress/100, sessionKey)
+			rt.finishSession(syncStore, traktClient, mapper, key, title, source, progress/100, sessionKey)
 		case progress < 1:
 			// Trakt 至少要求 1% 才接受 pause：刚开播尚无进度可存，本地记为已暂停
 			// 即可（否则暂停期间每个事件都会重试同一失败），恢复播放仍会正常上报 start
 			st.lastSent = "paused"
 		default:
-			if scrobbleCall(mapper, traktClient, trakt.ScrobblePause, key, title, progress) {
+			if rt.scrobbleCall(mapper, traktClient, trakt.ScrobblePause, key, title, progress) {
 				st.lastSent = "paused"
 			}
 		}
@@ -155,13 +155,13 @@ func scrobbleTransition(source string, syncStore *store.TraktSyncStore, traktCli
 
 // scrobbleCall 单次 start/pause 上报（仅在状态跃迁时调用，量级为每次观看
 // 个位数条）：成功记 INFO 便于观察上报轨迹，失败记 WARNING（下个事件自然重试）。
-func scrobbleCall(mapper watched.IDMapper, traktClient *trakt.Client, action trakt.ScrobbleAction, key watched.MediaKey, title string, progress float64) bool {
-	display := displayOrKey(key, title)
+func (rt *Runtime) scrobbleCall(mapper watched.IDMapper, traktClient *trakt.Client, action trakt.ScrobbleAction, key watched.MediaKey, title string, progress float64) bool {
+	display := rt.displayOrKey(key, title)
 	actionName := "开始记录"
 	if action == trakt.ScrobblePause {
 		actionName = "暂停记录"
 	}
-	if _, err := scrobbleDoWith(mapper, traktClient, action, key, progress); err != nil {
+	if _, err := rt.scrobbleDoWith(mapper, traktClient, action, key, progress); err != nil {
 		appLog("trakt", "session_scrobble_failed", "WARNING",
 			fmt.Sprintf("播放记录推送 Trakt 失败（%s %s）：%v", actionName, display, err), nil)
 		return false
@@ -178,10 +178,10 @@ func scrobbleCall(mapper watched.IDMapper, traktClient *trakt.Client, action tra
 }
 
 // scrobbleDoWith 组多 ID 载荷并执行 scrobble（mapper 为 nil 时用键自身锚）。
-func scrobbleDoWith(mapper watched.IDMapper, traktClient *trakt.Client, action trakt.ScrobbleAction, key watched.MediaKey, progress float64) (trakt.ScrobbleResult, error) {
+func (rt *Runtime) scrobbleDoWith(mapper watched.IDMapper, traktClient *trakt.Client, action trakt.ScrobbleAction, key watched.MediaKey, progress float64) (trakt.ScrobbleResult, error) {
 	var ids watched.MediaIDs
 	if mapper != nil {
-		ids = scrobbleIDs(mapper, key)
+		ids = rt.scrobbleIDs(mapper, key)
 	} else if key.TVDBID > 0 {
 		ids = watched.MediaIDs{TVDB: key.TVDBID}
 	} else {
@@ -204,8 +204,8 @@ func scrobbleDoWith(mapper watched.IDMapper, traktClient *trakt.Client, action t
 // 观看状态最终由定时全量同步兜底。
 // 不清理 scrobble 上报态（调用方在移除会话时 dropScrobbleState），以便 ≥80% 暂停
 // 经由此收尾后终态标记仍生效。
-func finishSession(syncStore *store.TraktSyncStore, traktClient *trakt.Client, mapper watched.IDMapper, key watched.MediaKey, title, source string, progress float64, sessionKey string) {
-	if (key.TMDBID == 0 && key.TVDBID == 0) || !sessionScrobbleGate(syncStore, key) {
+func (rt *Runtime) finishSession(syncStore *store.TraktSyncStore, traktClient *trakt.Client, mapper watched.IDMapper, key watched.MediaKey, title, source string, progress float64, sessionKey string) {
+	if (key.TMDBID == 0 && key.TVDBID == 0) || !rt.sessionScrobbleGate(syncStore, key) {
 		return
 	}
 	item := syncengine.RunItem{Key: key, Title: title, Direction: "to_trakt", Action: "watched"}
@@ -214,14 +214,14 @@ func finishSession(syncStore *store.TraktSyncStore, traktClient *trakt.Client, m
 	}
 	now := time.Now().Unix()
 	// 记录层沿用 0~1 进度分数；scrobble API 要求 0~100 百分比
-	res, err := scrobbleDoWith(mapper, traktClient, trakt.ScrobbleStop, key, progress*100)
+	res, err := rt.scrobbleDoWith(mapper, traktClient, trakt.ScrobbleStop, key, progress*100)
 	switch {
 	case err == nil && res.Action == "scrobble":
 		_ = syncStore.UpdateTraktWatched(key, now, now)
 		_ = syncStore.SetTraktPushedAt(now) // 供下轮全量同步的过期读取防护
 		record(true, "")
 		appLog("trakt", "session_pushed", "SUCCESS",
-			fmt.Sprintf("播放已记录到 Trakt：%s（进度 %.0f%%）", displayOrKey(key, title), progress*100), nil)
+			fmt.Sprintf("播放已记录到 Trakt：%s（进度 %.0f%%）", rt.displayOrKey(key, title), progress*100), nil)
 		// 推送成功即 Trakt 授权有效：会话推送是独立于全量同步的恢复上报点
 		NotifyServiceHealth("Trakt", true, "")
 	case err == nil:
@@ -237,14 +237,14 @@ func finishSession(syncStore *store.TraktSyncStore, traktClient *trakt.Client, m
 		_ = syncStore.UpdateTraktWatched(key, watchedAt, now)
 		_ = syncStore.SetTraktPushedAt(now)
 		appLog("trakt", "session_pushed", "INFO",
-			fmt.Sprintf("Trakt 近期已记录过该内容，本次不重复计入：%s", displayOrKey(key, title)), nil)
+			fmt.Sprintf("Trakt 近期已记录过该内容，本次不重复计入：%s", rt.displayOrKey(key, title)), nil)
 	case errors.As(err, new(*trakt.ScrobbleIgnoredError)):
 		// 422：进度不足等被服务端忽略（如刚开播即停）——静默
 	default:
 		_ = syncStore.MarkSessionPushFailure(key, now)
 		record(false, err.Error())
 		appLog("trakt", "session_push_failed", "WARNING",
-			fmt.Sprintf("播放记录推送 Trakt 失败（%s）：%v", displayOrKey(key, title), err), nil)
+			fmt.Sprintf("播放记录推送 Trakt 失败（%s）：%v", rt.displayOrKey(key, title), err), nil)
 		if errors.Is(err, trakt.ErrUnauthorized) {
 			NotifyServiceHealth("Trakt", false, "播放上报认证失败："+err.Error())
 		}
@@ -255,18 +255,18 @@ func finishSession(syncStore *store.TraktSyncStore, traktClient *trakt.Client, m
 // 跟踪：以观察行的最大进度上报 stop（已收尾过则不重复），随后清空观察行
 // 与上报状态，新条目重新解析身份、进度从零跟踪——上一集的进度不会带到
 // 下一集。切换后到 playing 前的 offset 守卫（awaitPlay）由调用方置位。
-func finishSwitchedSession(syncStore *store.TraktSyncStore, traktClient *trakt.Client, prev *store.TraktSyncSession, source, sessionKey string) {
-	if prev.TmdbID > 0 && scrobbleStateFor(sessionKey).lastSent != "finished" {
-		finishSession(syncStore, traktClient, syncStore, prev.Key(), derefString(prev.Title), source, prev.MaxProgress, sessionKey)
+func (rt *Runtime) finishSwitchedSession(syncStore *store.TraktSyncStore, traktClient *trakt.Client, prev *store.TraktSyncSession, source, sessionKey string) {
+	if prev.TmdbID > 0 && rt.scrobbleStateFor(sessionKey).lastSent != "finished" {
+		rt.finishSession(syncStore, traktClient, syncStore, prev.Key(), rt.derefString(prev.Title), source, prev.MaxProgress, sessionKey)
 	}
-	dropScrobbleState(sessionKey)
+	rt.dropScrobbleState(sessionKey)
 	syncStore.DeleteSyncSession(sessionKey)
 }
 
 // pollPlexSessionsOnce 单次会话轮询（SSE 离线时的兜底）：
 // 首见会话上报 start；连续缺席的会话以最后已知进度 stop 收尾。
-func pollPlexSessionsOnce() {
-	cfg := RT().GetConfig()
+func (rt *Runtime) pollPlexSessionsOnce() {
+	cfg := rt.GetConfig()
 	nowStr := utcNowISO()
 	traktSessionWatcher.mu.Lock()
 	traktSessionWatcher.lastPolledAt = &nowStr
@@ -276,27 +276,27 @@ func pollPlexSessionsOnce() {
 	// 纯兜底策略：SSE 在线时不并行轮询——实时事件已覆盖会话观察与上报，
 	// 仅在 SSE 未连接（开关关闭/断线窗口/旧版 PMS 无端点）时才主动轮询。
 	// 心跳簿记已在上方更新，watcher 存活状态不受影响。
-	if sseConnected() {
+	if rt.sseConnected() {
 		return
 	}
 	if !cfg.Trakt.SyncToTrakt || !cfg.IsPlexReady() || !cfg.IsTraktReady() {
 		return
 	}
-	if authorized, _ := traktOauthStatusPayload()["authorized"].(bool); !authorized {
+	if authorized, _ := rt.traktOauthStatusPayload()["authorized"].(bool); !authorized {
 		return
 	}
 	if TraktSyncRunning() {
 		return // 避免与全量同步交叉写 Trakt
 	}
-	plexClient := RT().GetPlexClient()
+	plexClient := rt.GetPlexClient()
 	if plexClient == nil {
 		return
 	}
-	traktClient := RT().GetTraktClient()
+	traktClient := rt.GetTraktClient()
 	if traktClient == nil {
 		return
 	}
-	syncStore := RT().GetTraktSyncStore()
+	syncStore := rt.GetTraktSyncStore()
 	sessions, err := plexClient.Sessions()
 	if err != nil {
 		msg := fmt.Sprintf("%v", err)
@@ -312,7 +312,7 @@ func pollPlexSessionsOnce() {
 	NotifyServiceHealth("Plex", true, "")
 
 	seen := map[string]bool{}
-	source := plexserver.NewSource(plexClient, buildTitleIndex(), syncStore)
+	source := plexserver.NewSource(plexClient, rt.buildTitleIndex(), syncStore)
 	for i := range sessions {
 		sess := &sessions[i]
 		seen[sess.SessionKey] = true
@@ -322,15 +322,15 @@ func pollPlexSessionsOnce() {
 		// 跃迁；轮询间隔 ≥ 切换过渡窗，下一轮快照 offset 已复位
 		switched := false
 		if prev := syncStore.GetSyncSession(sess.SessionKey); prev != nil && prev.PlexRef != "" && prev.PlexRef != sess.RatingKey {
-			finishSwitchedSession(syncStore, traktClient, prev, "poll", sess.SessionKey)
+			rt.finishSwitchedSession(syncStore, traktClient, prev, "poll", sess.SessionKey)
 			switched = true
 		}
 
-		key, keyOK := resolveSessionKey(syncStore, source, sess)
-		pct, progressOK := scrobbleProgress(int64(sess.ViewOffset), int64(sess.Duration))
-		title := sessionDisplayTitle(sess)
+		key, keyOK := rt.resolveSessionKey(syncStore, source, sess)
+		pct, progressOK := rt.scrobbleProgress(int64(sess.ViewOffset), int64(sess.Duration))
+		title := rt.sessionDisplayTitle(sess)
 		maxProgress := func() float64 {
-			f, _ := scrobbleProgress(int64(sess.ViewOffset), int64(sess.Duration))
+			f, _ := rt.scrobbleProgress(int64(sess.ViewOffset), int64(sess.Duration))
 			return f / 100
 		}()
 		if switched {
@@ -353,13 +353,13 @@ func pollPlexSessionsOnce() {
 			row.Episode = key.Episode
 		}
 		syncStore.UpsertSyncSession(row)
-		if keyOK && progressOK && !switched && sessionScrobbleGate(syncStore, key) {
-			scrobbleTransition("poll", syncStore, traktClient, syncStore, key, title, "playing", pct, sess.SessionKey)
+		if keyOK && progressOK && !switched && rt.sessionScrobbleGate(syncStore, key) {
+			rt.scrobbleTransition("poll", syncStore, traktClient, syncStore, key, title, "playing", pct, sess.SessionKey)
 		}
 	}
 
 	// 缺席检测：连续 2 次未见 → 以最后已知进度 stop 收尾并移除
-	reapAbsentSessions(syncStore, traktClient, seen)
+	rt.reapAbsentSessions(syncStore, traktClient, seen)
 }
 
 // sessionStaleAge 会话观察行超过该时长未刷新即视为僵尸（上一段进程生命
@@ -369,7 +369,7 @@ const sessionStaleAge = 10 * time.Minute
 
 // sessionRowStale 会话观察行是否已过期。时间不可解析时保守按未过期处理
 // （走原缺席计数路径，行为与修复前一致）。
-func sessionRowStale(row store.TraktSyncSession) bool {
+func (rt *Runtime) sessionRowStale(row store.TraktSyncSession) bool {
 	t, err := time.Parse(time.RFC3339, row.UpdatedAt)
 	if err != nil {
 		return false
@@ -382,28 +382,28 @@ func sessionRowStale(row store.TraktSyncSession) bool {
 // 「刚停止」推送，否则重启会把昨天看过的集再记一次 Trakt（2026-10-26
 // 实测事故：docker 重启即推送 tv:312266:S01E09 进度 99%）；确有未推送的
 // 观看由定时全量同步兜底。新鲜行连续缺席 2 轮后以最后已知进度收尾。
-func reapAbsentSessions(syncStore *store.TraktSyncStore, traktClient *trakt.Client, seen map[string]bool) {
+func (rt *Runtime) reapAbsentSessions(syncStore *store.TraktSyncStore, traktClient *trakt.Client, seen map[string]bool) {
 	for _, row := range syncStore.ListSyncSessions() {
 		if seen[row.SessionKey] {
 			continue
 		}
-		if sessionRowStale(row) {
-			dropScrobbleState(row.SessionKey)
+		if rt.sessionRowStale(row) {
+			rt.dropScrobbleState(row.SessionKey)
 			syncStore.DeleteSyncSession(row.SessionKey)
 			appLog("trakt", "session_stale_dropped", "INFO",
 				fmt.Sprintf("已忽略一段重启前遗留的播放会话（%s，最后更新于 %s），不推送播放记录",
-					displayOrKey(row.Key(), derefString(row.Title)), row.UpdatedAt), nil)
+					rt.displayOrKey(row.Key(), rt.derefString(row.Title)), row.UpdatedAt), nil)
 			continue
 		}
 		if misses := syncStore.IncrementSessionMiss(row.SessionKey); misses >= sessionMaxMisses {
-			finishSession(syncStore, traktClient, syncStore, row.Key(), derefString(row.Title), "poll", row.MaxProgress, row.SessionKey)
-			dropScrobbleState(row.SessionKey)
+			rt.finishSession(syncStore, traktClient, syncStore, row.Key(), rt.derefString(row.Title), "poll", row.MaxProgress, row.SessionKey)
+			rt.dropScrobbleState(row.SessionKey)
 			syncStore.DeleteSyncSession(row.SessionKey)
 		}
 	}
 }
 
-func derefString(s *string) string {
+func (rt *Runtime) derefString(s *string) string {
 	if s == nil {
 		return ""
 	}

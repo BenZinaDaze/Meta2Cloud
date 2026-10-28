@@ -548,7 +548,7 @@ func (rt *Runtime) getPlexClientLocked() *plexserver.Client {
 		if !cfg.IsPlexReady() {
 			return nil
 		}
-		auth := ensurePlexAuthLocked(rt)
+		auth := rt.ensurePlexAuthLocked()
 		if auth == nil {
 			return nil
 		}

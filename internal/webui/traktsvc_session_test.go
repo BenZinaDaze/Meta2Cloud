@@ -123,27 +123,27 @@ func TestSessionScrobbleFlowPlayingToStopped(t *testing.T) {
 	key := watched.MediaKey{Type: "tv", TMDBID: 335790, Season: 1, Episode: 2}
 
 	// 播放开始（25%）→ start
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "playing", SessionKey: "s1", RatingKey: "856",
 		ViewOffsetMS: 360000, DurationMS: 1440000,
 	})
 	// 播放中的周期性事件（30%）→ 不应重复上报
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "playing", SessionKey: "s1", RatingKey: "856",
 		ViewOffsetMS: 432000, DurationMS: 1440000,
 	})
 	// 暂停 → pause
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "paused", SessionKey: "s1", RatingKey: "856",
 		ViewOffsetMS: 720000, DurationMS: 1440000,
 	})
 	// 恢复播放 → start
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "playing", SessionKey: "s1", RatingKey: "856",
 		ViewOffsetMS: 1080000, DurationMS: 1440000,
 	})
 	// 停止（92.5%，叠加历史最大进度不变）→ stop，服务端判定计次
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, stoppedEvent("s1", 1332000))
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, stoppedEvent("s1", 1332000))
 
 	paths, bodies := cap.snapshot()
 	want := []string{"/scrobble/start", "/scrobble/pause", "/scrobble/start", "/scrobble/stop"}
@@ -194,11 +194,11 @@ func TestSessionScrobbleStopDuplicate409(t *testing.T) {
 		_, _ = w.Write([]byte(`{"action":"start","progress":50}`))
 	})
 
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "playing", SessionKey: "s2", RatingKey: "856",
 		ViewOffsetMS: 720000, DurationMS: 1440000,
 	})
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, stoppedEvent("s2", 1325000))
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, stoppedEvent("s2", 1325000))
 
 	key := watched.MediaKey{Type: "tv", TMDBID: 335790, Season: 1, Episode: 2}
 	sh, ok, _ := syncStore.GetShadow(key)
@@ -228,11 +228,11 @@ func TestSessionScrobbleStopIgnored422(t *testing.T) {
 	})
 
 	// 刚开播即停（进度 <1%）→ 422 忽略，不计次不落记录
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "playing", SessionKey: "s3", RatingKey: "856",
 		ViewOffsetMS: 0, DurationMS: 1440000,
 	})
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, stoppedEvent("s3", 0))
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, stoppedEvent("s3", 0))
 
 	if _, total, _ := syncStore.ListSyncRuns(10, 0); total != 0 {
 		t.Fatalf("422 忽略不应落记录：total=%d", total)
@@ -251,11 +251,11 @@ func TestSessionScrobbleStopErrorBackoff(t *testing.T) {
 		_, _ = w.Write([]byte(`{"action":"start","progress":50}`))
 	})
 
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "playing", SessionKey: "s4", RatingKey: "856",
 		ViewOffsetMS: 1080000, DurationMS: 1440000,
 	})
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, stoppedEvent("s4", 1325000))
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, stoppedEvent("s4", 1325000))
 
 	key := watched.MediaKey{Type: "tv", TMDBID: 335790, Season: 1, Episode: 2}
 	// 失败落退避标记（引擎兜底重试用）+ 失败记录
@@ -276,31 +276,31 @@ func TestSessionScrobblePauseBeyond80Finishes(t *testing.T) {
 	syncStore, plexClient, traktClient, cap := newSessionTestEnv(t, nil)
 
 	// 播放到 75% → start
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "playing", SessionKey: "s5", RatingKey: "856",
 		ViewOffsetMS: 1080000, DurationMS: 1440000,
 	})
 	// 片尾暂停（85%）→ 不发 pause，直接按收尾上报 stop
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "paused", SessionKey: "s5", RatingKey: "856",
 		ViewOffsetMS: 1224000, DurationMS: 1440000,
 	})
 	// 暂停期间后续 paused 事件（进度不变）→ 不应反复收尾
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "paused", SessionKey: "s5", RatingKey: "856",
 		ViewOffsetMS: 1224000, DurationMS: 1440000,
 	})
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "paused", SessionKey: "s5", RatingKey: "856",
 		ViewOffsetMS: 1230000, DurationMS: 1440000,
 	})
 	// 片尾段恢复播放（90%）→ 不应再上报 start
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "playing", SessionKey: "s5", RatingKey: "856",
 		ViewOffsetMS: 1296000, DurationMS: 1440000,
 	})
 	// 停止 → 会话收尾（实际会命中服务端去重 409，此处仅验证调用序列）
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, stoppedEvent("s5", 1296000))
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, stoppedEvent("s5", 1296000))
 
 	paths, bodies := cap.snapshot()
 	want := []string{"/scrobble/start", "/scrobble/stop", "/scrobble/stop"}
@@ -333,21 +333,21 @@ func TestSessionScrobblePauseUnder1PercentSkipped(t *testing.T) {
 	syncStore, plexClient, traktClient, cap := newSessionTestEnv(t, nil)
 
 	// 刚开播（0.2%）→ start
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "playing", SessionKey: "s6", RatingKey: "856",
 		ViewOffsetMS: 2880, DurationMS: 1440000,
 	})
 	// 立即暂停（0.5%、0.8%）→ 无进度可存，跳过上报且不重试
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "paused", SessionKey: "s6", RatingKey: "856",
 		ViewOffsetMS: 7200, DurationMS: 1440000,
 	})
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "paused", SessionKey: "s6", RatingKey: "856",
 		ViewOffsetMS: 11520, DurationMS: 1440000,
 	})
 	// 恢复播放（5%）→ 正常上报 start
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "playing", SessionKey: "s6", RatingKey: "856",
 		ViewOffsetMS: 72000, DurationMS: 1440000,
 	})
@@ -375,7 +375,7 @@ func TestSessionScrobbleStoppedWithoutTrackedRowSkipped(t *testing.T) {
 	syncStore, plexClient, traktClient, cap := newSessionTestEnv(t, nil)
 
 	// 会话首个事件就是 stopped（从未见过开播）→ 不上报
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "stopped", SessionKey: "s9", RatingKey: "856",
 		ViewOffsetMS: 1425600, DurationMS: 1440000,
 	})
@@ -384,14 +384,14 @@ func TestSessionScrobbleStoppedWithoutTrackedRowSkipped(t *testing.T) {
 	}
 
 	// 正常播放 → stopped → stop 收尾一次
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "playing", SessionKey: "s9", RatingKey: "856",
 		ViewOffsetMS: 360000, DurationMS: 1440000,
 	})
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, stoppedEvent("s9", 1332000))
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, stoppedEvent("s9", 1332000))
 
 	// 会话已收尾（观察行已删）后再来一条重复 stopped → 不再收尾
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, stoppedEvent("s9", 1332000))
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, stoppedEvent("s9", 1332000))
 
 	paths, bodies := cap.snapshot()
 	want := []string{"/scrobble/start", "/scrobble/stop"}
@@ -418,37 +418,37 @@ func TestSessionScrobblePlayQueueSwitchStaleOffset(t *testing.T) {
 	syncStore, plexClient, traktClient, cap := newSessionTestEnv(t, nil)
 
 	// E02 播放（92%）→ start
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "playing", SessionKey: "s10", RatingKey: "856",
 		ViewOffsetMS: 1325000, DurationMS: 1440000,
 	})
 	// E02 停止（98.6%）→ stop 收尾，观察行清理
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "stopped", SessionKey: "s10", RatingKey: "856",
 		ViewOffsetMS: 1420000, DurationMS: 1440000,
 	})
 	// 新 sessionKey 以「旧条目 + 旧最终 offset」诞生（抓包 17:30:40.333）
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "paused", SessionKey: "s10", RatingKey: "856",
 		ViewOffsetMS: 1420000, DurationMS: 1440000,
 	})
 	// ratingKey 切到 E03，buffering 仍带旧 offset（抓包 17:30:48.124）
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "buffering", SessionKey: "s10", RatingKey: "857",
 		ViewOffsetMS: 1420090, DurationMS: 1440000,
 	})
 	// buffering 重发（抓包 17:30:50.071），offset 未复位
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "buffering", SessionKey: "s10", RatingKey: "857",
 		ViewOffsetMS: 1420090, DurationMS: 1440000,
 	})
 	// E03 开播，offset 复位为 0（抓包 17:30:51.684）
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "playing", SessionKey: "s10", RatingKey: "857",
 		ViewOffsetMS: 0, DurationMS: 1440000,
 	})
 	// E03 播了 4 秒停止（0.24%，抓包 17:30:55.537）→ 只能按 0.24% 收尾
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "stopped", SessionKey: "s10", RatingKey: "857",
 		ViewOffsetMS: 3438, DurationMS: 1440000,
 	})
@@ -497,32 +497,32 @@ func TestSessionScrobbleCleanSwitchUnaffected(t *testing.T) {
 	syncStore, plexClient, traktClient, cap := newSessionTestEnv(t, nil)
 
 	// E02 播放（25%）→ start
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "playing", SessionKey: "s11", RatingKey: "856",
 		ViewOffsetMS: 360000, DurationMS: 1440000,
 	})
 	// 播放中周期性事件（92%）→ 不重复上报
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "playing", SessionKey: "s11", RatingKey: "856",
 		ViewOffsetMS: 1325000, DurationMS: 1440000,
 	})
 	// E02 停止（93%，真实最终 offset）→ stop 收尾
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "stopped", SessionKey: "s11", RatingKey: "856",
 		ViewOffsetMS: 1340000, DurationMS: 1440000,
 	})
 	// E03 以全新 sessionKey 开播（offset 干净复位为 105ms，抓包 17:16:07.035）
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "playing", SessionKey: "s12", RatingKey: "857",
 		ViewOffsetMS: 105, DurationMS: 1440000,
 	})
 	// E03 暂停（3%）→ pause
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "paused", SessionKey: "s12", RatingKey: "857",
 		ViewOffsetMS: 43356, DurationMS: 1440000,
 	})
 	// E03 停止（3%）→ 按自身进度收尾（真实 Trakt 会按进度不足忽略）
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "stopped", SessionKey: "s12", RatingKey: "857",
 		ViewOffsetMS: 43356, DurationMS: 1440000,
 	})
@@ -569,7 +569,7 @@ func TestSessionScrobbleTVDBAnchoredEndToEnd(t *testing.T) {
 		t.Fatal("tvdb 锚应可成键")
 	}
 	key := watched.MediaKey{Type: "tv", TVDBID: 999, Season: 1, Episode: 1}
-	finishSession(syncStore, traktClient, syncStore, key, "剧 X", "sse", 0.9, "sx")
+	RT().finishSession(syncStore, traktClient, syncStore, key, "剧 X", "sse", 0.9, "sx")
 	paths, bodies := cap.snapshot()
 	if len(paths) == 0 || paths[len(paths)-1] != "/scrobble/stop" {
 		t.Fatalf("应发出 stop：%v", paths)
@@ -609,7 +609,7 @@ func TestSessionScrobbleUnresolvedMediaLogsOnce(t *testing.T) {
 
 	// 同一会话三条 playing 事件（Plex 每 ~10s 重发）
 	for i := 0; i < 3; i++ {
-		handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+		RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 			State: "playing", SessionKey: "unres-1", RatingKey: "856", ViewOffsetMS: 100000,
 		})
 	}
@@ -652,7 +652,7 @@ func TestSessionPollStaleRowDroppedWithoutPush(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reapAbsentSessions(syncStore, traktClient, map[string]bool{})
+	RT().reapAbsentSessions(syncStore, traktClient, map[string]bool{})
 
 	paths, bodies := cap.snapshot()
 	if len(paths) != 1 || paths[0] != "/scrobble/stop" {
@@ -686,16 +686,16 @@ func TestSessionScrobbleStoppedOffsetCappedByObserved(t *testing.T) {
 	syncStore, plexClient, traktClient, cap := newSessionTestEnv(t, nil)
 
 	// 播放 1% 后暂停（ATV 随后休眠，28 分钟无事件）
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "playing", SessionKey: "sk-atv", RatingKey: "856",
 		ViewOffsetMS: 4663, DurationMS: 442475,
 	})
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "paused", SessionKey: "sk-atv", RatingKey: "856",
 		ViewOffsetMS: 4663, DurationMS: 442475,
 	})
 	// 终止：报文 offset=408426ms（上一集时长）
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "stopped", SessionKey: "sk-atv", RatingKey: "856", ViewOffsetMS: 408426,
 	})
 
@@ -718,11 +718,11 @@ func TestSessionScrobbleStoppedOffsetPlayingStateTrusted(t *testing.T) {
 	syncStore, plexClient, traktClient, cap := newSessionTestEnv(t, nil)
 
 	// 持续播放至 75%，最后一个周期事件后正常停止于 92.5%
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "playing", SessionKey: "sk-ok", RatingKey: "856",
 		ViewOffsetMS: 1080000, DurationMS: 1440000,
 	})
-	handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
+	RT().handlePlexPlaybackNotification(plexClient, traktClient, syncStore, plexserver.PlaybackNotification{
 		State: "stopped", SessionKey: "sk-ok", RatingKey: "856", ViewOffsetMS: 1332000, // 92.5%
 	})
 

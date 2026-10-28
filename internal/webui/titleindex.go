@@ -38,12 +38,12 @@ func titleIndexKey(mediaType, normTitle string, year int64) string {
 }
 
 // buildTitleIndex 从 LibraryStore 构建反查索引（只读，不写入 library.db）。
-func buildTitleIndex() watched.TitleIndex {
+func (rt *Runtime) buildTitleIndex() watched.TitleIndex {
 	idx := &titleIndex{
 		byExact: map[string]watched.MediaKey{},
 		byTitle: map[string][]identityEntry{},
 	}
-	libStore := RT().GetLibraryStore()
+	libStore := rt.GetLibraryStore()
 	add := func(mediaType, title, yearStr string, tmdbID int64) {
 		if mediaType == "" || title == "" || tmdbID <= 0 {
 			return

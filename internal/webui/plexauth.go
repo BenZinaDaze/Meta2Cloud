@@ -17,35 +17,35 @@ type plexAuthJSON struct {
 	CreatedAt        int64  `json:"created_at"`
 }
 
-func plexAuthPath() string {
-	return RT().resolveConfigPath(RT().GetConfig().Plex.TokenJSON)
+func (rt *Runtime) plexAuthPath() string {
+	return rt.resolveConfigPath(rt.GetConfig().Plex.TokenJSON)
 }
 
-func loadPlexAuth(path string) (*plexAuthJSON, error) {
+func (rt *Runtime) loadPlexAuth(path string) (*plexAuthJSON, error) {
 	return loadJSONSession[plexAuthJSON](path)
 }
 
-func savePlexAuth(path string, auth *plexAuthJSON) error {
+func (rt *Runtime) savePlexAuth(path string, auth *plexAuthJSON) error {
 	return saveJSONSession(path, auth)
 }
 
 // ensurePlexAuthLocked 确保 client_identifier 存在（需已持 rt.mu；只做文件 I/O）。
-func ensurePlexAuthLocked(rt *Runtime) *plexAuthJSON {
+func (rt *Runtime) ensurePlexAuthLocked() *plexAuthJSON {
 	cfg := rt.getConfigLocked()
 	tokenPath := cfg.Plex.TokenJSON
 	if !filepath.IsAbs(tokenPath) {
 		tokenPath = filepath.Join(rt.RootDir, tokenPath)
 	}
-	if auth, err := loadPlexAuth(tokenPath); err == nil && auth.ClientIdentifier != "" {
+	if auth, err := rt.loadPlexAuth(tokenPath); err == nil && auth.ClientIdentifier != "" {
 		return auth
 	}
 	identifier := generateClientIdentifier()
 	auth := &plexAuthJSON{ClientIdentifier: identifier, CreatedAt: time.Now().Unix()}
-	if old, err := loadPlexAuth(tokenPath); err == nil {
+	if old, err := rt.loadPlexAuth(tokenPath); err == nil {
 		auth.AuthToken = old.AuthToken
 		auth.CreatedAt = old.CreatedAt
 	}
-	if err := savePlexAuth(tokenPath, auth); err != nil {
+	if err := rt.savePlexAuth(tokenPath, auth); err != nil {
 		return nil
 	}
 	return auth
@@ -62,15 +62,13 @@ func generateClientIdentifier() string {
 
 // ── 运行时缓存失效 ─────────────────────────────────────────
 
-func invalidateTraktRuntimeCache() {
-	rt := RT()
+func (rt *Runtime) invalidateTraktRuntimeCache() {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	rt.traktClient = nil
 }
 
-func invalidatePlexRuntimeCache() {
-	rt := RT()
+func (rt *Runtime) invalidatePlexRuntimeCache() {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	rt.plexClient = nil

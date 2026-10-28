@@ -33,7 +33,7 @@ func TraktSyncRunning() bool {
 }
 
 // TriggerTraktSync 异步触发一轮同步；已在进行中返回 false。
-func TriggerTraktSync(trigger string) bool {
+func (rt *Runtime) TriggerTraktSync(trigger string) bool {
 	traktSyncState.mu.Lock()
 	if traktSyncState.running {
 		traktSyncState.mu.Unlock()
@@ -50,37 +50,37 @@ func TriggerTraktSync(trigger string) bool {
 			traktSyncState.running = false
 			traktSyncState.mu.Unlock()
 		}()
-		runTraktSync(trigger)
+		rt.runTraktSync(trigger)
 	}()
 	return true
 }
 
 // traktSyncLogger 引擎日志回调 → appLog。
-func traktSyncLogger(level, message string, details map[string]any) {
+func (rt *Runtime) traktSyncLogger(level, message string, details map[string]any) {
 	appLog("trakt", "sync", level, message, details)
 }
 
 // runTraktSync 构建引擎并执行一轮同步。
-func runTraktSync(trigger string) {
-	cfg := RT().GetConfig()
-	traktClient := RT().GetTraktClient()
+func (rt *Runtime) runTraktSync(trigger string) {
+	cfg := rt.GetConfig()
+	traktClient := rt.GetTraktClient()
 	if traktClient == nil {
 		appLog("trakt", "sync_skipped", "WARNING", "Trakt 客户端不可用（未配置或未授权），跳过同步", nil)
 		return
 	}
-	plexClient := RT().GetPlexClient()
+	plexClient := rt.GetPlexClient()
 	if plexClient == nil {
 		appLog("trakt", "sync_skipped", "WARNING", "Plex 未配置服务器地址或未授权，跳过同步", nil)
 		return
 	}
-	syncStore := RT().GetTraktSyncStore()
+	syncStore := rt.GetTraktSyncStore()
 	engine := &syncengine.Engine{
-		Playback: plexserver.NewSource(plexClient, buildTitleIndex(), syncStore),
+		Playback: plexserver.NewSource(plexClient, rt.buildTitleIndex(), syncStore),
 		Trakt:    trakt.NewTraktSource(traktClient, syncStore, syncStore),
 		Store:    syncStore,
 		ToPlex:   cfg.Trakt.SyncToPlex,
 		ToTrakt:  cfg.Trakt.SyncToTrakt,
-		Log:      traktSyncLogger,
+		Log:      rt.traktSyncLogger,
 	}
 	started := time.Now()
 	summary, err := engine.Run(context.Background(), trigger)
@@ -135,10 +135,10 @@ func notifyTraktSyncAnomaly(summary syncengine.RunSummary) {
 
 // ── HTTP 处理器：同步状态 / 触发 / 历史 ─────────────────────
 
-func traktSyncStatusPayload() map[string]any {
-	cfg := RT().GetConfig()
-	traktStatus := traktOauthStatusPayload()
-	plex := plexStatusPayload()
+func (rt *Runtime) traktSyncStatusPayload() map[string]any {
+	cfg := rt.GetConfig()
+	traktStatus := rt.traktOauthStatusPayload()
+	plex := rt.plexStatusPayload()
 	payload := map[string]any{
 		"enabled":                cfg.Trakt.Enabled,
 		"trakt_ready":            traktStatus["ready"],
@@ -154,7 +154,7 @@ func traktSyncStatusPayload() map[string]any {
 		"sync_watcher_alive":     watcherAlive(traktWatcher),
 		"session_watcher_alive":  watcherAlive(traktSessionWatcher),
 		"sse_enabled":            cfg.Trakt.SSEEnabled,
-		"sse_connected":          sseConnected(),
+		"sse_connected":          rt.sseConnected(),
 		"last_polled_at":         traktWatcher.lastPolledAt,
 		"last_poll_error":        traktWatcher.lastPollError,
 		"last_session_polled_at": traktSessionWatcher.lastPolledAt,
@@ -172,21 +172,21 @@ func traktSyncStatusPayload() map[string]any {
 	return payload
 }
 
-func handleTraktSyncStatus(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, traktSyncStatusPayload())
+func (s *Server) handleTraktSyncStatus(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.rt.traktSyncStatusPayload())
 }
 
-func handleTraktSyncTrigger(w http.ResponseWriter, _ *http.Request) {
-	status := traktOauthStatusPayload()
+func (s *Server) handleTraktSyncTrigger(w http.ResponseWriter, _ *http.Request) {
+	status := s.rt.traktOauthStatusPayload()
 	if authorized, _ := status["authorized"].(bool); !authorized {
 		writeJSONError(w, http.StatusBadRequest, "Trakt 未授权，请先完成设备码配对")
 		return
 	}
-	if connected, _ := plexStatusPayload()["token_configured"].(bool); !connected {
+	if connected, _ := s.rt.plexStatusPayload()["token_configured"].(bool); !connected {
 		writeJSONError(w, http.StatusBadRequest, "Plex 未授权，请先完成 PIN 配对")
 		return
 	}
-	if !TriggerTraktSync(triggerManual) {
+	if !s.rt.TriggerTraktSync(triggerManual) {
 		writeJSONError(w, http.StatusConflict, "观看同步已在进行中")
 		return
 	}
@@ -194,8 +194,8 @@ func handleTraktSyncTrigger(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "观看同步已触发"})
 }
 
-func handleTraktSyncRuns(w http.ResponseWriter, r *http.Request) {
-	store := RT().GetTraktSyncStore()
+func (s *Server) handleTraktSyncRuns(w http.ResponseWriter, r *http.Request) {
+	store := s.rt.GetTraktSyncStore()
 	limit := intQuery(r, "limit", 20)
 	offset := intQuery(r, "offset", 0)
 	if limit <= 0 || limit > 100 {
@@ -222,8 +222,8 @@ func handleTraktSyncRuns(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"total": total, "runs": list})
 }
 
-func handleTraktSyncRunItems(w http.ResponseWriter, r *http.Request) {
-	syncStore := RT().GetTraktSyncStore()
+func (s *Server) handleTraktSyncRunItems(w http.ResponseWriter, r *http.Request) {
+	syncStore := s.rt.GetTraktSyncStore()
 	runID, err := strconv.ParseInt(r.PathValue("runID"), 10, 64)
 	if err != nil || runID <= 0 {
 		writeJSONError(w, http.StatusBadRequest, "无效的 run id")
@@ -263,8 +263,8 @@ func traktMediaTitle(mediaType string, tmdbID int64) string {
 }
 
 // handleTraktSyncIgnores GET /api/trakt/sync/ignores：忽略清单 + 反复失败候选。
-func handleTraktSyncIgnores(w http.ResponseWriter, _ *http.Request) {
-	syncStore := RT().GetTraktSyncStore()
+func (s *Server) handleTraktSyncIgnores(w http.ResponseWriter, _ *http.Request) {
+	syncStore := s.rt.GetTraktSyncStore()
 	ignores := make([]map[string]any, 0)
 	for _, it := range syncStore.ListSyncIgnores() {
 		ignores = append(ignores, map[string]any{
@@ -292,8 +292,8 @@ func handleTraktSyncIgnores(w http.ResponseWriter, _ *http.Request) {
 // handleTraktSyncIgnoreSet POST /api/trakt/sync/ignore
 // {action: "add"|"remove", media_type, tmdb_id, reason?, anchor?}。
 // anchor 可选："tmdb"（默认）| "tvdb"（tvdb 锚定的剧集键）。
-func handleTraktSyncIgnoreSet(w http.ResponseWriter, r *http.Request) {
-	syncStore := RT().GetTraktSyncStore()
+func (s *Server) handleTraktSyncIgnoreSet(w http.ResponseWriter, r *http.Request) {
+	syncStore := s.rt.GetTraktSyncStore()
 	var req struct {
 		Action    string `json:"action"`
 		MediaType string `json:"media_type"`

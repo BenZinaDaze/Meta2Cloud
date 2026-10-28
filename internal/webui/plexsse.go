@@ -22,13 +22,13 @@ var traktSSEState struct {
 	connected bool
 }
 
-func setSSEConnected(connected bool) {
+func (rt *Runtime) setSSEConnected(connected bool) {
 	traktSSEState.mu.Lock()
 	traktSSEState.connected = connected
 	traktSSEState.mu.Unlock()
 }
 
-func sseConnected() bool {
+func (rt *Runtime) sseConnected() bool {
 	traktSSEState.mu.Lock()
 	defer traktSSEState.mu.Unlock()
 	return traktSSEState.connected
@@ -47,7 +47,7 @@ const stoppedOffsetTolerance = 0.02
 // 更新会话观察行，按状态跃迁上报 scrobble（start/pause 不计次），
 // stopped 事件以最终进度上报 stop（计次与去重由 Trakt 服务端裁定），
 // 随后清理会话观察行（轮询不与 SSE 并行运行，收尾由 stopped 事件承担）。
-func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *trakt.Client, syncStore *store.TraktSyncStore, notif plexserver.PlaybackNotification) {
+func (rt *Runtime) handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *trakt.Client, syncStore *store.TraktSyncStore, notif plexserver.PlaybackNotification) {
 	defer func() {
 		if r := recover(); r != nil {
 			appLog("trakt", "sse_event_panic", "ERROR", fmt.Sprintf("实时通知处理异常：%v", r), nil)
@@ -63,11 +63,11 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 	// 才复位——若不重置，上一集的 ~99% 会被并进下一集的收尾。
 	tracked := syncStore.GetSyncSession(notif.SessionKey)
 	if tracked != nil && tracked.PlexRef != "" && tracked.PlexRef != notif.RatingKey {
-		finishSwitchedSession(syncStore, traktClient, tracked, "sse", notif.SessionKey)
-		scrobbleStateFor(notif.SessionKey).awaitPlay = true
+		rt.finishSwitchedSession(syncStore, traktClient, tracked, "sse", notif.SessionKey)
+		rt.scrobbleStateFor(notif.SessionKey).awaitPlay = true
 		tracked = nil
 	}
-	st := scrobbleStateFor(notif.SessionKey)
+	st := rt.scrobbleStateFor(notif.SessionKey)
 	if notif.State != "stopped" {
 		st.lastObserved = notif.State
 	}
@@ -101,9 +101,9 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 			if tracked.MaxProgress > finalProgress {
 				finalProgress = tracked.MaxProgress
 			}
-			finishSession(syncStore, traktClient, syncStore, tracked.Key(), derefString(tracked.Title), "sse", finalProgress, notif.SessionKey)
+			rt.finishSession(syncStore, traktClient, syncStore, tracked.Key(), rt.derefString(tracked.Title), "sse", finalProgress, notif.SessionKey)
 		}
-		dropScrobbleState(notif.SessionKey)
+		rt.dropScrobbleState(notif.SessionKey)
 		syncStore.DeleteSyncSession(notif.SessionKey)
 		return
 	}
@@ -116,7 +116,7 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 		if duration == 0 {
 			duration = tracked.DurationMS
 		}
-		title = derefString(tracked.Title)
+		title = rt.derefString(tracked.Title)
 	}
 	if duration == 0 || title == "" {
 		if md, err := plexClient.Metadata(notif.RatingKey); err == nil {
@@ -124,16 +124,16 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 				duration = int64(md.Duration)
 			}
 			if title == "" {
-				title = sessionDisplayTitle(md)
+				title = rt.sessionDisplayTitle(md)
 			}
 		}
 	}
-	source := plexserver.NewSource(plexClient, buildTitleIndex(), syncStore)
+	source := plexserver.NewSource(plexClient, rt.buildTitleIndex(), syncStore)
 	sess := &plexserver.Metadata{
 		SessionKey: notif.SessionKey, RatingKey: notif.RatingKey,
 		ViewOffset: int(notif.ViewOffsetMS), Duration: int(duration),
 	}
-	key, keyOK := resolveSessionKey(syncStore, source, sess)
+	key, keyOK := rt.resolveSessionKey(syncStore, source, sess)
 
 	progress := 0.0
 	if duration > 0 {
@@ -174,15 +174,15 @@ func handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *
 		}
 		return
 	}
-	pct, _ := scrobbleProgress(notif.ViewOffsetMS, duration)
-	if sessionScrobbleGate(syncStore, key) {
-		scrobbleTransition("sse", syncStore, traktClient, syncStore, key, title, notif.State, pct, notif.SessionKey)
+	pct, _ := rt.scrobbleProgress(notif.ViewOffsetMS, duration)
+	if rt.sessionScrobbleGate(syncStore, key) {
+		rt.scrobbleTransition("sse", syncStore, traktClient, syncStore, key, title, notif.State, pct, notif.SessionKey)
 	}
 }
 
 // ensureTraktSSELoop 启动 Plex 实时通知订阅（幂等）：
 // 常驻一条 SSE 连接，断线指数退避重连；事件经有界队列异步分发。
-func ensureTraktSSELoop() {
+func (rt *Runtime) ensureTraktSSELoop() {
 	traktSSEOnce.Do(func() {
 		go func() {
 			appLog("trakt", "sse_started", "INFO", "Plex 实时通知线程已启动", nil)
@@ -192,13 +192,13 @@ func ensureTraktSSELoop() {
 				// 门控只看 sse 开关、配对就绪与 →Trakt 方向，不受「启用定时同步」影响：
 				// 实时推送是事件驱动的观看同步，与定时全量是两个独立开关
 				gate := func() (plexClient *plexserver.Client, traktClient *trakt.Client, syncStore *store.TraktSyncStore, ok bool) {
-					cfg := RT().GetConfig()
+					cfg := rt.GetConfig()
 					if !cfg.Trakt.SSEEnabled || !cfg.Trakt.SyncToTrakt || !cfg.IsPlexReady() || !cfg.IsTraktReady() {
 						return nil, nil, nil, false
 					}
-					plexClient = RT().GetPlexClient()
-					traktClient = RT().GetTraktClient()
-					syncStore = RT().GetTraktSyncStore()
+					plexClient = rt.GetPlexClient()
+					traktClient = rt.GetTraktClient()
+					syncStore = rt.GetTraktSyncStore()
 					if plexClient == nil || traktClient == nil {
 						return nil, nil, nil, false
 					}
@@ -206,7 +206,7 @@ func ensureTraktSSELoop() {
 				}
 				plexClient, traktClient, syncStore, ok := gate()
 				if !ok {
-					setSSEConnected(false)
+					rt.setSSEConnected(false)
 					if lastGateOK {
 						appLog("trakt", "sse_gate_pending", "INFO", "实时通知未开启：需开启实时通知开关并完成 Trakt 与 Plex 授权，30 秒后重新检查", nil)
 						lastGateOK = false
@@ -227,7 +227,7 @@ func ensureTraktSSELoop() {
 						}
 					}()
 					for notif := range events {
-						handlePlexPlaybackNotification(plexClient, traktClient, syncStore, notif)
+						rt.handlePlexPlaybackNotification(plexClient, traktClient, syncStore, notif)
 					}
 				}()
 
@@ -244,7 +244,7 @@ func ensureTraktSSELoop() {
 				}()
 				err := plexClient.StreamNotifications(ctx, func() {
 					openedAt = time.Now()
-					setSSEConnected(true)
+					rt.setSSEConnected(true)
 					NotifyServiceHealth("Plex", true, "")
 					appLog("trakt", "sse_connected", "INFO",
 						fmt.Sprintf("Plex 实时通知已连接（%s）", plexClient.BaseURL), nil)
@@ -265,7 +265,7 @@ func ensureTraktSSELoop() {
 				})
 				cancel()
 				close(events)
-				setSSEConnected(false)
+				rt.setSSEConnected(false)
 				if errors.Is(err, plexserver.ErrUnauthorized) {
 					NotifyServiceHealth("Plex", false, err.Error())
 				}
@@ -304,7 +304,7 @@ func sleepWatcher(w *watcherState, d time.Duration) bool {
 }
 
 // resolveSessionKey 会话身份解析：状态记录快路径 → 会话行缓存 → Plex 详情补解析。
-func resolveSessionKey(store *store.TraktSyncStore, source *plexserver.Source, sess *plexserver.Metadata) (watched.MediaKey, bool) {
+func (rt *Runtime) resolveSessionKey(store *store.TraktSyncStore, source *plexserver.Source, sess *plexserver.Metadata) (watched.MediaKey, bool) {
 	if shadow, ok, _ := store.GetShadowByPlexRef(sess.RatingKey); ok && shadow.Key.TMDBID > 0 {
 		return shadow.Key, true
 	}
@@ -325,8 +325,8 @@ var (
 )
 
 // plexReachable 轻探测 Plex 可达性（/identity，失败含 DNS/连接错误）。
-func plexReachable() bool {
-	plexClient := RT().GetPlexClient()
+func (rt *Runtime) plexReachable() bool {
+	plexClient := rt.GetPlexClient()
 	if plexClient == nil {
 		return true // 未完成 Plex 配对时不等待，由同步自身报出明确的配置错误
 	}
@@ -339,8 +339,8 @@ func plexReachable() bool {
 // 对端未就绪时触发，会在 DNS/连接层立刻失败并留下错误记录。探测
 // 不可达时短周期等待，恢复后立即开始本轮；超时放弃，交由下一轮定时。
 // halted=true 表示调度已被停止（随 stop 退出）。
-func waitPlexReachable(stop <-chan struct{}) (ready, halted bool) {
-	if plexReachable() {
+func (rt *Runtime) waitPlexReachable(stop <-chan struct{}) (ready, halted bool) {
+	if rt.plexReachable() {
 		return true, false
 	}
 	appLog("trakt", "plex_unreachable", "WARNING", "Plex 暂不可达，等待就绪后开始本轮同步", nil)
@@ -351,7 +351,7 @@ func waitPlexReachable(stop <-chan struct{}) (ready, halted bool) {
 			return false, true
 		case <-time.After(30 * time.Second):
 		}
-		if plexReachable() {
+		if rt.plexReachable() {
 			return true, false
 		}
 	}
@@ -361,12 +361,12 @@ func waitPlexReachable(stop <-chan struct{}) (ready, halted bool) {
 
 // ensureTraktSessionLoop 启动 Plex 会话轮询（正在看 → Trakt）。
 // 纯兜底：每轮先查 SSE 是否在线，在线则跳过实际轮询（见 pollPlexSessionsOnce）。
-func ensureTraktSessionLoop() {
+func (rt *Runtime) ensureTraktSessionLoop() {
 	traktSessionOnce.Do(func() {
 		go func() {
 			appLog("trakt", "session_poll_started", "INFO", "Plex 会话轮询线程已启动", nil)
 			for {
-				interval := RT().GetConfig().Trakt.SessionPollSeconds
+				interval := rt.GetConfig().Trakt.SessionPollSeconds
 				if interval < 15 {
 					interval = 15
 				}
@@ -379,7 +379,7 @@ func ensureTraktSessionLoop() {
 							traktSessionWatcher.mu.Unlock()
 						}
 					}()
-					pollPlexSessionsOnce()
+					rt.pollPlexSessionsOnce()
 				}()
 				select {
 				case <-traktSessionWatcher.stopCh:

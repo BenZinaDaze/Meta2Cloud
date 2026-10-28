@@ -66,16 +66,16 @@ type traktDeviceSessionJSON struct {
 	ExpiresAt       int64  `json:"expires_at"`
 }
 
-func traktSessionPath() string {
-	return RT().resolveConfigPath("config/trakt-device-session.json")
+func (rt *Runtime) traktSessionPath() string {
+	return rt.resolveConfigPath("config/trakt-device-session.json")
 }
 
-func saveTraktDeviceSession(sess *traktDeviceSessionJSON) error {
-	return saveJSONSession(traktSessionPath(), sess)
+func (rt *Runtime) saveTraktDeviceSession(sess *traktDeviceSessionJSON) error {
+	return saveJSONSession(rt.traktSessionPath(), sess)
 }
 
-func loadTraktDeviceSession() (*traktDeviceSessionJSON, error) {
-	sess, err := loadJSONSession[traktDeviceSessionJSON](traktSessionPath())
+func (rt *Runtime) loadTraktDeviceSession() (*traktDeviceSessionJSON, error) {
+	sess, err := loadJSONSession[traktDeviceSessionJSON](rt.traktSessionPath())
 	if err != nil {
 		return nil, missingSessionErr(err, "Trakt 配对会话不存在，请先发起配对")
 	}
@@ -90,16 +90,16 @@ type plexPinSessionJSON struct {
 	ClientIdentifier string `json:"client_identifier"`
 }
 
-func plexPinSessionPath() string {
-	return RT().resolveConfigPath("config/plex-pin-session.json")
+func (rt *Runtime) plexPinSessionPath() string {
+	return rt.resolveConfigPath("config/plex-pin-session.json")
 }
 
-func savePlexPinSession(sess *plexPinSessionJSON) error {
-	return saveJSONSession(plexPinSessionPath(), sess)
+func (rt *Runtime) savePlexPinSession(sess *plexPinSessionJSON) error {
+	return saveJSONSession(rt.plexPinSessionPath(), sess)
 }
 
-func loadPlexPinSession() (*plexPinSessionJSON, error) {
-	sess, err := loadJSONSession[plexPinSessionJSON](plexPinSessionPath())
+func (rt *Runtime) loadPlexPinSession() (*plexPinSessionJSON, error) {
+	sess, err := loadJSONSession[plexPinSessionJSON](rt.plexPinSessionPath())
 	if err != nil {
 		return nil, missingSessionErr(err, "Plex 配对会话不存在，请先发起配对")
 	}

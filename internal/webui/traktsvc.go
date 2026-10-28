@@ -14,7 +14,7 @@ import (
 
 // ── 状态载荷 ───────────────────────────────────────────────
 
-func traktOauthStatusPayload() map[string]any {
+func (rt *Runtime) traktOauthStatusPayload() map[string]any {
 	cfg := RT().GetConfig().Trakt
 	ready := RT().GetConfig().IsTraktReady()
 	tokenPath := RT().resolveConfigPath(cfg.TokenJSON)
@@ -52,7 +52,7 @@ func traktOauthStatusPayload() map[string]any {
 		}
 	}
 	// 配对会话存在时前端可继续轮询
-	session, _ := loadTraktDeviceSession()
+	session, _ := rt.loadTraktDeviceSession()
 	var pairing any
 	if session != nil && time.Now().Unix() < session.ExpiresAt {
 		pairing = map[string]any{
@@ -70,10 +70,10 @@ func traktOauthStatusPayload() map[string]any {
 	}
 }
 
-func plexStatusPayload() map[string]any {
+func (rt *Runtime) plexStatusPayload() map[string]any {
 	cfg := RT().GetConfig()
-	authPath := plexAuthPath()
-	auth, authErr := loadPlexAuth(authPath)
+	authPath := rt.plexAuthPath()
+	auth, authErr := rt.loadPlexAuth(authPath)
 	hasToken := authErr == nil && auth.AuthToken != ""
 	identifier := ""
 	if authErr == nil {
@@ -87,7 +87,7 @@ func plexStatusPayload() map[string]any {
 		"client_identifier": identifier,
 		"reachable":         false,
 	}
-	if pinSession, err := loadPlexPinSession(); err == nil {
+	if pinSession, err := rt.loadPlexPinSession(); err == nil {
 		payload["pairing"] = map[string]any{"code": pinSession.Code}
 	}
 	if !cfg.IsPlexReady() || !hasToken {
@@ -109,16 +109,16 @@ func plexStatusPayload() map[string]any {
 
 // ── HTTP 处理器：Trakt 设备码 ───────────────────────────────
 
-func handleTraktOauthStatus(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, traktOauthStatusPayload())
+func (s *Server) handleTraktOauthStatus(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.rt.traktOauthStatusPayload())
 }
 
-func handleTraktOauthDevice(w http.ResponseWriter, _ *http.Request) {
-	if !RT().GetConfig().IsTraktReady() {
+func (s *Server) handleTraktOauthDevice(w http.ResponseWriter, _ *http.Request) {
+	if !s.rt.GetConfig().IsTraktReady() {
 		writeJSONError(w, http.StatusBadRequest, "请先在配置中填写 trakt.client_id（trakt.tv/oauth/applications 创建应用；Development 应用无需 Client Secret）")
 		return
 	}
-	client := RT().GetTraktClient()
+	client := s.rt.GetTraktClient()
 	if client == nil {
 		writeJSONError(w, http.StatusBadRequest, "Trakt 客户端不可用")
 		return
@@ -129,7 +129,7 @@ func handleTraktOauthDevice(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	expiresAt := time.Now().Unix() + code.ExpiresIn
-	if err := saveTraktDeviceSession(&traktDeviceSessionJSON{
+	if err := s.rt.saveTraktDeviceSession(&traktDeviceSessionJSON{
 		DeviceCode: code.DeviceCode, UserCode: code.UserCode,
 		VerificationURL: code.VerificationURL, ExpiresAt: expiresAt,
 	}); err != nil {
@@ -140,23 +140,23 @@ func handleTraktOauthDevice(w http.ResponseWriter, _ *http.Request) {
 		"ok": true, "user_code": code.UserCode,
 		"verification_url": code.VerificationURL,
 		"expires_in":       code.ExpiresIn, "interval": code.Interval,
-		"status": traktOauthStatusPayload(),
+		"status": s.rt.traktOauthStatusPayload(),
 	})
 }
 
-func handleTraktOauthPoll(w http.ResponseWriter, _ *http.Request) {
-	client := RT().GetTraktClient()
+func (s *Server) handleTraktOauthPoll(w http.ResponseWriter, _ *http.Request) {
+	client := s.rt.GetTraktClient()
 	if client == nil {
 		writeJSONError(w, http.StatusBadRequest, "Trakt 客户端不可用（请先填写应用凭证并保存）")
 		return
 	}
-	session, err := loadTraktDeviceSession()
+	session, err := s.rt.loadTraktDeviceSession()
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	if time.Now().Unix() >= session.ExpiresAt {
-		_ = os.Remove(traktSessionPath())
+		_ = os.Remove(s.rt.traktSessionPath())
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok": false, "confirmed": false, "expired": true,
 			"message": "设备码已过期，请重新发起配对",
@@ -169,10 +169,10 @@ func handleTraktOauthPoll(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	if result.Confirmed() {
-		invalidateTraktRuntimeCache()
+		s.rt.invalidateTraktRuntimeCache()
 		// 会话已消费，删除会话文件
-		if onDisk, err := loadTraktDeviceSession(); err == nil && onDisk.DeviceCode == session.DeviceCode {
-			_ = os.Remove(traktSessionPath())
+		if onDisk, err := s.rt.loadTraktDeviceSession(); err == nil && onDisk.DeviceCode == session.DeviceCode {
+			_ = os.Remove(s.rt.traktSessionPath())
 		}
 		user, _ := client.Me()
 		appLog("trakt", "oauth_paired", "SUCCESS", "Trakt 授权成功（用户 "+user+"）", nil)
@@ -188,31 +188,31 @@ func handleTraktOauthPoll(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func handleTraktOauthDisconnect(w http.ResponseWriter, _ *http.Request) {
-	if client := RT().GetTraktClient(); client != nil {
+func (s *Server) handleTraktOauthDisconnect(w http.ResponseWriter, _ *http.Request) {
+	if client := s.rt.GetTraktClient(); client != nil {
 		client.Disconnect()
 	} else {
 		// 客户端不可用（凭证缺失）时直接删 token 文件
-		_ = os.Remove(RT().resolveConfigPath(RT().GetConfig().Trakt.TokenJSON))
+		_ = os.Remove(s.rt.resolveConfigPath(s.rt.GetConfig().Trakt.TokenJSON))
 	}
-	invalidateTraktRuntimeCache()
+	s.rt.invalidateTraktRuntimeCache()
 	appLog("trakt", "oauth_disconnected", "INFO", "已断开 Trakt 授权", nil)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok": true, "status": traktOauthStatusPayload(),
+		"ok": true, "status": s.rt.traktOauthStatusPayload(),
 	})
 }
 
 // ── HTTP 处理器：Plex PIN ───────────────────────────────────
 
-func handlePlexPin(w http.ResponseWriter, _ *http.Request) {
-	cfg := RT().GetConfig()
+func (s *Server) handlePlexPin(w http.ResponseWriter, _ *http.Request) {
+	cfg := s.rt.GetConfig()
 	if !cfg.IsPlexReady() {
 		writeJSONError(w, http.StatusBadRequest, "请先在配置中填写 plex.base_url")
 		return
 	}
-	rt := RT()
+	rt := s.rt
 	rt.mu.Lock()
-	auth := ensurePlexAuthLocked(rt)
+	auth := s.rt.ensurePlexAuthLocked()
 	rt.mu.Unlock()
 	if auth == nil {
 		writeJSONError(w, http.StatusInternalServerError, "Plex 配对态初始化失败")
@@ -224,7 +224,7 @@ func handlePlexPin(w http.ResponseWriter, _ *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("plex.tv 创建 PIN 失败：%v", err))
 		return
 	}
-	if err := savePlexPinSession(&plexPinSessionJSON{
+	if err := s.rt.savePlexPinSession(&plexPinSessionJSON{
 		PinID: pin.ID, Code: pin.Code, ClientIdentifier: auth.ClientIdentifier,
 	}); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("配对会话保存失败：%v", err))
@@ -235,9 +235,9 @@ func handlePlexPin(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func handlePlexPinPoll(w http.ResponseWriter, _ *http.Request) {
-	cfg := RT().GetConfig()
-	session, err := loadPlexPinSession()
+func (s *Server) handlePlexPinPoll(w http.ResponseWriter, _ *http.Request) {
+	cfg := s.rt.GetConfig()
+	session, err := s.rt.loadPlexPinSession()
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, err.Error())
 		return
@@ -253,24 +253,24 @@ func handlePlexPinPoll(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	// 授权完成：保存 token，验证服务器连通性
-	authPath := plexAuthPath()
+	authPath := s.rt.plexAuthPath()
 	auth := &plexAuthJSON{
 		AuthToken: pin.AuthToken, ClientIdentifier: session.ClientIdentifier,
 		CreatedAt: time.Now().Unix(),
 	}
-	if old, err := loadPlexAuth(authPath); err == nil && old.CreatedAt > 0 {
+	if old, err := s.rt.loadPlexAuth(authPath); err == nil && old.CreatedAt > 0 {
 		auth.CreatedAt = old.CreatedAt
 	}
-	if err := savePlexAuth(authPath, auth); err != nil {
+	if err := s.rt.savePlexAuth(authPath, auth); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Plex 凭证保存失败：%v", err))
 		return
 	}
-	_ = os.Remove(plexPinSessionPath())
-	invalidatePlexRuntimeCache()
+	_ = os.Remove(s.rt.plexPinSessionPath())
+	s.rt.invalidatePlexRuntimeCache()
 
 	serverVersion := ""
 	reachable := false
-	if plexClient := RT().GetPlexClient(); plexClient != nil {
+	if plexClient := s.rt.GetPlexClient(); plexClient != nil {
 		if identity, ierr := plexClient.Identity(); ierr == nil {
 			reachable = true
 			serverVersion = identity.MediaContainer.Version
@@ -285,8 +285,8 @@ func handlePlexPinPoll(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func handlePlexTest(w http.ResponseWriter, _ *http.Request) {
-	client := RT().GetPlexClient()
+func (s *Server) handlePlexTest(w http.ResponseWriter, _ *http.Request) {
+	client := s.rt.GetPlexClient()
 	if client == nil {
 		writeJSONError(w, http.StatusBadRequest, "Plex 客户端不可用（请先填写 base_url 并完成授权）")
 		return
