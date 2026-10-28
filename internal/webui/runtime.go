@@ -49,6 +49,12 @@ type Runtime struct {
 	traktClient *trakt.Client
 	plexClient  *plexserver.Client
 	traktSync   *store.TraktSyncStore
+
+	// loginLimiter 登录失败限速（内存级，按来源 IP；见 server.go）
+	loginLimiter struct {
+		mu      sync.Mutex
+		entries map[string]*loginFailState
+	}
 }
 
 var defaultRuntime = &Runtime{}

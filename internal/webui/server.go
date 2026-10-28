@@ -19,8 +19,9 @@ import (
 	"meta2cloud/internal/webui/store"
 )
 
-// Server WebUI 服务。
+// Server WebUI 服务。所有 handler 均为 Server 方法，依赖经构造注入的 rt 取用。
 type Server struct {
+	rt     *Runtime
 	mux    *http.ServeMux
 	rootFS http.Handler // 前端静态资源（可为 nil）
 	stop   chan struct{}
@@ -28,10 +29,10 @@ type Server struct {
 
 // NewServer 构造服务（注册全部路由）。
 func NewServer() *Server {
-	s := &Server{mux: http.NewServeMux(), stop: make(chan struct{})}
+	s := &Server{rt: defaultRuntime, mux: http.NewServeMux(), stop: make(chan struct{})}
 	s.registerRoutes()
-	s.rootFS = loadStaticFiles()
-	RT().startTmdbEvictLoop(s.stop)
+	s.rootFS = s.loadStaticFiles()
+	s.rt.startTmdbEvictLoop(s.stop)
 	StartupBackgroundWatchers()
 	return s
 }
@@ -43,8 +44,8 @@ func (s *Server) Close() {
 }
 
 // loadStaticFiles 加载 frontend/dist（存在时）。
-func loadStaticFiles() http.Handler {
-	staticDir := filepath.Join(RT().RootDir, "frontend", "dist")
+func (s *Server) loadStaticFiles() http.Handler {
+	staticDir := filepath.Join(s.rt.RootDir, "frontend", "dist")
 	if st, err := os.Stat(staticDir); err == nil && st.IsDir() {
 		return http.FileServer(http.Dir(staticDir))
 	}
@@ -55,14 +56,14 @@ func (s *Server) registerRoutes() {
 	m := s.mux
 
 	// auth
-	m.HandleFunc("POST /api/auth:login", handleAuthLogin)
-	m.HandleFunc("POST /api/auth:logout", handleAuthLogout)
-	m.HandleFunc("GET /api/auth/me", handleAuthMe)
+	m.HandleFunc("POST /api/auth:login", s.handleAuthLogin)
+	m.HandleFunc("POST /api/auth:logout", s.handleAuthLogout)
+	m.HandleFunc("GET /api/auth/me", s.handleAuthMe)
 
 	// library / stats
-	m.HandleFunc("GET /api/library", handleGetLibrary)
+	m.HandleFunc("GET /api/library", s.handleGetLibrary)
 	m.HandleFunc("POST /api/library:refresh", handleRefreshLibrary)
-	m.HandleFunc("GET /api/stats", handleGetStats)
+	m.HandleFunc("GET /api/stats", s.handleGetStats)
 	// 联动删除：删除预览 + 删网盘目录及衍生数据（STRM/库条目/可选订阅）
 	m.HandleFunc("GET /api/library/media/{folderID}", handleLibraryMediaPreview)
 	m.HandleFunc("DELETE /api/library/media/{folderID}", handleLibraryMediaDelete)
@@ -193,11 +194,6 @@ func (s *Server) Handler() http.Handler {
 
 // ListenAndServe 在 addr 上启动 HTTP 服务。
 func ListenAndServe(addr string, s *Server) error {
-	// 预开 STRM 存储：把上次进程遗留的「进行中」同步记录收尾为失败，
-	// 惰性初始化会让该清理推迟到首次访问 STRM 接口才发生
-	_ = RT().GetStrmStore()
-	// 观看同步存储同理（traktsync.db 的遗留进行中 run 收尾）
-	_ = RT().GetTraktSyncStore()
 	return http.ListenAndServe(addr, s.Handler())
 }
 
@@ -225,9 +221,9 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	if path == "." {
 		path = "index.html"
 	}
-	if _, err := os.Stat(filepath.Join(RT().RootDir, "frontend", "dist", path)); err != nil {
+	if _, err := os.Stat(filepath.Join(s.rt.RootDir, "frontend", "dist", path)); err != nil {
 		// SPA 回退
-		data, err := os.ReadFile(filepath.Join(RT().RootDir, "frontend", "dist", "index.html"))
+		data, err := os.ReadFile(filepath.Join(s.rt.RootDir, "frontend", "dist", "index.html"))
 		if err != nil {
 			http.NotFound(w, r)
 			return
@@ -281,16 +277,17 @@ var loginLimiter = struct {
 
 // resetLoginLimiterForTest 清空限速状态（测试隔离用）。
 func resetLoginLimiterForTest() {
-	loginLimiter.mu.Lock()
-	defer loginLimiter.mu.Unlock()
-	loginLimiter.entries = map[string]*loginFailState{}
+	rt := RT()
+	rt.loginLimiter.mu.Lock()
+	defer rt.loginLimiter.mu.Unlock()
+	rt.loginLimiter.entries = map[string]*loginFailState{}
 }
 
 // loginLockedRemaining 返回该 IP 登录锁定的剩余时长（0 = 未锁定）。
-func loginLockedRemaining(ip string) time.Duration {
-	loginLimiter.mu.Lock()
-	defer loginLimiter.mu.Unlock()
-	st, ok := loginLimiter.entries[ip]
+func (rt *Runtime) loginLockedRemaining(ip string) time.Duration {
+	rt.loginLimiter.mu.Lock()
+	defer rt.loginLimiter.mu.Unlock()
+	st, ok := rt.loginLimiter.entries[ip]
 	if !ok {
 		return 0
 	}
@@ -301,13 +298,16 @@ func loginLockedRemaining(ip string) time.Duration {
 }
 
 // recordLoginFailure 记一次登录失败；窗口外首次失败重置计数。
-func recordLoginFailure(ip string) {
-	loginLimiter.mu.Lock()
-	defer loginLimiter.mu.Unlock()
-	st := loginLimiter.entries[ip]
+func (rt *Runtime) recordLoginFailure(ip string) {
+	rt.loginLimiter.mu.Lock()
+	defer rt.loginLimiter.mu.Unlock()
+	if rt.loginLimiter.entries == nil {
+		rt.loginLimiter.entries = map[string]*loginFailState{}
+	}
+	st := rt.loginLimiter.entries[ip]
 	if st == nil || time.Since(st.lastFailure) > loginFailWindow {
 		st = &loginFailState{}
-		loginLimiter.entries[ip] = st
+		rt.loginLimiter.entries[ip] = st
 	}
 	st.failures++
 	st.lastFailure = time.Now()
@@ -316,29 +316,29 @@ func recordLoginFailure(ip string) {
 		st.failures = 0
 	}
 	// 条目过多时清理彻底过期的，防内存无限增长
-	if len(loginLimiter.entries) > 1024 {
+	if len(rt.loginLimiter.entries) > 1024 {
 		now := time.Now()
-		for k, v := range loginLimiter.entries {
+		for k, v := range rt.loginLimiter.entries {
 			if now.After(v.lockedUntil) && now.Sub(v.lastFailure) > loginFailWindow {
-				delete(loginLimiter.entries, k)
+				delete(rt.loginLimiter.entries, k)
 			}
 		}
 	}
 }
 
 // resetLoginFailures 登录成功后清除该 IP 的失败计数。
-func resetLoginFailures(ip string) {
-	loginLimiter.mu.Lock()
-	defer loginLimiter.mu.Unlock()
-	delete(loginLimiter.entries, ip)
+func (rt *Runtime) resetLoginFailures(ip string) {
+	rt.loginLimiter.mu.Lock()
+	defer rt.loginLimiter.mu.Unlock()
+	delete(rt.loginLimiter.entries, ip)
 }
 
-func handleAuthLogin(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		ip = r.RemoteAddr
 	}
-	if remain := loginLockedRemaining(ip); remain > 0 {
+	if remain := s.rt.loginLockedRemaining(ip); remain > 0 {
 		writeJSONError(w, http.StatusTooManyRequests,
 			fmt.Sprintf("登录尝试次数过多，请 %d 分钟后再试", int(remain.Minutes())+1))
 		return
@@ -348,17 +348,17 @@ func handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "请求体格式错误")
 		return
 	}
-	cfg := RT().GetConfig()
+	cfg := s.rt.GetConfig()
 	if cfg.WebUI.Password == "" && cfg.WebUI.PasswordHash == "" {
 		writeJSONError(w, http.StatusForbidden, "密码未设置，请先在配置文件中设置 webui 密码")
 		return
 	}
-	if !RT().CredentialsMatch(body.Username, body.Password) {
-		recordLoginFailure(ip)
+	if !s.rt.CredentialsMatch(body.Username, body.Password) {
+		s.rt.recordLoginFailure(ip)
 		writeJSONError(w, http.StatusUnauthorized, "用户名或密码错误")
 		return
 	}
-	resetLoginFailures(ip)
+	s.rt.resetLoginFailures(ip)
 	token, err := CreateToken(body.Username, cfg.WebUI.TokenExpireHours)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "Token 生成失败")
@@ -371,11 +371,11 @@ func handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func handleAuthLogout(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleAuthLogout(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func handleAuthMe(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 	auth := r.Header.Get("Authorization")
 	token := strings.TrimPrefix(auth, "Bearer ")
 	username := VerifyToken(token)
@@ -388,7 +388,7 @@ func handleAuthMe(w http.ResponseWriter, r *http.Request) {
 
 // ── library / stats 处理器 ──────────────────────────────────
 
-func handleGetLibrary(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGetLibrary(w http.ResponseWriter, r *http.Request) {
 	sortBy := r.URL.Query().Get("sort_by")
 	if sortBy == "" {
 		sortBy = "folder_modified_time"
@@ -399,7 +399,7 @@ func handleGetLibrary(w http.ResponseWriter, r *http.Request) {
 	}
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
-	libStore := RT().GetLibraryStore()
+	libStore := s.rt.GetLibraryStore()
 	snap := libStore.GetSnapshotPage(store.SnapshotQuery{
 		MediaType: r.URL.Query().Get("media_type"),
 		SortBy:    sortBy,
@@ -427,7 +427,7 @@ func handleGetLibrary(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func handleGetStats(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleGetStats(w http.ResponseWriter, _ *http.Request) {
 	libStore := RT().GetLibraryStore()
 	writeJSON(w, http.StatusOK, libStore.GetStats())
 }
