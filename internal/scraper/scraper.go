@@ -20,6 +20,10 @@ type MediaItem struct {
 	RssURL       string `json:"rss_url,omitempty"`
 }
 
+// maxSpiderBodyBytes 爬虫响应体大小上限（RSS/HTML 远小于此；源被劫持返回
+// 超大响应时不至于耗尽内存）。
+const maxSpiderBodyBytes = 4 << 20
+
 // MagnetItem 种子/磁力条目。
 type MagnetItem struct {
 	Title       string  `json:"title"`

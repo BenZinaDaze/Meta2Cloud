@@ -64,8 +64,11 @@ func (s *AniBTSpider) requestWithRetry(rawURL string) ([]byte, error) {
 				resp.Body.Close()
 				lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, rawURL)
 			} else {
-				body, readErr := io.ReadAll(resp.Body)
+				body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxSpiderBodyBytes+1))
 				resp.Body.Close()
+				if readErr == nil && len(body) > maxSpiderBodyBytes {
+					readErr = fmt.Errorf("响应超过大小上限（%dMB）", maxSpiderBodyBytes>>20)
+				}
 				if readErr != nil {
 					lastErr = readErr
 				} else {

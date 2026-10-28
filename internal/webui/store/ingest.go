@@ -205,8 +205,10 @@ func (s *IngestStore) Query(q IngestQuery) IngestQueryResult {
 		params = append(params, q.EndDate)
 	}
 	if q.Keyword != "" {
-		conditions = append(conditions, "(title LIKE ? OR original_title LIKE ?)")
-		params = append(params, "%"+q.Keyword+"%", "%"+q.Keyword+"%")
+		// 转义 LIKE 通配符（与 library 的 escapeLike 同一套语义），防 %/_ 注入全表模糊匹配
+		like := "%" + escapeLike(q.Keyword) + "%"
+		conditions = append(conditions, "(title LIKE ? ESCAPE '\\' OR original_title LIKE ? ESCAPE '\\')")
+		params = append(params, like, like)
 	}
 	where := "1=1"
 	if len(conditions) > 0 {

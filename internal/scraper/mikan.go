@@ -4,6 +4,7 @@ package scraper
 import (
 	"encoding/xml"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -60,17 +61,16 @@ func (s *MikanSpider) requestWithRetry(url string) (string, []byte, error) {
 				resp.Body.Close()
 				lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, url)
 			} else {
-				body := make([]byte, 0, 64*1024)
-				buf := make([]byte, 32*1024)
-				for {
-					n, readErr := resp.Body.Read(buf)
-					body = append(body, buf[:n]...)
-					if readErr != nil {
-						break
-					}
-				}
+				body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxSpiderBodyBytes+1))
 				resp.Body.Close()
-				return string(body), body, nil
+				if readErr == nil && len(body) > maxSpiderBodyBytes {
+					readErr = fmt.Errorf("响应超过大小上限（%dMB）", maxSpiderBodyBytes>>20)
+				}
+				if readErr != nil {
+					lastErr = readErr
+				} else {
+					return string(body), body, nil
+				}
 			}
 		} else {
 			lastErr = err

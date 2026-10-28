@@ -211,3 +211,30 @@ func TestRSSStoreFlow(t *testing.T) {
 		t.Error("删除失败")
 	}
 }
+
+// TestIngestQueryKeywordEscapesLike 关键词搜索应转义 LIKE 通配符：
+// "%" 与 "_" 按字面匹配，不被当作通配符匹配全表。
+func TestIngestQueryKeywordEscapesLike(t *testing.T) {
+	s, err := OpenIngestStore(filepath.Join(t.TempDir(), "library.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	if _, err := s.RecordIngest(IngestRecord{
+		MediaType: "tv", TmdbID: 1396, Title: "绝命毒师", OriginalTitle: "Breaking Bad",
+		Year: "2008", Status: "success",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// 通配符字面量：库中不含 % 或 _ 字符的记录不应被命中
+	for _, kw := range []string{"%", "_", "%毒%"} {
+		if got := s.Query(IngestQuery{Keyword: kw}); len(got.Items) != 0 {
+			t.Errorf("关键词 %q 命中 %d 条，应为 0（通配符须按字面匹配）", kw, len(got.Items))
+		}
+	}
+	// 普通关键词与中间匹配仍正常
+	if got := s.Query(IngestQuery{Keyword: "绝命"}); len(got.Items) != 1 {
+		t.Errorf("普通关键词命中 %d 条, want 1", len(got.Items))
+	}
+}
