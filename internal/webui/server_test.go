@@ -25,6 +25,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// testServer 以当前全局运行时构造裸 Server（不经 NewServer 的路由注册/后台任务），
+// 供直接调用单个 handler 方法的测试使用。
+func testServer() *Server { return &Server{rt: defaultRuntime} }
+
 // newTestServer 构造测试服务：独立 rootDir + 密码配置。
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()

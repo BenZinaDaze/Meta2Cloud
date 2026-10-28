@@ -624,7 +624,7 @@ func (s *Server) handleReidentifyItem(w http.ResponseWriter, r *http.Request) {
 	}
 	// 目录被移动、重命名或文件改名都会改变本地 STRM 树的镜像路径，触发全量同步立即跟进
 	if reclassified || renamed || filesRenamed > 0 {
-		TriggerStrmSync("reidentify")
+		s.rt.TriggerStrmSync("reidentify")
 	}
 	partial := len(renameErrors) > 0 || reclassifyError != "" || len(historyErrors) > 0
 	result["partial"] = partial

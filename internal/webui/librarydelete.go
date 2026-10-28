@@ -269,10 +269,10 @@ func (s *Server) handleLibraryMediaDelete(w http.ResponseWriter, r *http.Request
 	// 7.5 STRM 已即时清理时直接通知 Plex 扫库（无分类信息，回退刷新全部
 	// 电影/剧集库）；删除后对账同步通常无变更，不会再触发重复通知
 	if removedStrm > 0 {
-		notifyPlexRefresh(1, nil)
+		s.rt.notifyPlexRefresh(1, nil)
 	}
 	// 8. STRM 对账兜底（异步触发，失败只留日志；同步进行中则留待后续同步）
-	if !TriggerStrmSync("after-delete") {
+	if !s.rt.TriggerStrmSync("after-delete") {
 		appLog("library", "delete_sync", "WARN", "STRM 同步进行中，本次删除的清理将在后续同步中自动完成",
 			map[string]any{"folder_id": folderID})
 	}

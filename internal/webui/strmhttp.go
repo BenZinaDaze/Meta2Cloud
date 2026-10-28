@@ -64,7 +64,7 @@ var (
 	strmNeg   = map[string]negativeEntry{}
 )
 
-func strmNegativeGet(pickCode string) (negativeEntry, bool) {
+func (s *Server) strmNegativeGet(pickCode string) (negativeEntry, bool) {
 	strmNegMu.Lock()
 	defer strmNegMu.Unlock()
 	e, ok := strmNeg[pickCode]
@@ -75,7 +75,7 @@ func strmNegativeGet(pickCode string) (negativeEntry, bool) {
 	return e, ok
 }
 
-func strmNegativeSet(pickCode string, status int, msg string) {
+func (s *Server) strmNegativeSet(pickCode string, status int, msg string) {
 	strmNegMu.Lock()
 	defer strmNegMu.Unlock()
 	if len(strmNeg) > 1024 {
@@ -166,7 +166,7 @@ func urlFileName(rawURL string) string {
 
 // ── HTTP 处理器 ─────────────────────────────────────────────
 
-func handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	if method := r.Method; method != http.MethodGet && method != http.MethodHead && method != http.MethodPost {
 		writeJSONError(w, http.StatusMethodNotAllowed, "仅支持 GET/HEAD/POST")
@@ -188,7 +188,7 @@ func handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 	recordPlayback := func(cacheHit bool, status int, errMsg string, fileName string) {
 		go func() {
 			defer func() { _ = recover() }()
-			st := RT().GetStrmStore()
+			st := s.rt.GetStrmStore()
 			var nameArg, uaArg *string
 			if fileName != "" {
 				nameArg = &fileName
@@ -202,7 +202,7 @@ func handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 可选防滥用签名
-	cfg := RT().GetConfig()
+	cfg := s.rt.GetConfig()
 	if cfg.Strm.URLSecret != "" {
 		sign := query.Get("sign")
 		expect := StrmSign(cfg.Strm.URLSecret, pickCode)
@@ -217,20 +217,20 @@ func handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 	ua := r.Header.Get("User-Agent")
 
 	if link, ok := strmLinkCache.get(pickCode, ua); ok {
-		strmRedirect(w, r, link)
+		s.strmRedirect(w, r, link)
 		recordPlayback(true, http.StatusFound, "", link.fileName)
 		return
 	}
 
 	// 失败负缓存：同一 pickcode 短时间内重复失败直接返回，不打 115
-	if neg, ok := strmNegativeGet(pickCode); ok {
+	if neg, ok := s.strmNegativeGet(pickCode); ok {
 		w.Header().Set("Retry-After", "30")
 		recordPlayback(false, neg.status, neg.msg+"（负缓存）", query.Get("file_name"))
 		writeJSONError(w, neg.status, neg.msg+"（近期失败，请稍后重试）")
 		return
 	}
 
-	client := RT().GetU115Client()
+	client := s.rt.GetU115Client()
 	if client == nil {
 		recordPlayback(false, http.StatusServiceUnavailable, "115 客户端不可用", query.Get("file_name"))
 		writeJSONError(w, http.StatusServiceUnavailable, "115 客户端不可用，请先完成授权")
@@ -243,16 +243,16 @@ func handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 		defer func() { <-strmFetchSem }()
 		// 双检：排队期间同 pickcode+UA 可能已被其他请求取到
 		if link, ok := strmLinkCache.get(pickCode, ua); ok {
-			strmRedirect(w, r, link)
+			s.strmRedirect(w, r, link)
 			recordPlayback(true, http.StatusFound, "", link.fileName)
 			return
 		}
 		rawURL, err := client.GetDownloadURLWithUA(pickCode, ua)
 		if err != nil {
-			status, detail := strmUpstreamError(err)
-			strmNegativeSet(pickCode, status, detail)
+			status, detail := s.strmUpstreamError(err)
+			s.strmNegativeSet(pickCode, status, detail)
 			recordPlayback(false, status, detail, query.Get("file_name"))
-			writeStrmUpstreamError(w, err)
+			s.writeStrmUpstreamError(w, err)
 			return
 		}
 		expires := directURLExpiry(rawURL)
@@ -262,7 +262,7 @@ func handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 		if fileName == "" {
 			fileName = urlFileName(rawURL)
 		}
-		strmRedirectWithURL(w, r, rawURL, fileName)
+		s.strmRedirectWithURL(w, r, rawURL, fileName)
 		recordPlayback(false, http.StatusFound, "", fileName)
 		return
 
@@ -274,7 +274,7 @@ func handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 }
 
 // strmUpstreamError 将 115 错误映射为 HTTP 状态码与简述。
-func strmUpstreamError(err error) (int, string) {
+func (s *Server) strmUpstreamError(err error) (int, string) {
 	switch {
 	case u115.IsRateLimit(err):
 		return http.StatusServiceUnavailable, "115 限流/冷却"
@@ -285,9 +285,9 @@ func strmUpstreamError(err error) (int, string) {
 	}
 }
 
-func handleStrmPlaybackHistory(w http.ResponseWriter, r *http.Request) {
-	st := RT().GetStrmStore()
-	logs, total := st.ListPlaybackLogs(queryIntDefault(r, "limit", 50), queryIntDefault(r, "offset", 0))
+func (s *Server) handleStrmPlaybackHistory(w http.ResponseWriter, r *http.Request) {
+	st := s.rt.GetStrmStore()
+	logs, total := st.ListPlaybackLogs(s.queryIntDefault(r, "limit", 50), s.queryIntDefault(r, "offset", 0))
 	items := make([]map[string]any, 0, len(logs))
 	for _, l := range logs {
 		items = append(items, map[string]any{
@@ -303,11 +303,11 @@ func handleStrmPlaybackHistory(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func strmRedirect(w http.ResponseWriter, r *http.Request, link directLink) {
-	strmRedirectWithURL(w, r, link.url, link.fileName)
+func (s *Server) strmRedirect(w http.ResponseWriter, r *http.Request, link directLink) {
+	s.strmRedirectWithURL(w, r, link.url, link.fileName)
 }
 
-func strmRedirectWithURL(w http.ResponseWriter, r *http.Request, rawURL, fileName string) {
+func (s *Server) strmRedirectWithURL(w http.ResponseWriter, r *http.Request, rawURL, fileName string) {
 	if fileName != "" {
 		w.Header().Set("Content-Disposition", contentDisposition(fileName))
 	}
@@ -344,7 +344,7 @@ func directURLExpiry(rawURL string) time.Time {
 	return time.Now().Add(30 * time.Minute)
 }
 
-func writeStrmUpstreamError(w http.ResponseWriter, err error) {
+func (s *Server) writeStrmUpstreamError(w http.ResponseWriter, err error) {
 	switch {
 	case u115.IsRateLimit(err):
 		w.Header().Set("Retry-After", "60")
