@@ -23,15 +23,15 @@ var traktSSEState struct {
 }
 
 func (rt *Runtime) setSSEConnected(connected bool) {
-	traktSSEState.mu.Lock()
-	traktSSEState.connected = connected
-	traktSSEState.mu.Unlock()
+	rt.traktSSEState.mu.Lock()
+	rt.traktSSEState.connected = connected
+	rt.traktSSEState.mu.Unlock()
 }
 
 func (rt *Runtime) sseConnected() bool {
-	traktSSEState.mu.Lock()
-	defer traktSSEState.mu.Unlock()
-	return traktSSEState.connected
+	rt.traktSSEState.mu.Lock()
+	defer rt.traktSSEState.mu.Unlock()
+	return rt.traktSSEState.connected
 }
 
 // sseEventQueueSize SSE 事件异步分发的有界队列长度：
@@ -183,7 +183,7 @@ func (rt *Runtime) handlePlexPlaybackNotification(plexClient *plexserver.Client,
 // ensureTraktSSELoop 启动 Plex 实时通知订阅（幂等）：
 // 常驻一条 SSE 连接，断线指数退避重连；事件经有界队列异步分发。
 func (rt *Runtime) ensureTraktSSELoop() {
-	traktSSEOnce.Do(func() {
+	rt.traktSSEOnce.Do(func() {
 		go func() {
 			rt.appLog("trakt", "sse_started", "INFO", "Plex 实时通知线程已启动", nil)
 			backoff := 5 * time.Second
@@ -237,7 +237,7 @@ func (rt *Runtime) ensureTraktSSELoop() {
 				ctx, cancel := context.WithCancel(context.Background())
 				go func() {
 					select {
-					case <-traktSSEWatcher.stopCh:
+					case <-rt.traktSSEWatcher.stopCh:
 						cancel()
 					case <-ctx.Done():
 					}
@@ -362,7 +362,7 @@ func (rt *Runtime) waitPlexReachable(stop <-chan struct{}) (ready, halted bool) 
 // ensureTraktSessionLoop 启动 Plex 会话轮询（正在看 → Trakt）。
 // 纯兜底：每轮先查 SSE 是否在线，在线则跳过实际轮询（见 pollPlexSessionsOnce）。
 func (rt *Runtime) ensureTraktSessionLoop() {
-	traktSessionOnce.Do(func() {
+	rt.traktSessionOnce.Do(func() {
 		go func() {
 			rt.appLog("trakt", "session_poll_started", "INFO", "Plex 会话轮询线程已启动", nil)
 			for {
@@ -374,15 +374,15 @@ func (rt *Runtime) ensureTraktSessionLoop() {
 					defer func() {
 						if r := recover(); r != nil {
 							msg := fmt.Sprintf("%v", r)
-							traktSessionWatcher.mu.Lock()
-							traktSessionWatcher.lastPollError = &msg
-							traktSessionWatcher.mu.Unlock()
+							rt.traktSessionWatcher.mu.Lock()
+							rt.traktSessionWatcher.lastPollError = &msg
+							rt.traktSessionWatcher.mu.Unlock()
 						}
 					}()
 					rt.pollPlexSessionsOnce()
 				}()
 				select {
-				case <-traktSessionWatcher.stopCh:
+				case <-rt.traktSessionWatcher.stopCh:
 					rt.appLog("trakt", "session_poll_stopped", "INFO", "Plex 会话轮询线程已停止", nil)
 					return
 				case <-time.After(time.Duration(interval) * time.Second):

@@ -26,29 +26,29 @@ var traktSyncState struct {
 }
 
 // TraktSyncRunning 同步是否进行中。
-func TraktSyncRunning() bool {
-	traktSyncState.mu.Lock()
-	defer traktSyncState.mu.Unlock()
-	return traktSyncState.running
+func (rt *Runtime) TraktSyncRunning() bool {
+	rt.traktSyncState.mu.Lock()
+	defer rt.traktSyncState.mu.Unlock()
+	return rt.traktSyncState.running
 }
 
 // TriggerTraktSync 异步触发一轮同步；已在进行中返回 false。
 func (rt *Runtime) TriggerTraktSync(trigger string) bool {
-	traktSyncState.mu.Lock()
-	if traktSyncState.running {
-		traktSyncState.mu.Unlock()
+	rt.traktSyncState.mu.Lock()
+	if rt.traktSyncState.running {
+		rt.traktSyncState.mu.Unlock()
 		return false
 	}
-	traktSyncState.running = true
-	traktSyncState.mu.Unlock()
+	rt.traktSyncState.running = true
+	rt.traktSyncState.mu.Unlock()
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				rt.appLog("trakt", "sync_panic", "ERROR", fmt.Sprintf("观看同步异常退出：%v", r), nil)
 			}
-			traktSyncState.mu.Lock()
-			traktSyncState.running = false
-			traktSyncState.mu.Unlock()
+			rt.traktSyncState.mu.Lock()
+			rt.traktSyncState.running = false
+			rt.traktSyncState.mu.Unlock()
 		}()
 		rt.runTraktSync(trigger)
 	}()
@@ -150,14 +150,14 @@ func (rt *Runtime) traktSyncStatusPayload() map[string]any {
 		"sync_to_trakt":          cfg.Trakt.SyncToTrakt,
 		"sync_cron":              cfg.Trakt.SyncCron,
 		"session_poll_seconds":   cfg.Trakt.SessionPollSeconds,
-		"running":                TraktSyncRunning(),
+		"running":                rt.TraktSyncRunning(),
 		"sync_watcher_alive":     watcherAlive(traktWatcher),
 		"session_watcher_alive":  watcherAlive(traktSessionWatcher),
 		"sse_enabled":            cfg.Trakt.SSEEnabled,
 		"sse_connected":          rt.sseConnected(),
-		"last_polled_at":         traktWatcher.lastPolledAt,
-		"last_poll_error":        traktWatcher.lastPollError,
-		"last_session_polled_at": traktSessionWatcher.lastPolledAt,
+		"last_polled_at":         rt.traktWatcher.lastPolledAt,
+		"last_poll_error":        rt.traktWatcher.lastPollError,
+		"last_session_polled_at": rt.traktSessionWatcher.lastPolledAt,
 	}
 	if store := rt.GetTraktSyncStore(); store != nil {
 		if last := store.GetLastFinishedSyncRun(); last != nil {

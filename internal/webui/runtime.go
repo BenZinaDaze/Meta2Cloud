@@ -51,6 +51,25 @@ type Runtime struct {
 	plexClient  *plexserver.Client
 	traktSync   *store.TraktSyncStore
 
+
+	// ── 观看同步运行态（scrobble / SSE / 会话轮询 / 双向同步；见 scrobble.go 等）──
+	sessionScrobbleMu   sync.Mutex
+	sessionScrobbleByID map[string]*sessionScrobble
+	traktSSEState struct {
+		mu          sync.Mutex
+		connected   bool
+		lastEventAt time.Time
+	}
+	traktWatcher        *watcherState
+	traktSessionWatcher *watcherState
+	traktSSEWatcher     *watcherState
+	traktSessionOnce    sync.Once
+	traktSSEOnce        sync.Once
+	traktSyncState struct {
+		mu      sync.Mutex
+		running bool
+	}
+
 	jwtSecretOnce  sync.Once
 	jwtSecretValue string
 
@@ -116,6 +135,10 @@ func InitRuntime(rootDir string) *Runtime {
 	rt.configSig = [3]int64{}
 	// health 钩子默认实现（包级 init 环依赖已随钩子入字段消除）
 	rt.broadcaster = wsBroadcaster{conns: map[chan map[string]any]bool{}}
+	rt.sessionScrobbleByID = map[string]*sessionScrobble{}
+	rt.traktWatcher = &watcherState{stopCh: make(chan struct{})}
+	rt.traktSessionWatcher = &watcherState{stopCh: make(chan struct{})}
+	rt.traktSSEWatcher = &watcherState{stopCh: make(chan struct{})}
 	rt.strmSvc = &strmService{rt: rt}
 	rt.healthSendTG = pipeline.SendTelegramMessage
 	rt.healthTGConfig = func() config.Telegram { return rt.GetConfig().Telegram }

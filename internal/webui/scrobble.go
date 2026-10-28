@@ -4,7 +4,6 @@ package webui
 import (
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"meta2cloud/internal/plexserver"
@@ -90,26 +89,21 @@ type sessionScrobble struct {
 	unresolvedLogged bool
 }
 
-var (
-	sessionScrobbleMu   sync.Mutex
-	sessionScrobbleByID = map[string]*sessionScrobble{}
-)
-
 func (rt *Runtime) scrobbleStateFor(sessionKey string) *sessionScrobble {
-	sessionScrobbleMu.Lock()
-	defer sessionScrobbleMu.Unlock()
-	st := sessionScrobbleByID[sessionKey]
+	rt.sessionScrobbleMu.Lock()
+	defer rt.sessionScrobbleMu.Unlock()
+	st := rt.sessionScrobbleByID[sessionKey]
 	if st == nil {
 		st = &sessionScrobble{}
-		sessionScrobbleByID[sessionKey] = st
+		rt.sessionScrobbleByID[sessionKey] = st
 	}
 	return st
 }
 
 func (rt *Runtime) dropScrobbleState(sessionKey string) {
-	sessionScrobbleMu.Lock()
-	delete(sessionScrobbleByID, sessionKey)
-	sessionScrobbleMu.Unlock()
+	rt.sessionScrobbleMu.Lock()
+	delete(rt.sessionScrobbleByID, sessionKey)
+	rt.sessionScrobbleMu.Unlock()
 }
 
 // scrobbleTransition 按状态跃迁上报 start/pause（均不计次）。仅 stop 收尾
@@ -285,7 +279,7 @@ func (rt *Runtime) pollPlexSessionsOnce() {
 	if authorized, _ := rt.traktOauthStatusPayload()["authorized"].(bool); !authorized {
 		return
 	}
-	if TraktSyncRunning() {
+	if rt.TraktSyncRunning() {
 		return // 避免与全量同步交叉写 Trakt
 	}
 	plexClient := rt.GetPlexClient()
