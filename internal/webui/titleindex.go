@@ -44,9 +44,6 @@ func buildTitleIndex() watched.TitleIndex {
 		byTitle: map[string][]identityEntry{},
 	}
 	libStore := RT().GetLibraryStore()
-	if libStore == nil {
-		return idx
-	}
 	add := func(mediaType, title, yearStr string, tmdbID int64) {
 		if mediaType == "" || title == "" || tmdbID <= 0 {
 			return

@@ -28,10 +28,6 @@ type titlePinItem struct {
 
 func handleListTitlePins(w http.ResponseWriter, _ *http.Request) {
 	ls := RT().GetLibraryStore()
-	if ls == nil {
-		writeJSONError(w, http.StatusInternalServerError, "媒体库存储不可用")
-		return
-	}
 	pins, err := ls.ListTitlePins()
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
@@ -86,10 +82,6 @@ func handleAdoptTitlePin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ls := RT().GetLibraryStore()
-	if ls == nil {
-		writeJSONError(w, http.StatusInternalServerError, "媒体库存储不可用")
-		return
-	}
 	provider := RT().GetStorageProvider()
 	if provider == nil {
 		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
@@ -167,10 +159,6 @@ func handleDeleteTitlePin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ls := RT().GetLibraryStore()
-	if ls == nil {
-		writeJSONError(w, http.StatusInternalServerError, "媒体库存储不可用")
-		return
-	}
 	exists, err := ls.DeleteTitlePin(body.MediaType, body.TmdbID)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())

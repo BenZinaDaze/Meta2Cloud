@@ -189,9 +189,6 @@ func handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 		go func() {
 			defer func() { _ = recover() }()
 			st := RT().GetStrmStore()
-			if st == nil {
-				return
-			}
 			var nameArg, uaArg *string
 			if fileName != "" {
 				nameArg = &fileName
@@ -290,10 +287,6 @@ func strmUpstreamError(err error) (int, string) {
 
 func handleStrmPlaybackHistory(w http.ResponseWriter, r *http.Request) {
 	st := RT().GetStrmStore()
-	if st == nil {
-		writeJSONError(w, http.StatusInternalServerError, "STRM 存储不可用")
-		return
-	}
 	logs, total := st.ListPlaybackLogs(queryIntDefault(r, "limit", 50), queryIntDefault(r, "offset", 0))
 	items := make([]map[string]any, 0, len(logs))
 	for _, l := range logs {

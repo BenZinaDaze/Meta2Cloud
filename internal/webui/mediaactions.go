@@ -433,9 +433,6 @@ func fileStemOf(name string) string {
 // 否则旧记录会把同名再次下载重新识别到错误条目上。
 func rewriteIngestHistory(mediaType, driveFolderID string, tmdbID int64) (int, error) {
 	ingest := RT().GetIngestStore()
-	if ingest == nil {
-		return 0, nil
-	}
 	rows := ingest.ListByFolder(mediaType, driveFolderID)
 	if len(rows) == 0 {
 		return 0, nil

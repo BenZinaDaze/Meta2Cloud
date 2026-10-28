@@ -400,10 +400,6 @@ func handleGetLibrary(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
 	libStore := RT().GetLibraryStore()
-	if libStore == nil {
-		writeJSONError(w, http.StatusInternalServerError, "媒体库存储不可用")
-		return
-	}
 	snap := libStore.GetSnapshotPage(store.SnapshotQuery{
 		MediaType: r.URL.Query().Get("media_type"),
 		SortBy:    sortBy,
@@ -433,10 +429,6 @@ func handleGetLibrary(w http.ResponseWriter, r *http.Request) {
 
 func handleGetStats(w http.ResponseWriter, _ *http.Request) {
 	libStore := RT().GetLibraryStore()
-	if libStore == nil {
-		writeJSONError(w, http.StatusInternalServerError, "媒体库存储不可用")
-		return
-	}
 	writeJSON(w, http.StatusOK, libStore.GetStats())
 }
 

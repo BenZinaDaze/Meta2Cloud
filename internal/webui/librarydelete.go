@@ -51,9 +51,6 @@ func listMatchedSubscriptions(ref *libraryMediaRef) []*store.SubscriptionRecord 
 		return nil
 	}
 	rssStore := RT().GetRSSStore()
-	if rssStore == nil {
-		return nil
-	}
 	return rssStore.ListSubscriptionsByTmdb(ref.MediaType, ref.TmdbID)
 }
 
@@ -116,9 +113,6 @@ func removeStrmByFileIDs(st *store.StrmStore, fileIDs map[string]bool) int {
 // （title/tmdb_id/drive_folder_id 照抄条目字段，不改动原入库记录）。
 func recordDeletionIngest(ref *libraryMediaRef) {
 	ingest := RT().GetIngestStore()
-	if ingest == nil {
-		return
-	}
 	if _, err := ingest.RecordIngest(store.IngestRecord{
 		MediaType:     ref.MediaType,
 		TmdbID:        ref.TmdbID,
@@ -135,11 +129,8 @@ func recordDeletionIngest(ref *libraryMediaRef) {
 
 // cancelMatchedSubscriptions 逐条删除匹配的订阅（含已停用；命中记录随外键级联），返回取消数量。
 func cancelMatchedSubscriptions(subs []*store.SubscriptionRecord) int {
-	rssStore := RT().GetRSSStore()
-	if rssStore == nil {
-		return 0
-	}
 	cancelled := 0
+	rssStore := RT().GetRSSStore()
 	for _, sub := range subs {
 		if !rssStore.DeleteSubscription(sub.ID) {
 			continue
@@ -169,10 +160,6 @@ func handleLibraryMediaPreview(w http.ResponseWriter, r *http.Request) {
 	folderID := r.PathValue("folderID")
 	if folderID == "" {
 		writeJSONError(w, http.StatusBadRequest, "缺少 drive_folder_id")
-		return
-	}
-	if RT().GetLibraryStore() == nil {
-		writeJSONError(w, http.StatusInternalServerError, "媒体库存储不可用")
 		return
 	}
 	ref := loadLibraryMediaRef(folderID)
@@ -210,10 +197,6 @@ func handleLibraryMediaDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	libStore := RT().GetLibraryStore()
-	if libStore == nil {
-		writeJSONError(w, http.StatusInternalServerError, "媒体库存储不可用")
-		return
-	}
 	// 1. 删前读出条目与匹配订阅（删除后即查不到）
 	ref := loadLibraryMediaRef(folderID)
 	if ref == nil {

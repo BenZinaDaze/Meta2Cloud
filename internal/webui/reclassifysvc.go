@@ -161,10 +161,6 @@ func handleCategoriesReclassifyDry(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	ls := RT().GetLibraryStore()
-	if ls == nil {
-		writeJSONError(w, http.StatusInternalServerError, "媒体库存储不可用")
-		return
-	}
 	plan := buildReclassifyPlan(categories, ls)
 
 	type previewItem struct {
@@ -216,8 +212,8 @@ func handleCategoriesReclassify(w http.ResponseWriter, _ *http.Request) {
 	}
 	ls := RT().GetLibraryStore()
 	provider := RT().GetStorageProvider()
-	if ls == nil || provider == nil {
-		writeJSONError(w, http.StatusInternalServerError, "存储或媒体库不可用")
+	if provider == nil {
+		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
 		return
 	}
 	reclassifyMu.Lock()
@@ -446,7 +442,7 @@ func handleMediaClassification(w http.ResponseWriter, r *http.Request) {
 	categories := RT().GetCategories()
 	ls := RT().GetLibraryStore()
 	provider := RT().GetStorageProvider()
-	if categories == nil || ls == nil || provider == nil {
+	if categories == nil || provider == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"available": false})
 		return
 	}

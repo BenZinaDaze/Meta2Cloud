@@ -199,7 +199,7 @@ func ensureTraktSSELoop() {
 					plexClient = RT().GetPlexClient()
 					traktClient = RT().GetTraktClient()
 					syncStore = RT().GetTraktSyncStore()
-					if plexClient == nil || traktClient == nil || syncStore == nil {
+					if plexClient == nil || traktClient == nil {
 						return nil, nil, nil, false
 					}
 					return plexClient, traktClient, syncStore, true

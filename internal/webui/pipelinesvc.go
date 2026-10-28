@@ -327,12 +327,6 @@ func strconvParseInt(s string) (int64, error) {
 func handleGetLogs(w http.ResponseWriter, r *http.Request) {
 	// 与 Python logs_payload 一致：{items, summary, maxId}，并同步保留天数配置
 	ls := RT().GetLogStore()
-	if ls == nil {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"items": []any{}, "summary": map[string]any{}, "maxId": 0,
-		})
-		return
-	}
 	ls.SetRetentionDays(RT().GetConfig().WebUI.LogRetentionDays)
 	limit := intQuery(r, "limit", 200)
 	items := ls.Read(limit, r.URL.Query().Get("category"), r.URL.Query().Get("level"), 0)
@@ -348,10 +342,6 @@ func handleGetLogs(w http.ResponseWriter, r *http.Request) {
 
 func handleIngestHistory(w http.ResponseWriter, r *http.Request) {
 	is := RT().GetIngestStore()
-	if is == nil {
-		writeJSONError(w, http.StatusInternalServerError, "入库历史存储不可用")
-		return
-	}
 	q := r.URL.Query()
 	result := is.Query(ingestQueryFromParams(q))
 	for _, item := range result.Items {
@@ -364,29 +354,17 @@ func handleIngestHistory(w http.ResponseWriter, r *http.Request) {
 
 func handleIngestStats(w http.ResponseWriter, r *http.Request) {
 	is := RT().GetIngestStore()
-	if is == nil {
-		writeJSONError(w, http.StatusInternalServerError, "入库历史存储不可用")
-		return
-	}
 	days := intQuery(r, "days", 7)
 	writeJSON(w, http.StatusOK, is.Stats(days))
 }
 
 func handleIngestDailyStats(w http.ResponseWriter, r *http.Request) {
 	is := RT().GetIngestStore()
-	if is == nil {
-		writeJSONError(w, http.StatusInternalServerError, "入库历史存储不可用")
-		return
-	}
 	writeJSON(w, http.StatusOK, is.DailyStats(intQuery(r, "days", 30)))
 }
 
 func handleIngestRecent(w http.ResponseWriter, r *http.Request) {
 	is := RT().GetIngestStore()
-	if is == nil {
-		writeJSONError(w, http.StatusInternalServerError, "入库历史存储不可用")
-		return
-	}
 	items := is.GetRecent(intQuery(r, "limit", 10))
 	if items == nil {
 		items = []map[string]any{}

@@ -98,7 +98,108 @@ func InitRuntime(rootDir string) *Runtime {
 	defaultRuntime.categories = nil
 	defaultRuntime.categoriesM = 0
 	defaultRuntime.configSig = [3]int64{}
+	// 上一次初始化打开的存储句柄先关闭（重复 InitRuntime 的测试场景防 fd 泄漏）
+	defaultRuntime.closeStores()
+	defaultRuntime.initStores()
 	return defaultRuntime
+}
+
+// initStores 启动时统一打开全部存储单例（fail-fast）：库路径均由 RootDir 固定
+// 派生、打开一次终身使用（invalidateRuntimeCache 不清空 store），失败即中止启动
+// ——数据库损坏/磁盘不可写属部署级故障，比每次请求返回 500「不可用」更早、更清晰地暴露。
+// 需已持 rt.mu（由 InitRuntime 调用，Mutex 不可重入，本函数不得再取锁）。
+func (rt *Runtime) initStores() {
+	open := func(name, dbPath string, openFn func(string) error) {
+		if err := openFn(dbPath); err != nil {
+			log.Fatalf("%s初始化失败（%s）：%v", name, dbPath, err)
+		}
+	}
+	dataDir := filepath.Join(rt.RootDir, "config", "data")
+	libraryDB := filepath.Join(dataDir, "library.db")
+	open("媒体实体库", libraryDB, func(p string) error {
+		s, err := store.OpenLibraryStore(p)
+		if err != nil {
+			return err
+		}
+		rt.library = s
+		return nil
+	})
+	rt.tmdbCache = store.NewTmdbCache(rt.library)
+	open("入库历史存储", libraryDB, func(p string) error {
+		s, err := store.OpenIngestStore(p)
+		if err != nil {
+			return err
+		}
+		rt.ingest = s
+		return nil
+	})
+	open("RSS 订阅存储", libraryDB, func(p string) error {
+		s, err := store.OpenRSSStore(p, p)
+		if err != nil {
+			return err
+		}
+		s.ImageBaseURL = rt.getConfigLocked().TmdbImageBaseURL
+		rt.rss = s
+		return nil
+	})
+	open("STRM 存储", filepath.Join(dataDir, "strm.db"), func(p string) error {
+		s, err := store.OpenStrmStore(p)
+		if err != nil {
+			return err
+		}
+		rt.strm = s
+		return nil
+	})
+	open("115 自动整理状态存储", filepath.Join(dataDir, "u115_auto_organize.db"), func(p string) error {
+		s, err := store.OpenU115AutoStore(p)
+		if err != nil {
+			return err
+		}
+		rt.u115Auto = s
+		return nil
+	})
+	open("观看同步存储", filepath.Join(dataDir, "traktsync.db"), func(p string) error {
+		s, err := store.OpenTraktSyncStore(p)
+		if err != nil {
+			return err
+		}
+		rt.traktSync = s
+		return nil
+	})
+	legacyJSONL := filepath.Join(rt.DataDir(), "app_logs.jsonl") // Python 时代旧日志一次性迁移
+	s, err := store.OpenLogStore(rt.DataDir(), rt.getConfigLocked().WebUI.LogRetentionDays, legacyJSONL)
+	if err != nil {
+		log.Fatalf("应用日志存储初始化失败（%s）：%v", rt.DataDir(), err)
+	}
+	rt.logStore = s
+}
+
+// closeStores 关闭当前打开的存储句柄（重复初始化时防 fd 泄漏）。
+// 逐字段判空：typed nil 装进接口后 != nil 恒成立，不能走统一切片。
+func (rt *Runtime) closeStores() {
+	if rt.library != nil {
+		_ = rt.library.Close()
+	}
+	if rt.ingest != nil {
+		_ = rt.ingest.Close()
+	}
+	if rt.logStore != nil {
+		_ = rt.logStore.Close()
+	}
+	if rt.rss != nil {
+		_ = rt.rss.Close()
+	}
+	if rt.u115Auto != nil {
+		_ = rt.u115Auto.Close()
+	}
+	if rt.strm != nil {
+		_ = rt.strm.Close()
+	}
+	if rt.traktSync != nil {
+		_ = rt.traktSync.Close()
+	}
+	rt.library, rt.tmdbCache, rt.ingest, rt.logStore = nil, nil, nil, nil
+	rt.rss, rt.u115Auto, rt.strm, rt.traktSync = nil, nil, nil, nil
 }
 
 func fileMtime(path string) int64 {
@@ -219,18 +320,18 @@ func (rt *Runtime) getLibraryStoreLocked() *store.LibraryStore {
 	return rt.library
 }
 
-// GetLibraryStore 媒体实体库单例。
+// GetLibraryStore 媒体实体库单例（InitRuntime 时打开，失败则启动中止）。
 func (rt *Runtime) GetLibraryStore() *store.LibraryStore {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	return rt.getLibraryStoreLocked()
+	if rt.library != nil {
+		rt.library.ImageBaseURL = rt.getConfigLocked().TmdbImageBaseURL
+	}
+	return rt.library
 }
 
-// getTmdbCacheLocked TMDB 缓存单例（需已持锁）。
+// getTmdbCacheLocked TMDB 缓存单例（需已持锁；InitRuntime 时随库创建）。
 func (rt *Runtime) getTmdbCacheLocked() *store.TmdbCache {
-	if rt.tmdbCache == nil {
-		rt.tmdbCache = store.NewTmdbCache(rt.getLibraryStoreLocked())
-	}
 	return rt.tmdbCache
 }
 
@@ -368,83 +469,38 @@ func (rt *Runtime) startTmdbEvictLoop(stop <-chan struct{}) {
 	}()
 }
 
-// GetIngestStore 入库历史存储单例（与 library.db 同库）。
+// GetIngestStore 入库历史存储单例（与 library.db 同库；InitRuntime 时打开）。
 func (rt *Runtime) GetIngestStore() *store.IngestStore {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	if rt.ingest == nil {
-		dbPath := filepath.Join(rt.RootDir, "config", "data", "library.db")
-		s, err := store.OpenIngestStore(dbPath)
-		if err != nil {
-			log.Printf("入库历史存储初始化失败：%v", err)
-			return nil
-		}
-		rt.ingest = s
-	}
 	return rt.ingest
 }
 
-// GetLogStore 应用日志存储单例。
+// GetLogStore 应用日志存储单例（InitRuntime 时打开）。
 func (rt *Runtime) GetLogStore() *store.LogStore {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	if rt.logStore == nil {
-		legacyJSONL := filepath.Join(rt.DataDir(), "app_logs.jsonl") // Python 时代旧日志一次性迁移
-		s, err := store.OpenLogStore(rt.DataDir(), rt.getConfigLocked().WebUI.LogRetentionDays, legacyJSONL)
-		if err != nil {
-			return nil
-		}
-		rt.logStore = s
-	}
 	return rt.logStore
 }
 
-// GetRSSStore RSS 订阅存储单例（与 library.db 同库）。
+// GetRSSStore RSS 订阅存储单例（与 library.db 同库；InitRuntime 时打开）。
 func (rt *Runtime) GetRSSStore() *store.RSSStore {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	if rt.rss == nil {
-		dbPath := filepath.Join(rt.RootDir, "config", "data", "library.db")
-		s, err := store.OpenRSSStore(dbPath, dbPath)
-		if err != nil {
-			log.Printf("RSS 订阅存储初始化失败：%v", err)
-			return nil
-		}
-		cfg := rt.getConfigLocked()
-		s.ImageBaseURL = cfg.TmdbImageBaseURL
-		rt.rss = s
-	}
 	return rt.rss
 }
 
-// GetU115AutoStore 115 自动整理状态存储单例。
+// GetU115AutoStore 115 自动整理状态存储单例（InitRuntime 时打开）。
 func (rt *Runtime) GetU115AutoStore() *store.U115AutoStore {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	if rt.u115Auto == nil {
-		dbPath := filepath.Join(rt.RootDir, "config", "data", "u115_auto_organize.db")
-		s, err := store.OpenU115AutoStore(dbPath)
-		if err != nil {
-			return nil
-		}
-		rt.u115Auto = s
-	}
 	return rt.u115Auto
 }
 
-// GetStrmStore STRM 存储单例（独立 strm.db，不影响 library.db）。
+// GetStrmStore STRM 存储单例（独立 strm.db，不影响 library.db；InitRuntime 时打开）。
 func (rt *Runtime) GetStrmStore() *store.StrmStore {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	if rt.strm == nil {
-		dbPath := filepath.Join(rt.RootDir, "config", "data", "strm.db")
-		s, err := store.OpenStrmStore(dbPath)
-		if err != nil {
-			log.Printf("STRM 存储初始化失败：%v", err)
-			return nil
-		}
-		rt.strm = s
-	}
 	return rt.strm
 }
 
@@ -507,19 +563,10 @@ func (rt *Runtime) GetPlexClient() *plexserver.Client {
 	return rt.getPlexClientLocked()
 }
 
-// GetTraktSyncStore 观看同步同步状态存储单例（独立 traktsync.db）。
+// GetTraktSyncStore 观看同步状态存储单例（独立 traktsync.db；InitRuntime 时打开）。
 func (rt *Runtime) GetTraktSyncStore() *store.TraktSyncStore {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	if rt.traktSync == nil {
-		dbPath := filepath.Join(rt.RootDir, "config", "data", "traktsync.db")
-		s, err := store.OpenTraktSyncStore(dbPath)
-		if err != nil {
-			log.Printf("观看同步存储初始化失败：%v", err)
-			return nil
-		}
-		rt.traktSync = s
-	}
 	return rt.traktSync
 }
 

@@ -74,10 +74,6 @@ func runTraktSync(trigger string) {
 		return
 	}
 	syncStore := RT().GetTraktSyncStore()
-	if syncStore == nil {
-		appLog("trakt", "sync_skipped", "WARNING", "观看同步存储不可用，跳过同步", nil)
-		return
-	}
 	engine := &syncengine.Engine{
 		Playback: plexserver.NewSource(plexClient, buildTitleIndex(), syncStore),
 		Trakt:    trakt.NewTraktSource(traktClient, syncStore, syncStore),
@@ -200,10 +196,6 @@ func handleTraktSyncTrigger(w http.ResponseWriter, _ *http.Request) {
 
 func handleTraktSyncRuns(w http.ResponseWriter, r *http.Request) {
 	store := RT().GetTraktSyncStore()
-	if store == nil {
-		writeJSONError(w, http.StatusInternalServerError, "观看同步存储不可用")
-		return
-	}
 	limit := intQuery(r, "limit", 20)
 	offset := intQuery(r, "offset", 0)
 	if limit <= 0 || limit > 100 {
@@ -232,10 +224,6 @@ func handleTraktSyncRuns(w http.ResponseWriter, r *http.Request) {
 
 func handleTraktSyncRunItems(w http.ResponseWriter, r *http.Request) {
 	syncStore := RT().GetTraktSyncStore()
-	if syncStore == nil {
-		writeJSONError(w, http.StatusInternalServerError, "观看同步存储不可用")
-		return
-	}
 	runID, err := strconv.ParseInt(r.PathValue("runID"), 10, 64)
 	if err != nil || runID <= 0 {
 		writeJSONError(w, http.StatusBadRequest, "无效的 run id")
@@ -268,9 +256,6 @@ func handleTraktSyncRunItems(w http.ResponseWriter, r *http.Request) {
 // traktMediaTitle 查媒体展示标题（tmdb_media 缓存优先，回退 library_media）。
 func traktMediaTitle(mediaType string, tmdbID int64) string {
 	libStore := RT().GetLibraryStore()
-	if libStore == nil {
-		return ""
-	}
 	if row := libStore.GetTmdbEntry(mediaType, tmdbID); row != nil && row.Title != "" {
 		return row.Title
 	}
@@ -280,10 +265,6 @@ func traktMediaTitle(mediaType string, tmdbID int64) string {
 // handleTraktSyncIgnores GET /api/trakt/sync/ignores：忽略清单 + 反复失败候选。
 func handleTraktSyncIgnores(w http.ResponseWriter, _ *http.Request) {
 	syncStore := RT().GetTraktSyncStore()
-	if syncStore == nil {
-		writeJSONError(w, http.StatusInternalServerError, "观看同步存储不可用")
-		return
-	}
 	ignores := make([]map[string]any, 0)
 	for _, it := range syncStore.ListSyncIgnores() {
 		ignores = append(ignores, map[string]any{
@@ -313,10 +294,6 @@ func handleTraktSyncIgnores(w http.ResponseWriter, _ *http.Request) {
 // anchor 可选："tmdb"（默认）| "tvdb"（tvdb 锚定的剧集键）。
 func handleTraktSyncIgnoreSet(w http.ResponseWriter, r *http.Request) {
 	syncStore := RT().GetTraktSyncStore()
-	if syncStore == nil {
-		writeJSONError(w, http.StatusInternalServerError, "观看同步存储不可用")
-		return
-	}
 	var req struct {
 		Action    string `json:"action"`
 		MediaType string `json:"media_type"`
@@ -367,9 +344,6 @@ func handleTraktSyncIgnoreSet(w http.ResponseWriter, r *http.Request) {
 // unresolved 明细在记录时已带播放端标题，不覆盖。
 func enrichRunItemTitles(items []store.TraktSyncRunItem) {
 	libStore := RT().GetLibraryStore()
-	if libStore == nil {
-		return
-	}
 	for i := range items {
 		it := &items[i]
 		if it.MediaType == nil || it.TmdbID == nil || *it.TmdbID <= 0 {

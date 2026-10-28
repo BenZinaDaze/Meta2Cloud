@@ -297,9 +297,6 @@ func pollPlexSessionsOnce() {
 		return
 	}
 	syncStore := RT().GetTraktSyncStore()
-	if syncStore == nil {
-		return
-	}
 	sessions, err := plexClient.Sessions()
 	if err != nil {
 		msg := fmt.Sprintf("%v", err)

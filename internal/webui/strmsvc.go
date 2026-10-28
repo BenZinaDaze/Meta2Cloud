@@ -218,9 +218,6 @@ func StrmSyncRunning() bool {
 func runStrmSync(trigger string) {
 	cfg := RT().GetConfig()
 	st := RT().GetStrmStore()
-	if st == nil {
-		return
-	}
 	if len(cfg.Strm.Mappings) == 0 {
 		log.Printf("[strm] 未配置路径映射，跳过同步")
 		return
@@ -662,8 +659,8 @@ func HandleVideoIngested(result pipeline.ProcessResult) error {
 	}
 	st := RT().GetStrmStore()
 	provider := RT().GetStorageProvider()
-	if st == nil || provider == nil {
-		return fmt.Errorf("存储不可用")
+	if provider == nil {
+		return fmt.Errorf("存储 Provider 不可用")
 	}
 
 	mapping, relPath, ok := locateMapping(provider, cfg, *result.TargetFolder, result.TargetChain)
@@ -801,9 +798,6 @@ func locateMapping(provider cloudfile.Provider, cfg *config.Config, target cloud
 // ensureIngestRunLocked 取当前累积 run（窗口内复用，否则新建）。需已持 hookMu。
 func ensureIngestRunLocked() {
 	st := RT().GetStrmStore()
-	if st == nil {
-		return
-	}
 	now := time.Now()
 	if strmSvc.hookRunID != 0 && now.Sub(strmSvc.hookLastAt) <= ingestRunFlushIdle {
 		return
@@ -905,10 +899,6 @@ func handleStrmSyncTrigger(w http.ResponseWriter, _ *http.Request) {
 
 func handleStrmSyncRuns(w http.ResponseWriter, r *http.Request) {
 	st := RT().GetStrmStore()
-	if st == nil {
-		writeJSONError(w, http.StatusInternalServerError, "STRM 存储不可用")
-		return
-	}
 	limit := queryIntDefault(r, "limit", 20)
 	offset := queryIntDefault(r, "offset", 0)
 	runs, total := st.ListSyncRuns(limit, offset)
@@ -921,10 +911,6 @@ func handleStrmSyncRuns(w http.ResponseWriter, r *http.Request) {
 
 func handleStrmSyncRunFiles(w http.ResponseWriter, r *http.Request) {
 	st := RT().GetStrmStore()
-	if st == nil {
-		writeJSONError(w, http.StatusInternalServerError, "STRM 存储不可用")
-		return
-	}
 	runID, err := strconv.ParseInt(r.PathValue("runID"), 10, 64)
 	if err != nil || runID <= 0 {
 		writeJSONError(w, http.StatusBadRequest, "无效的 run ID")

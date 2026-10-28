@@ -779,8 +779,8 @@ func RefreshLibrary(incremental bool) map[string]any {
 	client := RT().GetStorageProvider()
 	cfg := RT().GetConfig()
 	libStore := RT().GetLibraryStore()
-	if client == nil || libStore == nil {
-		return map[string]any{"error": "存储或媒体库不可用"}
+	if client == nil {
+		return map[string]any{"error": "存储 Provider 不可用"}
 	}
 	if incremental {
 		storedMtimes := libStore.GetAllFolderModifiedTimes()

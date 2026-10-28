@@ -440,9 +440,6 @@ func checkSubscriptionRecord(rssStore *store.RSSStore, record *store.Subscriptio
 // first_error 取首条抓取错误；推送类错误单列 push_errors，不参与订阅源健康判定。
 func PollSubscriptionsOnce() map[string]any {
 	rssStore := RT().GetRSSStore()
-	if rssStore == nil {
-		return map[string]any{"checked": 0, "pushed": 0, "errors": 1, "push_errors": 0, "first_error": "订阅存储不可用"}
-	}
 	records := rssStore.ListEnabledSubscriptions()
 	checked, pushed, errCount, pushErrCount := 0, 0, 0, 0
 	firstError := ""
@@ -552,10 +549,6 @@ func maxIntValue(v, min int) int {
 
 func handleListSubscriptions(w http.ResponseWriter, _ *http.Request) {
 	rssStore := RT().GetRSSStore()
-	if rssStore == nil {
-		writeJSONError(w, http.StatusInternalServerError, "订阅存储不可用")
-		return
-	}
 	// 存量订阅缓存缺失时惰性补全（有 TMDB key 才会发起）
 	for _, record := range rssStore.ListSubscriptions() {
 		if record.TmdbID != nil && *record.TmdbID > 0 {
@@ -577,10 +570,6 @@ func handleListSubscriptions(w http.ResponseWriter, _ *http.Request) {
 
 func handleCreateSubscription(w http.ResponseWriter, r *http.Request) {
 	rssStore := RT().GetRSSStore()
-	if rssStore == nil {
-		writeJSONError(w, http.StatusInternalServerError, "订阅存储不可用")
-		return
-	}
 	var body subscriptionBody
 	if err := jsonDecodeBody(r, &body); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "请求体格式错误")
