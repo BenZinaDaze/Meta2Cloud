@@ -146,8 +146,8 @@ type wsBroadcaster struct {
 var broadcaster = &wsBroadcaster{conns: map[chan map[string]any]bool{}}
 
 // BroadcastLog 广播一条流水线输出（落库 + 实时广播都经 appLog）。
-func BroadcastLog(level, message string, runID string) {
-	RT().appLog("pipeline", "pipeline_output", level, message, map[string]any{"runId": runID})
+func (rt *Runtime) BroadcastLog(level, message string, runID string) {
+	rt.appLog("pipeline", "pipeline_output", level, message, map[string]any{"runId": runID})
 }
 
 // broadcastEntry 把一条已落库的日志实时推给 WebSocket 订阅者（全类别）。

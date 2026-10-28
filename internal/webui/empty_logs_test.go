@@ -21,7 +21,7 @@ func TestLogsEmptyReturnsArrayNotNull(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: secret123\n"), 0o644)
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 	server := NewServer()
 	defer server.Close()
@@ -83,7 +83,7 @@ func TestSubscriptionTmdbCacheBackfill(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: secret123\ntmdb:\n  api_key: k\n"), 0o644)
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 	tmdbClient := tmdb.NewClient("k", "zh-CN", "", 5, RT().GetTmdbCache())
 	tmdbClient.SetTestBaseURL(tmdbServer.URL)
@@ -123,7 +123,7 @@ func TestRootPathTraversal(t *testing.T) {
 	os.WriteFile(filepath.Join(rootDir, "secret", "token.txt"), []byte("TOPSECRET"), 0o644)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: secret123\n"), 0o644)
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 	server := NewServer()
 	defer server.Close()
@@ -167,7 +167,7 @@ func TestRefreshItemArraysNotNull(t *testing.T) {
 	movieFolder := fp.addFolder("测试电影 (2010)", "movies")
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: secret123\ntmdb:\n  api_key: k\n"), 0o644)
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 	tmdbClient := tmdb.NewClient("k", "zh-CN", "", 5, nil)
 	tmdbClient.SetTestBaseURL(tmdbServer.URL)
@@ -209,7 +209,7 @@ func TestBuildSeasonsTotalNotStale(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: p\n"), 0o644)
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 
 	// TMDB mock: 主详情 seasons[0].episode_count=7, 季详情 12 集

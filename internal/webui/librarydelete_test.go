@@ -33,7 +33,7 @@ func newLibraryDeleteServer(t *testing.T) *libraryDeleteEnv {
 		[]byte("webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 
 	// 假网盘：root/剧集/删除之剧 (2024)/Season 01/两集视频

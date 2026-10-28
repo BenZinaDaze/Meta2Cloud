@@ -123,7 +123,7 @@ func (rt *Runtime) doRunPipeline() {
 
 	opts := pipeline.Options{
 		LogFn: func(level, message string) {
-			BroadcastLog(level, message, runID)
+			rt.BroadcastLog(level, message, runID)
 		},
 		TmdbCache: rt.GetTmdbCache(),
 	}

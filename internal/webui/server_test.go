@@ -44,7 +44,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 	if err := os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	resetLoginLimiterForTest()
 	InitRuntime(rootDir)
 	server := NewServer()
@@ -152,7 +152,7 @@ func TestLoginWithoutPassword(t *testing.T) {
 	rootDir := t.TempDir()
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte("webui:\n  username: admin\n"), 0o644)
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 	server := NewServer()
 	defer server.Close()
@@ -187,7 +187,7 @@ func newScanServer(t *testing.T) (*httptest.Server, string) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	cfgYAML := "webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n"
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	resetLoginLimiterForTest()
 	InitRuntime(rootDir)
 
@@ -381,7 +381,7 @@ func TestTriggerWebhookEmptySecretLoopbackOnly(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	cfgYAML := "webui:\n  username: admin\n  password: secret123\n  webhook_secret: \"\"\n"
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 	server := NewServer()
 	t.Cleanup(server.Close)
@@ -437,7 +437,7 @@ func TestConfigEndpoints(t *testing.T) {
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
 	os.WriteFile(filepath.Join(rootDir, "config", "parser-rules.yaml"),
 		[]byte("parser:\n  custom_words:\n    - 测试词\n  custom_release_groups:\n    - FSD\n"), 0o644)
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 	server := NewServer()
 	t.Cleanup(server.Close)
@@ -570,7 +570,7 @@ func newU115TestServer(t *testing.T, confirmed bool) (*httptest.Server, string) 
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	cfgYAML := "webui:\n  username: admin\n  password: secret123\nu115:\n  client_id: test-cid\n"
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 
 	client := u115.NewClient("test-cid",
@@ -811,7 +811,7 @@ func TestPushTorrentLinkAddsBTTask(t *testing.T) {
 	// 持久化 token 文件 → authorized = true
 	tokenData := fmt.Sprintf(`{"access_token":"at","refresh_token":"rt","expires_in":3600,"refresh_time":%d}`, time.Now().Unix())
 	os.WriteFile(filepath.Join(rootDir, "config", "115-token.json"), []byte(tokenData), 0o600)
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 
 	client := u115.NewClient("cid",
@@ -893,7 +893,7 @@ func newSubscriptionTestServer(t *testing.T) (*httptest.Server, string) {
 	tokenData := fmt.Sprintf(`{"access_token":"at","refresh_token":"rt","expires_in":3600,"refresh_time":%d}`, time.Now().Unix())
 	os.WriteFile(filepath.Join(rootDir, "config", "115-token.json"), []byte(tokenData), 0o600)
 
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 
 	// 注入测试 115 客户端
@@ -1047,7 +1047,7 @@ func TestScanAggregatesDuplicateShowFolders(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n"), 0o644)
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 
 	fp := newFakeWebProvider()
@@ -1108,7 +1108,7 @@ func TestGetMovieDetailByTmdbID(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n"), 0o644)
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 
 	fp := newFakeWebProvider()
@@ -1149,7 +1149,7 @@ func TestIncrementalSiblingRescan(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n"), 0o644)
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 
 	fp := newFakeWebProvider()
@@ -1227,7 +1227,7 @@ func TestScanCategoryPassthrough(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: secret123\nu115:\n  root_folder_id: \"root\"\n"), 0o644)
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 
 	fp := newFakeWebProvider()
@@ -1263,7 +1263,7 @@ func TestReidentifyReclassifiesFolder(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"),
 		[]byte("webui:\n  username: admin\n  password: secret123\ntmdb:\n  api_key: k\nu115:\n  root_folder_id: \"root\"\n"), 0o644)
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 
 	// TMDB mock：新识别的媒体带动画流派（16）与日语
@@ -1404,7 +1404,7 @@ func TestCategoriesReclassifyFlow(t *testing.T) {
 	strmLocal := filepath.Join(t.TempDir(), "media")
 	cfgYAML := "webui:\n  username: admin\n  password: secret123\ntmdb:\n  api_key: k\nu115:\n  root_folder_id: \"root\"\nstrm:\n  enabled: true\n  url_base: \"http://127.0.0.1:38765\"\n  mappings:\n    - pan_folder_id: \"root\"\n      local_path: \"" + strmLocal + "\"\n"
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 
 	fp := newFakeWebProvider()
@@ -1536,7 +1536,7 @@ func TestMediaClassificationEndpoint(t *testing.T) {
 	os.MkdirAll(filepath.Join(rootDir, "config"), 0o755)
 	cfgYAML := "webui:\n  username: admin\n  password: secret123\ntmdb:\n  api_key: k\nu115:\n  root_folder_id: \"root\"\n"
 	os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfgYAML), 0o644)
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 
 	// TMDB mock：执行/核对均绕缓存拉最新详情，返回动画流派

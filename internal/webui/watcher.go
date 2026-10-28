@@ -112,7 +112,7 @@ func (rt *Runtime) pollU115AutoOrganizeOnce() {
 			if refreshErr := anyStrValue(auth["refresh_error"]); refreshErr != "" {
 				reason += "：" + refreshErr
 			}
-			NotifyServiceHealth("115", false, reason)
+			rt.NotifyServiceHealth("115", false, reason)
 		}
 		return
 	}
@@ -121,13 +121,13 @@ func (rt *Runtime) pollU115AutoOrganizeOnce() {
 		return
 	}
 	// 配置值为云下载目录名，按名解析为目录 ID（兼容旧 ID 值）后再与任务的 WpPathID 比较
-	dlFolderID := resolveFolderID(cfg.U115.DownloadFolderID)
+	dlFolderID := rt.resolveFolderID(cfg.U115.DownloadFolderID)
 	taskPage, err := offline.GetTaskList(1)
 	if err != nil {
 		rt.recordU115PollError(err)
 		return
 	}
-	NotifyServiceHealth("115", true, "")
+	rt.NotifyServiceHealth("115", true, "")
 	stableSeconds := cfg.U115.AutoOrganizeStableSeconds
 	if stableSeconds < 0 {
 		stableSeconds = 0
@@ -198,7 +198,7 @@ func (rt *Runtime) recordU115PollError(err error) {
 	}
 	// 仅授权失效属于配置问题（需重新授权）；限流/网络抖动等瞬时错误不告警
 	if u115.IsAuth(err) {
-		NotifyServiceHealth("115", false, "自动整理轮询认证失败："+err.Error())
+		rt.NotifyServiceHealth("115", false, "自动整理轮询认证失败："+err.Error())
 	}
 	u115AutoWatcher.mu.Lock()
 	u115AutoWatcher.lastPollError = &msg
@@ -465,7 +465,7 @@ func (rt *Runtime) runRSSCron(stop <-chan struct{}) {
 		rssWatcher.lastSummary = summary
 		rssWatcher.mu.Unlock()
 		if report, ok2, reason := rssHealth.update(summary); report {
-			NotifyServiceHealth("订阅源", ok2, reason)
+			rt.NotifyServiceHealth("订阅源", ok2, reason)
 		}
 	}
 }

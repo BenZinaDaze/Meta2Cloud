@@ -59,7 +59,7 @@ var healthLogCategory = map[string]string{
 //
 // service 取「115」「Plex」「Trakt」「订阅源」；TG 未配置时静默降级为仅应用日志，
 // TG 发送失败记应用日志 WARN，不影响状态机。并发安全。
-func NotifyServiceHealth(service string, ok bool, reason string) {
+func (rt *Runtime) NotifyServiceHealth(service string, ok bool, reason string) {
 	category := healthLogCategory[service]
 	if category == "" {
 		category = "u115"

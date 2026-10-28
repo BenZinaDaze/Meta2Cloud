@@ -223,7 +223,7 @@ func (rt *Runtime) finishSession(syncStore *store.TraktSyncStore, traktClient *t
 		rt.appLog("trakt", "session_pushed", "SUCCESS",
 			fmt.Sprintf("播放已记录到 Trakt：%s（进度 %.0f%%）", rt.displayOrKey(key, title), progress*100), nil)
 		// 推送成功即 Trakt 授权有效：会话推送是独立于全量同步的恢复上报点
-		NotifyServiceHealth("Trakt", true, "")
+		rt.NotifyServiceHealth("Trakt", true, "")
 	case err == nil:
 		// action=pause：进度未达阈值，服务端未计次——不落记录
 	case errors.As(err, new(*trakt.DuplicateScrobbleError)):
@@ -246,7 +246,7 @@ func (rt *Runtime) finishSession(syncStore *store.TraktSyncStore, traktClient *t
 		rt.appLog("trakt", "session_push_failed", "WARNING",
 			fmt.Sprintf("播放记录推送 Trakt 失败（%s）：%v", rt.displayOrKey(key, title), err), nil)
 		if errors.Is(err, trakt.ErrUnauthorized) {
-			NotifyServiceHealth("Trakt", false, "播放上报认证失败："+err.Error())
+			rt.NotifyServiceHealth("Trakt", false, "播放上报认证失败："+err.Error())
 		}
 	}
 }
@@ -304,12 +304,12 @@ func (rt *Runtime) pollPlexSessionsOnce() {
 		traktSessionWatcher.lastPollError = &msg
 		traktSessionWatcher.mu.Unlock()
 		if errors.Is(err, plexserver.ErrUnauthorized) {
-			NotifyServiceHealth("Plex", false, err.Error())
+			rt.NotifyServiceHealth("Plex", false, err.Error())
 		}
 		return
 	}
 	// 会话查询成功即 Plex 可达且授权有效：SSE 关闭时这里是唯一的 Plex 恢复上报点
-	NotifyServiceHealth("Plex", true, "")
+	rt.NotifyServiceHealth("Plex", true, "")
 
 	seen := map[string]bool{}
 	source := plexserver.NewSource(plexClient, rt.buildTitleIndex(), syncStore)

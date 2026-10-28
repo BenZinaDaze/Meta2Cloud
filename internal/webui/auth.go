@@ -15,45 +15,40 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var (
-	jwtSecretOnce  sync.Once
-	jwtSecretValue string
-)
-
 // GetJWTSecret JWT 签名密钥：配置优先，其次持久化文件，否则生成并落盘。
-func GetJWTSecret() string {
-	jwtSecretOnce.Do(func() {
-		cfg := RT().GetConfig()
+func (rt *Runtime) GetJWTSecret() string {
+	rt.jwtSecretOnce.Do(func() {
+		cfg := rt.GetConfig()
 		if cfg.WebUI.SecretKey != "" {
-			jwtSecretValue = cfg.WebUI.SecretKey
+			rt.jwtSecretValue = cfg.WebUI.SecretKey
 			return
 		}
 		secretFile := filepath.Join(RT().DataDir(), ".jwt_secret")
 		if data, err := os.ReadFile(secretFile); err == nil {
 			if v := strings.TrimSpace(string(data)); v != "" {
-				jwtSecretValue = v
+				rt.jwtSecretValue = v
 				return
 			}
 		}
 		buf := make([]byte, 32)
 		if _, err := rand.Read(buf); err != nil {
 			// 加密源异常时仍生成一个（安全性下降但不崩溃）
-			jwtSecretValue = hex.EncodeToString([]byte(time.Now().String()))
+			rt.jwtSecretValue = hex.EncodeToString([]byte(time.Now().String()))
 			return
 		}
-		jwtSecretValue = hex.EncodeToString(buf)
+		rt.jwtSecretValue = hex.EncodeToString(buf)
 		_ = os.MkdirAll(filepath.Dir(secretFile), 0o755)
-		if err := os.WriteFile(secretFile, []byte(jwtSecretValue), 0o600); err != nil {
+		if err := os.WriteFile(secretFile, []byte(rt.jwtSecretValue), 0o600); err != nil {
 			log.Printf("无法持久化 JWT 密钥：%v", err)
 		}
 	})
-	return jwtSecretValue
+	return rt.jwtSecretValue
 }
 
 // ResetJWTSecretCache 重置密钥缓存（测试用）。
-func ResetJWTSecretCache() {
-	jwtSecretOnce = sync.Once{}
-	jwtSecretValue = ""
+func (rt *Runtime) ResetJWTSecretCache() {
+	rt.jwtSecretOnce = sync.Once{}
+	rt.jwtSecretValue = ""
 }
 
 // CreateToken 签发 HS256 JWT。
@@ -65,7 +60,7 @@ func CreateToken(username string, expireHours int) (string, error) {
 		"exp": now.Add(time.Duration(expireHours) * time.Hour).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(GetJWTSecret()))
+	return token.SignedString([]byte(RT().GetJWTSecret()))
 }
 
 // VerifyToken 校验 token，返回用户名；失败返回空串。
@@ -74,7 +69,7 @@ func VerifyToken(tokenStr string) string {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, jwt.ErrSignatureInvalid
 		}
-		return []byte(GetJWTSecret()), nil
+		return []byte(RT().GetJWTSecret()), nil
 	}, jwt.WithValidMethods([]string{"HS256"}))
 	if err != nil || !token.Valid {
 		return ""

@@ -351,12 +351,12 @@ func (rt *Runtime) pushItem(pushTarget string, item map[string]any) error {
 // reportSubscriptionPushHealth 推送失败的健康归因（推送错误一律不参与订阅源健康判定，
 // 订阅源失效只看抓取错误）：115 授权失效改路报到 115 服务健康，
 // 限流（115 429）/网络抖动等瞬时错误按既有规则静默不告警。
-func reportSubscriptionPushHealth(err error) {
+func (rt *Runtime) reportSubscriptionPushHealth(err error) {
 	switch {
 	case errors.Is(err, errPush115Unauthorized):
-		NotifyServiceHealth("115", false, "订阅推送：115 未授权")
+		rt.NotifyServiceHealth("115", false, "订阅推送：115 未授权")
 	case u115.IsAuth(err):
-		NotifyServiceHealth("115", false, "订阅推送：115 授权失效："+err.Error())
+		rt.NotifyServiceHealth("115", false, "订阅推送：115 授权失效："+err.Error())
 	}
 }
 
@@ -393,7 +393,7 @@ func (rt *Runtime) checkSubscriptionRecord(rssStore *store.RSSStore, record *sto
 			hitPayload["push_error"] = err.Error()
 			_, _ = rssStore.RecordHit(hitPayload)
 			pushErrors = append(pushErrors, err.Error())
-			reportSubscriptionPushHealth(err)
+			rt.reportSubscriptionPushHealth(err)
 			continue
 		}
 		hitPayload["push_status"] = "success"

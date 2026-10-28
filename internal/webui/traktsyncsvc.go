@@ -90,15 +90,15 @@ func (rt *Runtime) runTraktSync(trigger string) {
 		// 仅授权失效上报健康状态；瞬时网络错误不告警
 		switch {
 		case errors.Is(err, trakt.ErrUnauthorized):
-			NotifyServiceHealth("Trakt", false, "观看同步："+err.Error())
+			rt.NotifyServiceHealth("Trakt", false, "观看同步："+err.Error())
 		case errors.Is(err, plexserver.ErrUnauthorized):
-			NotifyServiceHealth("Plex", false, "观看同步："+err.Error())
+			rt.NotifyServiceHealth("Plex", false, "观看同步："+err.Error())
 		}
 		return
 	}
 	// 全量成功即双向接口可达且授权有效：同时上报 Trakt 与 Plex 恢复
-	NotifyServiceHealth("Trakt", true, "")
-	NotifyServiceHealth("Plex", true, "")
+	rt.NotifyServiceHealth("Trakt", true, "")
+	rt.NotifyServiceHealth("Plex", true, "")
 	rt.appLog("trakt", "sync_done", "SUCCESS",
 		fmt.Sprintf("观看同步完成（耗时 %s）：记录到 Trakt %d 条，回写 Plex %d 条，冲突 %d，无法识别 %d，跳过 %d，失败 %d",
 			took, summary.ToTrakt, summary.ToPlex, summary.Conflicts, summary.Unresolved, summary.Skipped, summary.Failed),

@@ -257,11 +257,11 @@ func (rt *Runtime) runStrmSync(trigger string) {
 	log.Printf("[strm] 同步完成（%s）：新增 %d 更新 %d 删除 %d 跳过 %d",
 		trigger, stats.Created, stats.Updated, stats.Removed, stats.Skipped)
 	if syncErr == nil {
-		NotifyServiceHealth("115", true, "")
+		rt.NotifyServiceHealth("115", true, "")
 		rt.notifyPlexRefresh(stats.Created+stats.Updated+stats.Removed, changes)
 	} else if u115.IsAuth(syncErr) {
 		// 仅 115 授权失效才上报健康状态；瞬时网络/限流错误不告警
-		NotifyServiceHealth("115", false, "STRM 同步："+syncErr.Error())
+		rt.NotifyServiceHealth("115", false, "STRM 同步："+syncErr.Error())
 	}
 }
 
@@ -297,7 +297,7 @@ func (rt *Runtime) notifyPlexRefresh(changed int, changes *strmChanges) {
 				map[string]any{"changed": changed})
 			log.Printf("[strm] 通知 Plex 失败（获取媒体库列表）：%v", err)
 			if errors.Is(err, plexserver.ErrUnauthorized) {
-				NotifyServiceHealth("Plex", false, err.Error())
+				rt.NotifyServiceHealth("Plex", false, err.Error())
 			}
 			return
 		}
@@ -318,7 +318,7 @@ func (rt *Runtime) notifyPlexRefresh(changed int, changes *strmChanges) {
 					map[string]any{"section": s.Title})
 				log.Printf("[strm] 通知 Plex 刷新媒体库 %s 失败：%v", s.Title, err)
 				if errors.Is(err, plexserver.ErrUnauthorized) {
-					NotifyServiceHealth("Plex", false, err.Error())
+					rt.NotifyServiceHealth("Plex", false, err.Error())
 				}
 			}
 		}
@@ -332,7 +332,7 @@ func (rt *Runtime) notifyPlexRefresh(changed int, changes *strmChanges) {
 			level = "WARN"
 			msg += fmt.Sprintf("，%d 个失败", failed)
 		} else {
-			NotifyServiceHealth("Plex", true, "")
+			rt.NotifyServiceHealth("Plex", true, "")
 		}
 		rt.appLog("strm", "plex_notify", level, msg,
 			map[string]any{"targets": len(targets), "failed": failed, "changed": changed})

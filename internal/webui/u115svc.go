@@ -453,7 +453,7 @@ func (s *Server) handleU115OfflineAddURLs(w http.ResponseWriter, r *http.Request
 	targetPathID := strings.TrimSpace(body.WpPathID)
 	if targetPathID == "" {
 		// 配置值为目录名，按名解析为目录 ID（兼容旧 ID 值）
-		targetPathID = resolveFolderID(cfg.DownloadFolderID)
+		targetPathID = s.rt.resolveFolderID(cfg.DownloadFolderID)
 	}
 	// .torrent 链接需走 BT 任务流程（链接任务只会保存种子文件本身）
 	var urlTasks []string
@@ -659,7 +659,7 @@ func (rt *Runtime) pushU115Download(magnetURL, torrentURL string) error {
 		return fmt.Errorf("115 客户端不可用")
 	}
 	// 配置值为目录名，按名解析为目录 ID（兼容旧 ID 值）
-	wpPathID := resolveFolderID(rt.GetConfig().U115.DownloadFolderID)
+	wpPathID := rt.resolveFolderID(rt.GetConfig().U115.DownloadFolderID)
 	if magnetURL != "" {
 		_, err := offline.AddTaskURLs([]string{magnetURL}, wpPathID)
 		return err

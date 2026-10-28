@@ -76,7 +76,7 @@ func TestCreateSubscriptionKeepsTmdbIDAndPoster(t *testing.T) {
 
 	rootDir := t.TempDir()
 	setupSubscriptionTestConfig(t, rootDir)
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 	RT().SetTmdbClientForTest(newSubscriptionTmdbClient(t, tmdbServer))
 

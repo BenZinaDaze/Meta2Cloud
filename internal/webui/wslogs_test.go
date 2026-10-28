@@ -36,7 +36,7 @@ func TestLogsLiveWebsocket(t *testing.T) {
 	}
 	defer conn2.Close()
 
-	BroadcastLog("SUCCESS", "测试消息 ABC123", "run000001")
+	RT().BroadcastLog("SUCCESS", "测试消息 ABC123", "run000001")
 
 	_ = conn2.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, msg, err := conn2.ReadMessage()

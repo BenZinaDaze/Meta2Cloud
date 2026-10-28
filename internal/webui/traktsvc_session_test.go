@@ -61,7 +61,7 @@ func newSessionTestEnv(t *testing.T, traktHandler http.Handler) (*store.TraktSyn
 	if err := os.WriteFile(filepath.Join(rootDir, "config", "config.yaml"), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ResetJWTSecretCache()
+	RT().ResetJWTSecretCache()
 	InitRuntime(rootDir)
 	syncStore := RT().GetTraktSyncStore()
 	if syncStore == nil {

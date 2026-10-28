@@ -9,12 +9,12 @@ import (
 
 // resolveFolderID 将配置中的目录值（网盘根起算的相对路径，兼容旧名字/ID）解析为网盘目录 ID。
 // 解析失败时原样返回（兼容直接填 ID 的旧配置）。
-func resolveFolderID(value string) string {
+func (rt *Runtime) resolveFolderID(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return ""
 	}
-	if p := RT().GetStorageProvider(); p != nil {
+	if p := rt.GetStorageProvider(); p != nil {
 		if id, ok := cloudfile.ResolveFolderRefOrPath(p, value); ok {
 			return id
 		}

@@ -245,7 +245,7 @@ func (rt *Runtime) ensureTraktSSELoop() {
 				err := plexClient.StreamNotifications(ctx, func() {
 					openedAt = time.Now()
 					rt.setSSEConnected(true)
-					NotifyServiceHealth("Plex", true, "")
+					rt.NotifyServiceHealth("Plex", true, "")
 					rt.appLog("trakt", "sse_connected", "INFO",
 						fmt.Sprintf("Plex 实时通知已连接（%s）", plexClient.BaseURL), nil)
 				}, func(n plexserver.PlaybackNotification) {
@@ -267,7 +267,7 @@ func (rt *Runtime) ensureTraktSSELoop() {
 				close(events)
 				rt.setSSEConnected(false)
 				if errors.Is(err, plexserver.ErrUnauthorized) {
-					NotifyServiceHealth("Plex", false, err.Error())
+					rt.NotifyServiceHealth("Plex", false, err.Error())
 				}
 				msg := "连接结束"
 				if err != nil {
