@@ -67,7 +67,7 @@ type traktDeviceSessionJSON struct {
 }
 
 func traktSessionPath() string {
-	return resolveConfigPath("config/trakt-device-session.json")
+	return RT().resolveConfigPath("config/trakt-device-session.json")
 }
 
 func saveTraktDeviceSession(sess *traktDeviceSessionJSON) error {
@@ -91,7 +91,7 @@ type plexPinSessionJSON struct {
 }
 
 func plexPinSessionPath() string {
-	return resolveConfigPath("config/plex-pin-session.json")
+	return RT().resolveConfigPath("config/plex-pin-session.json")
 }
 
 func savePlexPinSession(sess *plexPinSessionJSON) error {

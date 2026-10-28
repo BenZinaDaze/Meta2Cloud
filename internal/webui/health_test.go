@@ -298,7 +298,7 @@ func TestPollSubscriptionsOnceCarriesFirstError(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	summary := PollSubscriptionsOnce()
+	summary := RT().PollSubscriptionsOnce()
 	if errs, _ := summary["errors"].(int); errs != 1 {
 		t.Fatalf("errors = %v, want 1", summary["errors"])
 	}
@@ -400,7 +400,7 @@ func TestPollSubscriptionsOncePushErrorsExcludedFromHealth(t *testing.T) {
 	}
 
 	// 测试运行时无 115 token 文件：pushItem 必走「115 未授权」分支
-	summary := PollSubscriptionsOnce()
+	summary := RT().PollSubscriptionsOnce()
 	if errs, _ := summary["errors"].(int); errs != 0 {
 		t.Fatalf("推送失败不应计入 errors（健康判定只认抓取错误），实际 %v", summary["errors"])
 	}

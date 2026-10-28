@@ -18,7 +18,7 @@ type plexAuthJSON struct {
 }
 
 func plexAuthPath() string {
-	return resolveConfigPath(RT().GetConfig().Plex.TokenJSON)
+	return RT().resolveConfigPath(RT().GetConfig().Plex.TokenJSON)
 }
 
 func loadPlexAuth(path string) (*plexAuthJSON, error) {

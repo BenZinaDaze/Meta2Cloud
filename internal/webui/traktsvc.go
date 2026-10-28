@@ -17,7 +17,7 @@ import (
 func traktOauthStatusPayload() map[string]any {
 	cfg := RT().GetConfig().Trakt
 	ready := RT().GetConfig().IsTraktReady()
-	tokenPath := resolveConfigPath(cfg.TokenJSON)
+	tokenPath := RT().resolveConfigPath(cfg.TokenJSON)
 	token, tokenExists := func() (trakt.Token, bool) {
 		t, ok, err := trakt.LoadToken(tokenPath)
 		if err != nil {
@@ -193,7 +193,7 @@ func handleTraktOauthDisconnect(w http.ResponseWriter, _ *http.Request) {
 		client.Disconnect()
 	} else {
 		// 客户端不可用（凭证缺失）时直接删 token 文件
-		_ = os.Remove(resolveConfigPath(RT().GetConfig().Trakt.TokenJSON))
+		_ = os.Remove(RT().resolveConfigPath(RT().GetConfig().Trakt.TokenJSON))
 	}
 	invalidateTraktRuntimeCache()
 	appLog("trakt", "oauth_disconnected", "INFO", "已断开 Trakt 授权", nil)

@@ -756,8 +756,8 @@ func TestIsTorrentLink(t *testing.T) {
 		"":                                                                 false,
 	}
 	for raw, want := range cases {
-		if got := isTorrentLink(raw); got != want {
-			t.Errorf("isTorrentLink(%q) = %v, want %v", raw, got, want)
+		if got := RT().isTorrentLink(raw); got != want {
+			t.Errorf("RT().isTorrentLink(%q) = %v, want %v", raw, got, want)
 		}
 	}
 }
@@ -819,7 +819,7 @@ func TestPushTorrentLinkAddsBTTask(t *testing.T) {
 	RT().SetProviderForTest(provider)
 
 	// 无 magnet、仅 .torrent 链接的条目 → 应创建 BT 任务而非链接任务
-	err := pushItem("u115", map[string]any{
+	err := RT().pushItem("u115", map[string]any{
 		"torrent_url": torrentSite.URL + "/api/torrent/rel_xxx.torrent",
 	})
 	if err != nil {

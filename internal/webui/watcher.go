@@ -102,7 +102,7 @@ func pollU115AutoOrganizeOnce() {
 	if cfg.ActiveStorageName() != "pan115" || !cfg.U115.AutoOrganizeEnabled || cfg.U115.DownloadFolderID == "" {
 		return
 	}
-	auth := u115OauthStatusPayload()
+	auth := RT().u115OauthStatusPayload()
 	if authorized, _ := auth["authorized"].(bool); !authorized {
 		// 最常见失效形态：本地 token 过期且自动刷新被拒——调 API 前即上报失效，
 		// 避免早退导致永不告警（token 文件缺失等未配置形态不在此告警，防止误报）；
@@ -116,7 +116,7 @@ func pollU115AutoOrganizeOnce() {
 		}
 		return
 	}
-	offline := offlineClient()
+	offline := RT().offlineClient()
 	if offline == nil {
 		return
 	}
@@ -299,7 +299,7 @@ func ApplyWatchSchedules(cfg *config.Config) {
 	traktCronLoop.apply(cfg.Trakt.Enabled && cfg.Trakt.SyncCron != "", runTraktCron)
 	strmCronLoop.apply(cfg.Strm.Enabled && cfg.ActiveStorageName() == "pan115" && cfg.Strm.SyncCron != "", runStrmCron)
 	u115CronLoop.apply(cfg.ActiveStorageName() == "pan115" && cfg.U115.AutoOrganizeEnabled && cfg.U115.DownloadFolderID != "" && cfg.U115.AutoOrganizeCron != "", runU115Cron)
-	rssCronLoop.apply(getSubscriptionPollCron() != "", runRSSCron)
+	rssCronLoop.apply(RT().getSubscriptionPollCron() != "", runRSSCron)
 }
 
 // runTraktCron 观看同步 cron 执行器。配对未完成（token 等不随配置文件变更）
@@ -434,7 +434,7 @@ func runRSSCron(stop <-chan struct{}) {
 	cronWarned := ""
 	rssHealth := rssHealthState{} // 连续失败计数（本次调度生命周期内）
 	for {
-		spec := getSubscriptionPollCron()
+		spec := RT().getSubscriptionPollCron()
 		d, ok, err := cronNextDelay(spec, time.Now())
 		if err != nil {
 			if cronWarned != spec {
@@ -460,7 +460,7 @@ func runRSSCron(stop <-chan struct{}) {
 		rssWatcher.lastPolledAt = &nowStr
 		rssWatcher.lastPollError = nil
 		rssWatcher.mu.Unlock()
-		summary := PollSubscriptionsOnce()
+		summary := RT().PollSubscriptionsOnce()
 		rssWatcher.mu.Lock()
 		rssWatcher.lastSummary = summary
 		rssWatcher.mu.Unlock()
@@ -523,7 +523,7 @@ func U115AutoOrganizeStatusPayload() map[string]any {
 	lastErr := u115AutoWatcher.lastPollError
 	u115AutoWatcher.mu.Unlock()
 
-	authorized, _ := u115OauthStatusPayload()["authorized"].(bool)
+	authorized, _ := RT().u115OauthStatusPayload()["authorized"].(bool)
 	return map[string]any{
 		"enabled":            cfg.U115.AutoOrganizeEnabled && cfg.ActiveStorageName() == "pan115",
 		"storage_primary":    cfg.ActiveStorageName(),

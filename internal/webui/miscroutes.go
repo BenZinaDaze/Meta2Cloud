@@ -16,7 +16,7 @@ import (
 )
 
 // handleMediavaultTest 测试 MediaVault 连接。
-func handleMediavaultTest(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleMediavaultTest(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Scheme  string `json:"scheme"`
 		Host    string `json:"host"`
@@ -24,7 +24,7 @@ func handleMediavaultTest(w http.ResponseWriter, r *http.Request) {
 		Timeout int    `json:"timeout"`
 	}
 	_ = jsonDecodeBody(r, &body)
-	cfg := RT().GetConfig().MediaVault
+	cfg := s.rt.GetConfig().MediaVault
 	scheme := body.Scheme
 	if scheme == "" {
 		scheme = cfg.Scheme
@@ -77,13 +77,13 @@ func handleMediavaultTest(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleTelegramTest 发送一条 Telegram 测试通知（表单值优先，缺省回退已保存配置）。
-func handleTelegramTest(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleTelegramTest(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		BotToken string `json:"bot_token"`
 		ChatID   string `json:"chat_id"`
 	}
 	_ = jsonDecodeBody(r, &body)
-	cfg := RT().GetConfig().Telegram
+	cfg := s.rt.GetConfig().Telegram
 	botToken := strings.TrimSpace(body.BotToken)
 	if botToken == "" {
 		botToken = cfg.BotToken
@@ -106,7 +106,7 @@ func handleTelegramTest(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleTmdbSeasonDetail TMDB 某季详情（含每集）。
-func handleTmdbSeasonDetail(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleTmdbSeasonDetail(w http.ResponseWriter, r *http.Request) {
 	tmdbID, err := strconvAtoi64(r.PathValue("tmdbID"))
 	if err != nil || tmdbID <= 0 {
 		writeJSONError(w, http.StatusBadRequest, "tmdb_id 无效")
@@ -117,7 +117,7 @@ func handleTmdbSeasonDetail(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "season 无效")
 		return
 	}
-	client := RT().GetTmdbClient()
+	client := s.rt.GetTmdbClient()
 	if client == nil {
 		writeJSONError(w, http.StatusInternalServerError, "TMDB API Key 未配置")
 		return

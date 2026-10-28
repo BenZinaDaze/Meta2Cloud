@@ -23,8 +23,8 @@ import (
 )
 
 // getSubscriptionPollCron 订阅轮询 cron（配置 rss.poll_cron；空串表示不定时）。
-func getSubscriptionPollCron() string {
-	return RT().GetConfig().Rss.PollCron
+func (rt *Runtime) getSubscriptionPollCron() string {
+	return rt.GetConfig().Rss.PollCron
 }
 
 func normalizeKeywords(keywordAll []string) []string {
@@ -54,11 +54,11 @@ func hitToPayload(h *store.HitRecord) map[string]any {
 }
 
 // serializeSubscription 订阅记录 → 前端载荷（含 TMDB/库状态增强）。
-func serializeSubscription(rssStore *store.RSSStore, record *store.SubscriptionRecord) map[string]any {
+func (s *Server) serializeSubscription(rssStore *store.RSSStore, record *store.SubscriptionRecord) map[string]any {
 	payload := map[string]any{
 		"id": record.ID, "name": record.Name, "media_title": record.MediaTitle,
 		"media_type": record.MediaType, "tmdb_id": record.TmdbID,
-		"poster_url": RT().tmdbImageURL(derefStr(record.PosterURL), "w500"),
+		"poster_url": s.rt.tmdbImageURL(derefStr(record.PosterURL), "w500"),
 		"site":       record.Site, "rss_url": record.RssURL, "subgroup_name": record.SubgroupName,
 		"season_number": record.SeasonNumber, "start_episode": record.StartEpisode,
 		"keyword_all": decodeKeywordAll(record.KeywordAll),
@@ -71,7 +71,7 @@ func serializeSubscription(rssStore *store.RSSStore, record *store.SubscriptionR
 		"library":    nil,
 	}
 	if record.TmdbID != nil && *record.TmdbID > 0 {
-		libStore := RT().GetLibraryStore()
+		libStore := s.rt.GetLibraryStore()
 		if entry := libStore.GetTmdbEntry(record.MediaType, *record.TmdbID); entry != nil {
 			raw := entry.RawJSON
 			posterPath := firstNonEmptyStr(jsonx.Str(raw, "poster_path"), entry.PosterPath)
@@ -82,9 +82,9 @@ func serializeSubscription(rssStore *store.RSSStore, record *store.SubscriptionR
 				"original_title": firstNonEmptyStr(jsonx.Str(raw, "original_title"), jsonx.Str(raw, "original_name"), entry.OriginalTitle),
 				"overview":       firstNonEmptyStr(jsonx.Str(raw, "overview"), entry.Overview),
 				"poster_path":    posterPath,
-				"poster_url":     RT().tmdbImageURL(posterPath, "w500"),
+				"poster_url":     s.rt.tmdbImageURL(posterPath, "w500"),
 				"backdrop_path":  backdropPath,
-				"backdrop_url":   RT().tmdbImageURL(backdropPath, ""),
+				"backdrop_url":   s.rt.tmdbImageURL(backdropPath, ""),
 				"release_date":   firstNonEmptyStr(jsonx.Str(raw, "release_date"), jsonx.Str(raw, "first_air_date")),
 				"status":         firstNonEmptyStr(jsonx.Str(raw, "status"), entry.Status),
 				"rating":         roundTo1F(firstNonZeroF(jsonx.Float(raw, "vote_average", 0), entry.VoteAverage)),
@@ -160,7 +160,7 @@ func rssQueryFirst(u *url.URL, keys ...string) string {
 	return ""
 }
 
-func parseRssURL(site, rssURL string) (string, string, error) {
+func (rt *Runtime) parseRssURL(site, rssURL string) (string, string, error) {
 	parsed, err := url.Parse(rssURL)
 	if err != nil {
 		return "", "", fmt.Errorf("RSS 链接无效")
@@ -182,8 +182,8 @@ func parseRssURL(site, rssURL string) (string, string, error) {
 	return "", "", fmt.Errorf("暂不支持 RSS 站点：%s", site)
 }
 
-func fetchFeedItems(site, rssURL string) ([]map[string]any, error) {
-	mediaID, subgroupID, err := parseRssURL(site, rssURL)
+func (rt *Runtime) fetchFeedItems(site, rssURL string) ([]map[string]any, error) {
+	mediaID, subgroupID, err := rt.parseRssURL(site, rssURL)
 	if err != nil {
 		return nil, err
 	}
@@ -208,8 +208,8 @@ func fetchFeedItems(site, rssURL string) ([]map[string]any, error) {
 
 // ── 标题分析与匹配 ──────────────────────────────────────────
 
-func analyzeTitle(title string) map[string]any {
-	cfg := RT().GetConfig()
+func (rt *Runtime) analyzeTitle(title string) map[string]any {
+	cfg := rt.GetConfig()
 	meta := mediaparser.MetaInfo(title, "", false, cfg.Parser.CustomWords, nil)
 	seasonNumber := 1
 	if meta.BeginSeason != nil {
@@ -237,7 +237,7 @@ func analyzeTitle(title string) map[string]any {
 	}
 }
 
-func dedupeKey(item map[string]any) string {
+func (rt *Runtime) dedupeKey(item map[string]any) string {
 	base := firstNonEmptyStr(
 		anyStrValue(item["magnet_url"]),
 		anyStrValue(item["torrent_url"]),
@@ -255,13 +255,13 @@ func anyStrValue(v any) string {
 }
 
 // filterMatchItems 过滤匹配条目（对应 _filter_match_items）。
-func filterMatchItems(items []map[string]any, seasonNumber, startEpisode int, keywordAll []string) map[string]any {
+func (rt *Runtime) filterMatchItems(items []map[string]any, seasonNumber, startEpisode int, keywordAll []string) map[string]any {
 	normalizedKeywords := normalizeKeywords(keywordAll)
 	matches := []map[string]any{}
 	parsedItems := 0
 
 	for _, item := range items {
-		analysis := analyzeTitle(anyStrValue(item["title"]))
+		analysis := rt.analyzeTitle(anyStrValue(item["title"]))
 		parseSuccess, _ := analysis["parse_success"].(bool)
 		if parseSuccess {
 			parsedItems++
@@ -294,7 +294,7 @@ func filterMatchItems(items []map[string]any, seasonNumber, startEpisode int, ke
 			"season_match":     seasonMatch,
 			"episode_match":    episodeMatch,
 			"would_push":       wouldPush,
-			"dedupe_key":       dedupeKey(item),
+			"dedupe_key":       rt.dedupeKey(item),
 		})
 	}
 
@@ -315,7 +315,7 @@ func filterMatchItems(items []map[string]any, seasonNumber, startEpisode int, ke
 }
 
 // withRecentHits 给 joined 载荷补最近命中。
-func withRecentHits(rssStore *store.RSSStore, payload map[string]any) map[string]any {
+func (s *Server) withRecentHits(rssStore *store.RSSStore, payload map[string]any) map[string]any {
 	id, _ := payload["id"].(int64)
 	recentHits := []map[string]any{}
 	for _, h := range rssStore.ListHits(id, 5) {
@@ -330,12 +330,12 @@ func withRecentHits(rssStore *store.RSSStore, payload map[string]any) map[string
 // errPush115Unauthorized 115 未授权时的推送失败（可 errors.Is 识别）。
 var errPush115Unauthorized = errors.New("115 未授权，无法推送云下载")
 
-func pushItem(pushTarget string, item map[string]any) error {
+func (rt *Runtime) pushItem(pushTarget string, item map[string]any) error {
 	magnetURL := anyStrValue(item["magnet_url"])
 	torrentURL := anyStrValue(item["torrent_url"])
 	switch pushTarget {
 	case "u115":
-		auth := u115OauthStatusPayload()
+		auth := rt.u115OauthStatusPayload()
 		if authorized, _ := auth["authorized"].(bool); !authorized {
 			return errPush115Unauthorized
 		}
@@ -343,7 +343,7 @@ func pushItem(pushTarget string, item map[string]any) error {
 			return fmt.Errorf("RSS 条目缺少下载地址")
 		}
 		// 磁力/普通链接走链接任务；.torrent 链接在 pushU115Download 内转 BT 任务
-		return pushU115Download(magnetURL, torrentURL)
+		return rt.pushU115Download(magnetURL, torrentURL)
 	}
 	return fmt.Errorf("未知推送目标：%s", pushTarget)
 }
@@ -362,14 +362,14 @@ func reportSubscriptionPushHealth(err error) {
 
 // checkSubscriptionRecord 检查一条订阅（抓取→匹配→推送→记录）。
 // 返回的 errors 只含订阅源抓取错误（健康判定依据），推送类错误单列 push_errors。
-func checkSubscriptionRecord(rssStore *store.RSSStore, record *store.SubscriptionRecord, manual bool) map[string]any {
-	items, err := fetchFeedItems(record.Site, record.RssURL)
+func (rt *Runtime) checkSubscriptionRecord(rssStore *store.RSSStore, record *store.SubscriptionRecord, manual bool) map[string]any {
+	items, err := rt.fetchFeedItems(record.Site, record.RssURL)
 	if err != nil {
 		rssStore.MarkChecked(record.ID, "", err.Error())
 		return map[string]any{"matched": 0, "pushed": 0, "skipped": 0,
 			"errors": []string{err.Error()}, "last_matched_at": nil}
 	}
-	result := filterMatchItems(items, record.SeasonNumber, record.StartEpisode, decodeKeywordAll(record.KeywordAll))
+	result := rt.filterMatchItems(items, record.SeasonNumber, record.StartEpisode, decodeKeywordAll(record.KeywordAll))
 
 	pushed, skipped := 0, 0
 	pushErrors := []string{} // 抓取已成功，推送失败不代表订阅源失效（115 未授权已改路上报 115 服务）
@@ -388,7 +388,7 @@ func checkSubscriptionRecord(rssStore *store.RSSStore, record *store.Subscriptio
 			"published_at": item["publish_time"], "dedupe_key": dedupe,
 			"pushed_to": record.PushTarget,
 		}
-		if err := pushItem(record.PushTarget, item); err != nil {
+		if err := rt.pushItem(record.PushTarget, item); err != nil {
 			hitPayload["push_status"] = "failed"
 			hitPayload["push_error"] = err.Error()
 			_, _ = rssStore.RecordHit(hitPayload)
@@ -438,8 +438,8 @@ func checkSubscriptionRecord(rssStore *store.RSSStore, record *store.Subscriptio
 // PollSubscriptionsOnce 轮询全部启用订阅（watcher 调用）。
 // 返回的 summary 携带健康监测判定输入：errors 只统计抓取错误（连续 2 轮 >0 判订阅源失效），
 // first_error 取首条抓取错误；推送类错误单列 push_errors，不参与订阅源健康判定。
-func PollSubscriptionsOnce() map[string]any {
-	rssStore := RT().GetRSSStore()
+func (rt *Runtime) PollSubscriptionsOnce() map[string]any {
+	rssStore := rt.GetRSSStore()
 	records := rssStore.ListEnabledSubscriptions()
 	checked, pushed, errCount, pushErrCount := 0, 0, 0, 0
 	firstError := ""
@@ -448,7 +448,7 @@ func PollSubscriptionsOnce() map[string]any {
 			time.Sleep(3 * time.Second) // 防止触发 mikan 阈值
 		}
 		checked++
-		result := checkSubscriptionRecord(rssStore, record, false)
+		result := rt.checkSubscriptionRecord(rssStore, record, false)
 		if p, ok := result["pushed"].(int); ok {
 			pushed += p
 		}
@@ -547,29 +547,29 @@ func maxIntValue(v, min int) int {
 	return v
 }
 
-func handleListSubscriptions(w http.ResponseWriter, _ *http.Request) {
-	rssStore := RT().GetRSSStore()
+func (s *Server) handleListSubscriptions(w http.ResponseWriter, _ *http.Request) {
+	rssStore := s.rt.GetRSSStore()
 	// 存量订阅缓存缺失时惰性补全（有 TMDB key 才会发起）
 	for _, record := range rssStore.ListSubscriptions() {
 		if record.TmdbID != nil && *record.TmdbID > 0 {
-			ensureSubscriptionTmdbCache(record.MediaType, *record.TmdbID)
+			s.ensureSubscriptionTmdbCache(record.MediaType, *record.TmdbID)
 		}
 	}
 	subscriptions := []map[string]any{}
 	if joined := rssStore.ListSubscriptionsJoined(); len(joined) > 0 {
 		for _, item := range joined {
-			subscriptions = append(subscriptions, withRecentHits(rssStore, item))
+			subscriptions = append(subscriptions, s.withRecentHits(rssStore, item))
 		}
 	} else {
 		for _, record := range rssStore.ListSubscriptions() {
-			subscriptions = append(subscriptions, serializeSubscription(rssStore, record))
+			subscriptions = append(subscriptions, s.serializeSubscription(rssStore, record))
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "subscriptions": subscriptions})
 }
 
-func handleCreateSubscription(w http.ResponseWriter, r *http.Request) {
-	rssStore := RT().GetRSSStore()
+func (s *Server) handleCreateSubscription(w http.ResponseWriter, r *http.Request) {
+	rssStore := s.rt.GetRSSStore()
 	var body subscriptionBody
 	if err := jsonDecodeBody(r, &body); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "请求体格式错误")
@@ -591,21 +591,21 @@ func handleCreateSubscription(w http.ResponseWriter, r *http.Request) {
 	if record.TmdbID != nil && *record.TmdbID > 0 {
 		// 资源检索等直创流程不经过 parse-rss，这里补拉详情入缓存，
 		// 创建响应与订阅卡片立即可显示中文标题/海报
-		ensureSubscriptionTmdbCache(record.MediaType, *record.TmdbID)
+		s.ensureSubscriptionTmdbCache(record.MediaType, *record.TmdbID)
 	}
 	appLog("subscription", "created", "SUCCESS", "已创建 RSS 订阅："+record.Name, map[string]any{
 		"subscription_id": record.ID, "site": record.Site, "push_target": record.PushTarget,
 	})
 	payload := map[string]any{}
 	if joined := rssStore.GetSubscriptionJoined(record.ID); joined != nil {
-		payload = withRecentHits(rssStore, joined)
+		payload = s.withRecentHits(rssStore, joined)
 	} else {
-		payload = serializeSubscription(rssStore, record)
+		payload = s.serializeSubscription(rssStore, record)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "subscription": payload})
 }
 
-func handleTestSubscription(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleTestSubscription(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Site         string   `json:"site"`
 		RssURL       string   `json:"rss_url"`
@@ -617,18 +617,18 @@ func handleTestSubscription(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "请求体格式错误")
 		return
 	}
-	items, err := fetchFeedItems(body.Site, body.RssURL)
+	items, err := s.rt.fetchFeedItems(body.Site, body.RssURL)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	result := filterMatchItems(items, body.SeasonNumber, body.StartEpisode, body.KeywordAll)
+	result := s.rt.filterMatchItems(items, body.SeasonNumber, body.StartEpisode, body.KeywordAll)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": true, "summary": result["summary"], "matches": result["matches"],
 	})
 }
 
-func handleParseSubscriptionRss(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleParseSubscriptionRss(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		RssURL string `json:"rss_url"`
 	}
@@ -641,7 +641,7 @@ func handleParseSubscriptionRss(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	items, err := fetchFeedItems(site, body.RssURL)
+	items, err := s.rt.fetchFeedItems(site, body.RssURL)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
 		return
@@ -652,7 +652,7 @@ func handleParseSubscriptionRss(w http.ResponseWriter, r *http.Request) {
 	}
 	first := items[0]
 	title := anyStrValue(first["title"])
-	analysis := analyzeTitle(title)
+	analysis := s.rt.analyzeTitle(title)
 	if parseSuccess, _ := analysis["parse_success"].(bool); !parseSuccess {
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "无法解析标题：" + title})
 		return
@@ -662,7 +662,7 @@ func handleParseSubscriptionRss(w http.ResponseWriter, r *http.Request) {
 	var posterURL any
 	mediaType := "tv"
 	if mediaTitle != "" {
-		if client := RT().GetTmdbClient(); client != nil {
+		if client := s.rt.GetTmdbClient(); client != nil {
 			results := client.SearchRawMulti(mediaTitle)
 			if len(results) > 0 {
 				firstTMDB := results[0]
@@ -670,13 +670,13 @@ func handleParseSubscriptionRss(w http.ResponseWriter, r *http.Request) {
 				if id > 0 {
 					tmdbID = id
 					if p := jsonx.Str(firstTMDB, "poster_path"); p != "" {
-						posterURL = tmdb.ImageURL(p, "w500", RT().GetConfig().TmdbImageBaseURL())
+						posterURL = tmdb.ImageURL(p, "w500", s.rt.GetConfig().TmdbImageBaseURL())
 					}
 					if mt := jsonx.Str(firstTMDB, "media_type"); mt != "" {
 						mediaType = mt
 					}
 					// 搜索命中后拉详情入缓存，订阅卡片立即可显示中文标题/海报
-					ensureSubscriptionTmdbCache(mediaType, id)
+					s.ensureSubscriptionTmdbCache(mediaType, id)
 				}
 			}
 		}
@@ -702,15 +702,15 @@ func subscriptionIDFromPath(r *http.Request) (int64, error) {
 	return strconv.ParseInt(r.PathValue("subscriptionID"), 10, 64)
 }
 
-func handleGetSubscription(w http.ResponseWriter, r *http.Request) {
-	rssStore := RT().GetRSSStore()
+func (s *Server) handleGetSubscription(w http.ResponseWriter, r *http.Request) {
+	rssStore := s.rt.GetRSSStore()
 	id, err := subscriptionIDFromPath(r)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "subscription_id 无效")
 		return
 	}
 	if joined := rssStore.GetSubscriptionJoined(id); joined != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "subscription": withRecentHits(rssStore, joined)})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "subscription": s.withRecentHits(rssStore, joined)})
 		return
 	}
 	record, _ := rssStore.GetSubscription(id)
@@ -718,11 +718,11 @@ func handleGetSubscription(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusNotFound, "订阅不存在")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "subscription": serializeSubscription(rssStore, record)})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "subscription": s.serializeSubscription(rssStore, record)})
 }
 
-func handleUpdateSubscription(w http.ResponseWriter, r *http.Request) {
-	rssStore := RT().GetRSSStore()
+func (s *Server) handleUpdateSubscription(w http.ResponseWriter, r *http.Request) {
+	rssStore := s.rt.GetRSSStore()
 	id, err := subscriptionIDFromPath(r)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "subscription_id 无效")
@@ -752,21 +752,21 @@ func handleUpdateSubscription(w http.ResponseWriter, r *http.Request) {
 	}
 	if record.TmdbID != nil && *record.TmdbID > 0 {
 		// 更新可能补填/更换 tmdb_id，同步补拉详情入缓存
-		ensureSubscriptionTmdbCache(record.MediaType, *record.TmdbID)
+		s.ensureSubscriptionTmdbCache(record.MediaType, *record.TmdbID)
 	}
 	appLog("subscription", "updated", "SUCCESS", "已更新 RSS 订阅："+record.Name,
 		map[string]any{"subscription_id": record.ID})
 	var payload map[string]any
 	if joined := rssStore.GetSubscriptionJoined(record.ID); joined != nil {
-		payload = withRecentHits(rssStore, joined)
+		payload = s.withRecentHits(rssStore, joined)
 	} else {
-		payload = serializeSubscription(rssStore, record)
+		payload = s.serializeSubscription(rssStore, record)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "subscription": payload})
 }
 
-func handleDeleteSubscription(w http.ResponseWriter, r *http.Request) {
-	rssStore := RT().GetRSSStore()
+func (s *Server) handleDeleteSubscription(w http.ResponseWriter, r *http.Request) {
+	rssStore := s.rt.GetRSSStore()
 	id, err := subscriptionIDFromPath(r)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "subscription_id 无效")
@@ -783,8 +783,8 @@ func handleDeleteSubscription(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-func handleCheckSubscription(w http.ResponseWriter, r *http.Request) {
-	rssStore := RT().GetRSSStore()
+func (s *Server) handleCheckSubscription(w http.ResponseWriter, r *http.Request) {
+	rssStore := s.rt.GetRSSStore()
 	id, err := subscriptionIDFromPath(r)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "subscription_id 无效")
@@ -795,20 +795,20 @@ func handleCheckSubscription(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusNotFound, "订阅不存在")
 		return
 	}
-	result := checkSubscriptionRecord(rssStore, record, true)
+	result := s.rt.checkSubscriptionRecord(rssStore, record, true)
 	refreshed, _ := rssStore.GetSubscription(id)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok": true, "result": result, "subscription": serializeSubscription(rssStore, refreshed),
+		"ok": true, "result": result, "subscription": s.serializeSubscription(rssStore, refreshed),
 	})
 }
 
 // handleSubscriptionPostOp POST /api/subscriptions/{id} 与 {id}:check 分发
 // （Go ServeMux 通配符段不支持后缀语法，这里在处理器内解析）。
-func handleSubscriptionPostOp(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleSubscriptionPostOp(w http.ResponseWriter, r *http.Request) {
 	op := r.PathValue("subscriptionID")
 	if strings.HasSuffix(op, ":check") {
 		r.SetPathValue("subscriptionID", strings.TrimSuffix(op, ":check"))
-		handleCheckSubscription(w, r)
+		s.handleCheckSubscription(w, r)
 		return
 	}
 	writeJSONError(w, http.StatusNotFound, "未知操作")
@@ -821,15 +821,15 @@ var subscriptionTmdbCachePrefetching sync.Map
 // parse-rss 搜索命中不会写库(与 Python 一致)，导致卡片标题回退到 RSS 原名；
 // 这里在创建/列表时补拉一次详情，命中后 tmdb_media 有中文标题与海报。
 // 返回 true 表示调用方应基于新缓存重新序列化。
-func ensureSubscriptionTmdbCache(mediaType string, tmdbID int64) bool {
+func (s *Server) ensureSubscriptionTmdbCache(mediaType string, tmdbID int64) bool {
 	if tmdbID <= 0 {
 		return false
 	}
-	client := RT().GetTmdbClient()
+	client := s.rt.GetTmdbClient()
 	if client == nil {
 		return false
 	}
-	if entry := RT().GetLibraryStore().GetTmdbEntry(mediaType, tmdbID); entry != nil && len(entry.RawJSON) > 0 {
+	if entry := s.rt.GetLibraryStore().GetTmdbEntry(mediaType, tmdbID); entry != nil && len(entry.RawJSON) > 0 {
 		return false // 已有缓存
 	}
 	key := fmt.Sprintf("%s:%d", mediaType, tmdbID)

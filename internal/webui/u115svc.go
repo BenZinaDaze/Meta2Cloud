@@ -19,14 +19,14 @@ import (
 )
 
 // resolveConfigPath 相对路径基于项目根目录解析。
-func resolveConfigPath(pathStr string) string {
+func (rt *Runtime) resolveConfigPath(pathStr string) string {
 	if pathStr == "" {
 		return ""
 	}
 	if filepath.IsAbs(pathStr) {
 		return pathStr
 	}
-	return filepath.Join(RT().RootDir, pathStr)
+	return filepath.Join(rt.RootDir, pathStr)
 }
 
 // ── 扫码会话持久化 ──────────────────────────────────────────
@@ -39,7 +39,7 @@ type deviceSessionJSON struct {
 	CodeVerifier string `json:"code_verifier"`
 }
 
-func saveU115DeviceSession(session u115.DeviceCodeSession, sessionPath string) error {
+func (s *Server) saveU115DeviceSession(session u115.DeviceCodeSession, sessionPath string) error {
 	return saveJSONSession(sessionPath, &deviceSessionJSON{
 		Qrcode: session.Qrcode, UID: session.UID, TimeValue: session.TimeValue,
 		Sign: session.Sign, CodeVerifier: session.CodeVerifier,
@@ -47,23 +47,23 @@ func saveU115DeviceSession(session u115.DeviceCodeSession, sessionPath string) e
 }
 
 // loadU115DeviceSession 读取扫码会话；不存在返回错误。
-func loadU115DeviceSession(sessionPath string) (*u115.DeviceCodeSession, error) {
-	s, err := loadJSONSession[deviceSessionJSON](sessionPath)
+func (s *Server) loadU115DeviceSession(sessionPath string) (*u115.DeviceCodeSession, error) {
+	raw, err := loadJSONSession[deviceSessionJSON](sessionPath)
 	if err != nil {
 		return nil, missingSessionErr(err, fmt.Sprintf("115 扫码会话文件不存在：%s", sessionPath))
 	}
 	return &u115.DeviceCodeSession{
-		Qrcode: s.Qrcode, UID: s.UID, TimeValue: s.TimeValue,
-		Sign: s.Sign, CodeVerifier: s.CodeVerifier,
+		Qrcode: raw.Qrcode, UID: raw.UID, TimeValue: raw.TimeValue,
+		Sign: raw.Sign, CodeVerifier: raw.CodeVerifier,
 	}, nil
 }
 
 // ── OAuth 状态 ──────────────────────────────────────────────
 
-func u115OauthStatusPayload() map[string]any {
-	cfg := RT().GetConfig().U115
-	tokenPath := resolveConfigPath(cfg.TokenJSON)
-	sessionPath := resolveConfigPath(cfg.SessionJSON)
+func (rt *Runtime) u115OauthStatusPayload() map[string]any {
+	cfg := rt.GetConfig().U115
+	tokenPath := rt.resolveConfigPath(cfg.TokenJSON)
+	sessionPath := rt.resolveConfigPath(cfg.SessionJSON)
 	_, tokenStatErr := os.Stat(tokenPath)
 	tokenExists := tokenStatErr == nil
 	_, sessionStatErr := os.Stat(sessionPath)
@@ -79,7 +79,7 @@ func u115OauthStatusPayload() map[string]any {
 			tokenExpired = time.Now().Unix() >= token.ExpiresAt()
 			if tokenExpired {
 				// 尝试自动刷新
-				client := RT().GetU115Client()
+				client := rt.GetU115Client()
 				if client != nil {
 					if refreshedToken, err := client.RefreshToken(); err == nil {
 						refreshed = true
@@ -111,7 +111,7 @@ func u115OauthStatusPayload() map[string]any {
 
 // ── HTTP 处理器 ─────────────────────────────────────────────
 
-func u115AuthError(w http.ResponseWriter, err error) {
+func (rt *Runtime) u115AuthError(w http.ResponseWriter, err error) {
 	if u115.IsAuth(err) {
 		writeJSONError(w, http.StatusBadRequest, "115 Token 已失效，请重新扫码授权")
 		return
@@ -119,17 +119,17 @@ func u115AuthError(w http.ResponseWriter, err error) {
 	writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("115 接口调用失败：%v", err))
 }
 
-func handleU115OauthStatus(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, u115OauthStatusPayload())
+func (s *Server) handleU115OauthStatus(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.rt.u115OauthStatusPayload())
 }
 
-func handleU115OauthCreate(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleU115OauthCreate(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ClientID  string `json:"client_id"`
 		TokenJSON string `json:"token_json"`
 	}
 	_ = jsonDecodeBody(r, &body)
-	cfg := RT().GetConfig().U115
+	cfg := s.rt.GetConfig().U115
 	clientID := strings.TrimSpace(body.ClientID)
 	if clientID == "" {
 		clientID = cfg.ClientID
@@ -147,29 +147,29 @@ func handleU115OauthCreate(w http.ResponseWriter, r *http.Request) {
 	// 显式指定 client_id/token 路径时构造独立客户端
 	var client *u115.Client
 	if clientID == cfg.ClientID && tokenJSON == cfg.TokenJSON {
-		client = RT().GetU115Client()
+		client = s.rt.GetU115Client()
 	}
 	if client == nil {
-		client = u115.NewClient(clientID, u115.WithTokenPath(resolveConfigPath(tokenJSON)))
+		client = u115.NewClient(clientID, u115.WithTokenPath(s.rt.resolveConfigPath(tokenJSON)))
 	}
 	session, err := client.CreateDeviceCode("")
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("115 创建扫码会话失败：%v", err))
 		return
 	}
-	if err := saveU115DeviceSession(session, resolveConfigPath(sessionJSON)); err != nil {
+	if err := s.saveU115DeviceSession(session, s.rt.resolveConfigPath(sessionJSON)); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("会话保存失败：%v", err))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": true, "qrcode": session.Qrcode, "uid": session.UID,
-		"session_path": sessionJSON, "status": u115OauthStatusPayload(),
+		"session_path": sessionJSON, "status": s.rt.u115OauthStatusPayload(),
 	})
 }
 
-func handleU115OauthQrcode(w http.ResponseWriter, _ *http.Request) {
-	cfg := RT().GetConfig().U115
-	session, err := loadU115DeviceSession(resolveConfigPath(cfg.SessionJSON))
+func (s *Server) handleU115OauthQrcode(w http.ResponseWriter, _ *http.Request) {
+	cfg := s.rt.GetConfig().U115
+	session, err := s.loadU115DeviceSession(s.rt.resolveConfigPath(cfg.SessionJSON))
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("115 二维码生成失败：%v", err))
 		return
@@ -183,22 +183,22 @@ func handleU115OauthQrcode(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write(png)
 }
 
-func handleU115OauthPoll(w http.ResponseWriter, _ *http.Request) {
-	cfg := RT().GetConfig().U115
-	client := RT().GetU115Client()
+func (s *Server) handleU115OauthPoll(w http.ResponseWriter, _ *http.Request) {
+	cfg := s.rt.GetConfig().U115
+	client := s.rt.GetU115Client()
 	if client == nil {
 		writeJSONError(w, http.StatusBadRequest, "115 客户端不可用")
 		return
 	}
-	sessionPath := resolveConfigPath(cfg.SessionJSON)
-	session, err := loadU115DeviceSession(sessionPath)
+	sessionPath := s.rt.resolveConfigPath(cfg.SessionJSON)
+	session, err := s.loadU115DeviceSession(sessionPath)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	status, err := client.GetQrcodeStatus(*session)
 	if err != nil {
-		u115AuthError(w, err)
+		s.rt.u115AuthError(w, err)
 		return
 	}
 	if status.Confirmed() {
@@ -209,9 +209,9 @@ func handleU115OauthPoll(w http.ResponseWriter, _ *http.Request) {
 			})
 			return
 		}
-		invalidateU115RuntimeCache()
+		s.rt.invalidateU115RuntimeCache()
 		// 会话已消费，删除会话文件
-		if onDisk, err := loadU115DeviceSession(sessionPath); err == nil && onDisk.UID == session.UID {
+		if onDisk, err := s.loadU115DeviceSession(sessionPath); err == nil && onDisk.UID == session.UID {
 			_ = os.Remove(sessionPath)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -227,21 +227,20 @@ func handleU115OauthPoll(w http.ResponseWriter, _ *http.Request) {
 }
 
 // invalidateU115RuntimeCache 失效 115 客户端与 Provider 缓存。
-func invalidateU115RuntimeCache() {
-	rt := RT()
+func (rt *Runtime) invalidateU115RuntimeCache() {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	rt.u115Client = nil
 	rt.provider = nil
 }
 
-func handleU115OauthExchange(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleU115OauthExchange(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ClientID  string `json:"client_id"`
 		TokenJSON string `json:"token_json"`
 	}
 	_ = jsonDecodeBody(r, &body)
-	cfg := RT().GetConfig().U115
+	cfg := s.rt.GetConfig().U115
 	clientID := strings.TrimSpace(body.ClientID)
 	if clientID == "" {
 		clientID = cfg.ClientID
@@ -254,9 +253,9 @@ func handleU115OauthExchange(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "u115.client_id 不能为空")
 		return
 	}
-	client := u115.NewClient(clientID, u115.WithTokenPath(resolveConfigPath(tokenJSON)))
-	sessionPath := resolveConfigPath(strings.TrimSpace(cfg.SessionJSON))
-	session, err := loadU115DeviceSession(sessionPath)
+	client := u115.NewClient(clientID, u115.WithTokenPath(s.rt.resolveConfigPath(tokenJSON)))
+	sessionPath := s.rt.resolveConfigPath(strings.TrimSpace(cfg.SessionJSON))
+	session, err := s.loadU115DeviceSession(sessionPath)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, err.Error())
 		return
@@ -266,27 +265,27 @@ func handleU115OauthExchange(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("115 换取 token 失败：%v", err))
 		return
 	}
-	invalidateU115RuntimeCache()
-	if onDisk, err := loadU115DeviceSession(sessionPath); err == nil && onDisk.UID == session.UID {
+	s.rt.invalidateU115RuntimeCache()
+	if onDisk, err := s.loadU115DeviceSession(sessionPath); err == nil && onDisk.UID == session.UID {
 		_ = os.Remove(sessionPath)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": true, "expires_in": token.ExpiresIn, "refresh_time": token.RefreshTime,
-		"token_path": tokenJSON, "status": u115OauthStatusPayload(),
+		"token_path": tokenJSON, "status": s.rt.u115OauthStatusPayload(),
 	})
 }
 
 // u115SpacePayload 获取 115 容量信息；不可用时写出错误响应并返回 false。
 // 测试连接与仪表盘的 /u115/space 共用。
-func u115SpacePayload(w http.ResponseWriter) (map[string]any, bool) {
-	client := RT().GetU115Client()
+func (rt *Runtime) u115SpacePayload(w http.ResponseWriter) (map[string]any, bool) {
+	client := rt.GetU115Client()
 	if client == nil {
 		writeJSONError(w, http.StatusBadRequest, "115 客户端不可用（请先完成授权）")
 		return nil, false
 	}
 	space, err := client.GetSpaceInfo()
 	if err != nil {
-		u115AuthError(w, err)
+		rt.u115AuthError(w, err)
 		return nil, false
 	}
 	return map[string]any{
@@ -294,8 +293,8 @@ func u115SpacePayload(w http.ResponseWriter) (map[string]any, bool) {
 	}, true
 }
 
-func handleU115TestConnection(w http.ResponseWriter, _ *http.Request) {
-	payload, ok := u115SpacePayload(w)
+func (s *Server) handleU115TestConnection(w http.ResponseWriter, _ *http.Request) {
+	payload, ok := s.rt.u115SpacePayload(w)
 	if !ok {
 		return
 	}
@@ -303,20 +302,20 @@ func handleU115TestConnection(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, payload)
 }
 
-func handleU115TestCookie(w http.ResponseWriter, _ *http.Request) {
-	cfg := RT().GetConfig().U115
+func (s *Server) handleU115TestCookie(w http.ResponseWriter, _ *http.Request) {
+	cfg := s.rt.GetConfig().U115
 	if strings.TrimSpace(cfg.Cookie) == "" {
 		writeJSONError(w, http.StatusBadRequest, "u115.cookie 未配置")
 		return
 	}
-	client := RT().GetU115Client()
+	client := s.rt.GetU115Client()
 	if client == nil {
 		writeJSONError(w, http.StatusBadRequest, "115 客户端不可用")
 		return
 	}
 	userInfo, err := client.GetUserInfo()
 	if err != nil {
-		u115AuthError(w, err)
+		s.rt.u115AuthError(w, err)
 		return
 	}
 	if len(userInfo) == 0 {
@@ -332,15 +331,15 @@ func handleU115TestCookie(w http.ResponseWriter, _ *http.Request) {
 
 // ── 云下载 ──────────────────────────────────────────────────
 
-func offlineClient() *u115.OfflineClient {
-	client := RT().GetU115Client()
+func (rt *Runtime) offlineClient() *u115.OfflineClient {
+	client := rt.GetU115Client()
 	if client == nil {
 		return nil
 	}
 	return u115.NewOfflineClient(client)
 }
 
-func serializeOfflineTask(task u115.OfflineTask) map[string]any {
+func (s *Server) serializeOfflineTask(task u115.OfflineTask) map[string]any {
 	return map[string]any{
 		"info_hash": task.InfoHash, "name": task.Name, "status": task.Status,
 		"percent_done": task.PercentDone, "size": task.Size,
@@ -352,8 +351,8 @@ func serializeOfflineTask(task u115.OfflineTask) map[string]any {
 	}
 }
 
-func handleU115OfflineOverview(w http.ResponseWriter, r *http.Request) {
-	offline := offlineClient()
+func (s *Server) handleU115OfflineOverview(w http.ResponseWriter, r *http.Request) {
+	offline := s.rt.offlineClient()
 	if offline == nil {
 		writeJSONError(w, http.StatusBadRequest, "115 客户端不可用")
 		return
@@ -364,12 +363,12 @@ func handleU115OfflineOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	taskPage, err := offline.GetTaskList(page)
 	if err != nil {
-		u115AuthError(w, err)
+		s.rt.u115AuthError(w, err)
 		return
 	}
 	tasks := make([]map[string]any, 0, len(taskPage.Tasks))
 	for _, t := range taskPage.Tasks {
-		tasks = append(tasks, serializeOfflineTask(t))
+		tasks = append(tasks, s.serializeOfflineTask(t))
 	}
 	totalPages := taskPage.PageCount
 	if totalPages < 1 {
@@ -385,23 +384,23 @@ func handleU115OfflineOverview(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func handleU115Space(w http.ResponseWriter, _ *http.Request) {
-	payload, ok := u115SpacePayload(w)
+func (s *Server) handleU115Space(w http.ResponseWriter, _ *http.Request) {
+	payload, ok := s.rt.u115SpacePayload(w)
 	if !ok {
 		return
 	}
 	writeJSON(w, http.StatusOK, payload)
 }
 
-func handleU115OfflineQuota(w http.ResponseWriter, _ *http.Request) {
-	offline := offlineClient()
+func (s *Server) handleU115OfflineQuota(w http.ResponseWriter, _ *http.Request) {
+	offline := s.rt.offlineClient()
 	if offline == nil {
 		writeJSONError(w, http.StatusBadRequest, "115 客户端不可用")
 		return
 	}
 	quota, err := offline.GetQuotaInfo()
 	if err != nil {
-		u115AuthError(w, err)
+		s.rt.u115AuthError(w, err)
 		return
 	}
 	packages := make([]map[string]any, 0, len(quota.Packages))
@@ -426,7 +425,7 @@ func handleU115OfflineQuota(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func handleU115OfflineAddURLs(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleU115OfflineAddURLs(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		URLs     string `json:"urls"`
 		WpPathID string `json:"wp_path_id"`
@@ -445,12 +444,12 @@ func handleU115OfflineAddURLs(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "请至少输入一个下载链接")
 		return
 	}
-	offline := offlineClient()
+	offline := s.rt.offlineClient()
 	if offline == nil {
 		writeJSONError(w, http.StatusBadRequest, "115 客户端不可用")
 		return
 	}
-	cfg := RT().GetConfig().U115
+	cfg := s.rt.GetConfig().U115
 	targetPathID := strings.TrimSpace(body.WpPathID)
 	if targetPathID == "" {
 		// 配置值为目录名，按名解析为目录 ID（兼容旧 ID 值）
@@ -459,7 +458,7 @@ func handleU115OfflineAddURLs(w http.ResponseWriter, r *http.Request) {
 	// .torrent 链接需走 BT 任务流程（链接任务只会保存种子文件本身）
 	var urlTasks []string
 	for _, line := range urlLines {
-		if isTorrentLink(line) {
+		if s.rt.isTorrentLink(line) {
 			continue
 		}
 		urlTasks = append(urlTasks, line)
@@ -468,7 +467,7 @@ func handleU115OfflineAddURLs(w http.ResponseWriter, r *http.Request) {
 	if len(urlTasks) > 0 {
 		results, err := offline.AddTaskURLs(urlTasks, targetPathID)
 		if err != nil {
-			u115AuthError(w, err)
+			s.rt.u115AuthError(w, err)
 			return
 		}
 		for _, item := range results {
@@ -479,10 +478,10 @@ func handleU115OfflineAddURLs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	for _, line := range urlLines {
-		if !isTorrentLink(line) {
+		if !s.rt.isTorrentLink(line) {
 			continue
 		}
-		if err := addU115TorrentTask(line, targetPathID); err != nil {
+		if err := s.rt.addU115TorrentTask(line, targetPathID); err != nil {
 			serialized = append(serialized, map[string]any{
 				"state": false, "code": -1, "message": err.Error(), "url": line,
 			})
@@ -497,7 +496,7 @@ func handleU115OfflineAddURLs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func handleU115OfflineDeleteTasks(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleU115OfflineDeleteTasks(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		InfoHashes    []string `json:"info_hashes"`
 		DelSourceFile int      `json:"del_source_file"`
@@ -516,21 +515,21 @@ func handleU115OfflineDeleteTasks(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "请至少选择一个云下载任务")
 		return
 	}
-	offline := offlineClient()
+	offline := s.rt.offlineClient()
 	if offline == nil {
 		writeJSONError(w, http.StatusBadRequest, "115 客户端不可用")
 		return
 	}
 	for _, infoHash := range infoHashes {
 		if err := offline.DelTask(infoHash, body.DelSourceFile); err != nil {
-			u115AuthError(w, err)
+			s.rt.u115AuthError(w, err)
 			return
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "deleted": len(infoHashes)})
 }
 
-func handleU115OfflineClearTasks(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleU115OfflineClearTasks(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Flag int `json:"flag"`
 	}
@@ -538,20 +537,20 @@ func handleU115OfflineClearTasks(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "请求体格式错误")
 		return
 	}
-	offline := offlineClient()
+	offline := s.rt.offlineClient()
 	if offline == nil {
 		writeJSONError(w, http.StatusBadRequest, "115 客户端不可用")
 		return
 	}
 	if err := offline.ClearTasks(body.Flag); err != nil {
-		u115AuthError(w, err)
+		s.rt.u115AuthError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "flag": body.Flag})
 }
 
 // handleU115AutoOrganizeStatus 115 自动整理监听状态。
-func handleU115AutoOrganizeStatus(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleU115AutoOrganizeStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, U115AutoOrganizeStatusPayload())
 }
 
@@ -569,7 +568,7 @@ const torrentFetchUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/53
 // isTorrentLink 判断链接是否指向 .torrent 种子文件。
 // 115 云下载的链接任务会把 .torrent 链接当作普通 HTTP 下载，
 // 最终保存的是种子文件本身（如 xxx.mkv.torrent），必须转 BT 任务。
-func isTorrentLink(rawURL string) bool {
+func (rt *Runtime) isTorrentLink(rawURL string) bool {
 	if rawURL == "" || strings.HasPrefix(rawURL, "magnet:") {
 		return false
 	}
@@ -585,7 +584,7 @@ var torrentURLValidator = validateOutboundURL
 
 // fetchTorrentContent 下载种子文件内容（bencode 字典以 'd' 开头）。
 // URL 可能源自 RSS 条目等外部内容：仅允许 http/https 公网地址（防 SSRF 探测内网）。
-func fetchTorrentContent(torrentURL string) ([]byte, error) {
+func (rt *Runtime) fetchTorrentContent(torrentURL string) ([]byte, error) {
 	if err := torrentURLValidator(torrentURL); err != nil {
 		return nil, fmt.Errorf("种子链接被拒绝：%v", err)
 	}
@@ -620,7 +619,7 @@ func fetchTorrentContent(torrentURL string) ([]byte, error) {
 }
 
 // torrentFileName 从种子链接推断文件名。
-func torrentFileName(torrentURL string) string {
+func (rt *Runtime) torrentFileName(torrentURL string) string {
 	parsed, err := url.Parse(torrentURL)
 	if err == nil {
 		if base := path.Base(parsed.Path); base != "" && base != "/" && base != "." {
@@ -634,7 +633,7 @@ func torrentFileName(torrentURL string) string {
 }
 
 // wantedFileIndexes 依据种子解析结果生成选中文件序号；无标记时全选。
-func wantedFileIndexes(files []u115.TorrentFileItem) []int {
+func (rt *Runtime) wantedFileIndexes(files []u115.TorrentFileItem) []int {
 	var wanted []int
 	for i, f := range files {
 		if f.Wanted != 0 {
@@ -654,19 +653,19 @@ func wantedFileIndexes(files []u115.TorrentFileItem) []int {
 // pushU115Download 按链接类型推送 115 云下载：
 // 磁力/普通链接走链接任务（保存到 wp_path_id），.torrent 链接转 BT 任务。
 // 未配置下载目录时任务落到根目录（与 Python 版一致）。
-func pushU115Download(magnetURL, torrentURL string) error {
-	offline := offlineClient()
+func (rt *Runtime) pushU115Download(magnetURL, torrentURL string) error {
+	offline := rt.offlineClient()
 	if offline == nil {
 		return fmt.Errorf("115 客户端不可用")
 	}
 	// 配置值为目录名，按名解析为目录 ID（兼容旧 ID 值）
-	wpPathID := resolveFolderID(RT().GetConfig().U115.DownloadFolderID)
+	wpPathID := resolveFolderID(rt.GetConfig().U115.DownloadFolderID)
 	if magnetURL != "" {
 		_, err := offline.AddTaskURLs([]string{magnetURL}, wpPathID)
 		return err
 	}
-	if isTorrentLink(torrentURL) {
-		return addU115TorrentTask(torrentURL, wpPathID)
+	if rt.isTorrentLink(torrentURL) {
+		return rt.addU115TorrentTask(torrentURL, wpPathID)
 	}
 	_, err := offline.AddTaskURLs([]string{torrentURL}, wpPathID)
 	return err
@@ -674,16 +673,16 @@ func pushU115Download(magnetURL, torrentURL string) error {
 
 // addU115TorrentTask .torrent 链接 → 下载种子 → 上传至「云下载/种子文件」
 // → 解析 info_hash → 提交 BT 任务（保存到 wp_path_id）。
-func addU115TorrentTask(torrentURL, wpPathID string) error {
-	data, err := fetchTorrentContent(torrentURL)
+func (rt *Runtime) addU115TorrentTask(torrentURL, wpPathID string) error {
+	data, err := rt.fetchTorrentContent(torrentURL)
 	if err != nil {
 		return err
 	}
-	client := RT().GetU115Client()
+	client := rt.GetU115Client()
 	if client == nil {
 		return fmt.Errorf("115 客户端不可用")
 	}
-	provider := RT().GetStorageProvider()
+	provider := rt.GetStorageProvider()
 	if provider == nil {
 		return fmt.Errorf("115 存储 Provider 不可用")
 	}
@@ -691,7 +690,7 @@ func addU115TorrentTask(torrentURL, wpPathID string) error {
 	if err != nil {
 		return fmt.Errorf("创建种子上传目录失败：%v", err)
 	}
-	name := torrentFileName(torrentURL)
+	name := rt.torrentFileName(torrentURL)
 	uploaded, err := provider.UploadBytes(data, name, folder.ID, "application/x-bittorrent", true)
 	if err != nil {
 		return fmt.Errorf("上传种子文件失败：%v", err)
@@ -717,7 +716,7 @@ func addU115TorrentTask(torrentURL, wpPathID string) error {
 	}
 	return offline.AddTaskBT(u115.AddTaskBTArgs{
 		InfoHash:    infos[0].InfoHash,
-		Wanted:      wantedFileIndexes(infos[0].Files),
+		Wanted:      rt.wantedFileIndexes(infos[0].Files),
 		SavePath:    "",
 		TorrentSHA1: torrentSHA1,
 		PickCode:    pickCode,
