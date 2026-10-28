@@ -500,9 +500,9 @@ func (rt *Runtime) StopBackgroundWatchers() {
 }
 
 // U115AutoOrganizeStatusPayload 115 自动整理状态。
-func U115AutoOrganizeStatusPayload() map[string]any {
-	cfg := RT().GetConfig()
-	autoStore := RT().GetU115AutoStore()
+func (rt *Runtime) U115AutoOrganizeStatusPayload() map[string]any {
+	cfg := rt.GetConfig()
+	autoStore := rt.GetU115AutoStore()
 	var lastTriggered map[string]any
 	if autoStore != nil {
 		if last := autoStore.GetLastTriggered(); last != nil {
@@ -523,7 +523,7 @@ func U115AutoOrganizeStatusPayload() map[string]any {
 	lastErr := u115AutoWatcher.lastPollError
 	u115AutoWatcher.mu.Unlock()
 
-	authorized, _ := RT().u115OauthStatusPayload()["authorized"].(bool)
+	authorized, _ := rt.u115OauthStatusPayload()["authorized"].(bool)
 	return map[string]any{
 		"enabled":            cfg.U115.AutoOrganizeEnabled && cfg.ActiveStorageName() == "pan115",
 		"storage_primary":    cfg.ActiveStorageName(),

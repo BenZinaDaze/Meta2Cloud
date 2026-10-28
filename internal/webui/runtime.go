@@ -397,7 +397,7 @@ func (rt *Runtime) GetStorageProvider() cloudfile.Provider {
 					return rt.getU115ClientLocked()
 				},
 				func() []string {
-					c := RT().GetConfig()
+					c := rt.GetConfig()
 					return []string{
 						c.ActiveRootFolderID(), c.ActiveScanFolderID(),
 						c.U115.RootFolderID, c.U115.DownloadFolderID,

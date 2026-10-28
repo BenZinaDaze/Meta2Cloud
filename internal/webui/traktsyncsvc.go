@@ -159,7 +159,7 @@ func (rt *Runtime) traktSyncStatusPayload() map[string]any {
 		"last_poll_error":        traktWatcher.lastPollError,
 		"last_session_polled_at": traktSessionWatcher.lastPolledAt,
 	}
-	if store := RT().GetTraktSyncStore(); store != nil {
+	if store := rt.GetTraktSyncStore(); store != nil {
 		if last := store.GetLastFinishedSyncRun(); last != nil {
 			payload["last_run"] = map[string]any{
 				"id": last.ID, "started_at": last.StartedAt, "finished_at": last.FinishedAt,
@@ -254,8 +254,8 @@ func (s *Server) handleTraktSyncRunItems(w http.ResponseWriter, r *http.Request)
 // ── 忽略清单（Trakt 无法识别等持续失败媒体的手动止损）────────
 
 // traktMediaTitle 查媒体展示标题（tmdb_media 缓存优先，回退 library_media）。
-func traktMediaTitle(mediaType string, tmdbID int64) string {
-	libStore := RT().GetLibraryStore()
+func (rt *Runtime) traktMediaTitle(mediaType string, tmdbID int64) string {
+	libStore := rt.GetLibraryStore()
 	if row := libStore.GetTmdbEntry(mediaType, tmdbID); row != nil && row.Title != "" {
 		return row.Title
 	}
@@ -279,7 +279,7 @@ func (s *Server) handleTraktSyncIgnores(w http.ResponseWriter, _ *http.Request) 
 			title = *c.Title
 		}
 		if title == "" {
-			title = traktMediaTitle(c.MediaType, c.TmdbID)
+			title = s.rt.traktMediaTitle(c.MediaType, c.TmdbID)
 		}
 		candidates = append(candidates, map[string]any{
 			"media_type": c.MediaType, "anchor": c.Anchor, "tmdb_id": c.TmdbID, "title": title,
@@ -312,13 +312,13 @@ func (s *Server) handleTraktSyncIgnoreSet(w http.ResponseWriter, r *http.Request
 		writeJSONError(w, http.StatusBadRequest, "media_type 须为 movie/tv 且 tmdb_id 有效")
 		return
 	}
-	ignoreDisplayName := traktMediaTitle(req.MediaType, req.TmdbID)
+	ignoreDisplayName := s.rt.traktMediaTitle(req.MediaType, req.TmdbID)
 	if ignoreDisplayName == "" {
 		ignoreDisplayName = fmt.Sprintf("%s:%d", req.MediaType, req.TmdbID)
 	}
 	switch req.Action {
 	case "add":
-		title := traktMediaTitle(req.MediaType, req.TmdbID)
+		title := s.rt.traktMediaTitle(req.MediaType, req.TmdbID)
 		if err := syncStore.AddSyncIgnore(req.MediaType, req.Anchor, req.TmdbID, title, req.Reason); err != nil {
 			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("保存忽略失败：%v", err))
 			return

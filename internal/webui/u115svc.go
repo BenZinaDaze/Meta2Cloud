@@ -551,7 +551,7 @@ func (s *Server) handleU115OfflineClearTasks(w http.ResponseWriter, r *http.Requ
 
 // handleU115AutoOrganizeStatus 115 自动整理监听状态。
 func (s *Server) handleU115AutoOrganizeStatus(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, U115AutoOrganizeStatusPayload())
+	writeJSON(w, http.StatusOK, s.rt.U115AutoOrganizeStatusPayload())
 }
 
 // ── 种子链接转 BT 云下载任务 ────────────────────────────────

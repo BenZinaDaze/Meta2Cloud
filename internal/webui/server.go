@@ -428,7 +428,7 @@ func (s *Server) handleGetLibrary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetStats(w http.ResponseWriter, _ *http.Request) {
-	libStore := RT().GetLibraryStore()
+	libStore := s.rt.GetLibraryStore()
 	writeJSON(w, http.StatusOK, libStore.GetStats())
 }
 

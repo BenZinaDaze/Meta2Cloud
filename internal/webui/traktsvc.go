@@ -15,9 +15,9 @@ import (
 // ── 状态载荷 ───────────────────────────────────────────────
 
 func (rt *Runtime) traktOauthStatusPayload() map[string]any {
-	cfg := RT().GetConfig().Trakt
-	ready := RT().GetConfig().IsTraktReady()
-	tokenPath := RT().resolveConfigPath(cfg.TokenJSON)
+	cfg := rt.GetConfig().Trakt
+	ready := rt.GetConfig().IsTraktReady()
+	tokenPath := rt.resolveConfigPath(cfg.TokenJSON)
 	token, tokenExists := func() (trakt.Token, bool) {
 		t, ok, err := trakt.LoadToken(tokenPath)
 		if err != nil {
@@ -34,7 +34,7 @@ func (rt *Runtime) traktOauthStatusPayload() map[string]any {
 		tokenExpired = time.Now().Unix() >= token.ExpiresAt()
 		if tokenExpired {
 			// 尝试自动刷新（与 115 状态载荷同思路）
-			if client := RT().GetTraktClient(); client != nil {
+			if client := rt.GetTraktClient(); client != nil {
 				if err := client.RefreshToken(); err == nil {
 					refreshed = true
 					if t, ok, _ := trakt.LoadToken(tokenPath); ok {
@@ -71,7 +71,7 @@ func (rt *Runtime) traktOauthStatusPayload() map[string]any {
 }
 
 func (rt *Runtime) plexStatusPayload() map[string]any {
-	cfg := RT().GetConfig()
+	cfg := rt.GetConfig()
 	authPath := rt.plexAuthPath()
 	auth, authErr := rt.loadPlexAuth(authPath)
 	hasToken := authErr == nil && auth.AuthToken != ""
@@ -93,7 +93,7 @@ func (rt *Runtime) plexStatusPayload() map[string]any {
 	if !cfg.IsPlexReady() || !hasToken {
 		return payload
 	}
-	client := RT().GetPlexClient()
+	client := rt.GetPlexClient()
 	if client == nil {
 		return payload
 	}
