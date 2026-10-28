@@ -23,7 +23,7 @@ var wsUpgrader = websocket.Upgrader{
 // handleLogsLiveWS /api/logs/live WebSocket 处理器。
 func handleLogsLiveWS(w http.ResponseWriter, r *http.Request) {
 	// token 无效：升级后以 4001 关闭（对齐 Python close(code=4001)）
-	if VerifyToken(r.URL.Query().Get("token")) == "" {
+	if RT().VerifyToken(r.URL.Query().Get("token")) == "" {
 		conn, err := wsUpgrader.Upgrade(w, r, nil)
 		if err != nil {
 			return

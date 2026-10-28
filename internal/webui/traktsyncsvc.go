@@ -110,7 +110,7 @@ func (rt *Runtime) runTraktSync(trigger string) {
 		})
 	// 有未处理项时提醒（长尾故障不再沉默数天）：写入失败 / 两侧冲突 / 无法识别
 	if summary.Failed > 0 || summary.Conflicts > 0 || summary.Unresolved > 0 {
-		notifyTraktSyncAnomaly(summary)
+		rt.notifyTraktSyncAnomaly(summary)
 	}
 }
 
@@ -120,7 +120,7 @@ var (
 	traktAnomalyLast time.Time
 )
 
-func notifyTraktSyncAnomaly(summary syncengine.RunSummary) {
+func (rt *Runtime) notifyTraktSyncAnomaly(summary syncengine.RunSummary) {
 	traktAnomalyMu.Lock()
 	if time.Since(traktAnomalyLast) < time.Hour {
 		traktAnomalyMu.Unlock()
@@ -128,7 +128,7 @@ func notifyTraktSyncAnomaly(summary syncengine.RunSummary) {
 	}
 	traktAnomalyLast = time.Now()
 	traktAnomalyMu.Unlock()
-	sendHealthTelegram("trakt", "Trakt", fmt.Sprintf(
+	rt.sendHealthTelegram("trakt", "Trakt", fmt.Sprintf(
 		"⚠️ 观看同步有未处理项：写入失败 %d 条，两侧状态冲突 %d 条，无法识别 %d 条。详情见同步记录",
 		summary.Failed, summary.Conflicts, summary.Unresolved))
 }
@@ -238,7 +238,7 @@ func (s *Server) handleTraktSyncRunItems(w http.ResponseWriter, r *http.Request)
 		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("读取同步明细失败：%v", err))
 		return
 	}
-	enrichRunItemTitles(items)
+	s.rt.enrichRunItemTitles(items)
 	list := make([]map[string]any, 0, len(items))
 	for _, it := range items {
 		list = append(list, map[string]any{
@@ -342,8 +342,8 @@ func (s *Server) handleTraktSyncIgnoreSet(w http.ResponseWriter, r *http.Request
 // enrichRunItemTitles 就地为明细补充媒体标题（原位覆盖 Title）。
 // 优先 tmdb_media 缓存（含剧名/译名），回退 library_media；两者都只读。
 // unresolved 明细在记录时已带播放端标题，不覆盖。
-func enrichRunItemTitles(items []store.TraktSyncRunItem) {
-	libStore := RT().GetLibraryStore()
+func (rt *Runtime) enrichRunItemTitles(items []store.TraktSyncRunItem) {
+	libStore := rt.GetLibraryStore()
 	for i := range items {
 		it := &items[i]
 		if it.MediaType == nil || it.TmdbID == nil || *it.TmdbID <= 0 {

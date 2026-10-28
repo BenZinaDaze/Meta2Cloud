@@ -53,6 +53,7 @@ const (
 )
 
 type strmService struct {
+	rt      *Runtime
 	mu      sync.Mutex
 	running bool
 
@@ -129,8 +130,6 @@ func (sc *strmChanges) list() []string {
 	return out
 }
 
-var strmSvc = &strmService{}
-
 // ── URL 构造 ────────────────────────────────────────────────
 
 // StrmSign 计算 302 访问签名（url_secret 非空时启用）。
@@ -186,22 +185,22 @@ func (rt *Runtime) pickCodeOf(f cloudfile.CloudFile) string {
 // TriggerStrmSync 异步触发一次全量同步（增量写库，已有且未变化的跳过）。
 // 返回 false 表示已有同步在进行。
 func (rt *Runtime) TriggerStrmSync(trigger string) bool {
-	strmSvc.mu.Lock()
-	if strmSvc.running {
-		strmSvc.mu.Unlock()
+	rt.strmSvc.mu.Lock()
+	if rt.strmSvc.running {
+		rt.strmSvc.mu.Unlock()
 		return false
 	}
-	strmSvc.running = true
-	strmSvc.mu.Unlock()
+	rt.strmSvc.running = true
+	rt.strmSvc.mu.Unlock()
 
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				log.Printf("[strm] 同步 panic：%v", r)
 			}
-			strmSvc.mu.Lock()
-			strmSvc.running = false
-			strmSvc.mu.Unlock()
+			rt.strmSvc.mu.Lock()
+			rt.strmSvc.running = false
+			rt.strmSvc.mu.Unlock()
 		}()
 		rt.runStrmSync(trigger)
 	}()
@@ -210,9 +209,9 @@ func (rt *Runtime) TriggerStrmSync(trigger string) bool {
 
 // StrmSyncRunning 是否正在同步。
 func (rt *Runtime) StrmSyncRunning() bool {
-	strmSvc.mu.Lock()
-	defer strmSvc.mu.Unlock()
-	return strmSvc.running
+	rt.strmSvc.mu.Lock()
+	defer rt.strmSvc.mu.Unlock()
+	return rt.strmSvc.running
 }
 
 func (rt *Runtime) runStrmSync(trigger string) {
@@ -679,19 +678,19 @@ func (rt *Runtime) HandleVideoIngested(result pipeline.ProcessResult) error {
 		}
 	}
 
-	strmSvc.hookMu.Lock()
-	defer strmSvc.hookMu.Unlock()
+	rt.strmSvc.hookMu.Lock()
+	defer rt.strmSvc.hookMu.Unlock()
 	rt.ensureIngestRunLocked()
-	action := rt.upsertStrmFile(st, cfg, mapping, result.File, relPath, pickCode, localRoot, strmSvc.hookRunID)
+	action := rt.upsertStrmFile(st, cfg, mapping, result.File, relPath, pickCode, localRoot, rt.strmSvc.hookRunID)
 	switch action {
 	case "created":
-		strmSvc.hookStats.Created++
-		strmSvc.hookChanges.add(relPath)
+		rt.strmSvc.hookStats.Created++
+		rt.strmSvc.hookChanges.add(relPath)
 	case "updated":
-		strmSvc.hookStats.Updated++
-		strmSvc.hookChanges.add(relPath)
+		rt.strmSvc.hookStats.Updated++
+		rt.strmSvc.hookChanges.add(relPath)
 	default:
-		strmSvc.hookStats.Skipped++
+		rt.strmSvc.hookStats.Skipped++
 	}
 	if fetcher != nil {
 		// 注意：hookMu 为非重入锁，upsertSidecarFile 内部不得再取本锁（其本身不取）
@@ -709,20 +708,20 @@ func (rt *Runtime) HandleVideoIngested(result pipeline.ProcessResult) error {
 					continue
 				}
 				sideLocal := rt.sidecarLocalPath(localRoot, relPath, item.Name)
-				switch rt.upsertSidecarFile(st, item, relPath, sidePickCode, sideLocal, fetcher, strmSvc.hookRunID) {
+				switch rt.upsertSidecarFile(st, item, relPath, sidePickCode, sideLocal, fetcher, rt.strmSvc.hookRunID) {
 				case "created":
-					strmSvc.hookStats.Created++
-					strmSvc.hookChanges.add(relPath)
+					rt.strmSvc.hookStats.Created++
+					rt.strmSvc.hookChanges.add(relPath)
 				case "updated":
-					strmSvc.hookStats.Updated++
-					strmSvc.hookChanges.add(relPath)
+					rt.strmSvc.hookStats.Updated++
+					rt.strmSvc.hookChanges.add(relPath)
 				default:
-					strmSvc.hookStats.Skipped++
+					rt.strmSvc.hookStats.Skipped++
 				}
 			}
 		}
 	}
-	strmSvc.hookLastAt = time.Now()
+	rt.strmSvc.hookLastAt = time.Now()
 	rt.scheduleIngestFlush()
 	return nil
 }
@@ -799,24 +798,24 @@ func (rt *Runtime) locateMapping(provider cloudfile.Provider, cfg *config.Config
 func (rt *Runtime) ensureIngestRunLocked() {
 	st := rt.GetStrmStore()
 	now := time.Now()
-	if strmSvc.hookRunID != 0 && now.Sub(strmSvc.hookLastAt) <= ingestRunFlushIdle {
+	if rt.strmSvc.hookRunID != 0 && now.Sub(rt.strmSvc.hookLastAt) <= ingestRunFlushIdle {
 		return
 	}
-	strmSvc.flushIngestRunLocked()
-	strmSvc.hookRunID = st.StartSyncRun(triggerIngest)
-	strmSvc.hookStats = strmRunStats{}
-	strmSvc.hookChanges = newStrmChanges(rt.GetCategories())
+	rt.strmSvc.flushIngestRunLocked()
+	rt.strmSvc.hookRunID = st.StartSyncRun(triggerIngest)
+	rt.strmSvc.hookStats = strmRunStats{}
+	rt.strmSvc.hookChanges = newStrmChanges(rt.GetCategories())
 }
 
 // scheduleIngestFlush 窗口静默后收尾入库 run。
 func (rt *Runtime) scheduleIngestFlush() {
-	if strmSvc.hookFlusher != nil {
-		strmSvc.hookFlusher.Stop()
+	if rt.strmSvc.hookFlusher != nil {
+		rt.strmSvc.hookFlusher.Stop()
 	}
-	strmSvc.hookFlusher = time.AfterFunc(ingestRunFlushIdle, func() {
-		strmSvc.hookMu.Lock()
-		defer strmSvc.hookMu.Unlock()
-		strmSvc.flushIngestRunLocked()
+	rt.strmSvc.hookFlusher = time.AfterFunc(ingestRunFlushIdle, func() {
+		rt.strmSvc.hookMu.Lock()
+		defer rt.strmSvc.hookMu.Unlock()
+		rt.strmSvc.flushIngestRunLocked()
 	})
 }
 
@@ -825,7 +824,7 @@ func (s *strmService) flushIngestRunLocked() {
 	if s.hookRunID == 0 {
 		return
 	}
-	if st := RT().GetStrmStore(); st != nil {
+	if st := s.rt.GetStrmStore(); st != nil {
 		st.FinishSyncRun(s.hookRunID, s.hookStats.Created, s.hookStats.Updated, s.hookStats.Removed, s.hookStats.Skipped, "")
 	}
 	changed := s.hookStats.Created + s.hookStats.Updated + s.hookStats.Removed
@@ -833,7 +832,7 @@ func (s *strmService) flushIngestRunLocked() {
 	s.hookRunID = 0
 	s.hookStats = strmRunStats{}
 	s.hookChanges = nil
-	RT().notifyPlexRefresh(changed, changes)
+	s.rt.notifyPlexRefresh(changed, changes)
 }
 
 // ── HTTP 处理器（/api/strm/*） ───────────────────────────────

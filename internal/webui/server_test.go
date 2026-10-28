@@ -167,14 +167,14 @@ func TestLoginWithoutPassword(t *testing.T) {
 
 func TestTokenRoundTrip(t *testing.T) {
 	newTestServer(t) // 初始化 runtime
-	token, err := CreateToken("tester", 1)
+	token, err := RT().CreateToken("tester", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := VerifyToken(token); got != "tester" {
+	if got := RT().VerifyToken(token); got != "tester" {
 		t.Errorf("verify = %q", got)
 	}
-	if got := VerifyToken(token + "x"); got != "" {
+	if got := RT().VerifyToken(token + "x"); got != "" {
 		t.Errorf("篡改 token 不应通过: %q", got)
 	}
 }

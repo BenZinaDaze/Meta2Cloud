@@ -12,6 +12,7 @@ import (
 
 	"meta2cloud/internal/cloudfile"
 	"meta2cloud/internal/config"
+	"meta2cloud/internal/pipeline"
 	"meta2cloud/internal/plexserver"
 	"meta2cloud/internal/storage"
 	"meta2cloud/internal/tmdb"
@@ -52,6 +53,13 @@ type Runtime struct {
 
 	jwtSecretOnce  sync.Once
 	jwtSecretValue string
+
+	// strmSvc STRM 同步服务（入库钩子缓冲，见 strmsvc.go）
+	strmSvc *strmService
+
+	// health 钩子（测试可替换；见 health.go）
+	healthSendTG   func(tg config.Telegram, text string) error
+	healthTGConfig func() config.Telegram
 
 	// loginLimiter 登录失败限速（内存级，按来源 IP；见 server.go）
 	loginLimiter struct {
@@ -107,6 +115,10 @@ func InitRuntime(rootDir string) *Runtime {
 	defaultRuntime.categories = nil
 	defaultRuntime.categoriesM = 0
 	defaultRuntime.configSig = [3]int64{}
+	// health 钩子默认实现（包级 init 环依赖已随钩子入字段消除）
+	defaultRuntime.strmSvc = &strmService{rt: defaultRuntime}
+	defaultRuntime.healthSendTG = pipeline.SendTelegramMessage
+	defaultRuntime.healthTGConfig = func() config.Telegram { return defaultRuntime.GetConfig().Telegram }
 	// 上一次初始化打开的存储句柄先关闭（重复 InitRuntime 的测试场景防 fd 泄漏）
 	defaultRuntime.closeStores()
 	defaultRuntime.initStores()

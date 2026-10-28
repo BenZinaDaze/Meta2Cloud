@@ -23,7 +23,7 @@ func (rt *Runtime) GetJWTSecret() string {
 			rt.jwtSecretValue = cfg.WebUI.SecretKey
 			return
 		}
-		secretFile := filepath.Join(RT().DataDir(), ".jwt_secret")
+		secretFile := filepath.Join(rt.DataDir(), ".jwt_secret")
 		if data, err := os.ReadFile(secretFile); err == nil {
 			if v := strings.TrimSpace(string(data)); v != "" {
 				rt.jwtSecretValue = v
@@ -52,7 +52,7 @@ func (rt *Runtime) ResetJWTSecretCache() {
 }
 
 // CreateToken 签发 HS256 JWT。
-func CreateToken(username string, expireHours int) (string, error) {
+func (rt *Runtime) CreateToken(username string, expireHours int) (string, error) {
 	now := time.Now()
 	claims := jwt.MapClaims{
 		"sub": username,
@@ -60,16 +60,16 @@ func CreateToken(username string, expireHours int) (string, error) {
 		"exp": now.Add(time.Duration(expireHours) * time.Hour).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(RT().GetJWTSecret()))
+	return token.SignedString([]byte(rt.GetJWTSecret()))
 }
 
 // VerifyToken 校验 token，返回用户名；失败返回空串。
-func VerifyToken(tokenStr string) string {
+func (rt *Runtime) VerifyToken(tokenStr string) string {
 	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, jwt.ErrSignatureInvalid
 		}
-		return []byte(RT().GetJWTSecret()), nil
+		return []byte(rt.GetJWTSecret()), nil
 	}, jwt.WithValidMethods([]string{"HS256"}))
 	if err != nil || !token.Valid {
 		return ""
@@ -87,7 +87,7 @@ func VerifyToken(tokenStr string) string {
 // （webhook 端点，handleTriggerWebhook 自行校验密钥/来源）、以及非 /api/ 路径（静态资源等）。
 // 注：Python/FastAPI 的 HTTP 中间件天然不拦截 WebSocket，Go 的升级请求
 // 仍是 HTTP 请求，因此必须显式豁免。
-func authMiddleware(next http.Handler) http.Handler {
+func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		if path == "/api/auth:login" || path == "/api/logs/live" || path == "/trigger" || !strings.HasPrefix(path, "/api/") {
@@ -99,7 +99,7 @@ func authMiddleware(next http.Handler) http.Handler {
 			writeJSONError(w, http.StatusUnauthorized, "未授权，请先登录")
 			return
 		}
-		username := VerifyToken(auth[7:])
+		username := s.rt.VerifyToken(auth[7:])
 		if username == "" {
 			writeJSONError(w, http.StatusUnauthorized, "Token 已过期或无效，请重新登录")
 			return

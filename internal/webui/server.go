@@ -187,7 +187,7 @@ func (s *Server) registerRoutes() {
 // Handler 最终 HTTP 处理器（认证 + CORS）。
 func (s *Server) Handler() http.Handler {
 	var handler http.Handler = s.mux
-	handler = authMiddleware(handler)
+	handler = s.authMiddleware(handler)
 	handler = corsMiddleware(handler)
 	return handler
 }
@@ -359,7 +359,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.rt.resetLoginFailures(ip)
-	token, err := CreateToken(body.Username, cfg.WebUI.TokenExpireHours)
+	token, err := s.rt.CreateToken(body.Username, cfg.WebUI.TokenExpireHours)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "Token 生成失败")
 		return
@@ -378,7 +378,7 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 	auth := r.Header.Get("Authorization")
 	token := strings.TrimPrefix(auth, "Bearer ")
-	username := VerifyToken(token)
+	username := s.rt.VerifyToken(token)
 	if username == "" {
 		writeJSONError(w, http.StatusUnauthorized, "Token 无效")
 		return

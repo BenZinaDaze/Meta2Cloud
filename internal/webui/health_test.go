@@ -74,11 +74,11 @@ func setupHealthTest(t *testing.T) *tgRecorder {
 	InitRuntime(t.TempDir())
 	resetHealthState()
 	rec := &tgRecorder{}
-	healthSendTG = rec.send
-	healthTGConfig = func() config.Telegram { return config.Telegram{BotToken: "tok", ChatID: "cid"} }
+	RT().healthSendTG = rec.send
+	RT().healthTGConfig = func() config.Telegram { return config.Telegram{BotToken: "tok", ChatID: "cid"} }
 	t.Cleanup(func() {
-		healthSendTG = pipeline.SendTelegramMessage
-		healthTGConfig = func() config.Telegram { return RT().GetConfig().Telegram }
+		RT().healthSendTG = pipeline.SendTelegramMessage
+		RT().healthTGConfig = func() config.Telegram { return RT().GetConfig().Telegram }
 		healthNow = time.Now
 		resetHealthState()
 	})
@@ -207,7 +207,7 @@ func TestNotifyServiceHealthPerServiceIndependent(t *testing.T) {
 // TestNotifyServiceHealthTGUnconfigured TG 未配置时静默降级为仅应用日志。
 func TestNotifyServiceHealthTGUnconfigured(t *testing.T) {
 	rec := setupHealthTest(t)
-	healthTGConfig = func() config.Telegram { return config.Telegram{} } // 未配置
+	RT().healthTGConfig = func() config.Telegram { return config.Telegram{} } // 未配置
 	healthNow = newFakeClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)).Now
 
 	RT().NotifyServiceHealth("Plex", false, "token 失效")
