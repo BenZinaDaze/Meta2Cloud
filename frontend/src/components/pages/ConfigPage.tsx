@@ -68,6 +68,7 @@ import { Separator } from '@/components/ui/separator'
 import { SkeletonPanel } from '@/components/StatePanel'
 import PageHeader from '@/components/shared/PageHeader'
 import FolderSelectInput from '@/components/config/FolderSelectInput'
+import { apiDetail, useAsyncAction } from '@/hooks/useAsyncAction'
 import { cn } from '@/lib/utils'
 
 const PAGE_VARIANTS = {
@@ -446,34 +447,30 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [u115Oauth, setU115Oauth] = useState<{ authorized: boolean; token_exists: boolean } | null>(null)
-  const [u115OauthMessage, setU115OauthMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-  const [u115CookieMessage, setU115CookieMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  // busy + message 状态对统一由 useAsyncAction 管理（命名沿用原状态语义）
+  const u115OauthAction = useAsyncAction()
+  const u115CookieAction = useAsyncAction()
   const [u115QrUrl, setU115QrUrl] = useState('')
   const [u115QrPreviewUrl, setU115QrPreviewUrl] = useState('')
-  const [u115AuthBusy, setU115AuthBusy] = useState(false)
-  const [u115CookieTestBusy, setU115CookieTestBusy] = useState(false)
   const [u115Polling, setU115Polling] = useState(false)
   const u115PollAbortRef = useRef<AbortController | null>(null)
-  const [fullRefreshing, setFullRefreshing] = useState(false)
-  const [fullRefreshMessage, setFullRefreshMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-  const [mediavaultTestBusy, setMediavaultTestBusy] = useState(false)
-  const [mediavaultMessage, setMediavaultMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-  const [telegramTestBusy, setTelegramTestBusy] = useState(false)
-  const [telegramMessage, setTelegramMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const fullRefreshAction = useAsyncAction()
+  const mediavaultAction = useAsyncAction()
+  const telegramAction = useAsyncAction()
   // ── 观看同步（Trakt ↔ Plex）──
   const [traktOauth, setTraktOauth] = useState<Record<string, unknown> | null>(null)
   const [traktPairing, setTraktPairing] = useState<{ user_code: string; verification_url: string } | null>(null)
   const [traktPolling, setTraktPolling] = useState(false)
-  const [traktMessage, setTraktMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-  const [traktPairBusy, setTraktPairBusy] = useState(false)
+  const traktAction = useAsyncAction()
   const [plexPairing, setPlexPairing] = useState<{ code: string; auth_url: string } | null>(null)
   const [plexPolling, setPlexPolling] = useState(false)
-  const [plexMessage, setPlexMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-  const [plexPairBusy, setPlexPairBusy] = useState(false)
-  const [plexTestBusy, setPlexTestBusy] = useState(false)
+  const plexAction = useAsyncAction()
   const [syncStatus, setSyncStatus] = useState<Record<string, unknown> | null>(null)
-  const [syncTriggerBusy, setSyncTriggerBusy] = useState(false)
-  const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const syncTriggerAction = useAsyncAction()
+  // 轮询 effect 内使用的稳定 setter 别名（useState setter 恒稳定，可安全列入依赖）
+  const { setMessage: setU115OauthMsg } = u115OauthAction
+  const { setMessage: setTraktMsg } = traktAction
+  const { setMessage: setPlexMsg } = plexAction
 
   const loadU115OauthStatus = useCallback(async () => {
     try {
@@ -520,7 +517,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
     const scheduleNextPoll = () => {
       if (cancelled) return
       if (Date.now() - startedAt >= maxPollingMs) {
-        setU115OauthMessage({ type: 'error', text: '115 扫码授权已超时，请重新发起扫码。' })
+        setU115OauthMsg({ type: 'error', text: '115 扫码授权已超时，请重新发起扫码。' })
         finishPolling()
         return
       }
@@ -536,11 +533,11 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
         const data = res?.data || {}
         if (data.confirmed) {
           if (data.ok) {
-            setU115OauthMessage({ type: 'success', text: '115 授权成功，token 已写入本地。' })
+            setU115OauthMsg({ type: 'success', text: '115 授权成功，token 已写入本地。' })
             finishPolling()
             loadU115OauthStatus()
           } else {
-            setU115OauthMessage({ type: 'error', text: data.message || '115 换取 token 失败' })
+            setU115OauthMsg({ type: 'error', text: data.message || '115 换取 token 失败' })
             finishPolling()
           }
           return
@@ -548,17 +545,17 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
         const statusCode = Number(data.status)
         const msg = String(data.message || '')
         if (Number.isFinite(statusCode) && statusCode < 0) {
-          setU115OauthMessage({ type: 'error', text: msg || `115 扫码授权已失效：${data.status}` })
+          setU115OauthMsg({ type: 'error', text: msg || `115 扫码授权已失效：${data.status}` })
           finishPolling()
           return
         }
         // 检查 message 是否包含错误关键词
         if (msg && (msg.includes('失败') || msg.includes('错误') || msg.includes('拒绝') || msg.includes('取消'))) {
-          setU115OauthMessage({ type: 'error', text: `115 扫码失败：${msg}` })
+          setU115OauthMsg({ type: 'error', text: `115 扫码失败：${msg}` })
           finishPolling()
           return
         }
-        setU115OauthMessage({
+        setU115OauthMsg({
           type: 'success',
           text: statusCode >= 1 ? '已扫码，等待手机确认…' : `等待扫码…`,
         })
@@ -568,12 +565,12 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
         if ((e as { code?: string; name?: string })?.code === 'ERR_CANCELED' || (e as { name?: string })?.name === 'CanceledError') return
         const status = (e as { response?: { status?: number } })?.response?.status
         if (status === 502 || status === 503 || status === 504 || !status) {
-          setU115OauthMessage({ type: 'error', text: '115 扫码状态查询暂时超时，系统会继续自动重试…' })
+          setU115OauthMsg({ type: 'error', text: '115 扫码状态查询暂时超时，系统会继续自动重试…' })
           scheduleNextPoll()
           return
         }
         setU115Polling(false)
-        setU115OauthMessage({ type: 'error', text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || (e as Error).message || '查询 115 扫码状态失败' })
+        setU115OauthMsg({ type: 'error', text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || (e as Error).message || '查询 115 扫码状态失败' })
       } finally {
         u115PollAbortRef.current = null
       }
@@ -589,7 +586,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
         u115PollAbortRef.current = null
       }
     }
-  }, [u115Polling, u115QrUrl, loadU115OauthStatus])
+  }, [u115Polling, u115QrUrl, loadU115OauthStatus, setU115OauthMsg])
 
   // ── 观看同步：状态（历史明细在「Trakt 同步」页查看）──────
   const loadWatchedSyncStatus = useCallback(async () => {
@@ -661,7 +658,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
         if (cancelled) return
         const data = res?.data || {}
         if (data.confirmed) {
-          setTraktMessage({ type: 'success', text: data.user ? `Trakt 授权成功（用户 ${data.user}）` : 'Trakt 授权成功' })
+          setTraktMsg({ type: 'success', text: data.user ? `Trakt 授权成功（用户 ${data.user}）` : 'Trakt 授权成功' })
           setTraktPairing(null)
           finishPolling()
           loadTraktOauthStatus()
@@ -669,13 +666,13 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
           return
         }
         if (data.expired) {
-          setTraktMessage({ type: 'error', text: data.message || '设备码已过期，请重新发起配对' })
+          setTraktMsg({ type: 'error', text: data.message || '设备码已过期，请重新发起配对' })
           setTraktPairing(null)
           finishPolling()
           return
         }
         if (Date.now() - startedAt >= maxPollingMs) {
-          setTraktMessage({ type: 'error', text: 'Trakt 配对等待超时，请重新发起。' })
+          setTraktMsg({ type: 'error', text: 'Trakt 配对等待超时，请重新发起。' })
           setTraktPairing(null)
           finishPolling()
           return
@@ -699,7 +696,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
       cancelled = true
       if (timer) clearTimeout(timer)
     }
-  }, [traktPolling, loadTraktOauthStatus, loadWatchedSyncStatus])
+  }, [traktPolling, loadTraktOauthStatus, loadWatchedSyncStatus, setTraktMsg])
 
   // Plex PIN 轮询
   useEffect(() => {
@@ -717,9 +714,9 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
         const data = res?.data || {}
         if (data.confirmed) {
           if (data.reachable === false) {
-            setPlexMessage({ type: 'error', text: 'Plex 授权完成，但服务器不可达，请检查 plex.base_url 与网络。' })
+            setPlexMsg({ type: 'error', text: 'Plex 授权完成，但服务器不可达，请检查 plex.base_url 与网络。' })
           } else {
-            setPlexMessage({ type: 'success', text: data.message || 'Plex 授权成功' })
+            setPlexMsg({ type: 'success', text: data.message || 'Plex 授权成功' })
           }
           setPlexPairing(null)
           setPlexPolling(false)
@@ -727,7 +724,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
           return
         }
         if (Date.now() - startedAt >= maxPollingMs) {
-          setPlexMessage({ type: 'error', text: 'Plex 配对等待超时，请重新发起。' })
+          setPlexMsg({ type: 'error', text: 'Plex 配对等待超时，请重新发起。' })
           setPlexPairing(null)
           setPlexPolling(false)
           return
@@ -750,78 +747,48 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
       cancelled = true
       if (timer) clearTimeout(timer)
     }
-  }, [plexPolling, loadWatchedSyncStatus])
+  }, [plexPolling, loadWatchedSyncStatus, setPlexMsg])
 
   async function handleTraktPair() {
-    setTraktPairBusy(true)
-    setTraktMessage(null)
-    try {
+    await traktAction.run(async () => {
       const res = await createTraktDeviceCode()
       const data = res.data || {}
       setTraktPairing({ user_code: data.user_code, verification_url: data.verification_url })
       setTraktPolling(true)
-    } catch (e) {
-      setTraktMessage({ type: 'error', text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || (e as Error).message || '创建设备码失败' })
-    } finally {
-      setTraktPairBusy(false)
-    }
+    }, (e) => apiDetail(e) || (e as Error).message || '创建设备码失败')
   }
 
-  async function handleTraktDisconnect() {
-    try {
+  const handleTraktDisconnect = () =>
+    traktAction.run(async () => {
       await disconnectTrakt()
-      setTraktMessage({ type: 'success', text: '已断开 Trakt 授权' })
       setTraktPairing(null)
       setTraktPolling(false)
       loadTraktOauthStatus()
       loadWatchedSyncStatus()
-    } catch (e) {
-      setTraktMessage({ type: 'error', text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '断开失败' })
-    }
-  }
+      return '已断开 Trakt 授权'
+    }, '断开失败')
 
   async function handlePlexPair() {
-    setPlexPairBusy(true)
-    setPlexMessage(null)
-    try {
+    await plexAction.run(async () => {
       const res = await createPlexPin()
       const data = res.data || {}
       setPlexPairing({ code: data.code, auth_url: data.auth_url })
       setPlexPolling(true)
-    } catch (e) {
-      setPlexMessage({ type: 'error', text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || (e as Error).message || '创建 PIN 失败' })
-    } finally {
-      setPlexPairBusy(false)
-    }
+    }, (e) => apiDetail(e) || (e as Error).message || '创建 PIN 失败')
   }
 
-  async function handlePlexTest() {
-    setPlexTestBusy(true)
-    setPlexMessage(null)
-    try {
+  const handlePlexTest = () =>
+    plexAction.run(async () => {
       const res = await testPlexConnection()
-      setPlexMessage({ type: 'success', text: `连接成功（服务器 ${res.data?.server_name || ''} v${res.data?.server_version || ''}）` })
-    } catch (e) {
-      setPlexMessage({ type: 'error', text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '连接失败' })
-    } finally {
-      setPlexTestBusy(false)
-    }
-  }
+      return `连接成功（服务器 ${res.data?.server_name || ''} v${res.data?.server_version || ''}）`
+    }, '连接失败')
 
-  async function handleWatchedSyncTrigger() {
-    setSyncTriggerBusy(true)
-    setSyncMessage(null)
-    try {
+  const handleWatchedSyncTrigger = () =>
+    syncTriggerAction.run(async () => {
       const res = await triggerWatchedSync()
-      setSyncMessage({ type: 'success', text: res.data?.message || '观看同步已触发' })
       loadWatchedSyncStatus()
-    } catch (e) {
-      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setSyncMessage({ type: 'error', text: detail || '触发失败' })
-    } finally {
-      setSyncTriggerBusy(false)
-    }
-  }
+      return res.data?.message || '观看同步已触发'
+    }, '触发失败')
 
   const isDirty = JSON.stringify(cfg) !== JSON.stringify(original)
   const pageMeta = PAGE_VARIANTS[page as keyof typeof PAGE_VARIANTS] || PAGE_VARIANTS.general
@@ -850,7 +817,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (e) {
-      setError((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '保存失败')
+      setError(apiDetail(e) || '保存失败')
     } finally {
       setSaving(false)
     }
@@ -863,14 +830,12 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
       currentU115Config.client_id !== savedU115Config.client_id ||
       currentU115Config.token_json !== savedU115Config.token_json
     ) {
-      setU115OauthMessage({ type: 'error', text: '请先保存 115 Client ID 和 Token 路径后再扫码授权。' })
+      u115OauthAction.setMessage({ type: 'error', text: '请先保存 115 Client ID 和 Token 路径后再扫码授权。' })
       return
     }
 
-    setU115AuthBusy(true)
     setU115Polling(false)
-    setU115OauthMessage(null)
-    try {
+    await u115OauthAction.run(async () => {
       const res = await createU115OauthSession({
         client_id: savedU115Config.client_id,
         token_json: savedU115Config.token_json,
@@ -884,31 +849,21 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
         setU115QrPreviewUrl('')
       }
       setU115Polling(true)
-      setU115OauthMessage({ type: 'success', text: '115 扫码会话已创建，请使用 App 扫码并确认，授权将自动完成。' })
       loadU115OauthStatus()
-    } catch (e) {
-      setU115Polling(false)
-      setU115OauthMessage({ type: 'error', text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '创建 115 扫码会话失败' })
-    } finally {
-      setU115AuthBusy(false)
-    }
+      return '115 扫码会话已创建，请使用 App 扫码并确认，授权将自动完成。'
+    }, '创建 115 扫码会话失败')
   }
 
-  async function handleU115ConnectionTest() {
-    try {
+  const handleU115ConnectionTest = () =>
+    u115OauthAction.run(async () => {
       const res = await testU115Connection()
       const data = res?.data || {}
-      setU115OauthMessage({ type: 'success', text: `连接成功：剩余空间 ${formatBytes(data.remain_space)} / 总空间 ${formatBytes(data.total_space)}` })
       loadU115OauthStatus()
-    } catch (e) {
-      setU115OauthMessage({ type: 'error', text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '115 连接测试失败' })
-    }
-  }
+      return `连接成功：剩余空间 ${formatBytes(data.remain_space)} / 总空间 ${formatBytes(data.total_space)}`
+    }, '115 连接测试失败')
 
-  async function handleU115CookieTest() {
-    setU115CookieTestBusy(true)
-    setU115CookieMessage(null)
-    try {
+  const handleU115CookieTest = () =>
+    u115CookieAction.run(async () => {
       const res = await testU115Cookie()
       const data = res?.data || {}
       const remainSpace = data?.space_info?.all_remain?.size
@@ -916,56 +871,30 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
       const spaceInfo = remainSpace != null && totalSpace != null
         ? `，剩余空间 ${formatBytes(remainSpace)} / 总空间 ${formatBytes(totalSpace)}`
         : ''
-      setU115CookieMessage({ type: 'success', text: `Cookie 可用${spaceInfo}` })
-    } catch (e) {
-      setU115CookieMessage({ type: 'error', text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Cookie 测试失败' })
-    } finally {
-      setU115CookieTestBusy(false)
-    }
-  }
+      return `Cookie 可用${spaceInfo}`
+    }, 'Cookie 测试失败')
 
-  async function handleFullRefresh() {
-    setFullRefreshing(true)
-    setFullRefreshMessage(null)
-    try {
+  const handleFullRefresh = () =>
+    fullRefreshAction.run(async () => {
       const res = await refreshLibrary(true)
       const data = res?.data || {}
-      setFullRefreshMessage({
-        type: 'success',
-        text: `全量刷新完成：电影 ${data.total_movies ?? '-'} 部，剧集 ${data.total_tv ?? '-'} 部`,
-      })
-    } catch (e) {
-      setFullRefreshMessage({
-        type: 'error',
-        text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '全量刷新失败',
-      })
-    } finally {
-      setFullRefreshing(false)
-    }
-  }
+      return `全量刷新完成：电影 ${data.total_movies ?? '-'} 部，剧集 ${data.total_tv ?? '-'} 部`
+    }, '全量刷新失败')
 
-  async function handleTelegramTest() {
+  const handleTelegramTest = () => {
     const telegram = (cfg?.telegram as Record<string, unknown>) || {}
-    setTelegramTestBusy(true)
-    setTelegramMessage(null)
-    try {
+    return telegramAction.run(async () => {
       await testTelegram({
         bot_token: (telegram.bot_token as string) || '',
         chat_id: (telegram.chat_id as string) || '',
       })
-      setTelegramMessage({ type: 'success', text: '测试通知已发送，请在 Telegram 查看' })
-    } catch (e) {
-      setTelegramMessage({ type: 'error', text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '测试通知发送失败' })
-    } finally {
-      setTelegramTestBusy(false)
-    }
+      return '测试通知已发送，请在 Telegram 查看'
+    }, '测试通知发送失败')
   }
 
-  async function handleMediaVaultTest() {
+  const handleMediaVaultTest = () => {
     const mediavault = (cfg?.mediavault as Record<string, unknown>) || {}
-    setMediavaultTestBusy(true)
-    setMediavaultMessage(null)
-    try {
+    return mediavaultAction.run(async () => {
       const res = await testMediaVault({
         enabled: mediavault.enabled,
         scheme: mediavault.scheme,
@@ -973,13 +902,8 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
         api_key: mediavault.api_key,
         timeout: mediavault.timeout,
       })
-      const data = res?.data || {}
-      setMediavaultMessage({ type: 'success', text: data.message || 'MediaVault 测试成功' })
-    } catch (e) {
-      setMediavaultMessage({ type: 'error', text: (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'MediaVault 测试失败' })
-    } finally {
-      setMediavaultTestBusy(false)
-    }
+      return res?.data?.message || 'MediaVault 测试成功'
+    }, 'MediaVault 测试失败')
   }
 
   function formatBytes(bytes: number): string {
@@ -1170,12 +1094,12 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                     variant="destructive"
                     size="lg"
                     onClick={handleFullRefresh}
-                    disabled={fullRefreshing}
+                    disabled={fullRefreshAction.busy}
                   >
-                    <RefreshCw className={cn('size-5', fullRefreshing && 'animate-spin')} />
-                    {fullRefreshing ? '刷新中…' : '全量刷新媒体库'}
+                    <RefreshCw className={cn('size-5', fullRefreshAction.busy && 'animate-spin')} />
+                    {fullRefreshAction.busy ? '刷新中…' : '全量刷新媒体库'}
                   </Button>
-                  <NoticeMessage message={fullRefreshMessage} />
+                  <NoticeMessage message={fullRefreshAction.message} />
                 </div>
               </CardContent>
             </Card>
@@ -1304,9 +1228,9 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                       variant="outline"
                       size="sm"
                       onClick={handleU115CreateQr}
-                      disabled={u115AuthBusy || !(cfg?.u115 as Record<string, unknown>)?.client_id}
+                      disabled={u115OauthAction.busy || !(cfg?.u115 as Record<string, unknown>)?.client_id}
                     >
-                      {u115AuthBusy ? '处理中…' : (u115Polling ? '等待扫码…' : '扫码授权')}
+                      {u115OauthAction.busy ? '处理中…' : (u115Polling ? '等待扫码…' : '扫码授权')}
                     </Button>
                     <Button
                       variant="outline"
@@ -1323,7 +1247,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                       <img src={u115QrPreviewUrl} alt="QR" className="mt-2 size-36 rounded-lg bg-white p-1" />
                     </div>
                   )}
-                  <NoticeMessage message={u115OauthMessage} />
+                  <NoticeMessage message={u115OauthAction.message} />
                 </div>
 
                 <Separator className="opacity-60" />
@@ -1408,13 +1332,13 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                       variant="outline"
                       size="sm"
                       onClick={handleU115CookieTest}
-                      disabled={u115CookieTestBusy || !(cfg?.u115 as Record<string, unknown>)?.cookie}
+                      disabled={u115CookieAction.busy || !(cfg?.u115 as Record<string, unknown>)?.cookie}
                     >
-                      {u115CookieTestBusy ? '测试中…' : '测试'}
+                      {u115CookieAction.busy ? '测试中…' : '测试'}
                     </Button>
-                    {u115CookieMessage && (
-                      <span className={cn('text-xs', u115CookieMessage.type === 'success' ? 'text-success' : 'text-destructive')}>
-                        {u115CookieMessage.text}
+                    {u115CookieAction.message && (
+                      <span className={cn('text-xs', u115CookieAction.message.type === 'success' ? 'text-success' : 'text-destructive')}>
+                        {u115CookieAction.message.text}
                       </span>
                     )}
                   </div>
@@ -1454,12 +1378,12 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                       variant="outline"
                       size="sm"
                       onClick={handleWatchedSyncTrigger}
-                      disabled={syncTriggerBusy || !traktOauth?.authorized || !syncStatus?.plex_connected}
+                      disabled={syncTriggerAction.busy || !traktOauth?.authorized || !syncStatus?.plex_connected}
                     >
                       {syncStatus?.running ? '同步中…' : '立即同步'}
                     </Button>
                   </div>
-                  <NoticeMessage message={syncMessage} />
+                  <NoticeMessage message={syncTriggerAction.message} />
                   {syncStatus?.last_run != null && (
                     <div className="mt-1 text-xs text-muted-foreground">
                       上次同步：{String((syncStatus.last_run as Record<string, unknown>).started_at || '')}
@@ -1505,10 +1429,10 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                             variant="outline"
                             size="sm"
                             onClick={handleTraktPair}
-                            disabled={traktPairBusy || !(cfg?.trakt as Record<string, unknown>)?.client_id}
+                            disabled={traktAction.busy || !(cfg?.trakt as Record<string, unknown>)?.client_id}
                             className="shrink-0"
                           >
-                            {traktPairBusy ? '处理中…' : traktPolling ? '等待确认…' : '设备码配对'}
+                            {traktAction.busy ? '处理中…' : traktPolling ? '等待确认…' : '设备码配对'}
                           </Button>
                           {traktPairing && (
                             <a
@@ -1530,7 +1454,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                         <div className="font-mono text-2xl font-semibold tracking-[0.3em]">{traktPairing.user_code}</div>
                       </div>
                     )}
-                    <NoticeMessage message={traktMessage} />
+                    <NoticeMessage message={traktAction.message} />
                   </div>
                 </div>
 
@@ -1546,12 +1470,12 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                         variant="outline"
                         size="sm"
                         onClick={handlePlexPair}
-                        disabled={plexPairBusy || !(cfg?.plex as Record<string, unknown>)?.base_url}
+                        disabled={plexAction.busy || !(cfg?.plex as Record<string, unknown>)?.base_url}
                       >
-                        {plexPairBusy ? '处理中…' : plexPolling ? '等待授权…' : 'PIN 授权'}
+                        {plexAction.busy ? '处理中…' : plexPolling ? '等待授权…' : 'PIN 授权'}
                       </Button>
-                      <Button variant="outline" size="sm" onClick={handlePlexTest} disabled={plexTestBusy || !syncStatus?.plex_connected}>
-                        {plexTestBusy ? '测试中…' : '测试连接'}
+                      <Button variant="outline" size="sm" onClick={handlePlexTest} disabled={plexAction.busy || !syncStatus?.plex_connected}>
+                        {plexAction.busy ? '测试中…' : '测试连接'}
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
@@ -1592,7 +1516,7 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                         <div className="text-xs text-muted-foreground">备用代码：{plexPairing.code}</div>
                       </div>
                     )}
-                    <NoticeMessage message={plexMessage} />
+                    <NoticeMessage message={plexAction.message} />
                   </div>
                 </div>
 
@@ -1712,13 +1636,13 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                     variant="outline"
                     size="sm"
                     onClick={handleTelegramTest}
-                    disabled={telegramTestBusy || !((cfg?.telegram as Record<string, unknown>)?.bot_token) || !((cfg?.telegram as Record<string, unknown>)?.chat_id)}
+                    disabled={telegramAction.busy || !((cfg?.telegram as Record<string, unknown>)?.bot_token) || !((cfg?.telegram as Record<string, unknown>)?.chat_id)}
                   >
-                    {telegramTestBusy ? '测试中…' : '发送测试通知'}
+                    {telegramAction.busy ? '测试中…' : '发送测试通知'}
                   </Button>
-                  {telegramMessage && (
-                    <span className={cn('text-xs', telegramMessage.type === 'success' ? 'text-success' : 'text-destructive')}>
-                      {telegramMessage.text}
+                  {telegramAction.message && (
+                    <span className={cn('text-xs', telegramAction.message.type === 'success' ? 'text-success' : 'text-destructive')}>
+                      {telegramAction.message.text}
                     </span>
                   )}
                 </div>
@@ -1740,13 +1664,13 @@ export default function ConfigPage({ page = 'general' }: ConfigPageProps) {
                       variant="outline"
                       size="sm"
                       onClick={handleMediaVaultTest}
-                      disabled={mediavaultTestBusy || !(cfg?.mediavault as Record<string, unknown>)?.host || !(cfg?.mediavault as Record<string, unknown>)?.api_key}
+                      disabled={mediavaultAction.busy || !(cfg?.mediavault as Record<string, unknown>)?.host || !(cfg?.mediavault as Record<string, unknown>)?.api_key}
                     >
-                      {mediavaultTestBusy ? '测试中…' : '测试'}
+                      {mediavaultAction.busy ? '测试中…' : '测试'}
                     </Button>
-                    {mediavaultMessage && (
-                      <span className={cn('text-xs', mediavaultMessage.type === 'success' ? 'text-success' : 'text-destructive')}>
-                        {mediavaultMessage.text}
+                    {mediavaultAction.message && (
+                      <span className={cn('text-xs', mediavaultAction.message.type === 'success' ? 'text-success' : 'text-destructive')}>
+                        {mediavaultAction.message.text}
                       </span>
                     )}
                   </div>
