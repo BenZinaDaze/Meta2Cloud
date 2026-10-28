@@ -14,8 +14,8 @@ import (
 	"meta2cloud/internal/config"
 	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/mediaparser"
+	"meta2cloud/internal/titlematch"
 	"meta2cloud/internal/tmdb"
-	"meta2cloud/internal/webui/store"
 )
 
 // ── 前端数据模型（对应 schemas/library.py，JSON 键保持一致） ──
@@ -320,7 +320,7 @@ func resolveMediaIdentity(mediaType, driveFolderID, folderName string, cfg *conf
 			// 沿用存量识别前先校验目录名：目录名与已识别标题差异过大
 			// （衍生条目曾被误绑到正篇，如「未来福音 extra chorus」绑到「未来福音」）
 			// 时丢弃旧 ID 重新识别，否则错误 ID 随库存记录永久延续且无从纠正
-			if store.TitlesMatch(folderName, storedTitleCandidates(existing)) {
+			if titlematch.TitlesMatch(folderName, storedTitleCandidates(existing)) {
 				return tmdbID, resolveTmdbInfo(mediaType, tmdbID)
 			}
 			log.Printf("目录 %q 与已识别标题 %q 不一致，重新识别", folderName, jsonx.Str(existing, "title"))

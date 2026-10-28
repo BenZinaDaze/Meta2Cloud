@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"meta2cloud/internal/titlematch"
 )
 
 const ingestDDL = `
@@ -290,7 +292,7 @@ func (s *IngestStore) UpdateIdentity(id int64, tmdbID int64, title, originalTitl
 
 // FindMatchByTitleYear 按标题+年份查找成功记录。
 func (s *IngestStore) FindMatchByTitleYear(mediaType, title, year string) map[string]any {
-	if len(lookupTitleVariants(title)) == 0 {
+	if len(titlematch.LookupTitleVariants(title)) == 0 {
 		return nil
 	}
 	rows, err := s.db.Query(fmt.Sprintf(`%s
@@ -312,7 +314,7 @@ func (s *IngestStore) FindMatchByTitleYear(mediaType, title, year string) map[st
 				nonEmpty = append(nonEmpty, c)
 			}
 		}
-		if TitlesMatch(title, nonEmpty) {
+		if titlematch.TitlesMatch(title, nonEmpty) {
 			return item
 		}
 	}

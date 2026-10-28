@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"meta2cloud/internal/titlematch"
 )
 
 func newTestStore(t *testing.T) *LibraryStore {
@@ -87,7 +89,7 @@ func TestTmdbCacheAdapter(t *testing.T) {
 
 func TestLibrarySnapshotFlow(t *testing.T) {
 	s := newTestStore(t)
-	if snap := s.GetSnapshot("updated_at", "desc"); snap != nil {
+	if page := s.GetSnapshotPage(SnapshotQuery{Page: 1, PageSize: 10}); page != nil {
 		t.Fatal("未扫描时不应有快照")
 	}
 	movies := []map[string]any{
@@ -102,12 +104,12 @@ func TestLibrarySnapshotFlow(t *testing.T) {
 	if diff.TotalMovies != 1 || diff.TotalTV != 1 || diff.NewMovies != 1 {
 		t.Fatalf("diff = %+v", diff)
 	}
-	snap := s.GetSnapshot("folder_modified_time", "desc")
-	if snap == nil || snap.TotalMovies != 1 || snap.TotalTV != 1 {
-		t.Fatalf("snap = %+v", snap)
+	page := s.GetSnapshotPage(SnapshotQuery{SortBy: "folder_modified_time", SortOrder: "desc", Page: 1, PageSize: 10})
+	if page == nil || page.TotalMovies != 1 || page.TotalTV != 1 {
+		t.Fatalf("page = %+v", page)
 	}
 	// poster_url 规范化为路径存储，hydrate 后恢复完整 URL
-	if v := snap.Movies[0]["poster_url"]; v != "https://image.tmdb.org/t/p/w500/in.jpg" {
+	if v := page.Movies[0]["poster_url"]; v != "https://image.tmdb.org/t/p/w500/in.jpg" {
 		t.Errorf("poster_url = %v", v)
 	}
 	// 再保存一次：新增为 0
@@ -122,6 +124,27 @@ func TestLibrarySnapshotFlow(t *testing.T) {
 	}
 }
 
+// TestGetStatsDedupMultiFolder 同一实体多目录（历史译名差异）时统计按实体去重，
+// 集数取各目录最大值，不因重复目录虚增。
+func TestGetStatsDedupMultiFolder(t *testing.T) {
+	s := newTestStore(t)
+	tv := []map[string]any{
+		{"drive_folder_id": "f1", "media_type": "tv", "tmdb_id": 1396, "title": "绝命毒师",
+			"total_episodes": 62, "in_library_episodes": 50},
+		// 同 tmdb_id 的第二个目录（另一译名）
+		{"drive_folder_id": "f2", "media_type": "tv", "tmdb_id": 1396, "title": "Breaking Bad 绝命毒师",
+			"total_episodes": 62, "in_library_episodes": 30},
+	}
+	s.SaveSnapshot(nil, tv)
+	stats := s.GetStats()
+	if stats["total_tv_shows"] != 1 {
+		t.Errorf("total_tv_shows = %v, want 1（多目录按实体去重）", stats["total_tv_shows"])
+	}
+	if stats["total_episodes_in_library"] != int64(50) {
+		t.Errorf("total_episodes_in_library = %v, want 50（取各目录最大值，不虚增）", stats["total_episodes_in_library"])
+	}
+}
+
 func TestMarkMissingAndPatch(t *testing.T) {
 	s := newTestStore(t)
 	s.SaveIncremental([]map[string]any{
@@ -131,30 +154,14 @@ func TestMarkMissingAndPatch(t *testing.T) {
 	if n := s.MarkMissingFolders([]string{"a"}); n != 1 {
 		t.Errorf("markMissing = %d, want 1", n)
 	}
-	if snap := s.GetSnapshot("", ""); snap.TotalMovies != 1 {
-		t.Errorf("in_library 过滤失败: %+v", snap)
+	if page := s.GetSnapshotPage(SnapshotQuery{MediaType: "movie", Page: 1, PageSize: 10}); page.TotalMovies != 1 {
+		t.Errorf("in_library 过滤失败: %+v", page)
 	}
 	if !s.PatchItem("a", map[string]any{"title": "A2"}) {
 		t.Fatal("patch 失败")
 	}
 	if item := s.GetLibraryItemByFolderID("a"); item["title"] != "A2" {
 		t.Errorf("patch 后 title = %v", item["title"])
-	}
-}
-
-func TestTitlesMatch(t *testing.T) {
-	if !TitlesMatch("Breaking Bad", []string{"Breaking  Bad"}) {
-		t.Error("忽略空白后应匹配")
-	}
-	if !TitlesMatch("绝命毒师", []string{"绝命毒师 (2008)"}) {
-		t.Error("年份后缀应被剥离")
-	}
-	if TitlesMatch("ABC", []string{"XYZ"}) {
-		t.Error("不同标题不应匹配")
-	}
-	// 短于 4 字符不做包含匹配
-	if TitlesMatch("AB", []string{"ABCD"}) {
-		t.Error("短标题包含匹配应被禁止")
 	}
 }
 
@@ -278,18 +285,18 @@ func TestMediaParentIDPersistence(t *testing.T) {
 
 func TestTitlesMatchContainmentGuard(t *testing.T) {
 	// 衍生条目长后缀：不得因包含关系绑到正篇的库记录
-	if TitlesMatch("空之境界 未来福音 extra chorus", []string{"空之境界 未来福音"}) {
+	if titlematch.TitlesMatch("空之境界 未来福音 extra chorus", []string{"空之境界 未来福音"}) {
 		t.Fatal("长后缀衍生条目不应匹配正篇")
 	}
 	// 数字缀（年份/序号）仍匹配
-	if !TitlesMatch("学生会也有洞 2026", []string{"学生会也有洞！"}) {
+	if !titlematch.TitlesMatch("学生会也有洞 2026", []string{"学生会也有洞！"}) {
 		t.Fatal("数字缀应匹配")
 	}
-	if !TitlesMatch("斗罗大陆", []string{"斗罗大陆2"}) {
+	if !titlematch.TitlesMatch("斗罗大陆", []string{"斗罗大陆2"}) {
 		t.Fatal("序号后缀应匹配")
 	}
 	// 短缀词仍匹配
-	if !TitlesMatch("斑小姐", []string{"令和的斑小姐"}) {
+	if !titlematch.TitlesMatch("斑小姐", []string{"令和的斑小姐"}) {
 		t.Fatal("短缀词应匹配")
 	}
 }

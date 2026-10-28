@@ -11,17 +11,16 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	_ "modernc.org/sqlite"
 
 	"meta2cloud/internal/jsonx"
+	"meta2cloud/internal/titlematch"
 	"meta2cloud/internal/tmdb"
 )
 
@@ -185,111 +184,18 @@ func utcNow() string {
 
 // ── 标题匹配工具（与 Python 版一致） ──────────────────────
 
-var yearSuffixRe = regexp.MustCompile(`\s*\(\d{4}\)\s*$`)
-var whitespaceRe = regexp.MustCompile(`\s+`)
-var nonAlnumRe = regexp.MustCompile(`[^0-9a-z\x{4e00}-\x{9fff}]`)
-var titleSplitRe = regexp.MustCompile(`[~～:：|／/]+`)
-
-func normalizeLookupTitle(title string) string {
-	raw := strings.TrimSpace(title)
-	raw = yearSuffixRe.ReplaceAllString(raw, "")
-	raw = whitespaceRe.ReplaceAllString(raw, " ")
-	return strings.ToLower(raw)
-}
-
-func compactLookupTitle(title string) string {
-	return nonAlnumRe.ReplaceAllString(normalizeLookupTitle(title), "")
-}
-
-func lookupTitleVariants(title string) map[string]bool {
-	raw := strings.TrimSpace(title)
-	variants := map[string]bool{}
-	if raw == "" {
-		return variants
-	}
-	variants[normalizeLookupTitle(raw)] = true
-	variants[compactLookupTitle(raw)] = true
-	for _, part := range titleSplitRe.Split(raw, -1) {
-		if n := normalizeLookupTitle(part); n != "" {
-			variants[n] = true
-		}
-		if c := compactLookupTitle(part); c != "" {
-			variants[c] = true
-		}
-	}
-	delete(variants, "")
-	return variants
-}
-
-// TitlesMatch 标题模糊匹配（变体交集，或包含关系且多出部分无足轻重）。
-func TitlesMatch(query string, candidates []string) bool {
-	queryVariants := lookupTitleVariants(query)
-	if len(queryVariants) == 0 {
-		return false
-	}
-	candidateVariants := map[string]bool{}
-	for _, candidate := range candidates {
-		for v := range lookupTitleVariants(candidate) {
-			candidateVariants[v] = true
-		}
-	}
-	if len(candidateVariants) == 0 {
-		return false
-	}
-	for q := range queryVariants {
-		if candidateVariants[q] {
-			return true
-		}
-	}
-	for q := range queryVariants {
-		for c := range candidateVariants {
-			if len(q) < 4 || len(c) < 4 {
-				continue
-			}
-			if strings.Contains(c, q) || strings.Contains(q, c) {
-				// 某个变体对多出部分过长时继续尝试其他变体（normalize 保留空格、
-				// compact 去除，数字缀可能只在 compact 变体上成立）
-				if containmentExtraOK(q, c) {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
-// containmentExtraOK 包含关系下，多出部分为空、纯数字（年份/序号）或 ≤3 字缀词
-// 时视为同一标题；长缀是衍生条目特征（"未来福音" vs "未来福音 extra chorus"），
-// 不视为同一标题——否则续作/特别篇会误绑到正篇的库记录。
-func containmentExtraOK(a, b string) bool {
-	long, short := a, b
-	if utf8.RuneCountInString(long) < utf8.RuneCountInString(short) {
-		long, short = short, long
-	}
-	extra := strings.Replace(long, short, "", 1)
-	if extra == "" {
-		return true
-	}
-	rs := []rune(extra)
-	if len(rs) <= 4 {
-		allDigit := true
-		for _, r := range rs {
-			if r < '0' || r > '9' {
-				allDigit = false
-				break
-			}
-		}
-		if allDigit {
-			return true
-		}
-	}
-	return len(rs) <= 3
-}
-
 // ── app_state ───────────────────────────────────────────────
 
 func (s *LibraryStore) setState(key, value string) error {
 	_, err := s.db.Exec(
+		`INSERT INTO app_state(key, value) VALUES (?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
+	return err
+}
+
+// setStateTx 事务版 setState。
+func setStateTx(tx *sql.Tx, key, value string) error {
+	_, err := tx.Exec(
 		`INSERT INTO app_state(key, value) VALUES (?, ?)
 		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
 	return err
@@ -533,79 +439,6 @@ func (s *LibraryStore) TmdbStats() map[string]int64 {
 // ── 媒体库快照 ──────────────────────────────────────────────
 
 // Snapshot 媒体库快照。
-type Snapshot struct {
-	ScannedAt   string           `json:"scanned_at"`
-	Movies      []map[string]any `json:"movies"`
-	TvShows     []map[string]any `json:"tv_shows"`
-	TotalMovies int              `json:"total_movies"`
-	TotalTV     int              `json:"total_tv"`
-}
-
-// GetSnapshot 读取快照；未扫描过返回 nil。
-func (s *LibraryStore) GetSnapshot(sortBy, sortOrder string) *Snapshot {
-	scannedAt, ok := s.getState(scanAtKey)
-	if !ok {
-		return nil
-	}
-	sortColumn := "updated_at"
-	switch sortBy {
-	case "updated_at", "year", "title", "folder_modified_time":
-		sortColumn = sortBy
-	}
-	order := "ASC"
-	if strings.EqualFold(sortOrder, "desc") {
-		order = "DESC"
-	}
-	titleOrder := "title COLLATE NOCASE ASC"
-	if sortColumn == "title" {
-		titleOrder = "title COLLATE NOCASE " + order
-	}
-	query := fmt.Sprintf(`SELECT media_type, raw_json, updated_at, folder_modified_time
-		FROM library_media WHERE in_library = 1
-		ORDER BY media_type ASC, %s %s, %s`, sortColumn, order, titleOrder)
-	rows, err := s.db.Query(query)
-	if err != nil {
-		return &Snapshot{ScannedAt: scannedAt, Movies: []map[string]any{}, TvShows: []map[string]any{}}
-	}
-	defer rows.Close()
-	snap := &Snapshot{ScannedAt: scannedAt, Movies: []map[string]any{}, TvShows: []map[string]any{}}
-	// 同一部剧存在多个目录（历史译名差异，如「令和的斑小姐」与「令和妖神斑小姐」）
-	// 时按 (media_type, tmdb_id>0) 合并为一张卡片：取最近更新的条目展示，
-	// 集数取各目录最大值，避免同一部剧出现多张卡片、且详情与卡片对不上。
-	seenMovie := map[int64]bool{}
-	seenTV := map[int64]bool{}
-	for rows.Next() {
-		var mediaType, rawJSON, updatedAt string
-		var folderModified int64
-		if err := rows.Scan(&mediaType, &rawJSON, &updatedAt, &folderModified); err != nil {
-			continue
-		}
-		payload := decodeJSONObject(rawJSON)
-		payload = s.hydrateLibraryPayload(payload)
-		payload["updated_at"] = updatedAt
-		payload["folder_modified_time"] = folderModified
-
-		target := &snap.TvShows
-		seen := seenTV
-		if mediaType == "movie" {
-			target = &snap.Movies
-			seen = seenMovie
-		}
-		tmdbID := int64(jsonx.Int(payload, "tmdb_id", 0))
-		if tmdbID > 0 {
-			if seen[tmdbID] {
-				mergeDedupedEntry(*target, tmdbID, payload)
-				continue
-			}
-			seen[tmdbID] = true
-		}
-		*target = append(*target, payload)
-	}
-	snap.TotalMovies = len(snap.Movies)
-	snap.TotalTV = len(snap.TvShows)
-	return snap
-}
-
 // LastScanned 最近一次扫描时间。
 func (s *LibraryStore) LastScanned() (string, bool) {
 	return s.getState(scanAtKey)
@@ -905,27 +738,11 @@ type SaveDiff struct {
 }
 
 // SaveSnapshot 全量保存媒体库快照。
+// 读旧值、清表、逐行写入同在一个事务：中途崩溃整体回滚，不会留下半库；
+// 也把逐行 upsert 的 N 次 auto-commit fsync 合并为一次提交。
 func (s *LibraryStore) SaveSnapshot(movies, tvShows []map[string]any) SaveDiff {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	oldRows, err := s.db.Query("SELECT media_type, tmdb_id FROM library_media WHERE tmdb_id > 0")
-	oldMovies := map[int64]bool{}
-	oldTV := map[int64]bool{}
-	if err == nil {
-		defer oldRows.Close()
-		for oldRows.Next() {
-			var mediaType string
-			var tmdbID int64
-			if oldRows.Scan(&mediaType, &tmdbID) == nil {
-				if mediaType == "movie" {
-					oldMovies[tmdbID] = true
-				} else {
-					oldTV[tmdbID] = true
-				}
-			}
-		}
-		oldRows.Close()
-	}
 
 	now := utcNow()
 	newMovies := map[int64]bool{}
@@ -941,12 +758,58 @@ func (s *LibraryStore) SaveSnapshot(movies, tvShows []map[string]any) SaveDiff {
 		}
 	}
 
-	_, _ = s.db.Exec("DELETE FROM library_media")
+	tx, err := s.db.Begin()
+	if err != nil {
+		log.Printf("媒体库快照保存失败（事务开启）：%v", err)
+		return SaveDiff{TotalMovies: len(movies), TotalTV: len(tvShows), ScannedAt: now}
+	}
+	commit := func() error {
+		return tx.Commit()
+	}
+	defer func() {
+		if commit != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	oldMovies := map[int64]bool{}
+	oldTV := map[int64]bool{}
+	oldRows, err := tx.Query("SELECT media_type, tmdb_id FROM library_media WHERE tmdb_id > 0")
+	if err == nil {
+		for oldRows.Next() {
+			var mediaType string
+			var tmdbID int64
+			if oldRows.Scan(&mediaType, &tmdbID) == nil {
+				if mediaType == "movie" {
+					oldMovies[tmdbID] = true
+				} else {
+					oldTV[tmdbID] = true
+				}
+			}
+		}
+		oldRows.Close()
+	}
+
+	if _, err := tx.Exec("DELETE FROM library_media"); err != nil {
+		log.Printf("媒体库快照保存失败（清表）：%v", err)
+		return SaveDiff{TotalMovies: len(movies), TotalTV: len(tvShows), ScannedAt: now}
+	}
 	for _, payload := range append(append([]map[string]any{}, movies...), tvShows...) {
 		mtime := jsonx.Int(payload, "folder_modified_time", 0)
-		s.upsertLibraryItem(payload, now, mtime)
+		if err := s.upsertLibraryItemTx(tx, payload, now, mtime); err != nil {
+			log.Printf("媒体库快照保存失败（写入 %s）：%v", jsonx.Str(payload, "drive_folder_id"), err)
+			return SaveDiff{TotalMovies: len(movies), TotalTV: len(tvShows), ScannedAt: now}
+		}
 	}
-	_ = s.setState(scanAtKey, now)
+	if err := setStateTx(tx, scanAtKey, now); err != nil {
+		log.Printf("媒体库快照保存失败（记录扫描时间）：%v", err)
+		return SaveDiff{TotalMovies: len(movies), TotalTV: len(tvShows), ScannedAt: now}
+	}
+	if err := commit(); err != nil {
+		log.Printf("媒体库快照保存失败（提交）：%v", err)
+		return SaveDiff{TotalMovies: len(movies), TotalTV: len(tvShows), ScannedAt: now}
+	}
+	commit = nil
 
 	newMovieCount := 0
 	for id := range newMovies {
@@ -979,14 +842,21 @@ func firstNonEmpty(vals ...string) string {
 }
 
 func (s *LibraryStore) upsertLibraryItem(payload map[string]any, scannedAt string, folderModifiedTime int64) {
+	if err := s.upsertLibraryItemTx(s.db, payload, scannedAt, folderModifiedTime); err != nil {
+		log.Printf("upsert library item 失败 [%s]: %v", jsonx.Str(payload, "drive_folder_id"), err)
+	}
+}
+
+// upsertLibraryItemTx 写入单条库条目（db 或 tx 二选一传入）；错误上抛由调用方决定处理。
+func (s *LibraryStore) upsertLibraryItemTx(db dbExecer, payload map[string]any, scannedAt string, folderModifiedTime int64) error {
 	payload = s.normalizeLibraryPayload(payload)
 	driveFolderID := jsonx.Str(payload, "drive_folder_id")
 	if driveFolderID == "" {
-		return
+		return nil
 	}
 	totalEps := nullableInt(payload["total_episodes"])
 	inLibEps := nullableInt(payload["in_library_episodes"])
-	_, err := s.db.Exec(`INSERT INTO library_media(
+	_, err := db.Exec(`INSERT INTO library_media(
 		drive_folder_id, media_type, tmdb_id, title, original_title, year,
 		poster_url, backdrop_url, overview, rating, status,
 		total_episodes, in_library_episodes, raw_json, in_library,
@@ -1022,9 +892,12 @@ func (s *LibraryStore) upsertLibraryItem(payload map[string]any, scannedAt strin
 		scannedAt,
 		scannedAt,
 	)
-	if err != nil {
-		log.Printf("upsert library item 失败 [%s]: %v", driveFolderID, err)
-	}
+	return err
+}
+
+// dbExecer 数据库执行接口：*sql.DB 与 *sql.Tx 的公共子集，供写路径复用。
+type dbExecer interface {
+	Exec(query string, args ...any) (sql.Result, error)
 }
 
 func nullableInt(v any) any {
@@ -1165,7 +1038,7 @@ func (s *LibraryStore) GetLibraryItemByFolderID(driveFolderID string) map[string
 
 // FindLibraryItemByTitleYear 按标题+年份查找库条目。
 func (s *LibraryStore) FindLibraryItemByTitleYear(mediaType, title, year string) map[string]any {
-	if len(lookupTitleVariants(title)) == 0 {
+	if len(titlematch.LookupTitleVariants(title)) == 0 {
 		return nil
 	}
 	rows, err := s.db.Query(`SELECT raw_json FROM library_media
@@ -1202,7 +1075,7 @@ func (s *LibraryStore) FindLibraryItemByTitleYear(mediaType, title, year string)
 				nonEmpty = append(nonEmpty, c)
 			}
 		}
-		if TitlesMatch(title, nonEmpty) {
+		if titlematch.TitlesMatch(title, nonEmpty) {
 			return s.hydrateLibraryPayload(payload)
 		}
 	}
@@ -1211,7 +1084,7 @@ func (s *LibraryStore) FindLibraryItemByTitleYear(mediaType, title, year string)
 
 // FindTmdbEntryByTitleYear 按标题+年份查找 TMDB 缓存条目。
 func (s *LibraryStore) FindTmdbEntryByTitleYear(mediaType, title, year string) *TmdbMediaRow {
-	if len(lookupTitleVariants(title)) == 0 {
+	if len(titlematch.LookupTitleVariants(title)) == 0 {
 		return nil
 	}
 	rows, err := s.db.Query(`SELECT * FROM tmdb_media WHERE media_type = ?
@@ -1249,7 +1122,7 @@ func (s *LibraryStore) FindTmdbEntryByTitleYear(mediaType, title, year string) *
 				nonEmpty = append(nonEmpty, c)
 			}
 		}
-		if TitlesMatch(title, nonEmpty) {
+		if titlematch.TitlesMatch(title, nonEmpty) {
 			return &r
 		}
 	}
@@ -1341,28 +1214,49 @@ func (s *LibraryStore) GetJoinedMediaItem(mediaType string, tmdbID int64) map[st
 	return payload
 }
 
-// GetStats 媒体库统计。
+// GetStats 媒体库统计（单条 SQL 聚合，剧集多目录按实体去重后取集数最大值，
+// 与 GetSnapshotPage 的合并语义一致）。
 func (s *LibraryStore) GetStats() map[string]any {
-	snap := s.GetSnapshot("folder_modified_time", "desc")
-	if snap == nil {
-		return map[string]any{
-			"total_movies": 0, "total_tv_shows": 0,
-			"total_episodes_in_library": 0, "total_episodes_on_tmdb": 0,
-			"completion_rate": 0.0,
-		}
+	zero := map[string]any{
+		"total_movies": 0, "total_tv_shows": 0,
+		"total_episodes_in_library": 0, "total_episodes_on_tmdb": 0,
+		"completion_rate": 0.0,
 	}
-	var totalEpsTmdb, totalEpsLib int64
-	for _, show := range snap.TvShows {
-		totalEpsTmdb += jsonx.Int(show, "total_episodes", 0)
-		totalEpsLib += jsonx.Int(show, "in_library_episodes", 0)
+	if _, ok := s.getState(scanAtKey); !ok {
+		return zero
+	}
+	// 同一实体多目录合并：取各目录 total_episodes / in_library_episodes 的最大值
+	//（与 GetSnapshotPage 的 mergeDedupedEntry「集数取各目录最大值」一致），
+	// 简单 SUM 会因历史译名的重复目录虚增集数。
+	var totalMovies, totalTV, totalEpsTmdb, totalEpsLib int64
+	rows, err := s.db.Query(`SELECT media_type, MAX(total_episodes), MAX(in_library_episodes)
+		FROM library_media WHERE in_library = 1
+		GROUP BY media_type, ` + libraryDedupKey)
+	if err != nil {
+		return zero
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var mediaType string
+		var epsTmdb, epsLib sql.NullInt64
+		if err := rows.Scan(&mediaType, &epsTmdb, &epsLib); err != nil {
+			continue
+		}
+		if mediaType == "movie" {
+			totalMovies++
+		} else {
+			totalTV++
+			totalEpsTmdb += epsTmdb.Int64
+			totalEpsLib += epsLib.Int64
+		}
 	}
 	rate := 0.0
 	if totalEpsTmdb > 0 {
 		rate = float64(int64(float64(totalEpsLib)/float64(totalEpsTmdb)*1000+0.5)) / 10
 	}
 	return map[string]any{
-		"total_movies":              snap.TotalMovies,
-		"total_tv_shows":            snap.TotalTV,
+		"total_movies":              int(totalMovies),
+		"total_tv_shows":            int(totalTV),
 		"total_episodes_in_library": totalEpsLib,
 		"total_episodes_on_tmdb":    totalEpsTmdb,
 		"completion_rate":           rate,
