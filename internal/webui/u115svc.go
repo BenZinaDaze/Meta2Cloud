@@ -3,7 +3,6 @@ package webui
 
 import (
 	"crypto/sha1"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -41,28 +40,17 @@ type deviceSessionJSON struct {
 }
 
 func saveU115DeviceSession(session u115.DeviceCodeSession, sessionPath string) error {
-	if dir := filepath.Dir(sessionPath); dir != "" && dir != "." {
-		_ = os.MkdirAll(dir, 0o755)
-	}
-	data, err := json.MarshalIndent(deviceSessionJSON{
+	return saveJSONSession(sessionPath, &deviceSessionJSON{
 		Qrcode: session.Qrcode, UID: session.UID, TimeValue: session.TimeValue,
 		Sign: session.Sign, CodeVerifier: session.CodeVerifier,
-	}, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(sessionPath, data, 0o600)
+	})
 }
 
 // loadU115DeviceSession 读取扫码会话；不存在返回错误。
 func loadU115DeviceSession(sessionPath string) (*u115.DeviceCodeSession, error) {
-	data, err := os.ReadFile(sessionPath)
+	s, err := loadJSONSession[deviceSessionJSON](sessionPath)
 	if err != nil {
-		return nil, fmt.Errorf("115 扫码会话文件不存在：%s", sessionPath)
-	}
-	var s deviceSessionJSON
-	if err := json.Unmarshal(data, &s); err != nil {
-		return nil, err
+		return nil, missingSessionErr(err, fmt.Sprintf("115 扫码会话文件不存在：%s", sessionPath))
 	}
 	return &u115.DeviceCodeSession{
 		Qrcode: s.Qrcode, UID: s.UID, TimeValue: s.TimeValue,
