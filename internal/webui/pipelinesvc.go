@@ -23,13 +23,13 @@ var (
 )
 
 // appLog 写应用日志（库不可用时静默）。
-func appLog(category, event, level, message string, details map[string]any) {
-	if ls := RT().GetLogStore(); ls != nil {
+func (rt *Runtime) appLog(category, event, level, message string, details map[string]any) {
+	if ls := rt.GetLogStore(); ls != nil {
 		entry := ls.Write(category, event, level, message, details)
 		// 统一日志出口：落库（日志页 + WS 实时）并镜像到进程 stdout，
 		// 终端/docker logs 与「日志」页观察同一份事件
 		log.Printf("[%s/%s] %s %s", category, event, level, message)
-		broadcastEntry(entry)
+		rt.broadcastEntry(entry)
 	}
 }
 
@@ -96,7 +96,7 @@ func newRunID() string {
 }
 
 // doRunPipeline 执行整理流程并刷新媒体库。
-func doRunPipeline() {
+func (rt *Runtime) doRunPipeline() {
 	pipelineMu.Lock()
 	if pipelineRunning {
 		pipelineMu.Unlock()
@@ -107,12 +107,12 @@ func doRunPipeline() {
 	pipelineMu.Unlock()
 
 	runID := newRunID()
-	appLog("pipeline", "pipeline_start", "INFO", "整理流程启动", map[string]any{"runId": runID})
+	rt.appLog("pipeline", "pipeline_start", "INFO", "整理流程启动", map[string]any{"runId": runID})
 
-	cfg := RT().GetConfig()
-	provider := RT().GetStorageProvider()
+	cfg := rt.GetConfig()
+	provider := rt.GetStorageProvider()
 	if provider == nil {
-		appLog("pipeline", "pipeline_exception", "ERROR", "整理流程执行异常", map[string]any{
+		rt.appLog("pipeline", "pipeline_exception", "ERROR", "整理流程执行异常", map[string]any{
 			"runId": runID, "error": "存储 Provider 不可用",
 		})
 		pipelineMu.Lock()
@@ -125,23 +125,23 @@ func doRunPipeline() {
 		LogFn: func(level, message string) {
 			BroadcastLog(level, message, runID)
 		},
-		TmdbCache: RT().GetTmdbCache(),
+		TmdbCache: rt.GetTmdbCache(),
 	}
-	if is := RT().GetIngestStore(); is != nil {
+	if is := rt.GetIngestStore(); is != nil {
 		opts.IngestStore = ingestStoreAdapter{is}
 	}
-	if ls := RT().GetLibraryStore(); ls != nil {
+	if ls := rt.GetLibraryStore(); ls != nil {
 		opts.TitlePinStore = titlePinAdapter{ls}
 		opts.DuplicateFolders = duplicateFolderAdapter{ls}
 	}
-	opts.Categories = RT().GetCategories()
+	opts.Categories = rt.GetCategories()
 	if cfg.Strm.Enabled {
-		opts.OnVideoIngested = RT().HandleVideoIngested
+		opts.OnVideoIngested = rt.HandleVideoIngested
 	}
 	pipe := pipeline.New(provider, cfg, opts)
 	summary := pipe.Run()
 
-	appLog("pipeline", "pipeline_finish", "SUCCESS", "整理流程完成", map[string]any{
+	rt.appLog("pipeline", "pipeline_finish", "SUCCESS", "整理流程完成", map[string]any{
 		"runId": runID, "okCount": summary.OKCount,
 		"skippedCount": summary.SkippedCount, "failedCount": summary.FailedCount,
 	})
@@ -152,7 +152,7 @@ func doRunPipeline() {
 				log.Printf("媒体库刷新异常：%v", r)
 			}
 		}()
-		RT().RefreshLibrary(true)
+		rt.RefreshLibrary(true)
 	}()
 	pipelineMu.Lock()
 	pipelineRunning = false
@@ -161,7 +161,7 @@ func doRunPipeline() {
 
 // SchedulePipeline 调度整理流程（debounce>0 时防抖合并）。
 // 返回是否受理（已在运行且无防抖时拒绝）。
-func SchedulePipeline(debounce int) bool {
+func (rt *Runtime) SchedulePipeline(debounce int) bool {
 	pipelineMu.Lock()
 	defer pipelineMu.Unlock()
 	if debounce > 0 {
@@ -169,23 +169,23 @@ func SchedulePipeline(debounce int) bool {
 			pipelineDebounce.Stop()
 			log.Printf("整理流程防抖计时器已重置 | 防抖：%d 秒", debounce)
 		} else {
-			appLog("pipeline", "pipeline_schedule", "INFO", "检测到媒体变化，等待稳定后开始整理",
+			rt.appLog("pipeline", "pipeline_schedule", "INFO", "检测到媒体变化，等待稳定后开始整理",
 				map[string]any{"debounceSeconds": debounce})
 		}
-		pipelineDebounce = time.AfterFunc(time.Duration(debounce)*time.Second, doRunPipeline)
+		pipelineDebounce = time.AfterFunc(time.Duration(debounce)*time.Second, rt.doRunPipeline)
 		return true
 	}
 	if pipelineRunning {
-		appLog("pipeline", "pipeline_skip_running", "WARNING", "整理流程已在运行，跳过本次触发", nil)
+		rt.appLog("pipeline", "pipeline_skip_running", "WARNING", "整理流程已在运行，跳过本次触发", nil)
 		return false
 	}
-	appLog("pipeline", "pipeline_schedule", "INFO", "整理流程立即执行", map[string]any{"debounceSeconds": 0})
-	go doRunPipeline()
+	rt.appLog("pipeline", "pipeline_schedule", "INFO", "整理流程立即执行", map[string]any{"debounceSeconds": 0})
+	go rt.doRunPipeline()
 	return true
 }
 
 // PipelineStatusPayload 当前调度状态。
-func PipelineStatusPayload() map[string]any {
+func (rt *Runtime) PipelineStatusPayload() map[string]any {
 	pipelineMu.Lock()
 	defer pipelineMu.Unlock()
 	return map[string]any{"running": pipelineRunning, "debounce": pipelineDebounce != nil}
@@ -203,8 +203,8 @@ func isLoopbackRequest(r *http.Request) bool {
 	return host == "127.0.0.1" || host == "::1" || strings.EqualFold(host, "localhost")
 }
 
-func handleTriggerWebhook(w http.ResponseWriter, r *http.Request) {
-	cfg := RT().GetConfig()
+func (s *Server) handleTriggerWebhook(w http.ResponseWriter, r *http.Request) {
+	cfg := s.rt.GetConfig()
 	if ws := cfg.WebUI.WebhookSecret; ws != "" {
 		provided := r.Header.Get("X-Webhook-Secret")
 		if provided == "" {
@@ -222,70 +222,70 @@ func handleTriggerWebhook(w http.ResponseWriter, r *http.Request) {
 	debounce := cfg.Telegram.DebounceSeconds
 	log.Printf("收到整理触发请求 | 来源：webhook，防抖：%d 秒", debounce)
 	status := "triggered"
-	if SchedulePipeline(debounce) && debounce > 0 {
+	if s.rt.SchedulePipeline(debounce) && debounce > 0 {
 		status = "scheduled"
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": status})
 }
 
-func handlePipelineStatus(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, PipelineStatusPayload())
+func (s *Server) handlePipelineStatus(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.rt.PipelineStatusPayload())
 }
 
-func handlePipelineTrigger(w http.ResponseWriter, _ *http.Request) {
-	SchedulePipeline(0)
+func (s *Server) handlePipelineTrigger(w http.ResponseWriter, _ *http.Request) {
+	s.rt.SchedulePipeline(0)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "triggered"})
 }
 
-func handleRefreshLibrary(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleRefreshLibrary(w http.ResponseWriter, r *http.Request) {
 	full := r.URL.Query().Get("full") == "true"
 	defer func() {
 		if rec := recover(); rec != nil {
 			log.Printf("刷新媒体库失败: %v", rec)
-			appLog("library", "refresh_failed", "ERROR", "媒体库刷新失败",
+			s.rt.appLog("library", "refresh_failed", "ERROR", "媒体库刷新失败",
 				map[string]any{"error": fmt.Sprintf("%v", rec)})
 			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("%v", rec))
 		}
 	}()
-	diff := RT().RefreshLibrary(!full)
-	appLog("library", "refresh_scan_finish", "SUCCESS", "媒体库刷新完成", diff)
+	diff := s.rt.RefreshLibrary(!full)
+	s.rt.appLog("library", "refresh_scan_finish", "SUCCESS", "媒体库刷新完成", diff)
 	writeJSON(w, http.StatusOK, diff)
 }
 
-func handleGetMovies(w http.ResponseWriter, _ *http.Request) {
-	client := RT().GetStorageProvider()
+func (s *Server) handleGetMovies(w http.ResponseWriter, _ *http.Request) {
+	client := s.rt.GetStorageProvider()
 	if client == nil {
 		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
 		return
 	}
-	writeJSON(w, http.StatusOK, RT().ScanMovies(client, RT().GetConfig()))
+	writeJSON(w, http.StatusOK, s.rt.ScanMovies(client, s.rt.GetConfig()))
 }
 
-func handleGetTVShows(w http.ResponseWriter, _ *http.Request) {
-	client := RT().GetStorageProvider()
+func (s *Server) handleGetTVShows(w http.ResponseWriter, _ *http.Request) {
+	client := s.rt.GetStorageProvider()
 	if client == nil {
 		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
 		return
 	}
-	writeJSON(w, http.StatusOK, RT().ScanTVShows(client, RT().GetConfig(), true))
+	writeJSON(w, http.StatusOK, s.rt.ScanTVShows(client, s.rt.GetConfig(), true))
 }
 
-func handleGetTVDetail(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGetTVDetail(w http.ResponseWriter, r *http.Request) {
 	tmdbID, err := strconvParseInt(r.PathValue("tmdbID"))
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "tmdb_id 无效")
 		return
 	}
-	if item := RT().GetLibraryStore().GetLibraryItemByTmdb("tv", tmdbID); item != nil {
+	if item := s.rt.GetLibraryStore().GetLibraryItemByTmdb("tv", tmdbID); item != nil {
 		writeJSON(w, http.StatusOK, item)
 		return
 	}
-	client := RT().GetStorageProvider()
+	client := s.rt.GetStorageProvider()
 	if client == nil {
 		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
 		return
 	}
-	for _, show := range RT().ScanTVShows(client, RT().GetConfig(), true) {
+	for _, show := range s.rt.ScanTVShows(client, s.rt.GetConfig(), true) {
 		if show.TmdbID == tmdbID {
 			writeJSON(w, http.StatusOK, show)
 			return
@@ -294,22 +294,22 @@ func handleGetTVDetail(w http.ResponseWriter, r *http.Request) {
 	writeJSONError(w, http.StatusNotFound, fmt.Sprintf("未找到 tmdb_id=%d 的剧集", tmdbID))
 }
 
-func handleGetMovieDetail(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGetMovieDetail(w http.ResponseWriter, r *http.Request) {
 	tmdbID, err := strconvParseInt(r.PathValue("tmdbID"))
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "tmdb_id 无效")
 		return
 	}
-	if item := RT().GetLibraryStore().GetLibraryItemByTmdb("movie", tmdbID); item != nil {
+	if item := s.rt.GetLibraryStore().GetLibraryItemByTmdb("movie", tmdbID); item != nil {
 		writeJSON(w, http.StatusOK, item)
 		return
 	}
-	client := RT().GetStorageProvider()
+	client := s.rt.GetStorageProvider()
 	if client == nil {
 		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
 		return
 	}
-	for _, movie := range RT().ScanMovies(client, RT().GetConfig()) {
+	for _, movie := range s.rt.ScanMovies(client, s.rt.GetConfig()) {
 		if movie.TmdbID == tmdbID {
 			writeJSON(w, http.StatusOK, movie)
 			return
@@ -324,10 +324,10 @@ func strconvParseInt(s string) (int64, error) {
 	return n, err
 }
 
-func handleGetLogs(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 	// 与 Python logs_payload 一致：{items, summary, maxId}，并同步保留天数配置
-	ls := RT().GetLogStore()
-	ls.SetRetentionDays(RT().GetConfig().WebUI.LogRetentionDays)
+	ls := s.rt.GetLogStore()
+	ls.SetRetentionDays(s.rt.GetConfig().WebUI.LogRetentionDays)
 	limit := intQuery(r, "limit", 200)
 	items := ls.Read(limit, r.URL.Query().Get("category"), r.URL.Query().Get("level"), 0)
 	if items == nil {
@@ -340,38 +340,38 @@ func handleGetLogs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func handleIngestHistory(w http.ResponseWriter, r *http.Request) {
-	is := RT().GetIngestStore()
+func (s *Server) handleIngestHistory(w http.ResponseWriter, r *http.Request) {
+	is := s.rt.GetIngestStore()
 	q := r.URL.Query()
 	result := is.Query(ingestQueryFromParams(q))
 	for _, item := range result.Items {
 		if path, ok := item["poster_path"].(string); ok && path != "" {
-			item["poster_url"] = RT().tmdbImageURL(path, "w500")
+			item["poster_url"] = s.rt.tmdbImageURL(path, "w500")
 		}
 	}
 	writeJSON(w, http.StatusOK, result)
 }
 
-func handleIngestStats(w http.ResponseWriter, r *http.Request) {
-	is := RT().GetIngestStore()
+func (s *Server) handleIngestStats(w http.ResponseWriter, r *http.Request) {
+	is := s.rt.GetIngestStore()
 	days := intQuery(r, "days", 7)
 	writeJSON(w, http.StatusOK, is.Stats(days))
 }
 
-func handleIngestDailyStats(w http.ResponseWriter, r *http.Request) {
-	is := RT().GetIngestStore()
+func (s *Server) handleIngestDailyStats(w http.ResponseWriter, r *http.Request) {
+	is := s.rt.GetIngestStore()
 	writeJSON(w, http.StatusOK, is.DailyStats(intQuery(r, "days", 30)))
 }
 
-func handleIngestRecent(w http.ResponseWriter, r *http.Request) {
-	is := RT().GetIngestStore()
+func (s *Server) handleIngestRecent(w http.ResponseWriter, r *http.Request) {
+	is := s.rt.GetIngestStore()
 	items := is.GetRecent(intQuery(r, "limit", 10))
 	if items == nil {
 		items = []map[string]any{}
 	}
 	for _, item := range items {
 		if path, ok := item["poster_path"].(string); ok && path != "" {
-			item["poster_url"] = RT().tmdbImageURL(path, "w500")
+			item["poster_url"] = s.rt.tmdbImageURL(path, "w500")
 		}
 	}
 	writeJSON(w, http.StatusOK, items)

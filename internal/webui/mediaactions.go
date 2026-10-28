@@ -534,7 +534,7 @@ func (s *Server) handleRefreshItem(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	appLog("library", "refresh_item", "SUCCESS",
+	s.rt.appLog("library", "refresh_item", "SUCCESS",
 		fmt.Sprintf("已刷新元数据：%s（TMDB 编号 %d）", body.MediaType, body.TmdbID), map[string]any{
 			"tmdb_id": body.TmdbID, "media_type": body.MediaType,
 			"drive_folder_id": body.DriveFolderID,

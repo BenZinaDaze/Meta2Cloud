@@ -78,7 +78,7 @@ func NotifyServiceHealth(service string, ok bool, reason string) {
 		st.failing = false
 		st.reason = ""
 		healthMu.Unlock()
-		appLog(category, "health_recovered", "INFO",
+		RT().appLog(category, "health_recovered", "INFO",
 			fmt.Sprintf("%s 配置已恢复正常", service), nil)
 		sendHealthTelegram(category, service, fmt.Sprintf("✅ %s 已恢复", service))
 		return
@@ -97,7 +97,7 @@ func NotifyServiceHealth(service string, ok bool, reason string) {
 		return
 	}
 	text := fmt.Sprintf("%s 配置失效：%s", service, healthReasonText(reason))
-	appLog(category, "health_failed", "ERROR", text, map[string]any{"reason": reason})
+	RT().appLog(category, "health_failed", "ERROR", text, map[string]any{"reason": reason})
 	sendHealthTelegram(category, service, "⚠️ "+html.EscapeString(text))
 }
 
@@ -116,7 +116,7 @@ func sendHealthTelegram(category, service, text string) {
 		return
 	}
 	if err := healthSendTG(tg, text); err != nil {
-		appLog(category, "health_notify_failed", "WARNING",
+		RT().appLog(category, "health_notify_failed", "WARNING",
 			fmt.Sprintf("发送 %s 健康通知失败：%v", service, err), nil)
 	}
 }

@@ -126,14 +126,14 @@ func (s *Server) handleAdoptTitlePin(w http.ResponseWriter, r *http.Request) {
 	if hasPin {
 		oldTitle = oldPin.PinnedTitle
 	}
-	appLog("library", "title_pin_adopt", "SUCCESS",
+	s.rt.appLog("library", "title_pin_adopt", "SUCCESS",
 		fmt.Sprintf("已采用 TMDB 最新译名：%s → %s", oldTitle, title), map[string]any{
 			"media_type": body.MediaType, "tmdb_id": body.TmdbID,
 			"title": title, "renamed_folders": renamed,
 		})
 
 	// 4. 触发整理（合并可能残留的重复目录）与 STRM 同步
-	SchedulePipeline(0)
+	s.rt.SchedulePipeline(0)
 	s.rt.TriggerStrmSync("title-pin-adopt")
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -168,7 +168,7 @@ func (s *Server) handleDeleteTitlePin(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusNotFound, "整理名称记录不存在")
 		return
 	}
-	appLog("library", "title_pin_delete", "SUCCESS",
+	s.rt.appLog("library", "title_pin_delete", "SUCCESS",
 		"已解除整理名称固定",
 		map[string]any{"media_type": body.MediaType, "tmdb_id": body.TmdbID})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})

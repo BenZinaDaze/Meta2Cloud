@@ -101,7 +101,7 @@ func (s *Server) handleTelegramTest(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadGateway, "测试通知发送失败："+err.Error())
 		return
 	}
-	appLog("telegram", "test_notify", "SUCCESS", "Telegram 测试通知已发送", nil)
+	s.rt.appLog("telegram", "test_notify", "SUCCESS", "Telegram 测试通知已发送", nil)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -147,11 +147,11 @@ var broadcaster = &wsBroadcaster{conns: map[chan map[string]any]bool{}}
 
 // BroadcastLog 广播一条流水线输出（落库 + 实时广播都经 appLog）。
 func BroadcastLog(level, message string, runID string) {
-	appLog("pipeline", "pipeline_output", level, message, map[string]any{"runId": runID})
+	RT().appLog("pipeline", "pipeline_output", level, message, map[string]any{"runId": runID})
 }
 
 // broadcastEntry 把一条已落库的日志实时推给 WebSocket 订阅者（全类别）。
-func broadcastEntry(e store.LogEntry) {
+func (rt *Runtime) broadcastEntry(e store.LogEntry) {
 	broadcaster.mu.Lock()
 	defer broadcaster.mu.Unlock()
 	if len(broadcaster.conns) == 0 {

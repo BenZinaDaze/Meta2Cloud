@@ -157,8 +157,8 @@ func pollU115AutoOrganizeOnce() {
 		return
 	}
 
-	if !SchedulePipeline(cfg.Telegram.DebounceSeconds) {
-		appLog("u115", "auto_organize_deferred", "WARNING",
+	if !RT().SchedulePipeline(cfg.Telegram.DebounceSeconds) {
+		RT().appLog("u115", "auto_organize_deferred", "WARNING",
 			"检测到 115 云下载任务完成，但当前整理流程忙碌，等待后续轮询重试", map[string]any{
 				"count": len(completed), "tasks": summarizeTasks(completed),
 			})
@@ -174,7 +174,7 @@ func pollU115AutoOrganizeOnce() {
 	u115AutoWatcher.mu.Lock()
 	u115AutoWatcher.lastTriggeredTask = triggeredPayload
 	u115AutoWatcher.mu.Unlock()
-	appLog("u115", "auto_organize_triggered", "SUCCESS",
+	RT().appLog("u115", "auto_organize_triggered", "SUCCESS",
 		fmt.Sprintf("检测到 %d 个 115 云下载任务完成，已触发自动整理", len(completed)), triggeredPayload)
 }
 
@@ -305,7 +305,7 @@ func ApplyWatchSchedules(cfg *config.Config) {
 // runTraktCron 观看同步 cron 执行器。配对未完成（token 等不随配置文件变更）
 // 时跳过本轮并提示，下个 cron 点重试。
 func runTraktCron(stop <-chan struct{}) {
-	appLog("trakt", "sync_schedule_started", "INFO", "观看同步定时线程已启动", nil)
+	RT().appLog("trakt", "sync_schedule_started", "INFO", "观看同步定时线程已启动", nil)
 	cronWarned := ""
 	readyWarned := false
 	for {
@@ -313,7 +313,7 @@ func runTraktCron(stop <-chan struct{}) {
 		d, ok, err := cronNextDelay(spec, time.Now())
 		if err != nil {
 			if cronWarned != spec {
-				appLog("trakt", "sync_cron_invalid", "ERROR",
+				RT().appLog("trakt", "sync_cron_invalid", "ERROR",
 					"观看同步 cron 表达式无效，修正配置后自动恢复："+err.Error(), map[string]any{"cron": spec})
 				cronWarned = spec
 			}
@@ -326,7 +326,7 @@ func runTraktCron(stop <-chan struct{}) {
 		select {
 		case <-stop:
 			timer.Stop()
-			appLog("trakt", "sync_schedule_stopped", "INFO", "观看同步定时线程已停止", nil)
+			RT().appLog("trakt", "sync_schedule_stopped", "INFO", "观看同步定时线程已停止", nil)
 			return
 		case <-timer.C:
 		}
@@ -337,7 +337,7 @@ func runTraktCron(stop <-chan struct{}) {
 		cfg := RT().GetConfig()
 		if !cfg.IsPlexReady() || !cfg.IsTraktReady() {
 			if !readyWarned {
-				appLog("trakt", "sync_schedule_skipped", "INFO",
+				RT().appLog("trakt", "sync_schedule_skipped", "INFO",
 					"观看同步定时触发跳过（Plex/Trakt 配对未完成），下个 cron 点重试", nil)
 				readyWarned = true
 			}
@@ -354,14 +354,14 @@ func runTraktCron(stop <-chan struct{}) {
 
 // runStrmCron STRM 定时同步 cron 执行器。
 func runStrmCron(stop <-chan struct{}) {
-	appLog("strm", "strm_sync_started", "INFO", "STRM 定时同步线程已启动", nil)
+	RT().appLog("strm", "strm_sync_started", "INFO", "STRM 定时同步线程已启动", nil)
 	cronWarned := ""
 	for {
 		spec := RT().GetConfig().Strm.SyncCron
 		d, ok, err := cronNextDelay(spec, time.Now())
 		if err != nil {
 			if cronWarned != spec {
-				appLog("strm", "sync_cron_invalid", "ERROR",
+				RT().appLog("strm", "sync_cron_invalid", "ERROR",
 					"STRM 定时同步 cron 表达式无效，修正配置后自动恢复："+err.Error(), map[string]any{"cron": spec})
 				cronWarned = spec
 			}
@@ -374,7 +374,7 @@ func runStrmCron(stop <-chan struct{}) {
 		select {
 		case <-stop:
 			timer.Stop()
-			appLog("strm", "strm_sync_stopped", "INFO", "STRM 定时同步线程已停止", nil)
+			RT().appLog("strm", "strm_sync_stopped", "INFO", "STRM 定时同步线程已停止", nil)
 			return
 		case <-timer.C:
 		}
@@ -388,14 +388,14 @@ func runStrmCron(stop <-chan struct{}) {
 
 // runU115Cron 115 自动整理 cron 执行器。
 func runU115Cron(stop <-chan struct{}) {
-	appLog("u115", "u115_auto_started", "INFO", "115 自动整理监听线程已启动", nil)
+	RT().appLog("u115", "u115_auto_started", "INFO", "115 自动整理监听线程已启动", nil)
 	cronWarned := ""
 	for {
 		spec := RT().GetConfig().U115.AutoOrganizeCron
 		d, ok, err := cronNextDelay(spec, time.Now())
 		if err != nil {
 			if cronWarned != spec {
-				appLog("u115", "auto_organize_cron_invalid", "ERROR",
+				RT().appLog("u115", "auto_organize_cron_invalid", "ERROR",
 					"自动整理 cron 表达式无效，修正配置后自动恢复："+err.Error(), map[string]any{"cron": spec})
 				cronWarned = spec
 			}
@@ -408,7 +408,7 @@ func runU115Cron(stop <-chan struct{}) {
 		select {
 		case <-stop:
 			timer.Stop()
-			appLog("u115", "u115_auto_stopped", "INFO", "115 自动整理监听线程已停止", nil)
+			RT().appLog("u115", "u115_auto_stopped", "INFO", "115 自动整理监听线程已停止", nil)
 			return
 		case <-timer.C:
 		}
@@ -419,7 +419,7 @@ func runU115Cron(stop <-chan struct{}) {
 					u115AutoWatcher.mu.Lock()
 					u115AutoWatcher.lastPollError = &msg
 					u115AutoWatcher.mu.Unlock()
-					appLog("u115", "auto_organize_poll_failed", "ERROR",
+					RT().appLog("u115", "auto_organize_poll_failed", "ERROR",
 						"115 自动整理轮询失败: "+msg, map[string]any{"error": msg})
 				}
 			}()
@@ -430,7 +430,7 @@ func runU115Cron(stop <-chan struct{}) {
 
 // runRSSCron 订阅轮询 cron 执行器。
 func runRSSCron(stop <-chan struct{}) {
-	appLog("rss", "rss_poll_started", "INFO", "RSS 订阅监听线程已启动", nil)
+	RT().appLog("rss", "rss_poll_started", "INFO", "RSS 订阅监听线程已启动", nil)
 	cronWarned := ""
 	rssHealth := rssHealthState{} // 连续失败计数（本次调度生命周期内）
 	for {
@@ -438,7 +438,7 @@ func runRSSCron(stop <-chan struct{}) {
 		d, ok, err := cronNextDelay(spec, time.Now())
 		if err != nil {
 			if cronWarned != spec {
-				appLog("rss", "poll_cron_invalid", "ERROR",
+				RT().appLog("rss", "poll_cron_invalid", "ERROR",
 					"订阅轮询 cron 表达式无效，修正配置后自动恢复："+err.Error(), map[string]any{"cron": spec})
 				cronWarned = spec
 			}
@@ -451,7 +451,7 @@ func runRSSCron(stop <-chan struct{}) {
 		select {
 		case <-stop:
 			timer.Stop()
-			appLog("rss", "rss_poll_stopped", "INFO", "RSS 订阅监听线程已停止", nil)
+			RT().appLog("rss", "rss_poll_stopped", "INFO", "RSS 订阅监听线程已停止", nil)
 			return
 		case <-timer.C:
 		}

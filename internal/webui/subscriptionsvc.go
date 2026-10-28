@@ -421,7 +421,7 @@ func (rt *Runtime) checkSubscriptionRecord(rssStore *store.RSSStore, record *sto
 			level = "WARNING"
 		}
 		summary := result["summary"].(map[string]any)
-		appLog("subscription", "checked", level, "RSS 订阅检查完成："+record.Name, map[string]any{
+		rt.appLog("subscription", "checked", level, "RSS 订阅检查完成："+record.Name, map[string]any{
 			"subscription_id": record.ID,
 			"matched":         summary["matched_items"],
 			"pushed":          pushed, "skipped": skipped, "push_errors": pushErrors,
@@ -593,7 +593,7 @@ func (s *Server) handleCreateSubscription(w http.ResponseWriter, r *http.Request
 		// 创建响应与订阅卡片立即可显示中文标题/海报
 		s.ensureSubscriptionTmdbCache(record.MediaType, *record.TmdbID)
 	}
-	appLog("subscription", "created", "SUCCESS", "已创建 RSS 订阅："+record.Name, map[string]any{
+	s.rt.appLog("subscription", "created", "SUCCESS", "已创建 RSS 订阅："+record.Name, map[string]any{
 		"subscription_id": record.ID, "site": record.Site, "push_target": record.PushTarget,
 	})
 	payload := map[string]any{}
@@ -754,7 +754,7 @@ func (s *Server) handleUpdateSubscription(w http.ResponseWriter, r *http.Request
 		// 更新可能补填/更换 tmdb_id，同步补拉详情入缓存
 		s.ensureSubscriptionTmdbCache(record.MediaType, *record.TmdbID)
 	}
-	appLog("subscription", "updated", "SUCCESS", "已更新 RSS 订阅："+record.Name,
+	s.rt.appLog("subscription", "updated", "SUCCESS", "已更新 RSS 订阅："+record.Name,
 		map[string]any{"subscription_id": record.ID})
 	var payload map[string]any
 	if joined := rssStore.GetSubscriptionJoined(record.ID); joined != nil {
@@ -778,7 +778,7 @@ func (s *Server) handleDeleteSubscription(w http.ResponseWriter, r *http.Request
 		return
 	}
 	rssStore.DeleteSubscription(id)
-	appLog("subscription", "deleted", "SUCCESS", "已删除 RSS 订阅："+record.Name,
+	s.rt.appLog("subscription", "deleted", "SUCCESS", "已删除 RSS 订阅："+record.Name,
 		map[string]any{"subscription_id": id})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

@@ -162,16 +162,16 @@ func (rt *Runtime) scrobbleCall(mapper watched.IDMapper, traktClient *trakt.Clie
 		actionName = "暂停记录"
 	}
 	if _, err := rt.scrobbleDoWith(mapper, traktClient, action, key, progress); err != nil {
-		appLog("trakt", "session_scrobble_failed", "WARNING",
+		rt.appLog("trakt", "session_scrobble_failed", "WARNING",
 			fmt.Sprintf("播放记录推送 Trakt 失败（%s %s）：%v", actionName, display, err), nil)
 		return false
 	}
 	switch action {
 	case trakt.ScrobbleStart:
-		appLog("trakt", "session_scrobble_started", "INFO",
+		rt.appLog("trakt", "session_scrobble_started", "INFO",
 			fmt.Sprintf("已通知 Trakt 开始记录播放：%s（进度 %.0f%%）", display, progress), nil)
 	case trakt.ScrobblePause:
-		appLog("trakt", "session_scrobble_paused", "INFO",
+		rt.appLog("trakt", "session_scrobble_paused", "INFO",
 			fmt.Sprintf("已通知 Trakt 暂停记录播放：%s（进度 %.0f%%）", display, progress), nil)
 	}
 	return true
@@ -220,7 +220,7 @@ func (rt *Runtime) finishSession(syncStore *store.TraktSyncStore, traktClient *t
 		_ = syncStore.UpdateTraktWatched(key, now, now)
 		_ = syncStore.SetTraktPushedAt(now) // 供下轮全量同步的过期读取防护
 		record(true, "")
-		appLog("trakt", "session_pushed", "SUCCESS",
+		rt.appLog("trakt", "session_pushed", "SUCCESS",
 			fmt.Sprintf("播放已记录到 Trakt：%s（进度 %.0f%%）", rt.displayOrKey(key, title), progress*100), nil)
 		// 推送成功即 Trakt 授权有效：会话推送是独立于全量同步的恢复上报点
 		NotifyServiceHealth("Trakt", true, "")
@@ -236,14 +236,14 @@ func (rt *Runtime) finishSession(syncStore *store.TraktSyncStore, traktClient *t
 		}
 		_ = syncStore.UpdateTraktWatched(key, watchedAt, now)
 		_ = syncStore.SetTraktPushedAt(now)
-		appLog("trakt", "session_pushed", "INFO",
+		rt.appLog("trakt", "session_pushed", "INFO",
 			fmt.Sprintf("Trakt 近期已记录过该内容，本次不重复计入：%s", rt.displayOrKey(key, title)), nil)
 	case errors.As(err, new(*trakt.ScrobbleIgnoredError)):
 		// 422：进度不足等被服务端忽略（如刚开播即停）——静默
 	default:
 		_ = syncStore.MarkSessionPushFailure(key, now)
 		record(false, err.Error())
-		appLog("trakt", "session_push_failed", "WARNING",
+		rt.appLog("trakt", "session_push_failed", "WARNING",
 			fmt.Sprintf("播放记录推送 Trakt 失败（%s）：%v", rt.displayOrKey(key, title), err), nil)
 		if errors.Is(err, trakt.ErrUnauthorized) {
 			NotifyServiceHealth("Trakt", false, "播放上报认证失败："+err.Error())
@@ -390,7 +390,7 @@ func (rt *Runtime) reapAbsentSessions(syncStore *store.TraktSyncStore, traktClie
 		if rt.sessionRowStale(row) {
 			rt.dropScrobbleState(row.SessionKey)
 			syncStore.DeleteSyncSession(row.SessionKey)
-			appLog("trakt", "session_stale_dropped", "INFO",
+			rt.appLog("trakt", "session_stale_dropped", "INFO",
 				fmt.Sprintf("已忽略一段重启前遗留的播放会话（%s，最后更新于 %s），不推送播放记录",
 					rt.displayOrKey(row.Key(), rt.derefString(row.Title)), row.UpdatedAt), nil)
 			continue

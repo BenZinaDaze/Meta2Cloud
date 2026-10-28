@@ -287,13 +287,13 @@ func (rt *Runtime) notifyPlexRefresh(changed int, changes *strmChanges) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				appLog("strm", "plex_notify", "ERROR", fmt.Sprintf("通知 Plex 时程序异常：%v", r), nil)
+				rt.appLog("strm", "plex_notify", "ERROR", fmt.Sprintf("通知 Plex 时程序异常：%v", r), nil)
 				log.Printf("[strm] 通知 Plex 时程序异常：%v", r)
 			}
 		}()
 		sections, err := client.Sections()
 		if err != nil {
-			appLog("strm", "plex_notify", "ERROR", "通知 Plex 失败（获取媒体库列表）："+err.Error(),
+			rt.appLog("strm", "plex_notify", "ERROR", "通知 Plex 失败（获取媒体库列表）："+err.Error(),
 				map[string]any{"changed": changed})
 			log.Printf("[strm] 通知 Plex 失败（获取媒体库列表）：%v", err)
 			if errors.Is(err, plexserver.ErrUnauthorized) {
@@ -314,7 +314,7 @@ func (rt *Runtime) notifyPlexRefresh(changed int, changes *strmChanges) {
 		for _, s := range targets {
 			if err := client.RefreshSection(s.Key); err != nil {
 				failed++
-				appLog("strm", "plex_notify", "ERROR", fmt.Sprintf("通知 Plex 刷新媒体库 %s 失败：%v", s.Title, err),
+				rt.appLog("strm", "plex_notify", "ERROR", fmt.Sprintf("通知 Plex 刷新媒体库 %s 失败：%v", s.Title, err),
 					map[string]any{"section": s.Title})
 				log.Printf("[strm] 通知 Plex 刷新媒体库 %s 失败：%v", s.Title, err)
 				if errors.Is(err, plexserver.ErrUnauthorized) {
@@ -334,7 +334,7 @@ func (rt *Runtime) notifyPlexRefresh(changed int, changes *strmChanges) {
 		} else {
 			NotifyServiceHealth("Plex", true, "")
 		}
-		appLog("strm", "plex_notify", level, msg,
+		rt.appLog("strm", "plex_notify", level, msg,
 			map[string]any{"targets": len(targets), "failed": failed, "changed": changed})
 		log.Printf("[strm] %s", msg)
 	}()
@@ -893,7 +893,7 @@ func (s *Server) handleStrmSyncTrigger(w http.ResponseWriter, _ *http.Request) {
 		writeJSONError(w, http.StatusConflict, "同步已在进行中")
 		return
 	}
-	appLog("strm", "strm_sync_triggered", "INFO", "手动触发 STRM 同步", nil)
+	s.rt.appLog("strm", "strm_sync_triggered", "INFO", "手动触发 STRM 同步", nil)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "同步已启动"})
 }
 

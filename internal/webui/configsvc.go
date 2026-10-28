@@ -343,7 +343,7 @@ func (s *Server) parserTestPayload(filename string, skipTmdb bool) (map[string]a
 		}
 	}
 	payload["tmdb"] = tmdbPayload
-	appLog("parser", "parse_test", "INFO", "执行了解析测试", map[string]any{
+	s.rt.appLog("parser", "parse_test", "INFO", "执行了解析测试", map[string]any{
 		"filename": filename, "name": payload["name"],
 		"type": payload["type"], "tmdbMatched": tmdbPayload != nil,
 	})
@@ -681,7 +681,7 @@ func (s *Server) handleWriteConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.rt.invalidateRuntimeCache()
-	appLog("system", "config_updated", "SUCCESS", "配置文件已更新", nil)
+	s.rt.appLog("system", "config_updated", "SUCCESS", "配置文件已更新", nil)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "配置已保存"})
 }
 
@@ -707,7 +707,7 @@ func (s *Server) handleWriteMainConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.rt.invalidateRuntimeCache()
-	appLog("system", "main_config_updated", "SUCCESS", "主配置文件已更新", nil)
+	s.rt.appLog("system", "main_config_updated", "SUCCESS", "主配置文件已更新", nil)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "主配置已保存"})
 }
 
@@ -725,6 +725,6 @@ func (s *Server) handleWriteParserRules(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.rt.invalidateRuntimeCache()
-	appLog("system", "parser_rules_updated", "SUCCESS", "文件名识别规则已更新", nil)
+	s.rt.appLog("system", "parser_rules_updated", "SUCCESS", "文件名识别规则已更新", nil)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "识别规则已保存"})
 }

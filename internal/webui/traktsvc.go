@@ -175,7 +175,7 @@ func (s *Server) handleTraktOauthPoll(w http.ResponseWriter, _ *http.Request) {
 			_ = os.Remove(s.rt.traktSessionPath())
 		}
 		user, _ := client.Me()
-		appLog("trakt", "oauth_paired", "SUCCESS", "Trakt 授权成功（用户 "+user+"）", nil)
+		s.rt.appLog("trakt", "oauth_paired", "SUCCESS", "Trakt 授权成功（用户 "+user+"）", nil)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok": true, "confirmed": true, "authorized": true, "user": user,
 			"message": "已确认并完成授权",
@@ -196,7 +196,7 @@ func (s *Server) handleTraktOauthDisconnect(w http.ResponseWriter, _ *http.Reque
 		_ = os.Remove(s.rt.resolveConfigPath(s.rt.GetConfig().Trakt.TokenJSON))
 	}
 	s.rt.invalidateTraktRuntimeCache()
-	appLog("trakt", "oauth_disconnected", "INFO", "已断开 Trakt 授权", nil)
+	s.rt.appLog("trakt", "oauth_disconnected", "INFO", "已断开 Trakt 授权", nil)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": true, "status": s.rt.traktOauthStatusPayload(),
 	})
@@ -276,7 +276,7 @@ func (s *Server) handlePlexPinPoll(w http.ResponseWriter, _ *http.Request) {
 			serverVersion = identity.MediaContainer.Version
 		}
 	}
-	appLog("trakt", "plex_paired", "SUCCESS",
+	s.rt.appLog("trakt", "plex_paired", "SUCCESS",
 		fmt.Sprintf("Plex 授权成功（服务器可达=%v）", reachable), nil)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": true, "confirmed": true, "authorized": true,

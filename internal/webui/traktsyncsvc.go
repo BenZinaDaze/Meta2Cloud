@@ -44,7 +44,7 @@ func (rt *Runtime) TriggerTraktSync(trigger string) bool {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				appLog("trakt", "sync_panic", "ERROR", fmt.Sprintf("观看同步异常退出：%v", r), nil)
+				rt.appLog("trakt", "sync_panic", "ERROR", fmt.Sprintf("观看同步异常退出：%v", r), nil)
 			}
 			traktSyncState.mu.Lock()
 			traktSyncState.running = false
@@ -57,7 +57,7 @@ func (rt *Runtime) TriggerTraktSync(trigger string) bool {
 
 // traktSyncLogger 引擎日志回调 → appLog。
 func (rt *Runtime) traktSyncLogger(level, message string, details map[string]any) {
-	appLog("trakt", "sync", level, message, details)
+	rt.appLog("trakt", "sync", level, message, details)
 }
 
 // runTraktSync 构建引擎并执行一轮同步。
@@ -65,12 +65,12 @@ func (rt *Runtime) runTraktSync(trigger string) {
 	cfg := rt.GetConfig()
 	traktClient := rt.GetTraktClient()
 	if traktClient == nil {
-		appLog("trakt", "sync_skipped", "WARNING", "Trakt 客户端不可用（未配置或未授权），跳过同步", nil)
+		rt.appLog("trakt", "sync_skipped", "WARNING", "Trakt 客户端不可用（未配置或未授权），跳过同步", nil)
 		return
 	}
 	plexClient := rt.GetPlexClient()
 	if plexClient == nil {
-		appLog("trakt", "sync_skipped", "WARNING", "Plex 未配置服务器地址或未授权，跳过同步", nil)
+		rt.appLog("trakt", "sync_skipped", "WARNING", "Plex 未配置服务器地址或未授权，跳过同步", nil)
 		return
 	}
 	syncStore := rt.GetTraktSyncStore()
@@ -86,7 +86,7 @@ func (rt *Runtime) runTraktSync(trigger string) {
 	summary, err := engine.Run(context.Background(), trigger)
 	took := time.Since(started).Round(time.Millisecond)
 	if err != nil {
-		appLog("trakt", "sync_failed", "ERROR", fmt.Sprintf("观看同步失败（耗时 %s）：%v", took, err), nil)
+		rt.appLog("trakt", "sync_failed", "ERROR", fmt.Sprintf("观看同步失败（耗时 %s）：%v", took, err), nil)
 		// 仅授权失效上报健康状态；瞬时网络错误不告警
 		switch {
 		case errors.Is(err, trakt.ErrUnauthorized):
@@ -99,7 +99,7 @@ func (rt *Runtime) runTraktSync(trigger string) {
 	// 全量成功即双向接口可达且授权有效：同时上报 Trakt 与 Plex 恢复
 	NotifyServiceHealth("Trakt", true, "")
 	NotifyServiceHealth("Plex", true, "")
-	appLog("trakt", "sync_done", "SUCCESS",
+	rt.appLog("trakt", "sync_done", "SUCCESS",
 		fmt.Sprintf("观看同步完成（耗时 %s）：记录到 Trakt %d 条，回写 Plex %d 条，冲突 %d，无法识别 %d，跳过 %d，失败 %d",
 			took, summary.ToTrakt, summary.ToPlex, summary.Conflicts, summary.Unresolved, summary.Skipped, summary.Failed),
 		map[string]any{
@@ -190,7 +190,7 @@ func (s *Server) handleTraktSyncTrigger(w http.ResponseWriter, _ *http.Request) 
 		writeJSONError(w, http.StatusConflict, "观看同步已在进行中")
 		return
 	}
-	appLog("trakt", "sync_triggered", "INFO", "手动触发观看同步", nil)
+	s.rt.appLog("trakt", "sync_triggered", "INFO", "手动触发观看同步", nil)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "观看同步已触发"})
 }
 
@@ -323,7 +323,7 @@ func (s *Server) handleTraktSyncIgnoreSet(w http.ResponseWriter, r *http.Request
 			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("保存忽略失败：%v", err))
 			return
 		}
-		appLog("trakt", "ignore_added", "INFO",
+		s.rt.appLog("trakt", "ignore_added", "INFO",
 			fmt.Sprintf("已忽略「%s」，双方都不再同步", ignoreDisplayName), nil)
 		writeJSON(w, http.StatusOK, map[string]any{"message": "已忽略，该媒体将不再参与同步"})
 	case "remove":
@@ -331,7 +331,7 @@ func (s *Server) handleTraktSyncIgnoreSet(w http.ResponseWriter, r *http.Request
 			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("解除忽略失败：%v", err))
 			return
 		}
-		appLog("trakt", "ignore_removed", "INFO",
+		s.rt.appLog("trakt", "ignore_removed", "INFO",
 			fmt.Sprintf("已解除忽略「%s」，下轮同步自动纳入", ignoreDisplayName), nil)
 		writeJSON(w, http.StatusOK, map[string]any{"message": "已恢复，下轮同步自动纳入"})
 	default:

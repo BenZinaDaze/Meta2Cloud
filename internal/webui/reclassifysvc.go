@@ -402,7 +402,7 @@ func (s *Server) runReclassify(provider cloudfile.Provider, ls *store.LibrarySto
 	if len(runErrors) > 0 {
 		details["errors"] = runErrors
 	}
-	appLog("library", "reclassify", level,
+	s.rt.appLog("library", "reclassify", level,
 		fmt.Sprintf("全库重新归类完成：共 %d 项，移动 %d 项，失败 %d 项", len(plan.Items), moved, failed), details)
 	log.Printf("[reclassify] 完成：共 %d 项，移动 %d，失败 %d", len(plan.Items), moved, failed)
 }

@@ -74,7 +74,7 @@ func (s *Server) handleSaveCategories(w http.ResponseWriter, r *http.Request) {
 			ensure(rootID, cats.Dirs.Other)
 		}
 	}
-	appLog("library", "categories_save", "SUCCESS", "媒体分类配置已保存", map[string]any{
+	s.rt.appLog("library", "categories_save", "SUCCESS", "媒体分类配置已保存", map[string]any{
 		"tv":    len(cats.TV),
 		"movie": len(cats.Movie),
 	})

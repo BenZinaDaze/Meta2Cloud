@@ -135,7 +135,7 @@ func (s *Server) cancelMatchedSubscriptions(subs []*store.SubscriptionRecord) in
 		if !rssStore.DeleteSubscription(sub.ID) {
 			continue
 		}
-		appLog("subscription", "deleted", "SUCCESS", "已删除 RSS 订阅："+sub.Name,
+		s.rt.appLog("subscription", "deleted", "SUCCESS", "已删除 RSS 订阅："+sub.Name,
 			map[string]any{"subscription_id": sub.ID})
 		cancelled++
 	}
@@ -205,7 +205,7 @@ func (s *Server) handleLibraryMediaDelete(w http.ResponseWriter, r *http.Request
 	}
 	subs := s.listMatchedSubscriptions(ref)
 
-	appLog("library", "delete_start", "INFO", "开始移出媒体库："+ref.Title,
+	s.rt.appLog("library", "delete_start", "INFO", "开始移出媒体库："+ref.Title,
 		map[string]any{"folder_id": folderID, "media_type": ref.MediaType, "tmdb_id": ref.TmdbID})
 
 	provider := s.rt.GetStorageProvider()
@@ -216,31 +216,31 @@ func (s *Server) handleLibraryMediaDelete(w http.ResponseWriter, r *http.Request
 	// 2+3. WalkAll 收集网盘文件 ID，再删整个目录；网盘删除失败即中止
 	fileIDs, exists, err := collectFolderFileIDs(provider, folderID)
 	if err != nil {
-		appLog("library", "delete_walk", "ERROR", "遍历网盘目录失败："+err.Error(),
+		s.rt.appLog("library", "delete_walk", "ERROR", "遍历网盘目录失败："+err.Error(),
 			map[string]any{"folder_id": folderID})
 		writeJSONError(w, http.StatusInternalServerError, "遍历网盘目录失败："+err.Error())
 		return
 	}
 	if exists {
-		appLog("library", "delete_walk", "INFO", fmt.Sprintf("已收集网盘文件 %d 个", len(fileIDs)),
+		s.rt.appLog("library", "delete_walk", "INFO", fmt.Sprintf("已收集网盘文件 %d 个", len(fileIDs)),
 			map[string]any{"folder_id": folderID})
 		if err := provider.DeleteFile(folderID); err != nil {
 			// 目录确认已不存在视为成功继续（幂等）；其余失败（含探测遇
 			// 网络/限流等无法区分的瞬时错误）即中止，本地一概不动
 			if !folderConfirmedMissing(provider, folderID) {
-				appLog("library", "delete_pan", "ERROR", "删除网盘目录失败："+err.Error(),
+				s.rt.appLog("library", "delete_pan", "ERROR", "删除网盘目录失败："+err.Error(),
 					map[string]any{"folder_id": folderID})
 				writeJSONError(w, http.StatusInternalServerError, "删除网盘目录失败："+err.Error())
 				return
 			}
-			appLog("library", "delete_pan", "INFO", "网盘目录已不存在，无需删除",
+			s.rt.appLog("library", "delete_pan", "INFO", "网盘目录已不存在，无需删除",
 				map[string]any{"folder_id": folderID})
 		} else {
-			appLog("library", "delete_pan", "SUCCESS", "网盘目录已删除",
+			s.rt.appLog("library", "delete_pan", "SUCCESS", "网盘目录已删除",
 				map[string]any{"folder_id": folderID})
 		}
 	} else {
-		appLog("library", "delete_walk", "INFO", "网盘目录已不存在，无需删除",
+		s.rt.appLog("library", "delete_walk", "INFO", "网盘目录已不存在，无需删除",
 			map[string]any{"folder_id": folderID})
 	}
 
@@ -249,11 +249,11 @@ func (s *Server) handleLibraryMediaDelete(w http.ResponseWriter, r *http.Request
 	if st := s.rt.GetStrmStore(); st != nil {
 		removedStrm = removeStrmByFileIDs(st, fileIDs)
 	}
-	appLog("library", "delete_strm", "SUCCESS", fmt.Sprintf("已清理 STRM %d 条", removedStrm),
+	s.rt.appLog("library", "delete_strm", "SUCCESS", fmt.Sprintf("已清理 STRM %d 条", removedStrm),
 		map[string]any{"folder_id": folderID})
 	// 5. 删库条目
 	libStore.DeleteLibraryItem(folderID)
-	appLog("library", "delete_item", "SUCCESS", "库条目已删除",
+	s.rt.appLog("library", "delete_item", "SUCCESS", "库条目已删除",
 		map[string]any{"folder_id": folderID})
 	// 6. 追加删除日志
 	s.recordDeletionIngest(ref)
@@ -262,7 +262,7 @@ func (s *Server) handleLibraryMediaDelete(w http.ResponseWriter, r *http.Request
 	if r.URL.Query().Get("cancel_subscription") == "true" {
 		cancelledSubs = s.cancelMatchedSubscriptions(subs)
 		if cancelledSubs > 0 {
-			appLog("library", "delete_subs", "SUCCESS", fmt.Sprintf("已联动取消订阅 %d 条", cancelledSubs),
+			s.rt.appLog("library", "delete_subs", "SUCCESS", fmt.Sprintf("已联动取消订阅 %d 条", cancelledSubs),
 				map[string]any{"folder_id": folderID})
 		}
 	}
@@ -273,7 +273,7 @@ func (s *Server) handleLibraryMediaDelete(w http.ResponseWriter, r *http.Request
 	}
 	// 8. STRM 对账兜底（异步触发，失败只留日志；同步进行中则留待后续同步）
 	if !s.rt.TriggerStrmSync("after-delete") {
-		appLog("library", "delete_sync", "WARN", "STRM 同步进行中，本次删除的清理将在后续同步中自动完成",
+		s.rt.appLog("library", "delete_sync", "WARN", "STRM 同步进行中，本次删除的清理将在后续同步中自动完成",
 			map[string]any{"folder_id": folderID})
 	}
 

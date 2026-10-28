@@ -62,20 +62,20 @@ func (s *Server) registerRoutes() {
 
 	// library / stats
 	m.HandleFunc("GET /api/library", s.handleGetLibrary)
-	m.HandleFunc("POST /api/library:refresh", handleRefreshLibrary)
+	m.HandleFunc("POST /api/library:refresh", s.handleRefreshLibrary)
 	m.HandleFunc("GET /api/stats", s.handleGetStats)
 	// 联动删除：删除预览 + 删网盘目录及衍生数据（STRM/库条目/可选订阅）
 	m.HandleFunc("GET /api/library/media/{folderID}", s.handleLibraryMediaPreview)
 	m.HandleFunc("DELETE /api/library/media/{folderID}", s.handleLibraryMediaDelete)
-	m.HandleFunc("GET /api/movies", handleGetMovies)
-	m.HandleFunc("GET /api/movies/{tmdbID}", handleGetMovieDetail)
-	m.HandleFunc("GET /api/tv-shows", handleGetTVShows)
-	m.HandleFunc("GET /api/tv-shows/{tmdbID}", handleGetTVDetail)
+	m.HandleFunc("GET /api/movies", s.handleGetMovies)
+	m.HandleFunc("GET /api/movies/{tmdbID}", s.handleGetMovieDetail)
+	m.HandleFunc("GET /api/tv-shows", s.handleGetTVShows)
+	m.HandleFunc("GET /api/tv-shows/{tmdbID}", s.handleGetTVDetail)
 
 	// pipeline / webhook
-	m.HandleFunc("POST /trigger", handleTriggerWebhook)
-	m.HandleFunc("GET /api/pipeline/status", handlePipelineStatus)
-	m.HandleFunc("POST /api/pipeline/trigger", handlePipelineTrigger)
+	m.HandleFunc("POST /trigger", s.handleTriggerWebhook)
+	m.HandleFunc("GET /api/pipeline/status", s.handlePipelineStatus)
+	m.HandleFunc("POST /api/pipeline/trigger", s.handlePipelineTrigger)
 
 	// config
 	m.HandleFunc("GET /api/config", s.handleReadConfig)
@@ -164,12 +164,12 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("POST /api/trakt/sync/ignore", s.handleTraktSyncIgnoreSet)
 
 	// logs / ingest
-	m.HandleFunc("GET /api/logs", handleGetLogs)
+	m.HandleFunc("GET /api/logs", s.handleGetLogs)
 	m.HandleFunc("GET /api/logs/live", handleLogsLiveWS)
-	m.HandleFunc("GET /api/ingest/history", handleIngestHistory)
-	m.HandleFunc("GET /api/ingest/stats", handleIngestStats)
-	m.HandleFunc("GET /api/ingest/stats/daily", handleIngestDailyStats)
-	m.HandleFunc("GET /api/ingest/recent", handleIngestRecent)
+	m.HandleFunc("GET /api/ingest/history", s.handleIngestHistory)
+	m.HandleFunc("GET /api/ingest/stats", s.handleIngestStats)
+	m.HandleFunc("GET /api/ingest/stats/daily", s.handleIngestDailyStats)
+	m.HandleFunc("GET /api/ingest/recent", s.handleIngestRecent)
 
 	// strm（STRM 生成 + 302 直链播放）
 	// /strm/redirect 非 /api 前缀，播放器无需 JWT，由 url_secret 签名可选防护

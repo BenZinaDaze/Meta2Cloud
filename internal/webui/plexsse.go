@@ -50,7 +50,7 @@ const stoppedOffsetTolerance = 0.02
 func (rt *Runtime) handlePlexPlaybackNotification(plexClient *plexserver.Client, traktClient *trakt.Client, syncStore *store.TraktSyncStore, notif plexserver.PlaybackNotification) {
 	defer func() {
 		if r := recover(); r != nil {
-			appLog("trakt", "sse_event_panic", "ERROR", fmt.Sprintf("实时通知处理异常：%v", r), nil)
+			rt.appLog("trakt", "sse_event_panic", "ERROR", fmt.Sprintf("实时通知处理异常：%v", r), nil)
 		}
 	}()
 	if notif.RatingKey == "" {
@@ -169,7 +169,7 @@ func (rt *Runtime) handlePlexPlaybackNotification(plexClient *plexserver.Client,
 		// 逐层抓包；这里每会话告警一次，给出可核对的条目定位
 		if !keyOK && !st.unresolvedLogged {
 			st.unresolvedLogged = true
-			appLog("trakt", "session_unresolved", "WARNING",
+			rt.appLog("trakt", "session_unresolved", "WARNING",
 				fmt.Sprintf("无法识别正在播放的条目对应哪部媒体，本次不推送播放记录（Plex 条目 %s）。常见原因：Plex 未提供外部 ID，或文件路径与本地媒体库不一致", notif.RatingKey), nil)
 		}
 		return
@@ -185,7 +185,7 @@ func (rt *Runtime) handlePlexPlaybackNotification(plexClient *plexserver.Client,
 func (rt *Runtime) ensureTraktSSELoop() {
 	traktSSEOnce.Do(func() {
 		go func() {
-			appLog("trakt", "sse_started", "INFO", "Plex 实时通知线程已启动", nil)
+			rt.appLog("trakt", "sse_started", "INFO", "Plex 实时通知线程已启动", nil)
 			backoff := 5 * time.Second
 			lastGateOK := true
 			for {
@@ -208,7 +208,7 @@ func (rt *Runtime) ensureTraktSSELoop() {
 				if !ok {
 					rt.setSSEConnected(false)
 					if lastGateOK {
-						appLog("trakt", "sse_gate_pending", "INFO", "实时通知未开启：需开启实时通知开关并完成 Trakt 与 Plex 授权，30 秒后重新检查", nil)
+						rt.appLog("trakt", "sse_gate_pending", "INFO", "实时通知未开启：需开启实时通知开关并完成 Trakt 与 Plex 授权，30 秒后重新检查", nil)
 						lastGateOK = false
 					}
 					if !sleepWatcher(traktSSEWatcher, 30*time.Second) {
@@ -223,7 +223,7 @@ func (rt *Runtime) ensureTraktSSELoop() {
 				go func() {
 					defer func() {
 						if r := recover(); r != nil {
-							appLog("trakt", "sse_worker_panic", "ERROR", fmt.Sprintf("实时事件分发异常：%v", r), nil)
+							rt.appLog("trakt", "sse_worker_panic", "ERROR", fmt.Sprintf("实时事件分发异常：%v", r), nil)
 						}
 					}()
 					for notif := range events {
@@ -246,7 +246,7 @@ func (rt *Runtime) ensureTraktSSELoop() {
 					openedAt = time.Now()
 					rt.setSSEConnected(true)
 					NotifyServiceHealth("Plex", true, "")
-					appLog("trakt", "sse_connected", "INFO",
+					rt.appLog("trakt", "sse_connected", "INFO",
 						fmt.Sprintf("Plex 实时通知已连接（%s）", plexClient.BaseURL), nil)
 				}, func(n plexserver.PlaybackNotification) {
 					select {
@@ -273,7 +273,7 @@ func (rt *Runtime) ensureTraktSSELoop() {
 				if err != nil {
 					msg = err.Error()
 				}
-				appLog("trakt", "sse_disconnected", "WARNING",
+				rt.appLog("trakt", "sse_disconnected", "WARNING",
 					fmt.Sprintf("Plex 实时通知已断开（%s），将于 %s 后重新连接，期间由会话轮询同步", msg, backoff), nil)
 				// 退避策略：稳定连接（存活 ≥60s）后重置；秒断（订阅被拒/服务不可达）
 				// 则逐次加倍直至 60s，避免日志刷屏；端点不存在（旧版 PMS）降到 10 分钟一探
@@ -343,7 +343,7 @@ func (rt *Runtime) waitPlexReachable(stop <-chan struct{}) (ready, halted bool) 
 	if rt.plexReachable() {
 		return true, false
 	}
-	appLog("trakt", "plex_unreachable", "WARNING", "Plex 暂不可达，等待就绪后开始本轮同步", nil)
+	rt.appLog("trakt", "plex_unreachable", "WARNING", "Plex 暂不可达，等待就绪后开始本轮同步", nil)
 	deadline := time.Now().Add(10 * time.Minute)
 	for time.Now().Before(deadline) {
 		select {
@@ -355,7 +355,7 @@ func (rt *Runtime) waitPlexReachable(stop <-chan struct{}) (ready, halted bool) 
 			return true, false
 		}
 	}
-	appLog("trakt", "plex_unreachable_timeout", "WARNING", "等待 Plex 就绪超时，本轮定时同步跳过", nil)
+	rt.appLog("trakt", "plex_unreachable_timeout", "WARNING", "等待 Plex 就绪超时，本轮定时同步跳过", nil)
 	return false, false
 }
 
@@ -364,7 +364,7 @@ func (rt *Runtime) waitPlexReachable(stop <-chan struct{}) (ready, halted bool) 
 func (rt *Runtime) ensureTraktSessionLoop() {
 	traktSessionOnce.Do(func() {
 		go func() {
-			appLog("trakt", "session_poll_started", "INFO", "Plex 会话轮询线程已启动", nil)
+			rt.appLog("trakt", "session_poll_started", "INFO", "Plex 会话轮询线程已启动", nil)
 			for {
 				interval := rt.GetConfig().Trakt.SessionPollSeconds
 				if interval < 15 {
@@ -383,7 +383,7 @@ func (rt *Runtime) ensureTraktSessionLoop() {
 				}()
 				select {
 				case <-traktSessionWatcher.stopCh:
-					appLog("trakt", "session_poll_stopped", "INFO", "Plex 会话轮询线程已停止", nil)
+					rt.appLog("trakt", "session_poll_stopped", "INFO", "Plex 会话轮询线程已停止", nil)
 					return
 				case <-time.After(time.Duration(interval) * time.Second):
 				}
