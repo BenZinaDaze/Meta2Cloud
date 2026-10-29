@@ -262,10 +262,10 @@ func (rt *Runtime) finishSwitchedSession(syncStore *store.TraktSyncStore, traktC
 func (rt *Runtime) pollPlexSessionsOnce() {
 	cfg := rt.GetConfig()
 	nowStr := utcNowISO()
-	traktSessionWatcher.mu.Lock()
-	traktSessionWatcher.lastPolledAt = &nowStr
-	traktSessionWatcher.lastPollError = nil
-	traktSessionWatcher.mu.Unlock()
+	rt.traktSessionWatcher.mu.Lock()
+	rt.traktSessionWatcher.lastPolledAt = &nowStr
+	rt.traktSessionWatcher.lastPollError = nil
+	rt.traktSessionWatcher.mu.Unlock()
 
 	// 纯兜底策略：SSE 在线时不并行轮询——实时事件已覆盖会话观察与上报，
 	// 仅在 SSE 未连接（开关关闭/断线窗口/旧版 PMS 无端点）时才主动轮询。
@@ -294,9 +294,9 @@ func (rt *Runtime) pollPlexSessionsOnce() {
 	sessions, err := plexClient.Sessions()
 	if err != nil {
 		msg := fmt.Sprintf("%v", err)
-		traktSessionWatcher.mu.Lock()
-		traktSessionWatcher.lastPollError = &msg
-		traktSessionWatcher.mu.Unlock()
+		rt.traktSessionWatcher.mu.Lock()
+		rt.traktSessionWatcher.lastPollError = &msg
+		rt.traktSessionWatcher.mu.Unlock()
 		if errors.Is(err, plexserver.ErrUnauthorized) {
 			rt.NotifyServiceHealth("Plex", false, err.Error())
 		}

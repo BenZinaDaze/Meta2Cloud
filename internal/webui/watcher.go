@@ -21,12 +21,6 @@ type watcherState struct {
 	lastSummary       map[string]any
 }
 
-var (
-	u115AutoWatcher = &watcherState{stopCh: make(chan struct{})}
-	rssWatcher      = &watcherState{stopCh: make(chan struct{})}
-	strmWatcher     = &watcherState{stopCh: make(chan struct{})}
-)
-
 // u115TaskKey 任务稳定键（info_hash → file_id → 名称+时间+大小）。
 func u115TaskKey(task u115.OfflineTask) string {
 	if task.InfoHash != "" {
@@ -61,11 +55,11 @@ func utcNowISO() string { return time.Now().UTC().Format("2006-01-02T15:04:05.00
 // pollU115AutoOrganizeOnce 单次轮询 115 云下载任务完成状态。
 func (rt *Runtime) pollU115AutoOrganizeOnce() {
 	cfg := rt.GetConfig()
-	u115AutoWatcher.mu.Lock()
+	rt.u115AutoWatcher.mu.Lock()
 	nowStr := utcNowISO()
-	u115AutoWatcher.lastPolledAt = &nowStr
-	u115AutoWatcher.lastPollError = nil
-	u115AutoWatcher.mu.Unlock()
+	rt.u115AutoWatcher.lastPolledAt = &nowStr
+	rt.u115AutoWatcher.lastPollError = nil
+	rt.u115AutoWatcher.mu.Unlock()
 
 	if cfg.ActiveStorageName() != "pan115" || !cfg.U115.AutoOrganizeEnabled || cfg.U115.DownloadFolderID == "" {
 		return
@@ -139,9 +133,9 @@ func (rt *Runtime) pollU115AutoOrganizeOnce() {
 		"triggered_at": utcNowISO(), "count": len(completed),
 		"tasks": rt.summarizeTasks(completed),
 	}
-	u115AutoWatcher.mu.Lock()
-	u115AutoWatcher.lastTriggeredTask = triggeredPayload
-	u115AutoWatcher.mu.Unlock()
+	rt.u115AutoWatcher.mu.Lock()
+	rt.u115AutoWatcher.lastTriggeredTask = triggeredPayload
+	rt.u115AutoWatcher.mu.Unlock()
 	rt.appLog("u115", "auto_organize_triggered", "SUCCESS",
 		fmt.Sprintf("检测到 %d 个 115 云下载任务完成，已触发自动整理", len(completed)), triggeredPayload)
 }
@@ -168,9 +162,9 @@ func (rt *Runtime) recordU115PollError(err error) {
 	if u115.IsAuth(err) {
 		rt.NotifyServiceHealth("115", false, "自动整理轮询认证失败："+err.Error())
 	}
-	u115AutoWatcher.mu.Lock()
-	u115AutoWatcher.lastPollError = &msg
-	u115AutoWatcher.mu.Unlock()
+	rt.u115AutoWatcher.mu.Lock()
+	rt.u115AutoWatcher.lastPollError = &msg
+	rt.u115AutoWatcher.mu.Unlock()
 }
 
 // rssHealthState RSS 轮询健康判定：连续 2 次 summary.errors（抓取错误数）> 0 才视为
@@ -289,9 +283,9 @@ func (rt *Runtime) runTraktCron(stop <-chan struct{}) {
 		case <-timer.C:
 		}
 		nowStr := utcNowISO()
-		traktWatcher.mu.Lock()
-		traktWatcher.lastPolledAt = &nowStr
-		traktWatcher.mu.Unlock()
+		rt.traktWatcher.mu.Lock()
+		rt.traktWatcher.lastPolledAt = &nowStr
+		rt.traktWatcher.mu.Unlock()
 		cfg := rt.GetConfig()
 		if !cfg.IsPlexReady() || !cfg.IsTraktReady() {
 			if !readyWarned {
@@ -374,9 +368,9 @@ func (rt *Runtime) runU115Cron(stop <-chan struct{}) {
 			defer func() {
 				if r := recover(); r != nil {
 					msg := fmt.Sprintf("[panic] %v", r)
-					u115AutoWatcher.mu.Lock()
-					u115AutoWatcher.lastPollError = &msg
-					u115AutoWatcher.mu.Unlock()
+					rt.u115AutoWatcher.mu.Lock()
+					rt.u115AutoWatcher.lastPollError = &msg
+					rt.u115AutoWatcher.mu.Unlock()
 					rt.appLog("u115", "auto_organize_poll_failed", "ERROR",
 						"115 自动整理轮询失败: "+msg, map[string]any{"error": msg})
 				}
@@ -414,14 +408,14 @@ func (rt *Runtime) runRSSCron(stop <-chan struct{}) {
 		case <-timer.C:
 		}
 		nowStr := utcNowISO()
-		rssWatcher.mu.Lock()
-		rssWatcher.lastPolledAt = &nowStr
-		rssWatcher.lastPollError = nil
-		rssWatcher.mu.Unlock()
+		rt.rssWatcher.mu.Lock()
+		rt.rssWatcher.lastPolledAt = &nowStr
+		rt.rssWatcher.lastPollError = nil
+		rt.rssWatcher.mu.Unlock()
 		summary := rt.PollSubscriptionsOnce()
-		rssWatcher.mu.Lock()
-		rssWatcher.lastSummary = summary
-		rssWatcher.mu.Unlock()
+		rt.rssWatcher.mu.Lock()
+		rt.rssWatcher.lastSummary = summary
+		rt.rssWatcher.mu.Unlock()
 		if report, ok2, reason := rssHealth.update(summary); report {
 			rt.NotifyServiceHealth("订阅源", ok2, reason)
 		}
@@ -447,7 +441,7 @@ func (rt *Runtime) StopBackgroundWatchers() {
 	rt.strmCronLoop.halt()
 	rt.u115CronLoop.halt()
 	rt.rssCronLoop.halt()
-	for _, w := range []*watcherState{u115AutoWatcher, rssWatcher, strmWatcher, traktWatcher, traktSessionWatcher, traktSSEWatcher} {
+	for _, w := range []*watcherState{rt.u115AutoWatcher, rt.rssWatcher, rt.strmWatcher, rt.traktWatcher, rt.traktSessionWatcher, rt.traktSSEWatcher} {
 		w.mu.Lock()
 		if !w.stopped {
 			w.stopped = true
@@ -473,20 +467,20 @@ func (rt *Runtime) U115AutoOrganizeStatusPayload() map[string]any {
 			}
 		}
 	}
-	u115AutoWatcher.mu.Lock()
-	if u115AutoWatcher.lastTriggeredTask != nil {
-		lastTriggered = u115AutoWatcher.lastTriggeredTask
+	rt.u115AutoWatcher.mu.Lock()
+	if rt.u115AutoWatcher.lastTriggeredTask != nil {
+		lastTriggered = rt.u115AutoWatcher.lastTriggeredTask
 	}
-	lastPolled := u115AutoWatcher.lastPolledAt
-	lastErr := u115AutoWatcher.lastPollError
-	u115AutoWatcher.mu.Unlock()
+	lastPolled := rt.u115AutoWatcher.lastPolledAt
+	lastErr := rt.u115AutoWatcher.lastPollError
+	rt.u115AutoWatcher.mu.Unlock()
 
 	authorized, _ := rt.u115OauthStatusPayload()["authorized"].(bool)
 	return map[string]any{
 		"enabled":            cfg.U115.AutoOrganizeEnabled && cfg.ActiveStorageName() == "pan115",
 		"storage_primary":    cfg.ActiveStorageName(),
 		"authorized":         authorized,
-		"watcher_alive":      watcherAlive(u115AutoWatcher),
+		"watcher_alive":      watcherAlive(rt.u115AutoWatcher),
 		"poll_cron":          cfg.U115.AutoOrganizeCron,
 		"stable_seconds":     cfg.U115.AutoOrganizeStableSeconds,
 		"download_folder_id": cfg.U115.DownloadFolderID,

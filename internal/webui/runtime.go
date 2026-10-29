@@ -21,9 +21,6 @@ import (
 	"meta2cloud/internal/webui/store"
 )
 
-// appliedScheduleGen 已应用过调度启停的配置代数（ApplyWatchSchedules 幂等去重）。
-var appliedScheduleGen atomic.Int64
-
 // Runtime 全局运行时状态。
 type Runtime struct {
 	RootDir string
@@ -35,8 +32,11 @@ type Runtime struct {
 	secretsPath string
 	configSig   [3]int64 // (config mtime, rules mtime, secrets mtime)
 	scheduleGen int64    // 配置变更代数（每次重载递增，驱动 cron 调度启停）
-	categories  *config.CategoriesConfig
-	categoriesM int64 // categories.yaml mtime
+	// appliedScheduleGen 已应用过调度启停的代数（GetConfig 幂等去重；
+	// 每实例私有，多实例测试互不污染）
+	appliedScheduleGen atomic.Int64
+	categories         *config.CategoriesConfig
+	categoriesM        int64 // categories.yaml mtime
 	library     *store.LibraryStore
 	tmdbCache   *store.TmdbCache
 	provider    cloudfile.Provider
@@ -100,8 +100,13 @@ type Runtime struct {
 	traktWatcher        *watcherState
 	traktSessionWatcher *watcherState
 	traktSSEWatcher     *watcherState
-	traktSessionOnce    sync.Once
-	traktSSEOnce        sync.Once
+	// u115AutoWatcher/rssWatcher/strmWatcher 非 cron 常驻轮询线程运行态
+	// （115 自动整理 / RSS 订阅 / STRM 直链同步）
+	u115AutoWatcher *watcherState
+	rssWatcher      *watcherState
+	strmWatcher     *watcherState
+	traktSessionOnce sync.Once
+	traktSSEOnce     sync.Once
 	traktSyncState      struct {
 		mu      sync.Mutex
 		running bool
@@ -198,6 +203,9 @@ func InitRuntime(rootDir string) *Runtime {
 	rt.traktWatcher = &watcherState{stopCh: make(chan struct{})}
 	rt.traktSessionWatcher = &watcherState{stopCh: make(chan struct{})}
 	rt.traktSSEWatcher = &watcherState{stopCh: make(chan struct{})}
+	rt.u115AutoWatcher = &watcherState{stopCh: make(chan struct{})}
+	rt.rssWatcher = &watcherState{stopCh: make(chan struct{})}
+	rt.strmWatcher = &watcherState{stopCh: make(chan struct{})}
 	rt.strmSvc = &strmService{rt: rt}
 	rt.healthSendTG = pipeline.SendTelegramMessage
 	rt.healthTGConfig = func() config.Telegram { return rt.GetConfig().Telegram }
@@ -378,10 +386,10 @@ func (rt *Runtime) GetConfig() *config.Config {
 	gen := rt.scheduleGen
 	cfg := rt.cfg
 	rt.mu.Unlock()
-	if gen != appliedScheduleGen.Load() {
+	if gen != rt.appliedScheduleGen.Load() {
 		// 先记代数再应用：Apply 内部会读配置（如订阅 cron），重入时据此返回，
 		// 避免无限递归；并发双跑无害（调度启停幂等且有互斥）
-		appliedScheduleGen.Store(gen)
+		rt.appliedScheduleGen.Store(gen)
 		rt.ApplyWatchSchedules(cfg)
 	}
 	return cfg

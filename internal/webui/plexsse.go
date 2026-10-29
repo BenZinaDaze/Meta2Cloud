@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"meta2cloud/internal/plexserver"
@@ -15,12 +14,6 @@ import (
 )
 
 // ── 实时推送（Plex SSE）─────────────────────────────────────
-
-// traktSSEState SSE 连接状态（状态接口展示用）。
-var traktSSEState struct {
-	mu        sync.Mutex
-	connected bool
-}
 
 func (rt *Runtime) setSSEConnected(connected bool) {
 	rt.traktSSEState.mu.Lock()
@@ -211,7 +204,7 @@ func (rt *Runtime) ensureTraktSSELoop() {
 						rt.appLog("trakt", "sse_gate_pending", "INFO", "实时通知未开启：需开启实时通知开关并完成 Trakt 与 Plex 授权，30 秒后重新检查", nil)
 						lastGateOK = false
 					}
-					if !sleepWatcher(traktSSEWatcher, 30*time.Second) {
+					if !sleepWatcher(rt.traktSSEWatcher, 30*time.Second) {
 						return
 					}
 					continue
@@ -285,7 +278,7 @@ func (rt *Runtime) ensureTraktSSELoop() {
 				case backoff < 60*time.Second:
 					backoff *= 2
 				}
-				if !sleepWatcher(traktSSEWatcher, backoff) {
+				if !sleepWatcher(rt.traktSSEWatcher, backoff) {
 					return
 				}
 			}
@@ -315,14 +308,8 @@ func (rt *Runtime) resolveSessionKey(store *store.TraktSyncStore, source *plexse
 }
 
 // ── 后台轮询循环 ───────────────────────────────────────────
-
-var (
-	traktWatcher        = &watcherState{stopCh: make(chan struct{})}
-	traktSessionWatcher = &watcherState{stopCh: make(chan struct{})}
-	traktSSEWatcher     = &watcherState{stopCh: make(chan struct{})}
-	traktSessionOnce    sync.Once
-	traktSSEOnce        sync.Once
-)
+// 运行态（traktWatcher/traktSessionWatcher/traktSSEWatcher 与两个启动 Once）
+// 均为 Runtime 字段，随实例构造，无包级全局。
 
 // plexReachable 轻探测 Plex 可达性（/identity，失败含 DNS/连接错误）。
 func (rt *Runtime) plexReachable() bool {
