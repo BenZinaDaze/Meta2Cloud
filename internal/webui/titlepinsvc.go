@@ -135,7 +135,7 @@ func (s *Server) handleAdoptTitlePin(w http.ResponseWriter, r *http.Request) {
 
 	// 4. 触发整理（合并可能残留的重复目录）与 STRM 同步
 	s.rt.SchedulePipeline(0)
-	s.rt.TriggerStrmSync("title-pin-adopt")
+	s.rt.strmSvc.TriggerStrmSync("title-pin-adopt")
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"media_type": body.MediaType, "tmdb_id": body.TmdbID,

@@ -137,7 +137,7 @@ func (rt *Runtime) doRunPipeline() {
 	}
 	opts.Categories = rt.GetCategories()
 	if cfg.Strm.Enabled {
-		opts.OnVideoIngested = rt.HandleVideoIngested
+		opts.OnVideoIngested = rt.strmSvc.HandleVideoIngested
 	}
 	pipe := pipeline.New(provider, cfg, opts)
 	summary, runErr := pipe.Run()

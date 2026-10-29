@@ -391,7 +391,7 @@ func (s *Server) runReclassify(provider cloudfile.Provider, ls *store.LibrarySto
 	runMoves := append([]string{}, s.rt.classify.progress.Moves...)
 	s.rt.classify.progressMu.Unlock()
 
-	s.rt.TriggerStrmSync("reclassify")
+	s.rt.strmSvc.TriggerStrmSync("reclassify")
 	level := "SUCCESS"
 	if failed > 0 {
 		level = "WARNING"

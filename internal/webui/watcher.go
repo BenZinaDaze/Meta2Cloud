@@ -354,8 +354,8 @@ func (rt *Runtime) runStrmCron(stop <-chan struct{}) {
 		}
 		// 触发点现读配置（执行期间配置可能已变更）
 		cur := rt.GetConfig()
-		if cur.Strm.Enabled && cur.ActiveStorageName() == "pan115" && !rt.StrmSyncRunning() {
-			rt.TriggerStrmSync(triggerSchedule)
+		if cur.Strm.Enabled && cur.ActiveStorageName() == "pan115" && !rt.strmSvc.StrmSyncRunning() {
+			rt.strmSvc.TriggerStrmSync(triggerSchedule)
 		}
 	}
 }

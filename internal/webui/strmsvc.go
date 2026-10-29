@@ -183,7 +183,7 @@ func strmSidecarExtSet(cfg *config.Config) map[string]struct{} {
 	return set
 }
 
-func (rt *Runtime) pickCodeOf(f cloudfile.CloudFile) string {
+func (s *strmService) pickCodeOf(f cloudfile.CloudFile) string {
 	pc, _ := f.Extra["pick_code"].(string)
 	return pc
 }
@@ -192,39 +192,39 @@ func (rt *Runtime) pickCodeOf(f cloudfile.CloudFile) string {
 
 // TriggerStrmSync 异步触发一次全量同步（增量写库，已有且未变化的跳过）。
 // 返回 false 表示已有同步在进行。
-func (rt *Runtime) TriggerStrmSync(trigger string) bool {
-	rt.strmSvc.mu.Lock()
-	if rt.strmSvc.running {
-		rt.strmSvc.mu.Unlock()
+func (s *strmService) TriggerStrmSync(trigger string) bool {
+	s.rt.strmSvc.mu.Lock()
+	if s.rt.strmSvc.running {
+		s.rt.strmSvc.mu.Unlock()
 		return false
 	}
-	rt.strmSvc.running = true
-	rt.strmSvc.mu.Unlock()
+	s.rt.strmSvc.running = true
+	s.rt.strmSvc.mu.Unlock()
 
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				log.Printf("[strm] 同步 panic：%v", r)
 			}
-			rt.strmSvc.mu.Lock()
-			rt.strmSvc.running = false
-			rt.strmSvc.mu.Unlock()
+			s.rt.strmSvc.mu.Lock()
+			s.rt.strmSvc.running = false
+			s.rt.strmSvc.mu.Unlock()
 		}()
-		rt.runStrmSync(trigger)
+		s.runStrmSync(trigger)
 	}()
 	return true
 }
 
 // StrmSyncRunning 是否正在同步。
-func (rt *Runtime) StrmSyncRunning() bool {
-	rt.strmSvc.mu.Lock()
-	defer rt.strmSvc.mu.Unlock()
-	return rt.strmSvc.running
+func (s *strmService) StrmSyncRunning() bool {
+	s.rt.strmSvc.mu.Lock()
+	defer s.rt.strmSvc.mu.Unlock()
+	return s.rt.strmSvc.running
 }
 
-func (rt *Runtime) runStrmSync(trigger string) {
-	cfg := rt.GetConfig()
-	st := rt.GetStrmStore()
+func (s *strmService) runStrmSync(trigger string) {
+	cfg := s.rt.GetConfig()
+	st := s.rt.GetStrmStore()
 	if len(cfg.Strm.Mappings) == 0 {
 		log.Printf("[strm] 未配置路径映射，跳过同步")
 		return
@@ -233,7 +233,7 @@ func (rt *Runtime) runStrmSync(trigger string) {
 		log.Printf("[strm] strm.url_base 未配置，无法生成播放地址，跳过同步")
 		return
 	}
-	provider := rt.GetStorageProvider()
+	provider := s.rt.GetStorageProvider()
 	if provider == nil {
 		log.Printf("[strm] 存储 Provider 不可用，跳过同步")
 		return
@@ -241,11 +241,11 @@ func (rt *Runtime) runStrmSync(trigger string) {
 
 	runID := st.StartSyncRun(trigger)
 	stats := strmRunStats{}
-	changes := newStrmChanges(rt.GetCategories())
+	changes := newStrmChanges(s.rt.GetCategories())
 	var syncErr error
 
 	for _, mapping := range cfg.Strm.Mappings {
-		created, updated, removed, skipped, err := rt.syncMapping(provider, st, cfg, mapping, runID, changes)
+		created, updated, removed, skipped, err := s.syncMapping(provider, st, cfg, mapping, runID, changes)
 		stats.Created += created
 		stats.Updated += updated
 		stats.Removed += removed
@@ -258,22 +258,22 @@ func (rt *Runtime) runStrmSync(trigger string) {
 	}
 	// 保守原则：任一映射遍历失败时跳过孤儿对账等删除类操作，宁可不删不误删
 	if syncErr == nil {
-		stats.Removed += rt.sweepOrphanStrmFiles(st, cfg.Strm.Mappings, runID)
+		stats.Removed += s.sweepOrphanStrmFiles(st, cfg.Strm.Mappings, runID)
 	}
-	st.FinishSyncRun(runID, stats.Created, stats.Updated, stats.Removed, stats.Skipped, rt.errText(syncErr))
+	st.FinishSyncRun(runID, stats.Created, stats.Updated, stats.Removed, stats.Skipped, s.errText(syncErr))
 	log.Printf("[strm] 同步完成（%s）：新增 %d 更新 %d 删除 %d 跳过 %d",
 		trigger, stats.Created, stats.Updated, stats.Removed, stats.Skipped)
 	if syncErr == nil {
-		rt.NotifyServiceHealth("115", true, "")
-		rt.notifyPlexRefresh(stats.Created+stats.Updated+stats.Removed, changes)
+		s.rt.NotifyServiceHealth("115", true, "")
+		s.notifyPlexRefresh(stats.Created+stats.Updated+stats.Removed, changes)
 	} else if u115.IsAuth(syncErr) {
 		// 仅 115 授权失效才上报健康状态；瞬时网络/限流错误不告警
-		rt.NotifyServiceHealth("115", false, "STRM 同步："+syncErr.Error())
+		s.rt.NotifyServiceHealth("115", false, "STRM 同步："+syncErr.Error())
 	}
 }
 
 // errText 错误转字符串（nil → 空串）。
-func (rt *Runtime) errText(err error) string {
+func (s *strmService) errText(err error) string {
 	if err == nil {
 		return ""
 	}
@@ -283,49 +283,49 @@ func (rt *Runtime) errText(err error) string {
 // notifyPlexRefresh strm 有实际变更后通知 Plex 扫描媒体库（strm.refresh_plex 开启时生效）。
 // 变更涉及的分类名与 Plex 库名一致时只刷对应库，对不上则回退全部电影/剧集库。
 // 异步执行且失败只记日志——不写进同步错误，避免触发保守跳过删除对账。
-func (rt *Runtime) notifyPlexRefresh(changed int, changes *strmChanges) {
-	if changed <= 0 || !rt.GetConfig().Strm.RefreshPlex {
+func (s *strmService) notifyPlexRefresh(changed int, changes *strmChanges) {
+	if changed <= 0 || !s.rt.GetConfig().Strm.RefreshPlex {
 		return
 	}
-	client := rt.GetPlexClient()
+	client := s.rt.GetPlexClient()
 	if client == nil { // Plex 未配对
 		return
 	}
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				rt.appLog("strm", "plex_notify", "ERROR", fmt.Sprintf("通知 Plex 时程序异常：%v", r), nil)
+				s.rt.appLog("strm", "plex_notify", "ERROR", fmt.Sprintf("通知 Plex 时程序异常：%v", r), nil)
 				log.Printf("[strm] 通知 Plex 时程序异常：%v", r)
 			}
 		}()
 		sections, err := client.Sections()
 		if err != nil {
-			rt.appLog("strm", "plex_notify", "ERROR", "通知 Plex 失败（获取媒体库列表）："+err.Error(),
+			s.rt.appLog("strm", "plex_notify", "ERROR", "通知 Plex 失败（获取媒体库列表）："+err.Error(),
 				map[string]any{"changed": changed})
 			log.Printf("[strm] 通知 Plex 失败（获取媒体库列表）：%v", err)
 			if errors.Is(err, plexserver.ErrUnauthorized) {
-				rt.NotifyServiceHealth("Plex", false, err.Error())
+				s.rt.NotifyServiceHealth("Plex", false, err.Error())
 			}
 			return
 		}
 		targets := make([]plexserver.Section, 0, len(sections))
-		for _, s := range sections {
-			if slices.Contains(changes.list(), s.Title) {
-				targets = append(targets, s)
+		for _, sec := range sections {
+			if slices.Contains(changes.list(), sec.Title) {
+				targets = append(targets, sec)
 			}
 		}
 		if len(targets) == 0 { // 库名与分类名对不上：宁可多刷不漏刷
 			targets = sections
 		}
 		failed := 0
-		for _, s := range targets {
-			if err := client.RefreshSection(s.Key); err != nil {
+		for _, sec := range targets {
+			if err := client.RefreshSection(sec.Key); err != nil {
 				failed++
-				rt.appLog("strm", "plex_notify", "ERROR", fmt.Sprintf("通知 Plex 刷新媒体库 %s 失败：%v", s.Title, err),
-					map[string]any{"section": s.Title})
-				log.Printf("[strm] 通知 Plex 刷新媒体库 %s 失败：%v", s.Title, err)
+				s.rt.appLog("strm", "plex_notify", "ERROR", fmt.Sprintf("通知 Plex 刷新媒体库 %s 失败：%v", sec.Title, err),
+					map[string]any{"section": sec.Title})
+				log.Printf("[strm] 通知 Plex 刷新媒体库 %s 失败：%v", sec.Title, err)
 				if errors.Is(err, plexserver.ErrUnauthorized) {
-					rt.NotifyServiceHealth("Plex", false, err.Error())
+					s.rt.NotifyServiceHealth("Plex", false, err.Error())
 				}
 			}
 		}
@@ -339,9 +339,9 @@ func (rt *Runtime) notifyPlexRefresh(changed int, changes *strmChanges) {
 			level = "WARN"
 			msg += fmt.Sprintf("，%d 个失败", failed)
 		} else {
-			rt.NotifyServiceHealth("Plex", true, "")
+			s.rt.NotifyServiceHealth("Plex", true, "")
 		}
-		rt.appLog("strm", "plex_notify", level, msg,
+		s.rt.appLog("strm", "plex_notify", level, msg,
 			map[string]any{"targets": len(targets), "failed": failed, "changed": changed})
 		log.Printf("[strm] %s", msg)
 	}()
@@ -349,7 +349,7 @@ func (rt *Runtime) notifyPlexRefresh(changed int, changes *strmChanges) {
 
 // syncMapping 同步单个映射，返回统计。遍历成功后清理该映射下网盘已不存在的 .strm。
 // ch 非 nil 时同时记录变更文件命中的分类名。
-func (rt *Runtime) syncMapping(provider cloudfile.Provider, st *store.StrmStore, cfg *config.Config, mapping config.StrmMapping, runID int64, ch *strmChanges) (created, updated, removed, skipped int, err error) {
+func (s *strmService) syncMapping(provider cloudfile.Provider, st *store.StrmStore, cfg *config.Config, mapping config.StrmMapping, runID int64, ch *strmChanges) (created, updated, removed, skipped int, err error) {
 	extSet := strmMediaExtSet(cfg)
 	sidecarSet := map[string]struct{}{}
 	var fetcher sidecarFetcher
@@ -389,7 +389,7 @@ func (rt *Runtime) syncMapping(provider cloudfile.Provider, st *store.StrmStore,
 				continue
 			}
 			ext := strings.TrimPrefix(item.Extension(), ".")
-			pickCode := rt.pickCodeOf(item)
+			pickCode := s.pickCodeOf(item)
 			_, isMedia := extSet[ext]
 			_, isSidecar := sidecarSet[ext]
 			switch {
@@ -397,8 +397,8 @@ func (rt *Runtime) syncMapping(provider cloudfile.Provider, st *store.StrmStore,
 				if pickCode == "" {
 					continue
 				}
-				localPath := rt.strmLocalPath(localRoot, relPath, item.Name)
-				switch rt.upsertStrmFile(st, cfg, mapping, item, relPath, pickCode, localRoot, runID) {
+				localPath := s.strmLocalPath(localRoot, relPath, item.Name)
+				switch s.upsertStrmFile(st, cfg, mapping, item, relPath, pickCode, localRoot, runID) {
 				case "created":
 					created++
 					ch.add(relPath)
@@ -414,8 +414,8 @@ func (rt *Runtime) syncMapping(provider cloudfile.Provider, st *store.StrmStore,
 				if fetcher == nil || pickCode == "" {
 					continue
 				}
-				localPath := rt.sidecarLocalPath(localRoot, relPath, item.Name)
-				switch rt.upsertSidecarFile(st, item, relPath, pickCode, localPath, fetcher, runID) {
+				localPath := s.sidecarLocalPath(localRoot, relPath, item.Name)
+				switch s.upsertSidecarFile(st, item, relPath, pickCode, localPath, fetcher, runID) {
 				case "created":
 					created++
 					ch.add(relPath)
@@ -450,12 +450,12 @@ func (rt *Runtime) syncMapping(provider cloudfile.Provider, st *store.StrmStore,
 	}
 
 	// 自内向外清理因网盘目录改名/合并而残留的本地空目录
-	rt.pruneEmptyDirs(localRoot)
+	s.pruneEmptyDirs(localRoot)
 	return created, updated, removed, skipped, nil
 }
 
 // pruneEmptyDirs 自内向外删除本地根目录下的空目录（仅删除真正为空的目录；根目录本身保留）。
-func (rt *Runtime) pruneEmptyDirs(root string) {
+func (s *strmService) pruneEmptyDirs(root string) {
 	var dirs []string
 	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || !d.IsDir() || p == root {
@@ -476,7 +476,7 @@ func (rt *Runtime) pruneEmptyDirs(root string) {
 // sweepOrphanStrmFiles 全局孤儿对账：不属于任何映射本地根的记录
 // （历史映射位置变更后的残留）删除本地文件与记录，返回清理数量。
 // 每次同步末尾执行，映射换位置后下一次同步即自动清干净。
-func (rt *Runtime) sweepOrphanStrmFiles(st *store.StrmStore, mappings []config.StrmMapping, runID int64) int {
+func (s *strmService) sweepOrphanStrmFiles(st *store.StrmStore, mappings []config.StrmMapping, runID int64) int {
 	roots := make([]string, 0, len(mappings))
 	for _, m := range mappings {
 		if root := filepath.Clean(m.LocalPath); root != "" && root != "." {
@@ -489,14 +489,14 @@ func (rt *Runtime) sweepOrphanStrmFiles(st *store.StrmStore, mappings []config.S
 	}
 	removed := 0
 	for _, rec := range st.ListAllStrmFiles() {
-		if rt.isUnderAnyLocalRoot(rec.LocalPath, roots) {
+		if s.isUnderAnyLocalRoot(rec.LocalPath, roots) {
 			continue
 		}
 		if err := os.Remove(rec.LocalPath); err != nil && !os.IsNotExist(err) {
 			st.InsertSyncFileDetail(runID, rec.FileName, rec.PanPath, rec.LocalPath, "removed", false, err.Error())
 			continue
 		}
-		rt.pruneEmptyDirParents(filepath.Dir(rec.LocalPath), roots)
+		s.pruneEmptyDirParents(filepath.Dir(rec.LocalPath), roots)
 		st.DeleteStrmFile(rec.ID)
 		st.InsertSyncFileDetail(runID, rec.FileName, rec.PanPath, rec.LocalPath, "removed", true, "")
 		log.Printf("[strm] 清理映射外残留：%s", rec.LocalPath)
@@ -506,7 +506,7 @@ func (rt *Runtime) sweepOrphanStrmFiles(st *store.StrmStore, mappings []config.S
 }
 
 // isUnderAnyLocalRoot 判断本地路径是否位于任一受管根之下（按路径段前缀比较）。
-func (rt *Runtime) isUnderAnyLocalRoot(localPath string, roots []string) bool {
+func (s *strmService) isUnderAnyLocalRoot(localPath string, roots []string) bool {
 	for _, root := range roots {
 		if localPath == root || strings.HasPrefix(localPath, root+string(os.PathSeparator)) {
 			return true
@@ -517,9 +517,9 @@ func (rt *Runtime) isUnderAnyLocalRoot(localPath string, roots []string) bool {
 
 // pruneEmptyDirParents 孤儿文件删除后自下而上清理空目录：
 // 非空、抵达受管根或文件系统顶层即停（os.Remove 仅对空目录生效，天然安全）。
-func (rt *Runtime) pruneEmptyDirParents(bottom string, roots []string) {
+func (s *strmService) pruneEmptyDirParents(bottom string, roots []string) {
 	dir := filepath.Clean(bottom)
-	for dir != "." && dir != string(os.PathSeparator) && len(dir) > 1 && !rt.isUnderAnyLocalRoot(dir, roots) {
+	for dir != "." && dir != string(os.PathSeparator) && len(dir) > 1 && !s.isUnderAnyLocalRoot(dir, roots) {
 		if err := os.Remove(dir); err != nil {
 			return
 		}
@@ -527,18 +527,18 @@ func (rt *Runtime) pruneEmptyDirParents(bottom string, roots []string) {
 	}
 }
 
-func (rt *Runtime) strmLocalPath(localRoot, relPath, fileName string) string {
+func (s *strmService) strmLocalPath(localRoot, relPath, fileName string) string {
 	name := fileName
 	if ext := path.Ext(fileName); ext != "" {
 		name = strings.TrimSuffix(fileName, ext) + ".strm"
 	} else {
 		name = fileName + ".strm"
 	}
-	return rt.sidecarLocalPath(localRoot, relPath, name)
+	return s.sidecarLocalPath(localRoot, relPath, name)
 }
 
 // sidecarLocalPath 伴随文件保持网盘原始命名（整理阶段已完成字幕改名与语言标注）。
-func (rt *Runtime) sidecarLocalPath(localRoot, relPath, fileName string) string {
+func (s *strmService) sidecarLocalPath(localRoot, relPath, fileName string) string {
 	if relPath == "" {
 		return filepath.Join(localRoot, fileName)
 	}
@@ -547,10 +547,10 @@ func (rt *Runtime) sidecarLocalPath(localRoot, relPath, fileName string) string 
 
 // upsertStrmFile 为单个网盘视频文件写 .strm 并更新记录。
 // 返回 created / updated / skipped。
-func (rt *Runtime) upsertStrmFile(st *store.StrmStore, cfg *config.Config, mapping config.StrmMapping,
+func (s *strmService) upsertStrmFile(st *store.StrmStore, cfg *config.Config, mapping config.StrmMapping,
 	f cloudfile.CloudFile, relPath, pickCode, localRoot string, runID int64) string {
 
-	localPath := rt.strmLocalPath(localRoot, relPath, f.Name)
+	localPath := s.strmLocalPath(localRoot, relPath, f.Name)
 	panPath := "/" + path.Join(relPath, f.Name)
 
 	size := int64(0)
@@ -582,7 +582,7 @@ func (rt *Runtime) upsertStrmFile(st *store.StrmStore, cfg *config.Config, mappi
 		}
 	}
 
-	if err := rt.writeStrmFile(localPath, strmURL); err != nil {
+	if err := s.writeStrmFile(localPath, strmURL); err != nil {
 		st.InsertSyncFileDetail(runID, f.Name, panPath, localPath, action, false, err.Error())
 		return action
 	}
@@ -590,7 +590,7 @@ func (rt *Runtime) upsertStrmFile(st *store.StrmStore, cfg *config.Config, mappi
 	return action
 }
 
-func (rt *Runtime) writeStrmFile(localPath, content string) error {
+func (s *strmService) writeStrmFile(localPath, content string) error {
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 		return fmt.Errorf("创建目录失败：%w", err)
 	}
@@ -600,7 +600,7 @@ func (rt *Runtime) writeStrmFile(localPath, content string) error {
 // upsertSidecarFile 下载网盘伴随文件（外挂字幕等）到本地 .strm 同目录，
 // 保持网盘原始命名（整理阶段已完成字幕改名与语言标注）。
 // 增量策略与 .strm 一致：记录未变且本地文件大小一致则跳过，避免重复下载。
-func (rt *Runtime) upsertSidecarFile(st *store.StrmStore, f cloudfile.CloudFile, relPath, pickCode, localPath string, fetcher sidecarFetcher, runID int64) string {
+func (s *strmService) upsertSidecarFile(st *store.StrmStore, f cloudfile.CloudFile, relPath, pickCode, localPath string, fetcher sidecarFetcher, runID int64) string {
 	panPath := "/" + path.Join(relPath, f.Name)
 	size := int64(0)
 	if f.Size != nil {
@@ -632,7 +632,7 @@ func (rt *Runtime) upsertSidecarFile(st *store.StrmStore, f cloudfile.CloudFile,
 		st.InsertSyncFileDetail(runID, f.Name, panPath, localPath, action, false, "下载失败："+err.Error())
 		return action
 	}
-	if err := rt.writeSidecarFile(localPath, data); err != nil {
+	if err := s.writeSidecarFile(localPath, data); err != nil {
 		st.InsertSyncFileDetail(runID, f.Name, panPath, localPath, action, false, err.Error())
 		return action
 	}
@@ -640,7 +640,7 @@ func (rt *Runtime) upsertSidecarFile(st *store.StrmStore, f cloudfile.CloudFile,
 	return action
 }
 
-func (rt *Runtime) writeSidecarFile(localPath string, data []byte) error {
+func (s *strmService) writeSidecarFile(localPath string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 		return fmt.Errorf("创建目录失败：%w", err)
 	}
@@ -652,25 +652,25 @@ func (rt *Runtime) writeSidecarFile(localPath string, data []byte) error {
 // HandleVideoIngested 整理流水线入库成功后的回调（单文件实时生成 STRM）。
 // 通过 TargetFolder 向上回溯父目录链定位映射根，计算相对路径。
 // 返回 nil 表示 STRM 已生成；返回 error 表示生成失败或目标不在任何映射目录下。
-func (rt *Runtime) HandleVideoIngested(result pipeline.ProcessResult) error {
+func (s *strmService) HandleVideoIngested(result pipeline.ProcessResult) error {
 	if result.Status != "ok" || result.TargetFolder == nil {
 		return fmt.Errorf("整理结果无效")
 	}
-	pickCode := rt.pickCodeOf(result.File)
+	pickCode := s.pickCodeOf(result.File)
 	if pickCode == "" {
 		return fmt.Errorf("缺少 pick_code")
 	}
-	cfg := rt.GetConfig()
+	cfg := s.rt.GetConfig()
 	if !cfg.Strm.Enabled || cfg.Strm.URLBase == "" {
 		return fmt.Errorf("STRM 未启用")
 	}
-	st := rt.GetStrmStore()
-	provider := rt.GetStorageProvider()
+	st := s.rt.GetStrmStore()
+	provider := s.rt.GetStorageProvider()
 	if provider == nil {
 		return fmt.Errorf("存储 Provider 不可用")
 	}
 
-	mapping, relPath, ok := rt.locateMapping(provider, cfg, *result.TargetFolder, result.TargetChain)
+	mapping, relPath, ok := s.locateMapping(provider, cfg, *result.TargetFolder, result.TargetChain)
 	if !ok {
 		return fmt.Errorf("目标目录不在任何 STRM 映射下")
 	}
@@ -686,19 +686,19 @@ func (rt *Runtime) HandleVideoIngested(result pipeline.ProcessResult) error {
 		}
 	}
 
-	rt.strmSvc.hookMu.Lock()
-	defer rt.strmSvc.hookMu.Unlock()
-	rt.ensureIngestRunLocked()
-	action := rt.upsertStrmFile(st, cfg, mapping, result.File, relPath, pickCode, localRoot, rt.strmSvc.hookRunID)
+	s.rt.strmSvc.hookMu.Lock()
+	defer s.rt.strmSvc.hookMu.Unlock()
+	s.ensureIngestRunLocked()
+	action := s.upsertStrmFile(st, cfg, mapping, result.File, relPath, pickCode, localRoot, s.rt.strmSvc.hookRunID)
 	switch action {
 	case "created":
-		rt.strmSvc.hookStats.Created++
-		rt.strmSvc.hookChanges.add(relPath)
+		s.rt.strmSvc.hookStats.Created++
+		s.rt.strmSvc.hookChanges.add(relPath)
 	case "updated":
-		rt.strmSvc.hookStats.Updated++
-		rt.strmSvc.hookChanges.add(relPath)
+		s.rt.strmSvc.hookStats.Updated++
+		s.rt.strmSvc.hookChanges.add(relPath)
 	default:
-		rt.strmSvc.hookStats.Skipped++
+		s.rt.strmSvc.hookStats.Skipped++
 	}
 	if fetcher != nil {
 		// 注意：hookMu 为非重入锁，upsertSidecarFile 内部不得再取本锁（其本身不取）
@@ -711,31 +711,31 @@ func (rt *Runtime) HandleVideoIngested(result pipeline.ProcessResult) error {
 				if _, ok := sidecarSet[ext]; !ok {
 					continue
 				}
-				sidePickCode := rt.pickCodeOf(item)
+				sidePickCode := s.pickCodeOf(item)
 				if sidePickCode == "" {
 					continue
 				}
-				sideLocal := rt.sidecarLocalPath(localRoot, relPath, item.Name)
-				switch rt.upsertSidecarFile(st, item, relPath, sidePickCode, sideLocal, fetcher, rt.strmSvc.hookRunID) {
+				sideLocal := s.sidecarLocalPath(localRoot, relPath, item.Name)
+				switch s.upsertSidecarFile(st, item, relPath, sidePickCode, sideLocal, fetcher, s.rt.strmSvc.hookRunID) {
 				case "created":
-					rt.strmSvc.hookStats.Created++
-					rt.strmSvc.hookChanges.add(relPath)
+					s.rt.strmSvc.hookStats.Created++
+					s.rt.strmSvc.hookChanges.add(relPath)
 				case "updated":
-					rt.strmSvc.hookStats.Updated++
-					rt.strmSvc.hookChanges.add(relPath)
+					s.rt.strmSvc.hookStats.Updated++
+					s.rt.strmSvc.hookChanges.add(relPath)
 				default:
-					rt.strmSvc.hookStats.Skipped++
+					s.rt.strmSvc.hookStats.Skipped++
 				}
 			}
 		}
 	}
-	rt.strmSvc.hookLastAt = time.Now()
-	rt.scheduleIngestFlush()
+	s.rt.strmSvc.hookLastAt = time.Now()
+	s.scheduleIngestFlush()
 	return nil
 }
 
 // locateMapping 从目标文件夹沿 ParentID 向上回溯，找到包含它的映射与相对目录路径。
-func (rt *Runtime) locateMapping(provider cloudfile.Provider, cfg *config.Config, target cloudfile.CloudFile, targetChain []cloudfile.CloudFile) (config.StrmMapping, string, bool) {
+func (s *strmService) locateMapping(provider cloudfile.Provider, cfg *config.Config, target cloudfile.CloudFile, targetChain []cloudfile.CloudFile) (config.StrmMapping, string, bool) {
 	mappingByRoot := map[string]config.StrmMapping{}
 	mappingByPath := map[string]config.StrmMapping{}
 	for _, m := range cfg.Strm.Mappings {
@@ -803,27 +803,27 @@ func (rt *Runtime) locateMapping(provider cloudfile.Provider, cfg *config.Config
 }
 
 // ensureIngestRunLocked 取当前累积 run（窗口内复用，否则新建）。需已持 hookMu。
-func (rt *Runtime) ensureIngestRunLocked() {
-	st := rt.GetStrmStore()
+func (s *strmService) ensureIngestRunLocked() {
+	st := s.rt.GetStrmStore()
 	now := time.Now()
-	if rt.strmSvc.hookRunID != 0 && now.Sub(rt.strmSvc.hookLastAt) <= ingestRunFlushIdle {
+	if s.rt.strmSvc.hookRunID != 0 && now.Sub(s.rt.strmSvc.hookLastAt) <= ingestRunFlushIdle {
 		return
 	}
-	rt.strmSvc.flushIngestRunLocked()
-	rt.strmSvc.hookRunID = st.StartSyncRun(triggerIngest)
-	rt.strmSvc.hookStats = strmRunStats{}
-	rt.strmSvc.hookChanges = newStrmChanges(rt.GetCategories())
+	s.rt.strmSvc.flushIngestRunLocked()
+	s.rt.strmSvc.hookRunID = st.StartSyncRun(triggerIngest)
+	s.rt.strmSvc.hookStats = strmRunStats{}
+	s.rt.strmSvc.hookChanges = newStrmChanges(s.rt.GetCategories())
 }
 
 // scheduleIngestFlush 窗口静默后收尾入库 run。
-func (rt *Runtime) scheduleIngestFlush() {
-	if rt.strmSvc.hookFlusher != nil {
-		rt.strmSvc.hookFlusher.Stop()
+func (s *strmService) scheduleIngestFlush() {
+	if s.rt.strmSvc.hookFlusher != nil {
+		s.rt.strmSvc.hookFlusher.Stop()
 	}
-	rt.strmSvc.hookFlusher = time.AfterFunc(ingestRunFlushIdle, func() {
-		rt.strmSvc.hookMu.Lock()
-		defer rt.strmSvc.hookMu.Unlock()
-		rt.strmSvc.flushIngestRunLocked()
+	s.rt.strmSvc.hookFlusher = time.AfterFunc(ingestRunFlushIdle, func() {
+		s.rt.strmSvc.hookMu.Lock()
+		defer s.rt.strmSvc.hookMu.Unlock()
+		s.rt.strmSvc.flushIngestRunLocked()
 	})
 }
 
@@ -840,7 +840,7 @@ func (s *strmService) flushIngestRunLocked() {
 	s.hookRunID = 0
 	s.hookStats = strmRunStats{}
 	s.hookChanges = nil
-	s.rt.notifyPlexRefresh(changed, changes)
+	s.notifyPlexRefresh(changed, changes)
 }
 
 // ── HTTP 处理器（/api/strm/*） ───────────────────────────────
@@ -892,7 +892,7 @@ func (s *Server) handleStrmSyncStatus(w http.ResponseWriter, _ *http.Request) {
 		Enabled:  cfg.Strm.Enabled,
 		URLBase:  cfg.Strm.URLBase,
 		Mappings: len(cfg.Strm.Mappings),
-		Running:  s.rt.StrmSyncRunning(),
+		Running:  s.rt.strmSvc.StrmSyncRunning(),
 	}
 	if st != nil {
 		payload.TotalFiles = st.CountStrmFiles()
@@ -918,7 +918,7 @@ func (s *Server) handleStrmSyncTrigger(w http.ResponseWriter, _ *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "strm.url_base 未配置")
 		return
 	}
-	if !s.rt.TriggerStrmSync(triggerManual) {
+	if !s.rt.strmSvc.TriggerStrmSync(triggerManual) {
 		writeJSONError(w, http.StatusConflict, "同步已在进行中")
 		return
 	}

@@ -23,7 +23,7 @@ func TestPruneEmptyDirs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rt.pruneEmptyDirs(root)
+	rt.strmSvc.pruneEmptyDirs(root)
 
 	if _, err := os.Stat(empty); !os.IsNotExist(err) {
 		t.Fatal("空目录应被删除")
