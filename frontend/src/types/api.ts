@@ -241,3 +241,109 @@ export interface CategoriesConfig {
   tv: CategoryRule[]
   movie: CategoryRule[]
 }
+
+// ── 观看同步（Trakt ↔ Plex）──
+// 与后端 payload struct 字段一一对应（internal/webui/traktsvc.go / traktsyncsvc.go）
+
+/** 进行中的 Trakt 设备码配对会话 */
+export interface TraktPairing {
+  user_code: string
+  verification_url: string
+  expires_at: number
+}
+
+/** GET /api/trakt/oauth/status（TraktOAuthStatusPayload） */
+export interface TraktOauthStatus {
+  ready: boolean
+  client_id: string
+  token_path: string
+  token_exists: boolean
+  authorized: boolean
+  token_valid: boolean
+  token_expired: boolean
+  refresh_time: number | null
+  expires_at: number | null
+  refreshed: boolean
+  pairing: TraktPairing | null
+}
+
+/** 同步运行记录（status.last_run 与 runs 列表共用形状） */
+export interface WatchedSyncRun {
+  id: number
+  started_at: string
+  finished_at: string | null
+  trigger: string
+  to_trakt: number
+  to_plex: number
+  conflicts: number
+  unresolved: number
+  skipped: number
+  error: string | null
+  /** 实时推送（sse/poll）记录的媒体标题与进度；全量同步为 null */
+  title: string | null
+  progress: number | null
+}
+
+/** GET /api/trakt/sync/status（TraktSyncStatusPayload） */
+export interface WatchedSyncStatus {
+  enabled: boolean
+  trakt_ready: boolean
+  trakt_authorized: boolean
+  plex_ready: boolean
+  plex_connected: boolean
+  plex_reachable: boolean
+  sync_to_plex: boolean
+  sync_to_trakt: boolean
+  sync_cron: string
+  session_poll_seconds: number
+  running: boolean
+  sync_watcher_alive: boolean
+  session_watcher_alive: boolean
+  sse_enabled: boolean
+  sse_connected: boolean
+  last_polled_at: string | null
+  last_poll_error: string | null
+  last_session_polled_at: string | null
+  last_run: WatchedSyncRun | null
+}
+
+/** 同步明细单条 */
+export interface WatchedSyncRunItem {
+  id: number
+  media_type: string | null
+  tmdb_id: number | null
+  season: number | null
+  episode: number | null
+  title: string | null
+  direction: string
+  action: string
+  success: boolean
+  error: string | null
+}
+
+/** 忽略清单条目 */
+export interface WatchedSyncIgnore {
+  media_type: string
+  anchor: string
+  tmdb_id: number
+  title: string | null
+  reason: string | null
+  created_at: string
+}
+
+/** 反复失败候选（建议忽略） */
+export interface WatchedFailingMedia {
+  media_type: string
+  anchor: string
+  tmdb_id: number
+  title: string
+  fails: number
+  last_error: string | null
+  last_at: string
+}
+
+/** GET /api/trakt/sync/ignores */
+export interface WatchedSyncIgnoresResponse {
+  ignores: WatchedSyncIgnore[]
+  candidates: WatchedFailingMedia[]
+}

@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { apiDetail, useAsyncAction } from '@/hooks/useAsyncAction'
+import type { TraktOauthStatus, WatchedSyncStatus } from '@/types/api'
 
 interface WatchedSyncSectionProps {
   cfg: Record<string, unknown> | null
@@ -26,14 +27,14 @@ interface WatchedSyncSectionProps {
 }
 
 export default function WatchedSyncSection({ cfg, set }: WatchedSyncSectionProps) {
-  const [traktOauth, setTraktOauth] = useState<Record<string, unknown> | null>(null)
+  const [traktOauth, setTraktOauth] = useState<TraktOauthStatus | null>(null)
   const [traktPairing, setTraktPairing] = useState<{ user_code: string; verification_url: string } | null>(null)
   const [traktPolling, setTraktPolling] = useState(false)
   const traktAction = useAsyncAction()
   const [plexPairing, setPlexPairing] = useState<{ code: string; auth_url: string } | null>(null)
   const [plexPolling, setPlexPolling] = useState(false)
   const plexAction = useAsyncAction()
-  const [syncStatus, setSyncStatus] = useState<Record<string, unknown> | null>(null)
+  const [syncStatus, setSyncStatus] = useState<WatchedSyncStatus | null>(null)
   const syncTriggerAction = useAsyncAction()
   // 轮询 effect 内使用的稳定 setter 别名（useState setter 恒稳定，可安全列入依赖）
   const { setMessage: setTraktMsg } = traktAction
@@ -271,12 +272,10 @@ export default function WatchedSyncSection({ cfg, set }: WatchedSyncSectionProps
           <NoticeMessage message={syncTriggerAction.message} />
           {syncStatus?.last_run != null && (
             <div className="mt-1 text-xs text-muted-foreground">
-              上次同步：{String((syncStatus.last_run as Record<string, unknown>).started_at || '')}
-              {' · '}→Trakt {String((syncStatus.last_run as Record<string, unknown>).to_trakt ?? 0)}
-              {' · '}→Plex {String((syncStatus.last_run as Record<string, unknown>).to_plex ?? 0)}
-              {(syncStatus.last_run as Record<string, unknown>).error
-                ? ` · 错误：${String((syncStatus.last_run as Record<string, unknown>).error)}`
-                : ''}
+              上次同步：{syncStatus.last_run.started_at}
+              {' · '}→Trakt {syncStatus.last_run.to_trakt}
+              {' · '}→Plex {syncStatus.last_run.to_plex}
+              {syncStatus.last_run.error ? ` · 错误：${syncStatus.last_run.error}` : ''}
             </div>
           )}
         </div>

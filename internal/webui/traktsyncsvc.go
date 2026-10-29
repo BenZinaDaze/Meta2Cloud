@@ -135,41 +135,87 @@ func (rt *Runtime) notifyTraktSyncAnomaly(summary syncengine.RunSummary) {
 
 // ── HTTP 处理器：同步状态 / 触发 / 历史 ─────────────────────
 
-func (rt *Runtime) traktSyncStatusPayload() map[string]any {
+// TraktSyncRunPayload 同步运行记录（status.last_run 与 runs 列表共用同一形状）。
+type TraktSyncRunPayload struct {
+	ID          int64    `json:"id"`
+	StartedAt   string   `json:"started_at"`
+	FinishedAt  *string  `json:"finished_at"`
+	Trigger     string   `json:"trigger"`
+	ToTrakt     int      `json:"to_trakt"`
+	ToPlex      int      `json:"to_plex"`
+	Conflicts   int      `json:"conflicts"`
+	Unresolved  int      `json:"unresolved"`
+	Skipped     int      `json:"skipped"`
+	Error       *string  `json:"error"`
+	Title       *string  `json:"title"`    // 实时推送（sse/poll）记录的媒体标题；全量同步为 null
+	Progress    *float64 `json:"progress"` // 实时推送记录的进度；全量同步为 null
+}
+
+// TraktSyncStatusPayload GET /api/trakt/sync/status 响应。
+type TraktSyncStatusPayload struct {
+	Enabled             bool                 `json:"enabled"`
+	TraktReady          bool                 `json:"trakt_ready"`
+	TraktAuthorized     bool                 `json:"trakt_authorized"`
+	PlexReady           bool                 `json:"plex_ready"`
+	PlexConnected       bool                 `json:"plex_connected"`
+	PlexReachable       bool                 `json:"plex_reachable"`
+	SyncToPlex          bool                 `json:"sync_to_plex"`
+	SyncToTrakt         bool                 `json:"sync_to_trakt"`
+	SyncCron            string               `json:"sync_cron"`
+	SessionPollSeconds  int                  `json:"session_poll_seconds"`
+	Running             bool                 `json:"running"`
+	SyncWatcherAlive    bool                 `json:"sync_watcher_alive"`
+	SessionWatcherAlive bool                 `json:"session_watcher_alive"`
+	SSEEnabled          bool                 `json:"sse_enabled"`
+	SSEConnected        bool                 `json:"sse_connected"`
+	LastPolledAt        *string              `json:"last_polled_at"`
+	LastPollError       *string              `json:"last_poll_error"`
+	LastSessionPolledAt *string              `json:"last_session_polled_at"`
+	LastRun             *TraktSyncRunPayload `json:"last_run"`
+}
+
+func (rt *Runtime) traktSyncStatusPayload() TraktSyncStatusPayload {
 	cfg := rt.GetConfig()
 	traktStatus := rt.traktOauthStatusPayload()
 	plex := rt.plexStatusPayload()
-	payload := map[string]any{
-		"enabled":                cfg.Trakt.Enabled,
-		"trakt_ready":            traktStatus["ready"],
-		"trakt_authorized":       traktStatus["authorized"],
-		"plex_ready":             plex["ready"],
-		"plex_connected":         plex["token_configured"],
-		"plex_reachable":         plex["reachable"],
-		"sync_to_plex":           cfg.Trakt.SyncToPlex,
-		"sync_to_trakt":          cfg.Trakt.SyncToTrakt,
-		"sync_cron":              cfg.Trakt.SyncCron,
-		"session_poll_seconds":   cfg.Trakt.SessionPollSeconds,
-		"running":                rt.TraktSyncRunning(),
-		"sync_watcher_alive":     watcherAlive(rt.trakt.syncWatcher),
-		"session_watcher_alive":  watcherAlive(rt.trakt.sessionWatcher),
-		"sse_enabled":            cfg.Trakt.SSEEnabled,
-		"sse_connected":          rt.sseConnected(),
-		"last_polled_at":         rt.trakt.syncWatcher.lastPolledAt,
-		"last_poll_error":        rt.trakt.syncWatcher.lastPollError,
-		"last_session_polled_at": rt.trakt.sessionWatcher.lastPolledAt,
+	payload := TraktSyncStatusPayload{
+		Enabled:             cfg.Trakt.Enabled,
+		TraktReady:          traktStatus.Ready,
+		TraktAuthorized:     traktStatus.Authorized,
+		PlexReady:           plex.Ready,
+		PlexConnected:       plex.TokenConfigured,
+		PlexReachable:       plex.Reachable,
+		SyncToPlex:          cfg.Trakt.SyncToPlex,
+		SyncToTrakt:         cfg.Trakt.SyncToTrakt,
+		SyncCron:            cfg.Trakt.SyncCron,
+		SessionPollSeconds:  cfg.Trakt.SessionPollSeconds,
+		Running:             rt.TraktSyncRunning(),
+		SyncWatcherAlive:    watcherAlive(rt.trakt.syncWatcher),
+		SessionWatcherAlive: watcherAlive(rt.trakt.sessionWatcher),
+		SSEEnabled:          cfg.Trakt.SSEEnabled,
+		SSEConnected:        rt.sseConnected(),
+		LastPolledAt:        rt.trakt.syncWatcher.lastPolledAt,
+		LastPollError:       rt.trakt.syncWatcher.lastPollError,
+		LastSessionPolledAt: rt.trakt.sessionWatcher.lastPolledAt,
 	}
 	if store := rt.GetTraktSyncStore(); store != nil {
 		if last := store.GetLastFinishedSyncRun(); last != nil {
-			payload["last_run"] = map[string]any{
-				"id": last.ID, "started_at": last.StartedAt, "finished_at": last.FinishedAt,
-				"trigger": last.Trigger, "to_trakt": last.ToTrakt, "to_plex": last.ToPlex,
-				"conflicts": last.Conflicts, "unresolved": last.Unresolved,
-				"skipped": last.Skipped, "error": last.Error,
-			}
+			run := traktSyncRunPayload(*last)
+			payload.LastRun = &run
 		}
 	}
 	return payload
+}
+
+// traktSyncRunPayload store 运行记录 → API 负载（含实时推送的标题/进度）。
+func traktSyncRunPayload(run store.TraktSyncRun) TraktSyncRunPayload {
+	return TraktSyncRunPayload{
+		ID: run.ID, StartedAt: run.StartedAt, FinishedAt: run.FinishedAt,
+		Trigger: run.Trigger, ToTrakt: run.ToTrakt, ToPlex: run.ToPlex,
+		Conflicts: run.Conflicts, Unresolved: run.Unresolved,
+		Skipped: run.Skipped, Error: run.Error,
+		Title: run.Title, Progress: run.Progress,
+	}
 }
 
 func (s *Server) handleTraktSyncStatus(w http.ResponseWriter, _ *http.Request) {
@@ -177,12 +223,11 @@ func (s *Server) handleTraktSyncStatus(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleTraktSyncTrigger(w http.ResponseWriter, _ *http.Request) {
-	status := s.rt.traktOauthStatusPayload()
-	if authorized, _ := status["authorized"].(bool); !authorized {
+	if !s.rt.traktOauthStatusPayload().Authorized {
 		writeJSONError(w, http.StatusBadRequest, "Trakt 未授权，请先完成设备码配对")
 		return
 	}
-	if connected, _ := s.rt.plexStatusPayload()["token_configured"].(bool); !connected {
+	if !s.rt.plexStatusPayload().TokenConfigured {
 		writeJSONError(w, http.StatusBadRequest, "Plex 未授权，请先完成 PIN 配对")
 		return
 	}
@@ -192,6 +237,12 @@ func (s *Server) handleTraktSyncTrigger(w http.ResponseWriter, _ *http.Request) 
 	}
 	s.rt.appLog("trakt", "sync_triggered", "INFO", "手动触发观看同步", nil)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "观看同步已触发"})
+}
+
+// TraktSyncRunsPayload GET /api/trakt/sync/runs 响应。
+type TraktSyncRunsPayload struct {
+	Total int                  `json:"total"`
+	Runs  []TraktSyncRunPayload `json:"runs"`
 }
 
 func (s *Server) handleTraktSyncRuns(w http.ResponseWriter, r *http.Request) {
@@ -209,17 +260,25 @@ func (s *Server) handleTraktSyncRuns(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("读取同步历史失败：%v", err))
 		return
 	}
-	list := make([]map[string]any, 0, len(runs))
+	list := make([]TraktSyncRunPayload, 0, len(runs))
 	for _, run := range runs {
-		list = append(list, map[string]any{
-			"id": run.ID, "started_at": run.StartedAt, "finished_at": run.FinishedAt,
-			"trigger": run.Trigger, "to_trakt": run.ToTrakt, "to_plex": run.ToPlex,
-			"conflicts": run.Conflicts, "unresolved": run.Unresolved,
-			"skipped": run.Skipped, "error": run.Error,
-			"title": run.Title, "progress": run.Progress,
-		})
+		list = append(list, traktSyncRunPayload(run))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"total": total, "runs": list})
+	writeJSON(w, http.StatusOK, TraktSyncRunsPayload{Total: total, Runs: list})
+}
+
+// TraktSyncRunItemPayload GET /api/trakt/sync/runs/{id}/items 单条明细。
+type TraktSyncRunItemPayload struct {
+	ID        int64    `json:"id"`
+	MediaType *string  `json:"media_type"`
+	TmdbID    *int64   `json:"tmdb_id"`
+	Season    *int     `json:"season"`
+	Episode   *int     `json:"episode"`
+	Title     *string  `json:"title"`
+	Direction string   `json:"direction"`
+	Action    string   `json:"action"`
+	Success   bool     `json:"success"`
+	Error     *string  `json:"error"`
 }
 
 func (s *Server) handleTraktSyncRunItems(w http.ResponseWriter, r *http.Request) {
@@ -239,13 +298,13 @@ func (s *Server) handleTraktSyncRunItems(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	s.rt.enrichRunItemTitles(items)
-	list := make([]map[string]any, 0, len(items))
+	list := make([]TraktSyncRunItemPayload, 0, len(items))
 	for _, it := range items {
-		list = append(list, map[string]any{
-			"id": it.ID, "media_type": it.MediaType, "tmdb_id": it.TmdbID,
-			"season": it.Season, "episode": it.Episode, "title": it.Title,
-			"direction": it.Direction, "action": it.Action,
-			"success": it.Success, "error": it.Error,
+		list = append(list, TraktSyncRunItemPayload{
+			ID: it.ID, MediaType: it.MediaType, TmdbID: it.TmdbID,
+			Season: it.Season, Episode: it.Episode, Title: it.Title,
+			Direction: it.Direction, Action: it.Action,
+			Success: it.Success, Error: it.Error,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": list})
@@ -253,26 +312,44 @@ func (s *Server) handleTraktSyncRunItems(w http.ResponseWriter, r *http.Request)
 
 // ── 忽略清单（Trakt 无法识别等持续失败媒体的手动止损）────────
 
-// traktMediaTitle 查媒体展示标题（tmdb_media 缓存优先，回退 library_media）。
-func (rt *Runtime) traktMediaTitle(mediaType string, tmdbID int64) string {
-	libStore := rt.GetLibraryStore()
-	if row := libStore.GetTmdbEntry(mediaType, tmdbID); row != nil && row.Title != "" {
-		return row.Title
-	}
-	return libStore.GetMediaTitle(mediaType, tmdbID)
+// TraktSyncIgnorePayload 忽略清单条目。
+type TraktSyncIgnorePayload struct {
+	MediaType string  `json:"media_type"`
+	Anchor    string  `json:"anchor"`
+	TmdbID    int64   `json:"tmdb_id"`
+	Title     *string `json:"title"`
+	Reason    *string `json:"reason"`
+	CreatedAt string  `json:"created_at"`
+}
+
+// TraktFailingMediaPayload 反复失败候选（建议忽略）。
+type TraktFailingMediaPayload struct {
+	MediaType string  `json:"media_type"`
+	Anchor    string  `json:"anchor"`
+	TmdbID    int64   `json:"tmdb_id"`
+	Title     string  `json:"title"`
+	Fails     int     `json:"fails"`
+	LastError *string `json:"last_error"`
+	LastAt    string  `json:"last_at"`
+}
+
+// TraktSyncIgnoresPayload GET /api/trakt/sync/ignores 响应。
+type TraktSyncIgnoresPayload struct {
+	Ignores    []TraktSyncIgnorePayload   `json:"ignores"`
+	Candidates []TraktFailingMediaPayload `json:"candidates"`
 }
 
 // handleTraktSyncIgnores GET /api/trakt/sync/ignores：忽略清单 + 反复失败候选。
 func (s *Server) handleTraktSyncIgnores(w http.ResponseWriter, _ *http.Request) {
 	syncStore := s.rt.GetTraktSyncStore()
-	ignores := make([]map[string]any, 0)
+	ignores := make([]TraktSyncIgnorePayload, 0)
 	for _, it := range syncStore.ListSyncIgnores() {
-		ignores = append(ignores, map[string]any{
-			"media_type": it.MediaType, "anchor": it.Anchor, "tmdb_id": it.TmdbID,
-			"title": it.Title, "reason": it.Reason, "created_at": it.CreatedAt,
+		ignores = append(ignores, TraktSyncIgnorePayload{
+			MediaType: it.MediaType, Anchor: it.Anchor, TmdbID: it.TmdbID,
+			Title: it.Title, Reason: it.Reason, CreatedAt: it.CreatedAt,
 		})
 	}
-	candidates := make([]map[string]any, 0)
+	candidates := make([]TraktFailingMediaPayload, 0)
 	for _, c := range syncStore.FailingMediaCandidates(7) {
 		title := ""
 		if c.Title != nil {
@@ -281,12 +358,21 @@ func (s *Server) handleTraktSyncIgnores(w http.ResponseWriter, _ *http.Request) 
 		if title == "" {
 			title = s.rt.traktMediaTitle(c.MediaType, c.TmdbID)
 		}
-		candidates = append(candidates, map[string]any{
-			"media_type": c.MediaType, "anchor": c.Anchor, "tmdb_id": c.TmdbID, "title": title,
-			"fails": c.Fails, "last_error": c.LastError, "last_at": c.LastAt,
+		candidates = append(candidates, TraktFailingMediaPayload{
+			MediaType: c.MediaType, Anchor: c.Anchor, TmdbID: c.TmdbID, Title: title,
+			Fails: c.Fails, LastError: c.LastError, LastAt: c.LastAt,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ignores": ignores, "candidates": candidates})
+	writeJSON(w, http.StatusOK, TraktSyncIgnoresPayload{Ignores: ignores, Candidates: candidates})
+}
+
+// traktMediaTitle 查媒体展示标题（tmdb_media 缓存优先，回退 library_media）。
+func (rt *Runtime) traktMediaTitle(mediaType string, tmdbID int64) string {
+	libStore := rt.GetLibraryStore()
+	if row := libStore.GetTmdbEntry(mediaType, tmdbID); row != nil && row.Title != "" {
+		return row.Title
+	}
+	return libStore.GetMediaTitle(mediaType, tmdbID)
 }
 
 // handleTraktSyncIgnoreSet POST /api/trakt/sync/ignore

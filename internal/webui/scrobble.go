@@ -302,7 +302,7 @@ func (rt *Runtime) pollPlexSessionsOnce() {
 	if !cfg.Trakt.SyncToTrakt || !cfg.IsPlexReady() || !cfg.IsTraktReady() {
 		return
 	}
-	if authorized, _ := rt.traktOauthStatusPayload()["authorized"].(bool); !authorized {
+	if !rt.traktOauthStatusPayload().Authorized {
 		return
 	}
 	if rt.TraktSyncRunning() {

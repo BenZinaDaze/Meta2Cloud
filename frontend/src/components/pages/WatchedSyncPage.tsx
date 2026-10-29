@@ -28,69 +28,13 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import PageHeader from '@/components/shared/PageHeader'
 import { relativeTime } from '@/lib/time'
-
-interface WatchedSyncRun {
-  id: number
-  started_at: string
-  finished_at: string | null
-  trigger: string
-  to_trakt: number
-  to_plex: number
-  conflicts: number
-  unresolved: number
-  skipped: number
-  error: string | null
-  /** 实时推送（sse/poll）记录的媒体标题与进度；全量同步为 null */
-  title: string | null
-  progress: number | null
-}
-
-interface WatchedSyncRunItem {
-  id: number
-  media_type: string | null
-  tmdb_id: number | null
-  season: number | null
-  episode: number | null
-  title: string | null
-  direction: string
-  action: string
-  success: boolean
-  error: string | null
-}
-
-interface WatchedSyncStatus {
-  enabled: boolean
-  trakt_ready: boolean
-  trakt_authorized: boolean
-  plex_ready: boolean
-  plex_connected: boolean
-  plex_reachable: boolean
-  sync_to_plex: boolean
-  sync_to_trakt: boolean
-  sync_cron: string
-  session_poll_seconds: number
-  running: boolean
-  sse_enabled?: boolean
-  sse_connected?: boolean
-  last_run: WatchedSyncRun | null
-}
-
-interface WatchedSyncIgnore {
-  media_type: string
-  tmdb_id: number
-  title: string | null
-  reason: string | null
-  created_at: string
-}
-
-interface WatchedFailingMedia {
-  media_type: string
-  tmdb_id: number
-  title: string
-  fails: number
-  last_error: string | null
-  last_at: string
-}
+import type {
+  WatchedSyncRun,
+  WatchedSyncRunItem,
+  WatchedSyncStatus,
+  WatchedSyncIgnore,
+  WatchedFailingMedia,
+} from '@/types/api'
 
 /** 实时推送（sse/poll）相邻同媒体同结果的运行合并为一组：
  * 推送失败按退避每小时重试，同一媒体会连续产生多条同结果记录，折叠后只占一行 */

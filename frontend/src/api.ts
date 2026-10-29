@@ -1,4 +1,11 @@
 import axios from 'axios'
+import type {
+  TraktOauthStatus,
+  WatchedSyncStatus,
+  WatchedSyncRun,
+  WatchedSyncRunItem,
+  WatchedSyncIgnoresResponse,
+} from '@/types/api'
 
 const api = axios.create({ baseURL: '/api' })
 
@@ -142,7 +149,7 @@ export const getStrmPlaybackHistory = (params?: { limit?: number; offset?: numbe
 
 // ── 观看同步（Trakt ↔ Plex） ──
 export const getTraktOauthStatus = (config?: { signal?: AbortSignal }) =>
-  api.get('/trakt/oauth/status', config)
+  api.get<TraktOauthStatus>('/trakt/oauth/status', config)
 export const createTraktDeviceCode = () => api.post('/trakt/oauth/device')
 export const pollTraktOauth = (config?: { signal?: AbortSignal }) =>
   api.get('/trakt/oauth/poll', { params: { ts: Date.now() }, ...config })
@@ -152,13 +159,14 @@ export const pollPlexPin = (config?: { signal?: AbortSignal }) =>
   api.get('/plex/pin/poll', { params: { ts: Date.now() }, ...config })
 export const testPlexConnection = () => api.post('/plex/test')
 export const getWatchedSyncStatus = (config?: { signal?: AbortSignal }) =>
-  api.get('/trakt/sync/status', config)
+  api.get<WatchedSyncStatus>('/trakt/sync/status', config)
 export const triggerWatchedSync = () => api.post('/trakt/sync')
 export const listWatchedSyncRuns = (params?: { limit?: number; offset?: number }) =>
-  api.get('/trakt/sync/runs', { params })
+  api.get<{ total: number; runs: WatchedSyncRun[] }>('/trakt/sync/runs', { params })
 export const getWatchedSyncRunItems = (runId: number | string, params?: { limit?: number }) =>
-  api.get(`/trakt/sync/runs/${runId}/items`, { params })
-export const getWatchedSyncIgnores = () => api.get('/trakt/sync/ignores')
+  api.get<{ items: WatchedSyncRunItem[] }>(`/trakt/sync/runs/${runId}/items`, { params })
+export const getWatchedSyncIgnores = () =>
+  api.get<WatchedSyncIgnoresResponse>('/trakt/sync/ignores')
 export const setWatchedSyncIgnore = (data: {
   action: 'add' | 'remove'
   media_type: string

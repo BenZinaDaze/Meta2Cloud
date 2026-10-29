@@ -14,7 +14,30 @@ import (
 
 // ── 状态载荷 ───────────────────────────────────────────────
 
-func (rt *Runtime) traktOauthStatusPayload() map[string]any {
+// TraktPairingPayload 进行中的设备码配对会话（前端据此继续轮询）。
+type TraktPairingPayload struct {
+	UserCode        string `json:"user_code"`
+	VerificationURL string `json:"verification_url"`
+	ExpiresAt       int64  `json:"expires_at"`
+}
+
+// TraktOAuthStatusPayload GET /api/trakt/oauth/status 响应
+// （也内嵌于设备码创建/断开授权的响应 status 字段）。
+type TraktOAuthStatusPayload struct {
+	Ready        bool                 `json:"ready"`
+	ClientID     string               `json:"client_id"`
+	TokenPath    string               `json:"token_path"`
+	TokenExists  bool                 `json:"token_exists"`
+	Authorized   bool                 `json:"authorized"`
+	TokenValid   bool                 `json:"token_valid"`
+	TokenExpired bool                 `json:"token_expired"`
+	RefreshTime  *int64               `json:"refresh_time"`
+	ExpiresAt    *int64               `json:"expires_at"`
+	Refreshed    bool                 `json:"refreshed"`
+	Pairing      *TraktPairingPayload `json:"pairing"`
+}
+
+func (rt *Runtime) traktOauthStatusPayload() TraktOAuthStatusPayload {
 	cfg := rt.GetConfig().Trakt
 	ready := rt.GetConfig().IsTraktReady()
 	tokenPath := rt.resolveConfigPath(cfg.TokenJSON)
@@ -27,19 +50,21 @@ func (rt *Runtime) traktOauthStatusPayload() map[string]any {
 	}()
 
 	authorized, tokenValid, tokenExpired, refreshed := false, false, false, false
-	var expiresAt, refreshTime any
+	var expiresAt, refreshTime *int64
 	if tokenExists {
-		refreshTime = token.RefreshTime
-		expiresAt = token.ExpiresAt()
-		tokenExpired = time.Now().Unix() >= token.ExpiresAt()
+		refreshTime = &token.RefreshTime
+		exp := token.ExpiresAt()
+		expiresAt = &exp
+		tokenExpired = time.Now().Unix() >= exp
 		if tokenExpired {
 			// 尝试自动刷新（与 115 状态载荷同思路）
 			if client := rt.GetTraktClient(); client != nil {
 				if err := client.RefreshToken(); err == nil {
 					refreshed = true
 					if t, ok, _ := trakt.LoadToken(tokenPath); ok {
-						refreshTime = t.RefreshTime
-						expiresAt = t.ExpiresAt()
+						refreshTime = &t.RefreshTime
+						exp = t.ExpiresAt()
+						expiresAt = &exp
 					}
 					tokenExpired = false
 					tokenValid = true
@@ -53,24 +78,43 @@ func (rt *Runtime) traktOauthStatusPayload() map[string]any {
 	}
 	// 配对会话存在时前端可继续轮询
 	session, _ := rt.loadTraktDeviceSession()
-	var pairing any
+	var pairing *TraktPairingPayload
 	if session != nil && time.Now().Unix() < session.ExpiresAt {
-		pairing = map[string]any{
-			"user_code": session.UserCode, "verification_url": session.VerificationURL,
-			"expires_at": session.ExpiresAt,
+		pairing = &TraktPairingPayload{
+			UserCode: session.UserCode, VerificationURL: session.VerificationURL,
+			ExpiresAt: session.ExpiresAt,
 		}
 	}
-	return map[string]any{
-		"ready":     ready,
-		"client_id": cfg.ClientID, "token_path": cfg.TokenJSON,
-		"token_exists": tokenExists, "authorized": authorized,
-		"token_valid": tokenValid, "token_expired": tokenExpired,
-		"refresh_time": refreshTime, "expires_at": expiresAt, "refreshed": refreshed,
-		"pairing": pairing,
+	return TraktOAuthStatusPayload{
+		Ready:     ready,
+		ClientID:  cfg.ClientID, TokenPath: cfg.TokenJSON,
+		TokenExists: tokenExists, Authorized: authorized,
+		TokenValid: tokenValid, TokenExpired: tokenExpired,
+		RefreshTime: refreshTime, ExpiresAt: expiresAt, Refreshed: refreshed,
+		Pairing: pairing,
 	}
 }
 
-func (rt *Runtime) plexStatusPayload() map[string]any {
+// PlexPairingPayload 进行中的 PIN 配对会话。
+type PlexPairingPayload struct {
+	Code string `json:"code"`
+}
+
+// PlexStatusPayload Plex 连接状态（观看同步状态接口的内嵌来源，非独立 API）。
+type PlexStatusPayload struct {
+	Ready            bool                `json:"ready"`
+	BaseURL          string              `json:"base_url"`
+	AuthPath         string              `json:"auth_path"`
+	TokenConfigured  bool                `json:"token_configured"`
+	ClientIdentifier string              `json:"client_identifier"`
+	Reachable        bool                `json:"reachable"`
+	Pairing          *PlexPairingPayload `json:"pairing,omitempty"`
+	ServerName       string              `json:"server_name,omitempty"`
+	ServerVersion    string              `json:"server_version,omitempty"`
+	Error            string              `json:"error,omitempty"`
+}
+
+func (rt *Runtime) plexStatusPayload() PlexStatusPayload {
 	cfg := rt.GetConfig()
 	authPath := rt.plexAuthPath()
 	auth, authErr := rt.loadPlexAuth(authPath)
@@ -79,16 +123,15 @@ func (rt *Runtime) plexStatusPayload() map[string]any {
 	if authErr == nil {
 		identifier = auth.ClientIdentifier
 	}
-	payload := map[string]any{
-		"ready":             cfg.IsPlexReady(),
-		"base_url":          cfg.Plex.BaseURL,
-		"auth_path":         cfg.Plex.TokenJSON,
-		"token_configured":  hasToken,
-		"client_identifier": identifier,
-		"reachable":         false,
+	payload := PlexStatusPayload{
+		Ready:            cfg.IsPlexReady(),
+		BaseURL:          cfg.Plex.BaseURL,
+		AuthPath:         cfg.Plex.TokenJSON,
+		TokenConfigured:  hasToken,
+		ClientIdentifier: identifier,
 	}
 	if pinSession, err := rt.loadPlexPinSession(); err == nil {
-		payload["pairing"] = map[string]any{"code": pinSession.Code}
+		payload.Pairing = &PlexPairingPayload{Code: pinSession.Code}
 	}
 	if !cfg.IsPlexReady() || !hasToken {
 		return payload
@@ -98,11 +141,11 @@ func (rt *Runtime) plexStatusPayload() map[string]any {
 		return payload
 	}
 	if identity, err := client.Identity(); err == nil {
-		payload["reachable"] = true
-		payload["server_name"] = identity.MediaContainer.MachineIdentifier
-		payload["server_version"] = identity.MediaContainer.Version
+		payload.Reachable = true
+		payload.ServerName = identity.MediaContainer.MachineIdentifier
+		payload.ServerVersion = identity.MediaContainer.Version
 	} else {
-		payload["error"] = err.Error()
+		payload.Error = err.Error()
 	}
 	return payload
 }
