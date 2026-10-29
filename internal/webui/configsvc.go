@@ -17,6 +17,7 @@ import (
 	"meta2cloud/internal/config"
 	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/mediaparser"
+	"meta2cloud/internal/strutil"
 	"meta2cloud/internal/tmdb"
 )
 
@@ -208,7 +209,7 @@ func (rt *Runtime) serializeTmdbResult(info map[string]any) map[string]any {
 	case "电视剧":
 		agent = "tv"
 	}
-	releaseDate := firstNonEmptyStr(jsonx.Str(info, "release_date"), jsonx.Str(info, "first_air_date"))
+	releaseDate := strutil.FirstNonEmpty(jsonx.Str(info, "release_date"), jsonx.Str(info, "first_air_date"))
 	year := ""
 	if len(releaseDate) >= 4 {
 		year = releaseDate[:4]
@@ -245,8 +246,8 @@ func (rt *Runtime) serializeTmdbResult(info map[string]any) map[string]any {
 		"tmdb_id":           jsonx.Int(info, "tmdb_id", jsonx.Int(info, "id", 0)),
 		"media_type":        agent,
 		"media_type_label":  mediaTypeStr,
-		"title":             firstNonEmptyStr(jsonx.Str(info, "title"), jsonx.Str(info, "name")),
-		"original_title":    firstNonEmptyStr(jsonx.Str(info, "original_title"), jsonx.Str(info, "original_name")),
+		"title":             strutil.FirstNonEmpty(jsonx.Str(info, "title"), jsonx.Str(info, "name")),
+		"original_title":    strutil.FirstNonEmpty(jsonx.Str(info, "original_title"), jsonx.Str(info, "original_name")),
 		"year":              year,
 		"release_date":      releaseDate,
 		"overview":          jsonx.Str(info, "overview"),
@@ -278,15 +279,6 @@ func peopleListFrom(v any) []map[string]any {
 		return out
 	}
 	return nil
-}
-
-func firstNonEmptyStr(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 func roundTo1F(v float64) float64 {

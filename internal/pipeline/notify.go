@@ -17,6 +17,7 @@ import (
 
 	"meta2cloud/internal/config"
 	"meta2cloud/internal/jsonx"
+	"meta2cloud/internal/strutil"
 	"meta2cloud/internal/tmdb"
 )
 
@@ -155,7 +156,7 @@ func (p *Pipeline) sendNotifications() {
 			}
 			lines := []string{fmt.Sprintf("%s <b>TMDB 未找到元数据，文件未整理</b>", icon)}
 			for _, it := range items {
-				name := firstNonEmpty(it.OriginalName, it.Title)
+				name := strutil.FirstNonEmpty(it.OriginalName, it.Title)
 				lines = append(lines, fmt.Sprintf("• <code>%s</code>", name))
 			}
 			lines = append(lines, "\n请检查文件名后手动触发重新整理")

@@ -16,6 +16,7 @@ import (
 	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/mediaparser"
 	"meta2cloud/internal/scraper"
+	"meta2cloud/internal/strutil"
 	"meta2cloud/internal/tmdb"
 	"meta2cloud/internal/u115"
 	"meta2cloud/internal/webui/store"
@@ -73,19 +74,19 @@ func (s *Server) serializeSubscription(rssStore *store.RSSStore, record *store.S
 		libStore := s.rt.GetLibraryStore()
 		if entry := libStore.GetTmdbEntry(record.MediaType, *record.TmdbID); entry != nil {
 			raw := entry.RawJSON
-			posterPath := firstNonEmptyStr(jsonx.Str(raw, "poster_path"), entry.PosterPath)
-			backdropPath := firstNonEmptyStr(jsonx.Str(raw, "backdrop_path"), entry.BackdropPath)
+			posterPath := strutil.FirstNonEmpty(jsonx.Str(raw, "poster_path"), entry.PosterPath)
+			backdropPath := strutil.FirstNonEmpty(jsonx.Str(raw, "backdrop_path"), entry.BackdropPath)
 			payload["tmdb"] = map[string]any{
 				"tmdb_id": *record.TmdbID, "media_type": record.MediaType,
-				"title":          firstNonEmptyStr(jsonx.Str(raw, "title"), jsonx.Str(raw, "name"), entry.Title),
-				"original_title": firstNonEmptyStr(jsonx.Str(raw, "original_title"), jsonx.Str(raw, "original_name"), entry.OriginalTitle),
-				"overview":       firstNonEmptyStr(jsonx.Str(raw, "overview"), entry.Overview),
+				"title":          strutil.FirstNonEmpty(jsonx.Str(raw, "title"), jsonx.Str(raw, "name"), entry.Title),
+				"original_title": strutil.FirstNonEmpty(jsonx.Str(raw, "original_title"), jsonx.Str(raw, "original_name"), entry.OriginalTitle),
+				"overview":       strutil.FirstNonEmpty(jsonx.Str(raw, "overview"), entry.Overview),
 				"poster_path":    posterPath,
 				"poster_url":     s.rt.tmdbImageURL(posterPath, "w500"),
 				"backdrop_path":  backdropPath,
 				"backdrop_url":   s.rt.tmdbImageURL(backdropPath, ""),
-				"release_date":   firstNonEmptyStr(jsonx.Str(raw, "release_date"), jsonx.Str(raw, "first_air_date")),
-				"status":         firstNonEmptyStr(jsonx.Str(raw, "status"), entry.Status),
+				"release_date":   strutil.FirstNonEmpty(jsonx.Str(raw, "release_date"), jsonx.Str(raw, "first_air_date")),
+				"status":         strutil.FirstNonEmpty(jsonx.Str(raw, "status"), entry.Status),
 				"rating":         roundTo1F(firstNonZeroF(jsonx.Float(raw, "vote_average", 0), entry.VoteAverage)),
 			}
 		}
@@ -237,7 +238,7 @@ func (rt *Runtime) analyzeTitle(title string) map[string]any {
 }
 
 func (rt *Runtime) dedupeKey(item map[string]any) string {
-	base := firstNonEmptyStr(
+	base := strutil.FirstNonEmpty(
 		anyStrValue(item["magnet_url"]),
 		anyStrValue(item["torrent_url"]),
 		anyStrValue(item["title"])+"|"+anyStrValue(item["publish_time"]),
@@ -530,7 +531,7 @@ func (b *subscriptionBody) toPayload() map[string]any {
 	}
 	return map[string]any{
 		"name": b.Name, "media_title": b.MediaTitle,
-		"media_type": firstNonEmptyStr(b.MediaType, "tv"),
+		"media_type": strutil.FirstNonEmpty(b.MediaType, "tv"),
 		"tmdb_id":    b.TmdbID, "poster_url": b.PosterURL,
 		"site": b.Site, "rss_url": b.RssURL, "subgroup_name": b.SubgroupName,
 		"season_number": maxIntValue(b.SeasonNumber, 1), "start_episode": maxIntValue(b.StartEpisode, 1),

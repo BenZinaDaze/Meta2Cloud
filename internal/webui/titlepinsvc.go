@@ -9,6 +9,7 @@ import (
 
 	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/mediaparser"
+	"meta2cloud/internal/strutil"
 )
 
 // titlePinItem 整理名称列表条目。
@@ -179,8 +180,8 @@ func (s *Server) fetchCurrentTmdbTitle(mediaType string, tmdbID int64) (string, 
 	if client := s.rt.GetTmdbClient(); client != nil {
 		mtype := mediaparser.MediaTypeFromAgent(mediaType)
 		if detail := client.GetByID(mtype, int(tmdbID)); detail != nil {
-			title := firstNonEmptyStr(jsonx.Str(detail, "name"), jsonx.Str(detail, "title"))
-			date := firstNonEmptyStr(jsonx.Str(detail, "first_air_date"), jsonx.Str(detail, "release_date"))
+			title := strutil.FirstNonEmpty(jsonx.Str(detail, "name"), jsonx.Str(detail, "title"))
+			date := strutil.FirstNonEmpty(jsonx.Str(detail, "first_air_date"), jsonx.Str(detail, "release_date"))
 			if title != "" {
 				return title, firstN4Str(date), nil
 			}

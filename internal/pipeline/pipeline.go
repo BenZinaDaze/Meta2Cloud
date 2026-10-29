@@ -16,6 +16,7 @@ import (
 	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/mediaparser"
 	"meta2cloud/internal/organizer"
+	"meta2cloud/internal/strutil"
 	"meta2cloud/internal/tmdb"
 )
 
@@ -408,14 +409,14 @@ func fileExt(name string) string {
 // 电影：Inception (2010).mkv；剧集：Breaking Bad - S01E03.mkv。
 func buildCleanName(info map[string]any, isTV bool, seasonNum int, episodeNum *int, ext string) string {
 	if isTV {
-		title := firstNonEmpty(jsonx.Str(info, "name"), jsonx.Str(info, "title"), "Unknown")
+		title := strutil.FirstNonEmpty(jsonx.Str(info, "name"), jsonx.Str(info, "title"), "Unknown")
 		epStr := fmt.Sprintf("S%02d", seasonNum)
 		if episodeNum != nil {
 			epStr = fmt.Sprintf("S%02dE%02d", seasonNum, *episodeNum)
 		}
 		return fmt.Sprintf("%s - %s%s", safeFilename(title), epStr, ext)
 	}
-	title := firstNonEmpty(jsonx.Str(info, "title"), jsonx.Str(info, "name"), "Unknown")
+	title := strutil.FirstNonEmpty(jsonx.Str(info, "title"), jsonx.Str(info, "name"), "Unknown")
 	year := jsonx.Str(info, "release_date")
 	if len(year) >= 4 {
 		year = year[:4]
@@ -425,15 +426,6 @@ func buildCleanName(info map[string]any, isTV bool, seasonNum int, episodeNum *i
 		yearStr = " (" + year + ")"
 	}
 	return fmt.Sprintf("%s%s%s", safeFilename(title), yearStr, ext)
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // resolvePinnedTitle 查询标题钉扎（无记录时按「最早入库历史 → fallback」落库）。
@@ -512,16 +504,16 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 		}
 		seasonInfo = fmt.Sprintf("  S%02dE%s", seasonNum, ep)
 	}
-	p.log(fmt.Sprintf("      解析：%s (%s)  [%s]%s", meta.Name(), orDefault(meta.Year, "?"), mediaLabel, seasonInfo), "INFO")
+	p.log(fmt.Sprintf("      解析：%s (%s)  [%s]%s", meta.Name(), strutil.OrDefault(meta.Year, "?"), mediaLabel, seasonInfo), "INFO")
 
 	// Step 3: TMDB 整剧/整片元数据
 	var tmdbInfo map[string]any
 	if p.tmdb != nil {
 		tmdbInfo = p.tmdb.Recognize(meta)
 		if tmdbInfo != nil {
-			tmdbTitle := firstNonEmpty(jsonx.Str(tmdbInfo, "title"), jsonx.Str(tmdbInfo, "name"))
+			tmdbTitle := strutil.FirstNonEmpty(jsonx.Str(tmdbInfo, "title"), jsonx.Str(tmdbInfo, "name"))
 			tmdbID := tmdbIDOf(tmdbInfo)
-			tmdbYear := firstN4(firstNonEmpty(jsonx.Str(tmdbInfo, "release_date"), jsonx.Str(tmdbInfo, "first_air_date")))
+			tmdbYear := firstN4(strutil.FirstNonEmpty(jsonx.Str(tmdbInfo, "release_date"), jsonx.Str(tmdbInfo, "first_air_date")))
 			p.log(fmt.Sprintf("      TMDB：%s (%s)  tmdb_id=%s", tmdbTitle, tmdbYear, tmdbID), "SUCCESS")
 			if isTV {
 				tmdbInfo["_season"] = float64(seasonNum)
@@ -562,8 +554,8 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 
 	// Step 5: 用 TMDB 数据更新 Meta，以便 Organizer 创建正确的中文目录
 	if tmdbInfo != nil {
-		tmdbTitle := firstNonEmpty(jsonx.Str(tmdbInfo, "name"), jsonx.Str(tmdbInfo, "title"), meta.Name())
-		tmdbYear := firstN4(firstNonEmpty(jsonx.Str(tmdbInfo, "release_date"), jsonx.Str(tmdbInfo, "first_air_date")))
+		tmdbTitle := strutil.FirstNonEmpty(jsonx.Str(tmdbInfo, "name"), jsonx.Str(tmdbInfo, "title"), meta.Name())
+		tmdbYear := firstN4(strutil.FirstNonEmpty(jsonx.Str(tmdbInfo, "release_date"), jsonx.Str(tmdbInfo, "first_air_date")))
 		// 标题钉扎：目录/文件名沿用首次整理名，TMDB 译名变更不再产生新目录
 		if pinnedTitle, pinnedYear := p.resolvePinnedTitle(isTV, tmdbInfo, tmdbTitle, tmdbYear); pinnedTitle != "" {
 			if pinnedTitle != tmdbTitle {
@@ -638,7 +630,7 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 	// Step 7.5: 同名文件预检
 	pendingReplaceID := ""
 	if targetFolder != nil {
-		targetName := firstNonEmpty(cleanName, video.Name)
+		targetName := strutil.FirstNonEmpty(cleanName, video.Name)
 		existing, err := p.provider.FindFile(targetName, targetFolder.ID)
 		if err == nil && existing != nil {
 			if existing.ID == video.ID {
@@ -699,7 +691,7 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 
 	// Step 13: 移动关联的字幕文件（视频被跳过也处理）
 	if len(subtitleIndex) > 0 && result.Status != "failed" {
-		p.moveSubtitlesForVideo(video, firstNonEmpty(cleanName, video.Name), targetFolder, subtitleIndex)
+		p.moveSubtitlesForVideo(video, strutil.FirstNonEmpty(cleanName, video.Name), targetFolder, subtitleIndex)
 		p.log("", "INFO")
 	}
 
@@ -764,9 +756,9 @@ func (p *Pipeline) recordIngest(result *ProcessResult, meta *mediaparser.MetaBas
 	case result.Status == "ok" && tmdbInfo != nil:
 		id, _ := strconv.Atoi(tmdbIDOf(tmdbInfo))
 		record.TmdbID = id
-		record.Title = firstNonEmpty(jsonx.Str(tmdbInfo, "name"), jsonx.Str(tmdbInfo, "title"), meta.Name())
-		record.OriginalTitle = firstNonEmpty(jsonx.Str(tmdbInfo, "original_name"), jsonx.Str(tmdbInfo, "original_title"))
-		record.Year = firstN4(firstNonEmpty(jsonx.Str(tmdbInfo, "first_air_date"), jsonx.Str(tmdbInfo, "release_date")))
+		record.Title = strutil.FirstNonEmpty(jsonx.Str(tmdbInfo, "name"), jsonx.Str(tmdbInfo, "title"), meta.Name())
+		record.OriginalTitle = strutil.FirstNonEmpty(jsonx.Str(tmdbInfo, "original_name"), jsonx.Str(tmdbInfo, "original_title"))
+		record.Year = firstN4(strutil.FirstNonEmpty(jsonx.Str(tmdbInfo, "first_air_date"), jsonx.Str(tmdbInfo, "release_date")))
 		record.EpisodeTitle = jsonx.Str(episodeDetail, "name")
 		record.PosterPath = jsonx.Str(tmdbInfo, "poster_path")
 		if result.TargetFolder != nil {
@@ -827,13 +819,6 @@ func (p *Pipeline) printSummary(results []ProcessResult) {
 		}
 	}
 	p.log(strings.Repeat("=", 68), "INFO")
-}
-
-func orDefault(s, def string) string {
-	if s == "" {
-		return def
-	}
-	return s
 }
 
 func firstN4(s string) string {

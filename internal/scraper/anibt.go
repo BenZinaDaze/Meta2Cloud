@@ -15,6 +15,7 @@ import (
 
 	"meta2cloud/internal/httpx"
 	"meta2cloud/internal/jsonx"
+	"meta2cloud/internal/strutil"
 )
 
 const anibtBaseURL = "https://anibt.net"
@@ -156,7 +157,7 @@ func (s *AniBTSpider) SearchMedia(keyword string) ([]MediaItem, error) {
 		if title == "" {
 			title = keyword
 		}
-		cover := firstNonEmpty3(jsonx.Str(candidate, "image"), jsonx.Str(candidate, "cover"), jsonx.Str(candidate, "poster"))
+		cover := strutil.FirstNonEmpty(jsonx.Str(candidate, "image"), jsonx.Str(candidate, "cover"), jsonx.Str(candidate, "poster"))
 		detailURL := fmt.Sprintf("%s/anime/%s", s.baseURL, bgmID)
 
 		items = append(items, MediaItem{
@@ -197,8 +198,8 @@ func (s *AniBTSpider) getGroups(bgmID string) []anibtGroup {
 		if nested := jsonx.Map(item, "group"); nested != nil {
 			group = nested
 		}
-		slug := firstNonEmpty3(jsonx.Str(group, "slug"), jsonx.Str(group, "groupSlug"))
-		name := firstNonEmpty3(jsonx.Str(group, "name"), jsonx.Str(group, "displayName"), slug)
+		slug := strutil.FirstNonEmpty(jsonx.Str(group, "slug"), jsonx.Str(group, "groupSlug"))
+		name := strutil.FirstNonEmpty(jsonx.Str(group, "name"), jsonx.Str(group, "displayName"), slug)
 		if slug == "" || name == "" || seen[slug] {
 			continue
 		}
@@ -339,13 +340,4 @@ func (s *AniBTSpider) GetEpisodes(mediaID, subgroupID string) ([]MagnetItem, err
 		})
 	}
 	return episodes, nil
-}
-
-func firstNonEmpty3(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }

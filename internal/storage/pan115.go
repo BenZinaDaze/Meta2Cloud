@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"meta2cloud/internal/cloudfile"
+	"meta2cloud/internal/strutil"
 	"meta2cloud/internal/u115"
 )
 
@@ -365,7 +366,7 @@ func (p *Pan115Provider) uploadData(data []byte, name, cid string) (cloudfile.Cl
 	}
 
 	return cloudfile.CloudFile{
-		ID:       firstNonEmptyStr(derefString(initInfo.FileID), *initInfo.PickCode),
+		ID:       strutil.FirstNonEmpty(derefString(initInfo.FileID), *initInfo.PickCode),
 		Name:     name,
 		FileType: cloudfile.TypeFile,
 		Size:     &hashes.FileSize,
@@ -384,15 +385,6 @@ func fastUploadResult(name, cid string, size int64, fileID string) cloudfile.Clo
 		ParentID: cid,
 		Parents:  []string{cid},
 	}
-}
-
-func firstNonEmptyStr(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // multipartUpload OSS 分片上传（数据已在内存，直接分片发送）。

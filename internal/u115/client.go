@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"meta2cloud/internal/httpx"
+	"meta2cloud/internal/strutil"
 )
 
 const (
@@ -362,13 +363,13 @@ func (c *Client) doRequest(method, target string, opts requestOpts) (payload map
 
 	if hasCode && authErrorCodes[codeVal] {
 		statePtr := statePtrOf(payload)
-		return nil, false, &APIError{Kind: KindAuth, Message: orDefault(message, "115 授权失败"), Code: &codeVal, State: statePtr, Payload: payload}
+		return nil, false, &APIError{Kind: KindAuth, Message: strutil.OrDefault(message, "115 授权失败"), Code: &codeVal, State: statePtr, Payload: payload}
 	}
 	codePtr := (*float64)(nil)
 	if hasCode {
 		codePtr = &codeVal
 	}
-	return nil, false, &APIError{Message: orDefault(message, "115 接口返回失败"), Code: codePtr, State: statePtrOf(payload), Payload: payload}
+	return nil, false, &APIError{Message: strutil.OrDefault(message, "115 接口返回失败"), Code: codePtr, State: statePtrOf(payload), Payload: payload}
 }
 
 func statePtrOf(payload map[string]any) *bool {
@@ -376,13 +377,6 @@ func statePtrOf(payload map[string]any) *bool {
 		return &v
 	}
 	return nil
-}
-
-func orDefault(s, def string) string {
-	if s == "" {
-		return def
-	}
-	return s
 }
 
 // ── 扫码授权 ────────────────────────────────────────────────
@@ -1087,23 +1081,14 @@ func (c *Client) ListRecycleBin(limit, offset int) ([]RecycleBinItem, error) {
 	results := make([]RecycleBinItem, 0, len(items))
 	for _, item := range items {
 		results = append(results, RecycleBinItem{
-			ID:       firstNonEmpty(jString(item, "fid"), jString(item, "file_id")),
-			Name:     firstNonEmpty(jString(item, "fn"), jString(item, "file_name")),
+			ID:       strutil.FirstNonEmpty(jString(item, "fid"), jString(item, "file_id")),
+			Name:     strutil.FirstNonEmpty(jString(item, "fn"), jString(item, "file_name")),
 			Category: jStringPtr(item, "fc"),
 			Size:     jIntPtr(item, "fs"),
 			Raw:      item,
 		})
 	}
 	return results, nil
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // ── Cookie API: 分享转存 ────────────────────────────────────
@@ -1282,7 +1267,7 @@ func (c *Client) GetShareInfo(shareCode, receiveCode, cid string, offset, limit 
 			modified = &t
 		}
 		items = append(items, ShareItem{
-			ID:           firstNonEmpty(jString(item, "cid"), jString(item, "fid")),
+			ID:           strutil.FirstNonEmpty(jString(item, "cid"), jString(item, "fid")),
 			Name:         jString(item, "n"),
 			Size:         jInt(item, "s", 0),
 			IsFolder:     isFolder,

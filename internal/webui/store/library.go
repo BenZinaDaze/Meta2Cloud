@@ -21,6 +21,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"meta2cloud/internal/jsonx"
+	"meta2cloud/internal/strutil"
 	"meta2cloud/internal/titlematch"
 	"meta2cloud/internal/tmdb"
 )
@@ -332,8 +333,8 @@ func (s *LibraryStore) UpsertTmdbDetail(mediaType string, tmdbID int64, language
 		episode_details_json = excluded.episode_details_json,
 		last_synced_at = excluded.last_synced_at, expires_at = excluded.expires_at`,
 		mediaType, tmdbID, language,
-		firstNonEmpty(jsonx.Str(data, "title"), jsonx.Str(data, "name")),
-		firstNonEmpty(jsonx.Str(data, "original_title"), jsonx.Str(data, "original_name")),
+		strutil.FirstNonEmpty(jsonx.Str(data, "title"), jsonx.Str(data, "name")),
+		strutil.FirstNonEmpty(jsonx.Str(data, "original_title"), jsonx.Str(data, "original_name")),
 		jsonx.Str(data, "original_language"),
 		jsonx.Str(data, "overview"),
 		jsonx.Str(data, "poster_path"),
@@ -821,15 +822,6 @@ func (s *LibraryStore) SaveSnapshot(movies, tvShows []map[string]any) SaveDiff {
 	return diff
 }
 
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
 func (s *LibraryStore) upsertLibraryItem(payload map[string]any, scannedAt string, folderModifiedTime int64) {
 	if err := s.upsertLibraryItemTx(s.db, payload, scannedAt, folderModifiedTime); err != nil {
 		log.Printf("upsert library item 失败 [%s]: %v", jsonx.Str(payload, "drive_folder_id"), err)
@@ -1193,9 +1185,9 @@ func (s *LibraryStore) GetJoinedMediaItem(mediaType string, tmdbID int64) map[st
 		baseURL = s.ImageBaseURL()
 	}
 	raw := entry.RawJSON
-	posterPath := firstNonEmpty(jsonx.Str(raw, "poster_path"), entry.PosterPath)
-	backdropPath := firstNonEmpty(jsonx.Str(raw, "backdrop_path"), entry.BackdropPath)
-	year := firstNonEmpty(jsonx.Str(raw, "release_date"), jsonx.Str(raw, "first_air_date"))
+	posterPath := strutil.FirstNonEmpty(jsonx.Str(raw, "poster_path"), entry.PosterPath)
+	backdropPath := strutil.FirstNonEmpty(jsonx.Str(raw, "backdrop_path"), entry.BackdropPath)
+	year := strutil.FirstNonEmpty(jsonx.Str(raw, "release_date"), jsonx.Str(raw, "first_air_date"))
 	if len(year) > 4 {
 		year = year[:4]
 	}
@@ -1205,14 +1197,14 @@ func (s *LibraryStore) GetJoinedMediaItem(mediaType string, tmdbID int64) map[st
 	}
 	payload["tmdb_id"] = tmdbID
 	payload["media_type"] = mediaType
-	payload["title"] = firstNonEmpty(jsonx.Str(raw, "title"), jsonx.Str(raw, "name"), entry.Title)
-	payload["original_title"] = firstNonEmpty(jsonx.Str(raw, "original_title"), jsonx.Str(raw, "original_name"), entry.OriginalTitle)
+	payload["title"] = strutil.FirstNonEmpty(jsonx.Str(raw, "title"), jsonx.Str(raw, "name"), entry.Title)
+	payload["original_title"] = strutil.FirstNonEmpty(jsonx.Str(raw, "original_title"), jsonx.Str(raw, "original_name"), entry.OriginalTitle)
 	payload["year"] = year
 	payload["poster_url"] = tmdb.ImageURL(posterPath, "w500", baseURL)
 	payload["backdrop_url"] = tmdb.ImageURL(backdropPath, "", baseURL)
-	payload["overview"] = firstNonEmpty(jsonx.Str(raw, "overview"), entry.Overview)
+	payload["overview"] = strutil.FirstNonEmpty(jsonx.Str(raw, "overview"), entry.Overview)
 	payload["rating"] = jsonx.Float(raw, "vote_average", entry.VoteAverage)
-	payload["status"] = firstNonEmpty(jsonx.Str(raw, "status"), entry.Status)
+	payload["status"] = strutil.FirstNonEmpty(jsonx.Str(raw, "status"), entry.Status)
 	payload["in_library"] = false
 	return payload
 }
