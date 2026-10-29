@@ -8,12 +8,16 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"meta2cloud/internal/webui"
 )
@@ -49,6 +53,9 @@ func main() {
 	}
 }
 
+// shutdownGrace 收到退出信号后等待在途请求完成的最长时间。
+const shutdownGrace = 15 * time.Second
+
 func runServe(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	host := fs.String("host", "0.0.0.0", "监听地址")
@@ -58,18 +65,31 @@ func runServe(args []string) {
 
 	rt := webui.InitRuntime(*root)
 	server := webui.NewServer(rt)
-	defer server.Close()
 
 	addr := fmt.Sprintf("%s:%d", *host, *port)
 	log.Printf("Meta2Cloud v%s Web 服务启动：http://%s", version, addr)
+
+	httpSrv := &http.Server{Addr: addr, Handler: server.Handler()}
 	go func() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 		<-sig
-		log.Println("收到退出信号")
-		os.Exit(0)
+		log.Println("收到退出信号，等待在途请求完成后关闭…")
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+		defer cancel()
+		if err := httpSrv.Shutdown(ctx); err != nil {
+			log.Printf("关闭超时，强制断开剩余连接：%v", err)
+			_ = httpSrv.Close()
+		}
 	}()
-	if err := webui.ListenAndServe(addr, server); err != nil {
+
+	err := httpSrv.ListenAndServe()
+	// ListenAndServe 返回（信号关闭或异常）后统一释放：先停后台任务，再关存储句柄，
+	// 避免 SQLite WAL 残留与 watcher 在库关闭后继续写入
+	server.Close()
+	rt.Shutdown()
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("Web 服务异常退出：%v", err)
 	}
+	log.Println("Meta2Cloud 已退出")
 }

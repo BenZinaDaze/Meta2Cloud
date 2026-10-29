@@ -295,6 +295,15 @@ func (rt *Runtime) closeStores() {
 	rt.rss, rt.u115Auto, rt.strm, rt.traktSync = nil, nil, nil, nil
 }
 
+// Shutdown 释放运行时持有的资源（当前即全部存储句柄），供进程退出路径调用：
+// 应在 Server.Close 停止后台任务之后执行，避免 watcher 在库关闭后继续写入。
+// 测试中重复 InitRuntime 的防 fd 泄漏由 InitRuntime 内部的 closeStores 兜底。
+func (rt *Runtime) Shutdown() {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.closeStores()
+}
+
 func fileMtime(path string) int64 {
 	if st, err := os.Stat(path); err == nil {
 		return st.ModTime().UnixNano()

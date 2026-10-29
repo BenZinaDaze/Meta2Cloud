@@ -191,11 +191,6 @@ func (s *Server) Handler() http.Handler {
 	return handler
 }
 
-// ListenAndServe 在 addr 上启动 HTTP 服务。
-func ListenAndServe(addr string, s *Server) error {
-	return http.ListenAndServe(addr, s.Handler())
-}
-
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
