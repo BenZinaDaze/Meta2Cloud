@@ -5,6 +5,7 @@ package webui
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"meta2cloud/internal/config"
@@ -19,6 +20,22 @@ type watcherState struct {
 	lastPollError     *string
 	lastTriggeredTask map[string]any
 	lastSummary       map[string]any
+}
+
+// schedulerState 后台调度域状态：4 个 cron 循环 + 3 个非 cron 常驻轮询线程
+// （115 自动整理 / RSS 订阅 / STRM 直链同步）的运行态与全局停止开关。
+type schedulerState struct {
+	stopped    atomic.Bool  // 全局停止后 cron 不再重启（StopBackgroundWatchers 置位）
+	appliedGen atomic.Int64 // 已应用过调度启停的配置代数（GetConfig 幂等去重）
+
+	traktCron *cronLoop
+	strmCron  *cronLoop
+	u115Cron  *cronLoop
+	rssCron   *cronLoop
+
+	u115Auto *watcherState
+	rssPoll  *watcherState
+	strmSync *watcherState
 }
 
 // u115TaskKey 任务稳定键（info_hash → file_id → 名称+时间+大小）。
@@ -55,11 +72,11 @@ func utcNowISO() string { return time.Now().UTC().Format("2006-01-02T15:04:05.00
 // pollU115AutoOrganizeOnce 单次轮询 115 云下载任务完成状态。
 func (rt *Runtime) pollU115AutoOrganizeOnce() {
 	cfg := rt.GetConfig()
-	rt.u115AutoWatcher.mu.Lock()
+	rt.sched.u115Auto.mu.Lock()
 	nowStr := utcNowISO()
-	rt.u115AutoWatcher.lastPolledAt = &nowStr
-	rt.u115AutoWatcher.lastPollError = nil
-	rt.u115AutoWatcher.mu.Unlock()
+	rt.sched.u115Auto.lastPolledAt = &nowStr
+	rt.sched.u115Auto.lastPollError = nil
+	rt.sched.u115Auto.mu.Unlock()
 
 	if cfg.ActiveStorageName() != "pan115" || !cfg.U115.AutoOrganizeEnabled || cfg.U115.DownloadFolderID == "" {
 		return
@@ -133,9 +150,9 @@ func (rt *Runtime) pollU115AutoOrganizeOnce() {
 		"triggered_at": utcNowISO(), "count": len(completed),
 		"tasks": rt.summarizeTasks(completed),
 	}
-	rt.u115AutoWatcher.mu.Lock()
-	rt.u115AutoWatcher.lastTriggeredTask = triggeredPayload
-	rt.u115AutoWatcher.mu.Unlock()
+	rt.sched.u115Auto.mu.Lock()
+	rt.sched.u115Auto.lastTriggeredTask = triggeredPayload
+	rt.sched.u115Auto.mu.Unlock()
 	rt.appLog("u115", "auto_organize_triggered", "SUCCESS",
 		fmt.Sprintf("检测到 %d 个 115 云下载任务完成，已触发自动整理", len(completed)), triggeredPayload)
 }
@@ -162,9 +179,9 @@ func (rt *Runtime) recordU115PollError(err error) {
 	if u115.IsAuth(err) {
 		rt.NotifyServiceHealth("115", false, "自动整理轮询认证失败："+err.Error())
 	}
-	rt.u115AutoWatcher.mu.Lock()
-	rt.u115AutoWatcher.lastPollError = &msg
-	rt.u115AutoWatcher.mu.Unlock()
+	rt.sched.u115Auto.mu.Lock()
+	rt.sched.u115Auto.lastPollError = &msg
+	rt.sched.u115Auto.mu.Unlock()
 }
 
 // rssHealthState RSS 轮询健康判定：连续 2 次 summary.errors（抓取错误数）> 0 才视为
@@ -245,13 +262,13 @@ func (m *cronLoop) halt() {
 // ApplyWatchSchedules 依当前配置启停各 cron 调度（配置变更检测点调用，幂等）：
 // 开关开启才存在执行循环，关闭即停。
 func (rt *Runtime) ApplyWatchSchedules(cfg *config.Config) {
-	if rt.schedulesStopped.Load() {
+	if rt.sched.stopped.Load() {
 		return
 	}
-	rt.traktCronLoop.apply(cfg.Trakt.Enabled && cfg.Trakt.SyncCron != "", rt.runTraktCron)
-	rt.strmCronLoop.apply(cfg.Strm.Enabled && cfg.ActiveStorageName() == "pan115" && cfg.Strm.SyncCron != "", rt.runStrmCron)
-	rt.u115CronLoop.apply(cfg.ActiveStorageName() == "pan115" && cfg.U115.AutoOrganizeEnabled && cfg.U115.DownloadFolderID != "" && cfg.U115.AutoOrganizeCron != "", rt.runU115Cron)
-	rt.rssCronLoop.apply(rt.getSubscriptionPollCron() != "", rt.runRSSCron)
+	rt.sched.traktCron.apply(cfg.Trakt.Enabled && cfg.Trakt.SyncCron != "", rt.runTraktCron)
+	rt.sched.strmCron.apply(cfg.Strm.Enabled && cfg.ActiveStorageName() == "pan115" && cfg.Strm.SyncCron != "", rt.runStrmCron)
+	rt.sched.u115Cron.apply(cfg.ActiveStorageName() == "pan115" && cfg.U115.AutoOrganizeEnabled && cfg.U115.DownloadFolderID != "" && cfg.U115.AutoOrganizeCron != "", rt.runU115Cron)
+	rt.sched.rssCron.apply(rt.getSubscriptionPollCron() != "", rt.runRSSCron)
 }
 
 // runTraktCron 观看同步 cron 执行器。配对未完成（token 等不随配置文件变更）
@@ -368,9 +385,9 @@ func (rt *Runtime) runU115Cron(stop <-chan struct{}) {
 			defer func() {
 				if r := recover(); r != nil {
 					msg := fmt.Sprintf("[panic] %v", r)
-					rt.u115AutoWatcher.mu.Lock()
-					rt.u115AutoWatcher.lastPollError = &msg
-					rt.u115AutoWatcher.mu.Unlock()
+					rt.sched.u115Auto.mu.Lock()
+					rt.sched.u115Auto.lastPollError = &msg
+					rt.sched.u115Auto.mu.Unlock()
 					rt.appLog("u115", "auto_organize_poll_failed", "ERROR",
 						"115 自动整理轮询失败: "+msg, map[string]any{"error": msg})
 				}
@@ -408,14 +425,14 @@ func (rt *Runtime) runRSSCron(stop <-chan struct{}) {
 		case <-timer.C:
 		}
 		nowStr := utcNowISO()
-		rt.rssWatcher.mu.Lock()
-		rt.rssWatcher.lastPolledAt = &nowStr
-		rt.rssWatcher.lastPollError = nil
-		rt.rssWatcher.mu.Unlock()
+		rt.sched.rssPoll.mu.Lock()
+		rt.sched.rssPoll.lastPolledAt = &nowStr
+		rt.sched.rssPoll.lastPollError = nil
+		rt.sched.rssPoll.mu.Unlock()
 		summary := rt.PollSubscriptionsOnce()
-		rt.rssWatcher.mu.Lock()
-		rt.rssWatcher.lastSummary = summary
-		rt.rssWatcher.mu.Unlock()
+		rt.sched.rssPoll.mu.Lock()
+		rt.sched.rssPoll.lastSummary = summary
+		rt.sched.rssPoll.mu.Unlock()
 		if report, ok2, reason := rssHealth.update(summary); report {
 			rt.NotifyServiceHealth("订阅源", ok2, reason)
 		}
@@ -436,12 +453,12 @@ func (rt *Runtime) StartupBackgroundWatchers() {
 // 注意：停止后当前进程内 cron 调度不会随配置变更重启；
 // 生产环境进程生命周期即线程生命周期，不受影响。
 func (rt *Runtime) StopBackgroundWatchers() {
-	rt.schedulesStopped.Store(true)
-	rt.traktCronLoop.halt()
-	rt.strmCronLoop.halt()
-	rt.u115CronLoop.halt()
-	rt.rssCronLoop.halt()
-	for _, w := range []*watcherState{rt.u115AutoWatcher, rt.rssWatcher, rt.strmWatcher, rt.traktWatcher, rt.traktSessionWatcher, rt.traktSSEWatcher} {
+	rt.sched.stopped.Store(true)
+	rt.sched.traktCron.halt()
+	rt.sched.strmCron.halt()
+	rt.sched.u115Cron.halt()
+	rt.sched.rssCron.halt()
+	for _, w := range []*watcherState{rt.sched.u115Auto, rt.sched.rssPoll, rt.sched.strmSync, rt.traktWatcher, rt.traktSessionWatcher, rt.traktSSEWatcher} {
 		w.mu.Lock()
 		if !w.stopped {
 			w.stopped = true
@@ -467,20 +484,20 @@ func (rt *Runtime) U115AutoOrganizeStatusPayload() map[string]any {
 			}
 		}
 	}
-	rt.u115AutoWatcher.mu.Lock()
-	if rt.u115AutoWatcher.lastTriggeredTask != nil {
-		lastTriggered = rt.u115AutoWatcher.lastTriggeredTask
+	rt.sched.u115Auto.mu.Lock()
+	if rt.sched.u115Auto.lastTriggeredTask != nil {
+		lastTriggered = rt.sched.u115Auto.lastTriggeredTask
 	}
-	lastPolled := rt.u115AutoWatcher.lastPolledAt
-	lastErr := rt.u115AutoWatcher.lastPollError
-	rt.u115AutoWatcher.mu.Unlock()
+	lastPolled := rt.sched.u115Auto.lastPolledAt
+	lastErr := rt.sched.u115Auto.lastPollError
+	rt.sched.u115Auto.mu.Unlock()
 
 	authorized, _ := rt.u115OauthStatusPayload()["authorized"].(bool)
 	return map[string]any{
 		"enabled":            cfg.U115.AutoOrganizeEnabled && cfg.ActiveStorageName() == "pan115",
 		"storage_primary":    cfg.ActiveStorageName(),
 		"authorized":         authorized,
-		"watcher_alive":      watcherAlive(rt.u115AutoWatcher),
+		"watcher_alive":      watcherAlive(rt.sched.u115Auto),
 		"poll_cron":          cfg.U115.AutoOrganizeCron,
 		"stable_seconds":     cfg.U115.AutoOrganizeStableSeconds,
 		"download_folder_id": cfg.U115.DownloadFolderID,

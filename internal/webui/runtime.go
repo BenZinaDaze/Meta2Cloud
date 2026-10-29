@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"meta2cloud/internal/cloudfile"
@@ -32,11 +31,8 @@ type Runtime struct {
 	secretsPath string
 	configSig   [3]int64 // (config mtime, rules mtime, secrets mtime)
 	scheduleGen int64    // 配置变更代数（每次重载递增，驱动 cron 调度启停）
-	// appliedScheduleGen 已应用过调度启停的代数（GetConfig 幂等去重；
-	// 每实例私有，多实例测试互不污染）
-	appliedScheduleGen atomic.Int64
-	categories         *config.CategoriesConfig
-	categoriesM        int64 // categories.yaml mtime
+	categories  *config.CategoriesConfig
+	categoriesM int64 // categories.yaml mtime
 	library     *store.LibraryStore
 	tmdbCache   *store.TmdbCache
 	provider    cloudfile.Provider
@@ -62,12 +58,8 @@ type Runtime struct {
 	classTreeMu    sync.Mutex
 	classTreeCache *categoryTree
 
-	// ── cron 调度器（见 watcher.go）──
-	schedulesStopped atomic.Bool
-	traktCronLoop    *cronLoop
-	strmCronLoop     *cronLoop
-	u115CronLoop     *cronLoop
-	rssCronLoop      *cronLoop
+	// ── 后台调度（见 watcher.go）──
+	sched schedulerState
 
 	// ── 订阅 TMDB 缓存预取去重（见 subscriptionsvc.go）──
 	subscriptionTmdbCachePrefetching sync.Map
@@ -195,17 +187,19 @@ func InitRuntime(rootDir string) *Runtime {
 	rt.strmNegTTL = strmNegativeCacheTTL
 	rt.healthNow = time.Now
 	rt.healthServices = map[string]*serviceHealth{}
-	rt.traktCronLoop = &cronLoop{name: "观看同步"}
-	rt.strmCronLoop = &cronLoop{name: "STRM 定时同步"}
-	rt.u115CronLoop = &cronLoop{name: "115 自动整理"}
-	rt.rssCronLoop = &cronLoop{name: "订阅轮询"}
 	rt.torrentURLValidator = validateOutboundURL
 	rt.traktWatcher = &watcherState{stopCh: make(chan struct{})}
 	rt.traktSessionWatcher = &watcherState{stopCh: make(chan struct{})}
 	rt.traktSSEWatcher = &watcherState{stopCh: make(chan struct{})}
-	rt.u115AutoWatcher = &watcherState{stopCh: make(chan struct{})}
-	rt.rssWatcher = &watcherState{stopCh: make(chan struct{})}
-	rt.strmWatcher = &watcherState{stopCh: make(chan struct{})}
+	rt.sched = schedulerState{
+		traktCron: &cronLoop{name: "观看同步"},
+		strmCron:  &cronLoop{name: "STRM 定时同步"},
+		u115Cron:  &cronLoop{name: "115 自动整理"},
+		rssCron:   &cronLoop{name: "订阅轮询"},
+		u115Auto:  &watcherState{stopCh: make(chan struct{})},
+		rssPoll:   &watcherState{stopCh: make(chan struct{})},
+		strmSync:  &watcherState{stopCh: make(chan struct{})},
+	}
 	rt.strmSvc = &strmService{rt: rt}
 	rt.healthSendTG = pipeline.SendTelegramMessage
 	rt.healthTGConfig = func() config.Telegram { return rt.GetConfig().Telegram }
@@ -386,10 +380,10 @@ func (rt *Runtime) GetConfig() *config.Config {
 	gen := rt.scheduleGen
 	cfg := rt.cfg
 	rt.mu.Unlock()
-	if gen != rt.appliedScheduleGen.Load() {
+	if gen != rt.sched.appliedGen.Load() {
 		// 先记代数再应用：Apply 内部会读配置（如订阅 cron），重入时据此返回，
 		// 避免无限递归；并发双跑无害（调度启停幂等且有互斥）
-		rt.appliedScheduleGen.Store(gen)
+		rt.sched.appliedGen.Store(gen)
 		rt.ApplyWatchSchedules(cfg)
 	}
 	return cfg
