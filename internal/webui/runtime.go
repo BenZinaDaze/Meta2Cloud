@@ -507,7 +507,7 @@ func (rt *Runtime) CredentialsMatch(username, password string) bool {
 	cfg := rt.GetConfig()
 	cfgUser := cfg.WebUI.Username
 	if cfgUser == "" {
-		cfgUser = "admin"
+		cfgUser = config.DefaultWebUIUsername
 	}
 	userOK := subtle.ConstantTimeCompare([]byte(username), []byte(cfgUser)) == 1
 	if cfg.WebUI.PasswordHash != "" {
@@ -619,7 +619,7 @@ func (rt *Runtime) getPlexClientLocked() *plexserver.Client {
 		}
 		timeout := cfg.Plex.Timeout
 		if timeout <= 0 {
-			timeout = 10
+			timeout = config.DefaultPlexTimeoutSecs
 		}
 		rt.plexClient = plexserver.NewClient(cfg.Plex.BaseURL, auth.AuthToken, auth.ClientIdentifier,
 			plexserver.WithTimeout(timeout))

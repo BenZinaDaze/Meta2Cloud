@@ -17,6 +17,12 @@ import (
 // DefaultTMDBImageBaseURL TMDB 图片默认根地址。
 const DefaultTMDBImageBaseURL = "https://image.tmdb.org"
 
+// DefaultWebUIUsername WebUI 默认用户名（配置缺失时的兜底；运行时登录比对与此同源）。
+const DefaultWebUIUsername = "admin"
+
+// DefaultPlexTimeoutSecs Plex 请求超时默认秒数（配置缺失/非法时的兜底，运行时回退与此同源）。
+const DefaultPlexTimeoutSecs = 10
+
 // parserRulesFilename 解析规则文件名（与主配置同目录）。
 const parserRulesFilename = "parser-rules.yaml"
 
@@ -197,7 +203,7 @@ func Default() *Config {
 		},
 		Subtitle:   Subtitle{Enabled: true},
 		MediaVault: MediaVault{Scheme: "http", Timeout: 10},
-		WebUI:      WebUI{Username: "admin", TokenExpireHours: 24, LogRetentionDays: 7},
+		WebUI:      WebUI{Username: DefaultWebUIUsername, TokenExpireHours: 24, LogRetentionDays: 7},
 		Storage:    Storage{Primary: "pan115"},
 		Strm: Strm{
 			MediaExt:     append([]string{}, DefaultStrmMediaExt...),
@@ -215,7 +221,7 @@ func Default() *Config {
 		},
 		Plex: Plex{
 			TokenJSON: "config/plex-auth.json",
-			Timeout:   10,
+			Timeout:   DefaultPlexTimeoutSecs,
 		},
 		Rss: Rss{
 			PollCron: "*/5 * * * *",
@@ -479,7 +485,7 @@ func parseMediaVault(m map[string]any) MediaVault {
 
 func parseWebUI(m map[string]any) WebUI {
 	return WebUI{
-		Username:         str(m, "username", "admin"),
+		Username:         str(m, "username", DefaultWebUIUsername),
 		Password:         str(m, "password", ""),
 		PasswordHash:     str(m, "password_hash", ""),
 		SecretKey:        str(m, "secret_key", ""),
@@ -703,7 +709,7 @@ func parsePlex(m map[string]any) Plex {
 	return Plex{
 		BaseURL:   normalizeStrmURLBase(str(m, "base_url", "")),
 		TokenJSON: str(m, "token_json", "config/plex-auth.json"),
-		Timeout:   maxInt(integer(m, "timeout", 10), 1),
+		Timeout:   maxInt(integer(m, "timeout", DefaultPlexTimeoutSecs), 1),
 	}
 }
 
