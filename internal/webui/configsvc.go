@@ -382,8 +382,8 @@ func validateIntField(section map[string]any, key, label string, minimum, maximu
 }
 
 // validateCronField cron 表达式校验（robfig 标准解析预检；空值放行＝不定时）。
-// 复用运行时的 cronNextDelay：除解析错误外，永不触发的表达式（如 0 0 30 2 *）
-// 与 @every 间隔 <1 分钟同样拒绝，保证保存校验与后台循环行为一致。
+// 复用 config.CronNextDelay：除解析错误外，永不触发的表达式（如 0 0 30 2 *）
+// 与 @every 间隔 <1 分钟同样拒绝，保证保存校验、启动校验与后台循环行为一致。
 func validateCronField(section map[string]any, key, label string) string {
 	v, ok := section[key]
 	if !ok || v == nil {
@@ -397,7 +397,7 @@ func validateCronField(section map[string]any, key, label string) string {
 	if s == "" {
 		return ""
 	}
-	if _, _, err := cronNextDelay(s, time.Now()); err != nil {
+	if _, _, err := config.CronNextDelay(s, time.Now()); err != nil {
 		return fmt.Sprintf("%s 无效：%v", label, err)
 	}
 	return ""

@@ -4,43 +4,12 @@ package webui
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 	"time"
-
-	"github.com/robfig/cron/v3"
 
 	"meta2cloud/internal/config"
 	"meta2cloud/internal/u115"
 )
-
-// cronNextDelay 计算距下一次 cron 触发的等待时长（服务器本地时区，5 段式，支持 @every 简写）。
-// spec 为空串返回 ok=false（未配置定时）；表达式非法返回 err。
-// 另两类畸形同样按非法处理（否则 time.After(负值/1s) 会让后台循环热空转）：
-//   - 合法但永不触发的表达式（如 0 0 30 2 *、0 0 31 4 *）：robfig Next 返回零时刻，
-//     Sub 出负数等待，循环会被立即反复触发；
-//   - @every 间隔小于 1 分钟（robfig 向上取整后可打出秒级节奏，如 @every 500ms ≙ 1s），
-//     延续旧 *_interval_seconds 的 60s 下限，防止全量同步/轮询被打成秒级。
-//
-// 校验（validateCronField）与四个后台循环共用本函数，行为保持一致。
-func cronNextDelay(spec string, now time.Time) (time.Duration, bool, error) {
-	spec = strings.TrimSpace(spec)
-	if spec == "" {
-		return 0, false, nil
-	}
-	sched, err := cron.ParseStandard(spec)
-	if err != nil {
-		return 0, false, err
-	}
-	if delay, isDelay := sched.(cron.ConstantDelaySchedule); isDelay && delay.Delay < time.Minute {
-		return 0, false, fmt.Errorf("@every 间隔不得小于 1 分钟（当前 %v）", delay.Delay)
-	}
-	next := sched.Next(now)
-	if next.IsZero() || next.Sub(now) <= 0 {
-		return 0, false, fmt.Errorf("表达式合法但永远不触发（如 2 月 30 日这类不存在的日期）")
-	}
-	return next.Sub(now), true, nil
-}
 
 type watcherState struct {
 	mu                sync.Mutex
@@ -299,7 +268,7 @@ func (rt *Runtime) runTraktCron(stop <-chan struct{}) {
 	readyWarned := false
 	for {
 		spec := rt.GetConfig().Trakt.SyncCron
-		d, ok, err := cronNextDelay(spec, time.Now())
+		d, ok, err := config.CronNextDelay(spec, time.Now())
 		if err != nil {
 			if cronWarned != spec {
 				rt.appLog("trakt", "sync_cron_invalid", "ERROR",
@@ -347,7 +316,7 @@ func (rt *Runtime) runStrmCron(stop <-chan struct{}) {
 	cronWarned := ""
 	for {
 		spec := rt.GetConfig().Strm.SyncCron
-		d, ok, err := cronNextDelay(spec, time.Now())
+		d, ok, err := config.CronNextDelay(spec, time.Now())
 		if err != nil {
 			if cronWarned != spec {
 				rt.appLog("strm", "sync_cron_invalid", "ERROR",
@@ -381,7 +350,7 @@ func (rt *Runtime) runU115Cron(stop <-chan struct{}) {
 	cronWarned := ""
 	for {
 		spec := rt.GetConfig().U115.AutoOrganizeCron
-		d, ok, err := cronNextDelay(spec, time.Now())
+		d, ok, err := config.CronNextDelay(spec, time.Now())
 		if err != nil {
 			if cronWarned != spec {
 				rt.appLog("u115", "auto_organize_cron_invalid", "ERROR",
@@ -424,7 +393,7 @@ func (rt *Runtime) runRSSCron(stop <-chan struct{}) {
 	rssHealth := rssHealthState{} // 连续失败计数（本次调度生命周期内）
 	for {
 		spec := rt.getSubscriptionPollCron()
-		d, ok, err := cronNextDelay(spec, time.Now())
+		d, ok, err := config.CronNextDelay(spec, time.Now())
 		if err != nil {
 			if cronWarned != spec {
 				rt.appLog("rss", "poll_cron_invalid", "ERROR",

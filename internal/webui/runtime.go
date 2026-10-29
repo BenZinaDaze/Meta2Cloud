@@ -153,6 +153,16 @@ func InitRuntime(rootDir string) *Runtime {
 	); err != nil {
 		log.Printf("默认配置文件生成失败：%v", err)
 	}
+	// 启动校验 fail-fast：配置存在但 YAML 解析失败/cron 非法时拒绝启动——
+	// 静默回退默认值会带着清零的 root folder 等关键配置继续运行，更难排查。
+	// 运行中的文件变更走 getConfigLocked 的「沿用最近可用配置」路径，不停摆。
+	startCfg, err := config.Load(rt.configPath)
+	if err != nil {
+		log.Fatalf("配置加载失败，拒绝启动：%v", err)
+	}
+	if err := startCfg.Validate(); err != nil {
+		log.Fatalf("配置校验失败，拒绝启动：%v", err)
+	}
 	rt.cfg = nil
 	rt.provider = nil
 	rt.u115Client = nil
@@ -337,14 +347,22 @@ func (rt *Runtime) invalidateIfChanged() bool {
 
 // getConfigLocked 当前配置（需已持锁；sync.Mutex 不可重入，内部方法禁止再取锁）。
 func (rt *Runtime) getConfigLocked() *config.Config {
+	prev := rt.cfg
 	if rt.invalidateIfChanged() {
 		rt.scheduleGen++
 	}
 	if rt.cfg == nil {
 		cfg, err := config.Load(rt.configPath)
 		if err != nil {
-			log.Printf("配置加载失败：%v，使用默认配置", err)
-			cfg = config.Default()
+			// 配置文件存在但读取/解析失败（如手改 YAML 出错）：运行中沿用最近一次
+			// 可用配置继续服务而非清零重启；启动期由 InitRuntime 的 fail-fast 拦截，
+			// prev==nil 走默认值仅作兜底
+			log.Printf("配置加载失败：%v", err)
+			if prev != nil {
+				cfg = prev
+			} else {
+				cfg = config.Default()
+			}
 		}
 		rt.cfg = cfg
 		rt.configSig = rt.configSignature()

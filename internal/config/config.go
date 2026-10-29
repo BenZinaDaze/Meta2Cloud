@@ -24,9 +24,6 @@ const parserRulesFilename = "parser-rules.yaml"
 // 敏感键（见 SecretKeys）的值持久化在此文件而非主配置，主配置可整体外发（贴日志/求助）而不泄漏凭证。
 const SecretsFilename = "secrets.yaml"
 
-// ParseError 配置解析错误。
-type ParseError struct{ msg string }
-
 // normalizeImageBaseURL 规范化 TMDB 图片根地址。
 func normalizeImageBaseURL(baseURL string) string {
 	value := strings.TrimRight(strings.TrimSpace(baseURL), "/")
@@ -227,7 +224,9 @@ func Default() *Config {
 }
 
 // Load 从 YAML 文件加载配置；path 为空时按默认搜索路径查找。
-// 文件不存在时返回默认配置（不报错，与 Python 版一致）。
+// 文件不存在时返回默认配置（首次启动，缺失文件由 EnsureDefaultFiles 生成）；
+// 文件存在但读取/解析失败时返回错误——手改 YAML 的缩进错误若静默回退默认值，
+// 应用会带着清零的 root folder 等关键配置继续运行，比拒绝启动难排查得多。
 func Load(path string) (*Config, error) {
 	configPath, found := findConfig(path)
 	if !found {
@@ -235,22 +234,36 @@ func Load(path string) (*Config, error) {
 	}
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "读取配置文件失败：%v，将使用默认配置。\n", err)
-		return Default(), nil
+		return nil, fmt.Errorf("读取配置文件 %s 失败：%w", configPath, err)
 	}
-	main := unmarshalYAMLMap(data)
+	main, err := unmarshalYAMLMapStrict(data)
+	if err != nil {
+		return nil, fmt.Errorf("解析配置文件 %s 失败：%w", configPath, err)
+	}
+	dir := filepath.Dir(configPath)
 	// 敏感配置文件（与主配置同目录）：敏感键的值优先于主配置
-	if secretsData, err := os.ReadFile(filepath.Join(filepath.Dir(configPath), SecretsFilename)); err == nil {
-		MergeSecrets(main, unmarshalYAMLMap(secretsData))
+	secretsPath := filepath.Join(dir, SecretsFilename)
+	if secretsData, err := os.ReadFile(secretsPath); err == nil {
+		secrets, err := unmarshalYAMLMapStrict(secretsData)
+		if err != nil {
+			return nil, fmt.Errorf("解析敏感配置文件 %s 失败：%w", secretsPath, err)
+		}
+		MergeSecrets(main, secrets)
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("读取敏感配置文件 %s 失败：%w", secretsPath, err)
 	}
 	cfg := parseConfigMap(main)
 
 	// 解析规则文件（与主配置同目录）
-	rulesPath := filepath.Join(filepath.Dir(configPath), parserRulesFilename)
+	rulesPath := filepath.Join(dir, parserRulesFilename)
 	if rulesData, err := os.ReadFile(rulesPath); err == nil {
-		if parser, err := parseParserRules(rulesData); err == nil {
-			cfg.Parser = parser
+		parser, err := parseParserRules(rulesData)
+		if err != nil {
+			return nil, fmt.Errorf("解析规则文件 %s 失败：%w", rulesPath, err)
 		}
+		cfg.Parser = parser
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("读取规则文件 %s 失败：%w", rulesPath, err)
 	}
 	return cfg, nil
 }
@@ -285,6 +298,8 @@ func sectionMap(m map[string]any, name string) map[string]any {
 }
 
 // unmarshalYAMLMap 解析为配置 map；失败时打印日志并返回空 map（默认值兜底）。
+// 仅限辅助场景（webhook 密钥探测等，配置坏时不该被其阻塞）；主加载路径用
+// unmarshalYAMLMapStrict 严格报错。
 func unmarshalYAMLMap(data []byte) map[string]any {
 	out := map[string]any{}
 	if err := yaml.Unmarshal(data, &out); err != nil {
@@ -292,6 +307,15 @@ func unmarshalYAMLMap(data []byte) map[string]any {
 		return map[string]any{}
 	}
 	return out
+}
+
+// unmarshalYAMLMapStrict 解析为配置 map，语法/类型错误原样返回（Load 快速失败用）。
+func unmarshalYAMLMapStrict(data []byte) (map[string]any, error) {
+	out := map[string]any{}
+	if err := yaml.Unmarshal(data, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // parseParserRules 解析 parser-rules.yaml（支持顶层或 parser: 包裹）。
