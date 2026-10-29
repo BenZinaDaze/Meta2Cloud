@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"meta2cloud/internal/cloudfile"
@@ -37,6 +38,14 @@ type reclassifyProgress struct {
 	Error      string   `json:"error,omitempty"`
 }
 
+// classifyState 重新分类与分类树域状态：批量重归类进度 + 分类树缓存。
+type classifyState struct {
+	progressMu sync.Mutex
+	progress   reclassifyProgress
+	treeMu     sync.Mutex
+	treeCache  *categoryTree
+}
+
 // reclassifyFailures 失败原因收集（上限 50 条，超出只计数）。
 func reclassifyFailures(state *reclassifyProgress, reason string) {
 	if len(state.Errors) < 50 {
@@ -45,9 +54,9 @@ func reclassifyFailures(state *reclassifyProgress, reason string) {
 }
 
 func (rt *Runtime) reclassifyState() reclassifyProgress {
-	rt.reclassifyMu.Lock()
-	defer rt.reclassifyMu.Unlock()
-	return rt.reclassifyRun
+	rt.classify.progressMu.Lock()
+	defer rt.classify.progressMu.Unlock()
+	return rt.classify.progress
 }
 
 // resolveCategoryFor 按规则解析分类；info 缺失（无缓存）时走兜底规则。
@@ -210,18 +219,18 @@ func (s *Server) handleCategoriesReclassify(w http.ResponseWriter, _ *http.Reque
 		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
 		return
 	}
-	s.rt.reclassifyMu.Lock()
-	if s.rt.reclassifyRun.Running {
-		s.rt.reclassifyMu.Unlock()
-		writeJSON(w, http.StatusConflict, map[string]any{"started": false, "state": s.rt.reclassifyRun})
+	s.rt.classify.progressMu.Lock()
+	if s.rt.classify.progress.Running {
+		s.rt.classify.progressMu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]any{"started": false, "state": s.rt.classify.progress})
 		return
 	}
 	plan := s.buildReclassifyPlan(categories, ls)
-	s.rt.reclassifyRun = reclassifyProgress{
+	s.rt.classify.progress = reclassifyProgress{
 		Running: true, Total: len(plan.Items),
 		StartedAt: time.Now().UTC().Format(time.RFC3339),
 	}
-	s.rt.reclassifyMu.Unlock()
+	s.rt.classify.progressMu.Unlock()
 
 	go s.runReclassify(provider, ls, categories, rootRef, plan)
 	writeJSON(w, http.StatusOK, map[string]any{"started": true, "total": len(plan.Items)})
@@ -231,19 +240,19 @@ func (s *Server) runReclassify(provider cloudfile.Provider, ls *store.LibrarySto
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("[reclassify] panic：%v", r)
-			s.rt.reclassifyMu.Lock()
-			s.rt.reclassifyRun.Running = false
-			s.rt.reclassifyRun.Error = fmt.Sprintf("内部异常：%v", r)
-			s.rt.reclassifyMu.Unlock()
+			s.rt.classify.progressMu.Lock()
+			s.rt.classify.progress.Running = false
+			s.rt.classify.progress.Error = fmt.Sprintf("内部异常：%v", r)
+			s.rt.classify.progressMu.Unlock()
 		}
 	}()
 
 	rootID, ok := cloudfile.ResolveFolderRefOrPath(provider, rootRef)
 	if !ok {
-		s.rt.reclassifyMu.Lock()
-		s.rt.reclassifyRun.Running = false
-		s.rt.reclassifyRun.Error = "媒体库根目录不存在：" + rootRef
-		s.rt.reclassifyMu.Unlock()
+		s.rt.classify.progressMu.Lock()
+		s.rt.classify.progress.Running = false
+		s.rt.classify.progress.Error = "媒体库根目录不存在：" + rootRef
+		s.rt.classify.progressMu.Unlock()
 		return
 	}
 
@@ -303,9 +312,9 @@ func (s *Server) runReclassify(provider cloudfile.Provider, ls *store.LibrarySto
 		if err != nil {
 			reason := fmt.Sprintf("创建分类目录 %s 失败：%v", it.Category, err)
 			log.Printf("[reclassify] %s", reason)
-			s.rt.reclassifyMu.Lock()
-			reclassifyFailures(&s.rt.reclassifyRun, reason)
-			s.rt.reclassifyMu.Unlock()
+			s.rt.classify.progressMu.Lock()
+			reclassifyFailures(&s.rt.classify.progress, reason)
+			s.rt.classify.progressMu.Unlock()
 			continue
 		}
 		parentByCategory[it.Category] = parent
@@ -330,11 +339,11 @@ func (s *Server) runReclassify(provider cloudfile.Provider, ls *store.LibrarySto
 			cur = it.ParentID
 		}
 		processed := func() {
-			s.rt.reclassifyMu.Lock()
-			s.rt.reclassifyRun.Processed++
-			s.rt.reclassifyRun.Moved = moved
-			s.rt.reclassifyRun.Failed = failed
-			s.rt.reclassifyMu.Unlock()
+			s.rt.classify.progressMu.Lock()
+			s.rt.classify.progress.Processed++
+			s.rt.classify.progress.Moved = moved
+			s.rt.classify.progress.Failed = failed
+			s.rt.classify.progressMu.Unlock()
 		}
 		if cur == target {
 			processed()
@@ -344,9 +353,9 @@ func (s *Server) runReclassify(provider cloudfile.Provider, ls *store.LibrarySto
 			failed++
 			reason := fmt.Sprintf("%s：%v", it.Title, err)
 			log.Printf("[reclassify] 移动失败 %s", reason)
-			s.rt.reclassifyMu.Lock()
-			reclassifyFailures(&s.rt.reclassifyRun, reason)
-			s.rt.reclassifyMu.Unlock()
+			s.rt.classify.progressMu.Lock()
+			reclassifyFailures(&s.rt.classify.progress, reason)
+			s.rt.classify.progressMu.Unlock()
 		} else {
 			moved++
 			curByID[it.FolderID] = target
@@ -358,11 +367,11 @@ func (s *Server) runReclassify(provider cloudfile.Provider, ls *store.LibrarySto
 				note = it.Title + "：" + from + " → " + it.Category
 			}
 			log.Printf("[reclassify] 已归位 %s", note)
-			s.rt.reclassifyMu.Lock()
-			if len(s.rt.reclassifyRun.Moves) < 50 {
-				s.rt.reclassifyRun.Moves = append(s.rt.reclassifyRun.Moves, note)
+			s.rt.classify.progressMu.Lock()
+			if len(s.rt.classify.progress.Moves) < 50 {
+				s.rt.classify.progress.Moves = append(s.rt.classify.progress.Moves, note)
 			}
-			s.rt.reclassifyMu.Unlock()
+			s.rt.classify.progressMu.Unlock()
 		}
 		processed()
 		if moved > 0 && moved%20 == 0 {
@@ -370,17 +379,17 @@ func (s *Server) runReclassify(provider cloudfile.Provider, ls *store.LibrarySto
 		}
 	}
 
-	s.rt.reclassifyMu.Lock()
-	s.rt.reclassifyRun.Running = false
-	s.rt.reclassifyRun.Moved = moved
-	s.rt.reclassifyRun.Failed = failed
-	s.rt.reclassifyRun.FinishedAt = time.Now().UTC().Format(time.RFC3339)
-	runErrors := append([]string{}, s.rt.reclassifyRun.Errors...)
-	if s.rt.reclassifyRun.Error != "" {
-		runErrors = append(runErrors, s.rt.reclassifyRun.Error)
+	s.rt.classify.progressMu.Lock()
+	s.rt.classify.progress.Running = false
+	s.rt.classify.progress.Moved = moved
+	s.rt.classify.progress.Failed = failed
+	s.rt.classify.progress.FinishedAt = time.Now().UTC().Format(time.RFC3339)
+	runErrors := append([]string{}, s.rt.classify.progress.Errors...)
+	if s.rt.classify.progress.Error != "" {
+		runErrors = append(runErrors, s.rt.classify.progress.Error)
 	}
-	runMoves := append([]string{}, s.rt.reclassifyRun.Moves...)
-	s.rt.reclassifyMu.Unlock()
+	runMoves := append([]string{}, s.rt.classify.progress.Moves...)
+	s.rt.classify.progressMu.Unlock()
 
 	s.rt.TriggerStrmSync("reclassify")
 	level := "SUCCESS"
@@ -488,10 +497,10 @@ func (rt *Runtime) currentCategoryLabels(provider cloudfile.Provider, categories
 	if rootRef == "" {
 		return nil
 	}
-	rt.classTreeMu.Lock()
-	defer rt.classTreeMu.Unlock()
-	if rt.classTreeCache != nil && rt.classTreeCache.rootRef == rootRef && time.Since(rt.classTreeCache.at) < 5*time.Minute {
-		return rt.classTreeCache
+	rt.classify.treeMu.Lock()
+	defer rt.classify.treeMu.Unlock()
+	if rt.classify.treeCache != nil && rt.classify.treeCache.rootRef == rootRef && time.Since(rt.classify.treeCache.at) < 5*time.Minute {
+		return rt.classify.treeCache
 	}
 	rootID, ok := cloudfile.ResolveFolderRefOrPath(provider, rootRef)
 	if !ok {
@@ -530,7 +539,7 @@ func (rt *Runtime) currentCategoryLabels(provider cloudfile.Provider, categories
 			}
 		}
 	}
-	rt.classTreeCache = tree
+	rt.classify.treeCache = tree
 	return tree
 }
 

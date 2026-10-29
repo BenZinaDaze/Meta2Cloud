@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"meta2cloud/internal/pipeline"
@@ -78,21 +79,33 @@ func (a duplicateFolderAdapter) DuplicateFolderGroups() []pipeline.DuplicateFold
 	return out
 }
 
-// runID 生成短运行 ID。
+// pipelineState 整理管线域状态：单飞运行 + 防抖计时器 + 运行计数（runID 用）。
+type pipelineState struct {
+	mu         sync.Mutex
+	debounce   *time.Timer
+	running    bool
+	runCounter int
+}
+
+// runID 生成短运行 ID（DI-2 迁移时曾丢失递增，所有运行都变成 run000000，已恢复）。
 func (rt *Runtime) newRunID() string {
-	return fmt.Sprintf("run%06d", rt.pipelineRunCounter)
+	rt.pipeline.mu.Lock()
+	rt.pipeline.runCounter++
+	n := rt.pipeline.runCounter
+	rt.pipeline.mu.Unlock()
+	return fmt.Sprintf("run%06d", n)
 }
 
 // doRunPipeline 执行整理流程并刷新媒体库。
 func (rt *Runtime) doRunPipeline() {
-	rt.pipelineMu.Lock()
-	if rt.pipelineRunning {
-		rt.pipelineMu.Unlock()
+	rt.pipeline.mu.Lock()
+	if rt.pipeline.running {
+		rt.pipeline.mu.Unlock()
 		return
 	}
-	rt.pipelineDebounce = nil
-	rt.pipelineRunning = true
-	rt.pipelineMu.Unlock()
+	rt.pipeline.debounce = nil
+	rt.pipeline.running = true
+	rt.pipeline.mu.Unlock()
 
 	runID := rt.newRunID()
 	rt.appLog("pipeline", "pipeline_start", "INFO", "整理流程启动", map[string]any{"runId": runID})
@@ -103,9 +116,9 @@ func (rt *Runtime) doRunPipeline() {
 		rt.appLog("pipeline", "pipeline_exception", "ERROR", "整理流程执行异常", map[string]any{
 			"runId": runID, "error": "存储 Provider 不可用",
 		})
-		rt.pipelineMu.Lock()
-		rt.pipelineRunning = false
-		rt.pipelineMu.Unlock()
+		rt.pipeline.mu.Lock()
+		rt.pipeline.running = false
+		rt.pipeline.mu.Unlock()
 		return
 	}
 
@@ -146,28 +159,28 @@ func (rt *Runtime) doRunPipeline() {
 		}()
 		rt.RefreshLibrary(true)
 	}()
-	rt.pipelineMu.Lock()
-	rt.pipelineRunning = false
-	rt.pipelineMu.Unlock()
+	rt.pipeline.mu.Lock()
+	rt.pipeline.running = false
+	rt.pipeline.mu.Unlock()
 }
 
 // SchedulePipeline 调度整理流程（debounce>0 时防抖合并）。
 // 返回是否受理（已在运行且无防抖时拒绝）。
 func (rt *Runtime) SchedulePipeline(debounce int) bool {
-	rt.pipelineMu.Lock()
-	defer rt.pipelineMu.Unlock()
+	rt.pipeline.mu.Lock()
+	defer rt.pipeline.mu.Unlock()
 	if debounce > 0 {
-		if rt.pipelineDebounce != nil {
-			rt.pipelineDebounce.Stop()
+		if rt.pipeline.debounce != nil {
+			rt.pipeline.debounce.Stop()
 			log.Printf("整理流程防抖计时器已重置 | 防抖：%d 秒", debounce)
 		} else {
 			rt.appLog("pipeline", "pipeline_schedule", "INFO", "检测到媒体变化，等待稳定后开始整理",
 				map[string]any{"debounceSeconds": debounce})
 		}
-		rt.pipelineDebounce = time.AfterFunc(time.Duration(debounce)*time.Second, rt.doRunPipeline)
+		rt.pipeline.debounce = time.AfterFunc(time.Duration(debounce)*time.Second, rt.doRunPipeline)
 		return true
 	}
-	if rt.pipelineRunning {
+	if rt.pipeline.running {
 		rt.appLog("pipeline", "pipeline_skip_running", "WARNING", "整理流程已在运行，跳过本次触发", nil)
 		return false
 	}
@@ -178,9 +191,9 @@ func (rt *Runtime) SchedulePipeline(debounce int) bool {
 
 // PipelineStatusPayload 当前调度状态。
 func (rt *Runtime) PipelineStatusPayload() map[string]any {
-	rt.pipelineMu.Lock()
-	defer rt.pipelineMu.Unlock()
-	return map[string]any{"running": rt.pipelineRunning, "debounce": rt.pipelineDebounce != nil}
+	rt.pipeline.mu.Lock()
+	defer rt.pipeline.mu.Unlock()
+	return map[string]any{"running": rt.pipeline.running, "debounce": rt.pipeline.debounce != nil}
 }
 
 // ── HTTP 处理器 ─────────────────────────────────────────────

@@ -17,7 +17,7 @@ import (
 	"meta2cloud/internal/webui/store"
 )
 
-// fakeClock 可手动推进的时钟（rt.healthNow 注入用）。
+// fakeClock 可手动推进的时钟（rt.health.now 注入用）。
 type fakeClock struct {
 	mu sync.Mutex
 	t  time.Time
@@ -74,21 +74,21 @@ func setupHealthTest(t *testing.T) (*tgRecorder, *Runtime) {
 	rt := InitRuntime(t.TempDir())
 	rt.resetHealthState()
 	rec := &tgRecorder{}
-	rt.healthSendTG = rec.send
-	rt.healthTGConfig = func() config.Telegram { return config.Telegram{BotToken: "tok", ChatID: "cid"} }
+	rt.health.sendTG = rec.send
+	rt.health.tgConfig = func() config.Telegram { return config.Telegram{BotToken: "tok", ChatID: "cid"} }
 	t.Cleanup(func() {
-		rt.healthSendTG = pipeline.SendTelegramMessage
-		rt.healthTGConfig = func() config.Telegram { return rt.GetConfig().Telegram }
-		rt.healthNow = time.Now
+		rt.health.sendTG = pipeline.SendTelegramMessage
+		rt.health.tgConfig = func() config.Telegram { return rt.GetConfig().Telegram }
+		rt.health.now = time.Now
 		rt.resetHealthState()
 	})
 	return rec, rt
 }
 
 func (rt *Runtime) resetHealthState() {
-	rt.healthMu.Lock()
-	defer rt.healthMu.Unlock()
-	rt.healthServices = map[string]*serviceHealth{}
+	rt.health.mu.Lock()
+	defer rt.health.mu.Unlock()
+	rt.health.services = map[string]*serviceHealth{}
 }
 
 func healthLogEvents(rt *Runtime, category string) []store.LogEntry {
@@ -103,7 +103,7 @@ func healthLogEvents(rt *Runtime, category string) []store.LogEntry {
 func TestNotifyServiceHealthStateMachine(t *testing.T) {
 	rec, rt := setupHealthTest(t)
 	clock := newFakeClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC))
-	rt.healthNow = clock.Now
+	rt.health.now = clock.Now
 
 	// 失效边沿：发一次失效通知
 	rt.NotifyServiceHealth("115", false, "token 已过期")
@@ -166,7 +166,7 @@ func TestNotifyServiceHealthStateMachine(t *testing.T) {
 func TestNotifyServiceHealthCooldownBoundary(t *testing.T) {
 	rec, rt := setupHealthTest(t)
 	clock := newFakeClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC))
-	rt.healthNow = clock.Now
+	rt.health.now = clock.Now
 
 	rt.NotifyServiceHealth("Plex", false, "token 失效") // 失效边沿：立即通知
 	clock.Advance(healthNotifyCooldown - time.Minute)
@@ -185,7 +185,7 @@ func TestNotifyServiceHealthCooldownBoundary(t *testing.T) {
 // TestNotifyServiceHealthPerServiceIndependent 各服务状态互不影响。
 func TestNotifyServiceHealthPerServiceIndependent(t *testing.T) {
 	rec, rt := setupHealthTest(t)
-	rt.healthNow = newFakeClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)).Now
+	rt.health.now = newFakeClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)).Now
 
 	rt.NotifyServiceHealth("Plex", false, "token 失效")
 	rt.NotifyServiceHealth("Trakt", true, "") // 正常服务上报无操作
@@ -207,8 +207,8 @@ func TestNotifyServiceHealthPerServiceIndependent(t *testing.T) {
 // TestNotifyServiceHealthTGUnconfigured TG 未配置时静默降级为仅应用日志。
 func TestNotifyServiceHealthTGUnconfigured(t *testing.T) {
 	rec, rt := setupHealthTest(t)
-	rt.healthTGConfig = func() config.Telegram { return config.Telegram{} } // 未配置
-	rt.healthNow = newFakeClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)).Now
+	rt.health.tgConfig = func() config.Telegram { return config.Telegram{} } // 未配置
+	rt.health.now = newFakeClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)).Now
 
 	rt.NotifyServiceHealth("Plex", false, "token 失效")
 	rt.NotifyServiceHealth("Plex", true, "")
@@ -229,7 +229,7 @@ func TestNotifyServiceHealthTGUnconfigured(t *testing.T) {
 func TestNotifyServiceHealthTGSendFailure(t *testing.T) {
 	rec, rt := setupHealthTest(t)
 	rec.err = errors.New("网络不可达")
-	rt.healthNow = newFakeClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)).Now
+	rt.health.now = newFakeClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)).Now
 
 	rt.NotifyServiceHealth("Trakt", false, "刷新被拒")
 	rt.NotifyServiceHealth("Trakt", false, "刷新仍被拒") // 24h 内：不再尝试发送
@@ -250,7 +250,7 @@ func TestNotifyServiceHealthTGSendFailure(t *testing.T) {
 // TestNotifyServiceHealthConcurrency 多循环 goroutine 并发上报不死锁、不 panic（-race 验证）。
 func TestNotifyServiceHealthConcurrency(t *testing.T) {
 	rec, rt := setupHealthTest(t)
-	rt.healthNow = newFakeClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)).Now
+	rt.health.now = newFakeClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)).Now
 
 	services := []string{"115", "Plex", "Trakt", "订阅源"}
 	var wg sync.WaitGroup
@@ -435,9 +435,9 @@ func TestReportSubscriptionPushHealthClassification(t *testing.T) {
 	if got := rec.sent(); len(got) != 1 {
 		t.Fatalf("冷却内重复上报不应再发送，实际 %v", got)
 	}
-	rt.healthMu.Lock()
-	reason := rt.healthServices["115"].reason
-	rt.healthMu.Unlock()
+	rt.health.mu.Lock()
+	reason := rt.health.services["115"].reason
+	rt.health.mu.Unlock()
 	if !strings.Contains(reason, "token 失效") {
 		t.Fatalf("冷却内上报应更新失效原因，实际 %q", reason)
 	}

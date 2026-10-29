@@ -48,15 +48,10 @@ type Runtime struct {
 	traktSync   *store.TraktSyncStore
 
 	// ── 健康状态机（见 health.go）──
-	healthNow      func() time.Time // 测试可替换
-	healthMu       sync.Mutex
-	healthServices map[string]*serviceHealth
+	health healthState
 
-	// ── 重新分类进度与分类树缓存（见 reclassifysvc.go）──
-	reclassifyMu   sync.Mutex
-	reclassifyRun  reclassifyProgress
-	classTreeMu    sync.Mutex
-	classTreeCache *categoryTree
+	// ── 重新分类与分类树（见 reclassifysvc.go）──
+	classify classifyState
 
 	// ── 后台调度（见 watcher.go）──
 	sched schedulerState
@@ -75,11 +70,8 @@ type Runtime struct {
 	strmFetchWait time.Duration // 测试可调
 	strmNegTTL    time.Duration
 
-	// ── 整理管线单飞调度状态（见 pipelinesvc.go）──
-	pipelineMu         sync.Mutex
-	pipelineDebounce   *time.Timer
-	pipelineRunning    bool
-	pipelineRunCounter int
+	// ── 整理管线单飞调度（见 pipelinesvc.go）──
+	pipeline pipelineState
 
 	// ── 观看同步运行态（scrobble / SSE / 会话轮询 / 双向同步；见 scrobble.go 等）──
 	sessionScrobbleMu   sync.Mutex
@@ -94,12 +86,12 @@ type Runtime struct {
 	traktSSEWatcher     *watcherState
 	// u115AutoWatcher/rssWatcher/strmWatcher 非 cron 常驻轮询线程运行态
 	// （115 自动整理 / RSS 订阅 / STRM 直链同步）
-	u115AutoWatcher *watcherState
-	rssWatcher      *watcherState
-	strmWatcher     *watcherState
+	u115AutoWatcher  *watcherState
+	rssWatcher       *watcherState
+	strmWatcher      *watcherState
 	traktSessionOnce sync.Once
 	traktSSEOnce     sync.Once
-	traktSyncState      struct {
+	traktSyncState   struct {
 		mu      sync.Mutex
 		running bool
 	}
@@ -112,10 +104,6 @@ type Runtime struct {
 
 	// strmSvc STRM 同步服务（入库钩子缓冲，见 strmsvc.go）
 	strmSvc *strmService
-
-	// health 钩子（测试可替换；见 health.go）
-	healthSendTG   func(tg config.Telegram, text string) error
-	healthTGConfig func() config.Telegram
 
 	// loginLimiter 登录失败限速（内存级，按来源 IP；见 server.go）
 	loginLimiter struct {
@@ -177,7 +165,6 @@ func InitRuntime(rootDir string) *Runtime {
 	rt.categories = nil
 	rt.categoriesM = 0
 	rt.configSig = [3]int64{}
-	// health 钩子默认实现（包级 init 环依赖已随钩子入字段消除）
 	rt.broadcaster = wsBroadcaster{conns: map[chan map[string]any]bool{}}
 	rt.sessionScrobbleByID = map[string]*sessionScrobble{}
 	rt.strmLinkCache = &directLinkCache{entries: map[string]directLink{}}
@@ -185,8 +172,13 @@ func InitRuntime(rootDir string) *Runtime {
 	rt.strmFetchSem = make(chan struct{}, strmFetchConcurrency)
 	rt.strmFetchWait = strmFetchWaitTimeout
 	rt.strmNegTTL = strmNegativeCacheTTL
-	rt.healthNow = time.Now
-	rt.healthServices = map[string]*serviceHealth{}
+	// health 钩子默认实现（包级 init 环依赖已随钩子入字段消除）
+	rt.health = healthState{
+		now:      time.Now,
+		services: map[string]*serviceHealth{},
+		sendTG:   pipeline.SendTelegramMessage,
+		tgConfig: func() config.Telegram { return rt.GetConfig().Telegram },
+	}
 	rt.torrentURLValidator = validateOutboundURL
 	rt.traktWatcher = &watcherState{stopCh: make(chan struct{})}
 	rt.traktSessionWatcher = &watcherState{stopCh: make(chan struct{})}
@@ -201,8 +193,6 @@ func InitRuntime(rootDir string) *Runtime {
 		strmSync:  &watcherState{stopCh: make(chan struct{})},
 	}
 	rt.strmSvc = &strmService{rt: rt}
-	rt.healthSendTG = pipeline.SendTelegramMessage
-	rt.healthTGConfig = func() config.Telegram { return rt.GetConfig().Telegram }
 	// 上一次初始化打开的存储句柄先关闭（重复 InitRuntime 的测试场景防 fd 泄漏）
 	rt.closeStores()
 	rt.initStores()

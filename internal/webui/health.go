@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"html"
 	"strings"
+	"sync"
 	"time"
+
+	"meta2cloud/internal/config"
 )
 
 // healthNotifyCooldown 同一服务持续失效时的重复提醒冷却（1 天）。
@@ -18,6 +21,15 @@ type serviceHealth struct {
 	failing    bool
 	reason     string
 	notifiedAt time.Time // 最近一次失效通知时刻（冷却用）
+}
+
+// healthState 服务健康状态机域状态：各服务健康态 + 通知发送钩子（测试可替换）。
+type healthState struct {
+	now      func() time.Time // 测试可替换
+	mu       sync.Mutex
+	services map[string]*serviceHealth
+	sendTG   func(tg config.Telegram, text string) error // 测试可替换
+	tgConfig func() config.Telegram
 }
 
 // healthLogCategory 服务名 → 应用日志 category（保证「日志」页可按服务过滤）。
@@ -38,20 +50,20 @@ func (rt *Runtime) NotifyServiceHealth(service string, ok bool, reason string) {
 	if category == "" {
 		category = "u115"
 	}
-	rt.healthMu.Lock()
-	st := rt.healthServices[service]
+	rt.health.mu.Lock()
+	st := rt.health.services[service]
 	if st == nil {
 		st = &serviceHealth{}
-		rt.healthServices[service] = st
+		rt.health.services[service] = st
 	}
 	if ok {
 		if !st.failing { // 持续正常：无操作
-			rt.healthMu.Unlock()
+			rt.health.mu.Unlock()
 			return
 		}
 		st.failing = false
 		st.reason = ""
-		rt.healthMu.Unlock()
+		rt.health.mu.Unlock()
 		rt.appLog(category, "health_recovered", "INFO",
 			fmt.Sprintf("%s 配置已恢复正常", service), nil)
 		rt.sendHealthTelegram(category, service, fmt.Sprintf("✅ %s 已恢复", service))
@@ -60,13 +72,13 @@ func (rt *Runtime) NotifyServiceHealth(service string, ok bool, reason string) {
 	// 失效观测：失败边沿立即通知，持续失效按冷却每日提醒一次（原因始终更新）
 	wasFailing := st.failing
 	st.reason = reason
-	now := rt.healthNow()
+	now := rt.health.now()
 	notify := !wasFailing || now.Sub(st.notifiedAt) >= healthNotifyCooldown
 	if notify {
 		st.failing = true
 		st.notifiedAt = now
 	}
-	rt.healthMu.Unlock()
+	rt.health.mu.Unlock()
 	if !notify {
 		return
 	}
@@ -85,11 +97,11 @@ func healthReasonText(reason string) string {
 
 // sendHealthTelegram 发送健康通知（未配置 Telegram 静默跳过；发送失败仅记应用日志）。
 func (rt *Runtime) sendHealthTelegram(category, service, text string) {
-	tg := rt.healthTGConfig()
+	tg := rt.health.tgConfig()
 	if tg.BotToken == "" || tg.ChatID == "" {
 		return
 	}
-	if err := rt.healthSendTG(tg, text); err != nil {
+	if err := rt.health.sendTG(tg, text); err != nil {
 		rt.appLog(category, "health_notify_failed", "WARNING",
 			fmt.Sprintf("发送 %s 健康通知失败：%v", service, err), nil)
 	}
