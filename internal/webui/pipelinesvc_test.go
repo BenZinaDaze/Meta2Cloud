@@ -69,8 +69,9 @@ func TestIngestStoreAdapterRecords(t *testing.T) {
 		"poster_path": "/poster.jpg", "drive_folder_id": "folder-1",
 		"status": "success", "original_name": "[SubGroup] Sousou no Frieren - 07 [1080p].mkv",
 	} {
-		if got := item[key]; got != want {
-			t.Errorf("%s = %v，期望 %v", key, got, want)
+		got := map[string]any{"title": item.Title, "status": item.Status, "original_name": item.OriginalName}
+		if got[key] != want {
+			t.Errorf("%s = %v，期望 %v", key, got[key], want)
 		}
 	}
 }

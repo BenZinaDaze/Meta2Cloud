@@ -345,8 +345,8 @@ func (rt *Runtime) resolveMediaIdentity(mediaType, driveFolderID, folderName str
 	}
 	if ingest := rt.GetIngestStore(); ingest != nil {
 		if match := ingest.FindMatchByTitleYear(mediaType, title, year); match != nil {
-			if tmdbID := jsonx.Int(match, "tmdb_id", 0); tmdbID > 0 {
-				return tmdbID, rt.resolveTmdbInfo(mediaType, tmdbID)
+			if match.TmdbID > 0 {
+				return match.TmdbID, rt.resolveTmdbInfo(mediaType, match.TmdbID)
 			}
 		}
 	}

@@ -452,19 +452,14 @@ func (s *Server) rewriteIngestHistory(mediaType, driveFolderID string, tmdbID in
 	posterPath := jsonx.Str(info, "poster_path")
 	client := s.rt.GetTmdbClient()
 	for _, row := range rows {
-		episodeTitle, _ := row["episode_title"].(string)
-		if mediaType == "tv" && client != nil {
-			if s, ok1 := row["season"].(int64); ok1 {
-				if e, ok2 := row["episode"].(int64); ok2 && e > 0 {
-					// 拉取失败保持原值（下轮修正识别可再补）
-					if detail := client.GetEpisodeDetail(int(tmdbID), int(s), int(e)); detail != nil {
-						episodeTitle = jsonx.Str(detail, "name")
-					}
-				}
+		episodeTitle := row.EpisodeTitle
+		if mediaType == "tv" && client != nil && row.Season != nil && row.Episode != nil && *row.Episode > 0 {
+			// 拉取失败保持原值（下轮修正识别可再补）
+			if detail := client.GetEpisodeDetail(int(tmdbID), int(*row.Season), int(*row.Episode)); detail != nil {
+				episodeTitle = jsonx.Str(detail, "name")
 			}
 		}
-		rowID, _ := row["id"].(int64)
-		if err := ingest.UpdateIdentity(rowID, tmdbID, title, originalTitle, year, posterPath, episodeTitle); err != nil {
+		if err := ingest.UpdateIdentity(row.ID, tmdbID, title, originalTitle, year, posterPath, episodeTitle); err != nil {
 			return 0, err
 		}
 	}

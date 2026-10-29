@@ -159,8 +159,8 @@ func TestLibraryMediaDeleteFullFlow(t *testing.T) {
 		t.Fatalf("删除日志应 1 条, got %d", len(items))
 	}
 	item := items[0]
-	if item["title"] != "删除之剧" || item["drive_folder_id"] != env.showID || item["tmdb_id"] != int64(312507) {
-		t.Errorf("删除日志字段 = %v", item)
+	if item.Title != "删除之剧" || item.DriveFolderID != env.showID || item.TmdbID != 312507 {
+		t.Errorf("删除日志字段 = %+v", item)
 	}
 }
 

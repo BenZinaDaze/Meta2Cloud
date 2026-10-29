@@ -133,13 +133,35 @@ type IngestQuery struct {
 	Keyword   string
 }
 
-// IngestQueryResult 查询结果。
-type IngestQueryResult struct {
-	Items      []map[string]any `json:"items"`
-	Pagination map[string]any   `json:"pagination"`
+// IngestRecordRow 入库历史行（GET /api/ingest/history 与 /api/ingest/recent 的条目形状；
+// PosterURL 由 webui 层按 PosterPath 拼接，无图不出键）。
+type IngestRecordRow struct {
+	ID            int64  `json:"id"`
+	MediaType     string `json:"media_type"`
+	TmdbID        int64  `json:"tmdb_id"`
+	Title         string `json:"title"`
+	OriginalTitle string `json:"original_title"`
+	Year          string `json:"year"`
+	Season        *int64 `json:"season"`
+	Episode       *int64 `json:"episode"`
+	EpisodeTitle  string `json:"episode_title"`
+	PosterPath    string `json:"poster_path"`
+	DriveFolderID string `json:"drive_folder_id"`
+	OriginalName  string `json:"original_name"`
+	Status        string `json:"status"`
+	ErrorMessage  string `json:"error_message"`
+	IngestedAt    string `json:"ingested_at"`
+	CreatedAt     string `json:"created_at"`
+	PosterURL     string `json:"poster_url,omitempty"`
 }
 
-func scanIngestRow(row interface{ Scan(...any) error }) map[string]any {
+// IngestQueryResult 查询结果。
+type IngestQueryResult struct {
+	Items      []IngestRecordRow `json:"items"`
+	Pagination map[string]any    `json:"pagination"`
+}
+
+func scanIngestRow(row interface{ Scan(...any) error }) *IngestRecordRow {
 	var id int64
 	var mediaType, title, originalTitle, year, episodeTitle, posterPath string
 	var driveFolderID, originalName, status, errorMessage, ingestedAt, createdAt string
@@ -150,22 +172,21 @@ func scanIngestRow(row interface{ Scan(...any) error }) map[string]any {
 		&originalName, &status, &errorMessage, &ingestedAt, &createdAt); err != nil {
 		return nil
 	}
-	item := map[string]any{
-		"id": id, "media_type": mediaType, "tmdb_id": tmdbID,
-		"title": title, "original_title": originalTitle, "year": year,
-		"season": nil, "episode": nil,
-		"episode_title": episodeTitle, "poster_path": posterPath,
-		"drive_folder_id": driveFolderID, "original_name": originalName,
-		"status": status, "error_message": errorMessage,
-		"ingested_at": ingestedAt, "created_at": createdAt,
+	item := IngestRecordRow{
+		ID: id, MediaType: mediaType, TmdbID: tmdbID,
+		Title: title, OriginalTitle: originalTitle, Year: year,
+		EpisodeTitle: episodeTitle, PosterPath: posterPath,
+		DriveFolderID: driveFolderID, OriginalName: originalName,
+		Status: status, ErrorMessage: errorMessage,
+		IngestedAt: ingestedAt, CreatedAt: createdAt,
 	}
 	if season.Valid {
-		item["season"] = season.Int64
+		item.Season = &season.Int64
 	}
 	if episode.Valid {
-		item["episode"] = episode.Int64
+		item.Episode = &episode.Int64
 	}
-	return item
+	return &item
 }
 
 const ingestSelect = `SELECT id, media_type, tmdb_id, title, original_title, year,
@@ -225,15 +246,15 @@ func (s *IngestStore) Query(q IngestQuery) IngestQueryResult {
 		fmt.Sprintf("%s WHERE %s ORDER BY ingested_at DESC LIMIT ? OFFSET ?", ingestSelect, where),
 		args...)
 	if err != nil {
-		return IngestQueryResult{Items: []map[string]any{}, Pagination: map[string]any{
+		return IngestQueryResult{Items: []IngestRecordRow{}, Pagination: map[string]any{
 			"page": page, "page_size": pageSize, "total": 0, "total_pages": 1,
 		}}
 	}
 	defer rows.Close()
-	items := []map[string]any{}
+	items := []IngestRecordRow{}
 	for rows.Next() {
 		if item := scanIngestRow(rows); item != nil {
-			items = append(items, item)
+			items = append(items, *item)
 		}
 	}
 	totalPages := 1
@@ -246,16 +267,16 @@ func (s *IngestStore) Query(q IngestQuery) IngestQueryResult {
 }
 
 // GetRecent 最近 N 条。
-func (s *IngestStore) GetRecent(limit int) []map[string]any {
+func (s *IngestStore) GetRecent(limit int) []IngestRecordRow {
 	rows, err := s.db.Query(fmt.Sprintf("%s ORDER BY ingested_at DESC LIMIT ?", ingestSelect), limit)
 	if err != nil {
 		return nil
 	}
 	defer rows.Close()
-	out := []map[string]any{}
+	out := []IngestRecordRow{}
 	for rows.Next() {
 		if item := scanIngestRow(rows); item != nil {
-			out = append(out, item)
+			out = append(out, *item)
 		}
 	}
 	return out
@@ -263,7 +284,7 @@ func (s *IngestStore) GetRecent(limit int) []map[string]any {
 
 // ListByFolder 取该媒体目录的全部入库记录（修正识别改写用，按时间升序）。
 // 仅成功记录带 drive_folder_id（recordIngest 落库语义），失败/无 TMDB 行不会命中。
-func (s *IngestStore) ListByFolder(mediaType, driveFolderID string) []map[string]any {
+func (s *IngestStore) ListByFolder(mediaType, driveFolderID string) []IngestRecordRow {
 	rows, err := s.db.Query(
 		fmt.Sprintf("%s WHERE media_type = ? AND drive_folder_id = ? ORDER BY ingested_at ASC, id ASC", ingestSelect),
 		mediaType, driveFolderID)
@@ -271,10 +292,10 @@ func (s *IngestStore) ListByFolder(mediaType, driveFolderID string) []map[string
 		return nil
 	}
 	defer rows.Close()
-	out := []map[string]any{}
+	out := []IngestRecordRow{}
 	for rows.Next() {
 		if item := scanIngestRow(rows); item != nil {
-			out = append(out, item)
+			out = append(out, *item)
 		}
 	}
 	return out
@@ -291,7 +312,7 @@ func (s *IngestStore) UpdateIdentity(id int64, tmdbID int64, title, originalTitl
 }
 
 // FindMatchByTitleYear 按标题+年份查找成功记录。
-func (s *IngestStore) FindMatchByTitleYear(mediaType, title, year string) map[string]any {
+func (s *IngestStore) FindMatchByTitleYear(mediaType, title, year string) *IngestRecordRow {
 	if len(titlematch.LookupTitleVariants(title)) == 0 {
 		return nil
 	}
@@ -307,7 +328,7 @@ func (s *IngestStore) FindMatchByTitleYear(mediaType, title, year string) map[st
 		if item == nil {
 			continue
 		}
-		candidates := []string{strOf(item["title"]), strOf(item["original_title"])}
+		candidates := []string{item.Title, item.OriginalTitle}
 		var nonEmpty []string
 		for _, c := range candidates {
 			if c != "" {

@@ -355,9 +355,9 @@ func (s *Server) handleIngestHistory(w http.ResponseWriter, r *http.Request) {
 	is := s.rt.GetIngestStore()
 	q := r.URL.Query()
 	result := is.Query(ingestQueryFromParams(q))
-	for _, item := range result.Items {
-		if path, ok := item["poster_path"].(string); ok && path != "" {
-			item["poster_url"] = s.rt.tmdbImageURL(path, "w500")
+	for i := range result.Items {
+		if result.Items[i].PosterPath != "" {
+			result.Items[i].PosterURL = s.rt.tmdbImageURL(result.Items[i].PosterPath, "w500")
 		}
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -378,11 +378,11 @@ func (s *Server) handleIngestRecent(w http.ResponseWriter, r *http.Request) {
 	is := s.rt.GetIngestStore()
 	items := is.GetRecent(intQuery(r, "limit", 10))
 	if items == nil {
-		items = []map[string]any{}
+		items = []store.IngestRecordRow{}
 	}
-	for _, item := range items {
-		if path, ok := item["poster_path"].(string); ok && path != "" {
-			item["poster_url"] = s.rt.tmdbImageURL(path, "w500")
+	for i := range items {
+		if items[i].PosterPath != "" {
+			items[i].PosterURL = s.rt.tmdbImageURL(items[i].PosterPath, "w500")
 		}
 	}
 	writeJSON(w, http.StatusOK, items)

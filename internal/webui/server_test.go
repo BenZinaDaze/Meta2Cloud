@@ -1372,10 +1372,10 @@ func TestReidentifyReclassifiesFolder(t *testing.T) {
 		t.Fatalf("新身份入库记录 = %d, want 1", len(rewritten.Items))
 	}
 	rec := rewritten.Items[0]
-	if rec["title"] != "从后面来的神威先生" || rec["episode_title"] != "正确的单集名" || rec["poster_path"] != "/p.jpg" {
-		t.Fatalf("入库记录未改写为新身份: %v", rec)
+	if rec.Title != "从后面来的神威先生" || rec.EpisodeTitle != "正确的单集名" || rec.PosterPath != "/p.jpg" {
+		t.Fatalf("入库记录未改写为新身份: %+v", rec)
 	}
-	if rec["original_name"] != "误识别的剧 - S01E01.mkv" || rec["tmdb_id"] != int64(325052) {
+	if rec.OriginalName != "误识别的剧 - S01E01.mkv" || rec.TmdbID != 325052 {
 		t.Fatalf("入库记录历史字段应保留、ID 应更新: %v", rec)
 	}
 	if old := ingest.Query(store.IngestQuery{MediaType: "tv", TmdbID: 111}); len(old.Items) != 0 {

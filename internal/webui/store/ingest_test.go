@@ -37,11 +37,11 @@ func TestIngestRoundTrip(t *testing.T) {
 	}
 	// 过滤
 	tvOnly := s.Query(IngestQuery{MediaType: "tv"})
-	if len(tvOnly.Items) != 1 || tvOnly.Items[0]["title"] != "绝命毒师" {
+	if len(tvOnly.Items) != 1 || tvOnly.Items[0].Title != "绝命毒师" {
 		t.Errorf("tvOnly = %+v", tvOnly.Items)
 	}
 	failed := s.Query(IngestQuery{Status: "failed"})
-	if len(failed.Items) != 1 || failed.Items[0]["error_message"] != "移动失败" {
+	if len(failed.Items) != 1 || failed.Items[0].ErrorMessage != "移动失败" {
 		t.Errorf("failed = %+v", failed.Items)
 	}
 	// 标题年份匹配
