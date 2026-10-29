@@ -275,22 +275,32 @@ func (s *Server) handleU115OauthExchange(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// U115SpacePayload GET /api/u115/space 响应（测试连接响应内嵌同形状 + ok）。
+type U115SpacePayload struct {
+	TotalSpace  int64 `json:"total_space"`
+	RemainSpace int64 `json:"remain_space"`
+}
+
 // u115SpacePayload 获取 115 容量信息；不可用时写出错误响应并返回 false。
 // 测试连接与仪表盘的 /u115/space 共用。
-func (rt *Runtime) u115SpacePayload(w http.ResponseWriter) (map[string]any, bool) {
+func (rt *Runtime) u115SpacePayload(w http.ResponseWriter) (U115SpacePayload, bool) {
 	client := rt.GetU115Client()
 	if client == nil {
 		writeJSONError(w, http.StatusBadRequest, "115 客户端不可用（请先完成授权）")
-		return nil, false
+		return U115SpacePayload{}, false
 	}
 	space, err := client.GetSpaceInfo()
 	if err != nil {
 		rt.u115AuthError(w, err)
-		return nil, false
+		return U115SpacePayload{}, false
 	}
-	return map[string]any{
-		"total_space": space.TotalSize, "remain_space": space.RemainSize,
-	}, true
+	return U115SpacePayload{TotalSpace: space.TotalSize, RemainSpace: space.RemainSize}, true
+}
+
+// u115TestConnectionResponse 测试连接响应：容量信息 + ok。
+type u115TestConnectionResponse struct {
+	U115SpacePayload
+	OK bool `json:"ok"`
 }
 
 func (s *Server) handleU115TestConnection(w http.ResponseWriter, _ *http.Request) {
@@ -298,8 +308,7 @@ func (s *Server) handleU115TestConnection(w http.ResponseWriter, _ *http.Request
 	if !ok {
 		return
 	}
-	payload["ok"] = true
-	writeJSON(w, http.StatusOK, payload)
+	writeJSON(w, http.StatusOK, u115TestConnectionResponse{U115SpacePayload: payload, OK: true})
 }
 
 func (s *Server) handleU115TestCookie(w http.ResponseWriter, _ *http.Request) {
@@ -339,16 +348,51 @@ func (rt *Runtime) offlineClient() *u115.OfflineClient {
 	return u115.NewOfflineClient(client)
 }
 
-func (s *Server) serializeOfflineTask(task u115.OfflineTask) map[string]any {
-	return map[string]any{
-		"info_hash": task.InfoHash, "name": task.Name, "status": task.Status,
-		"percent_done": task.PercentDone, "size": task.Size,
-		"add_time": task.AddTime, "last_update": task.LastUpdate,
-		"file_id": task.FileID, "delete_file_id": task.DeleteFileID,
-		"url": task.URL, "wp_path_id": task.WpPathID,
-		"is_finished": task.IsFinished(), "is_downloading": task.IsDownloading(),
-		"is_failed": task.IsFailed(),
+// U115OfflineTaskPayload 云下载任务（overview.tasks 元素）。
+type U115OfflineTaskPayload struct {
+	InfoHash      string  `json:"info_hash"`
+	Name          string  `json:"name"`
+	Status        int     `json:"status"`
+	PercentDone   float64 `json:"percent_done"`
+	Size          int64   `json:"size"`
+	AddTime       *int64  `json:"add_time"`
+	LastUpdate    *int64  `json:"last_update"`
+	FileID        *string `json:"file_id"`
+	DeleteFileID  *string `json:"delete_file_id"`
+	URL           *string `json:"url"`
+	WpPathID      *string `json:"wp_path_id"`
+	IsFinished    bool    `json:"is_finished"`
+	IsDownloading bool    `json:"is_downloading"`
+	IsFailed      bool    `json:"is_failed"`
+}
+
+func (s *Server) serializeOfflineTask(task u115.OfflineTask) U115OfflineTaskPayload {
+	return U115OfflineTaskPayload{
+		InfoHash: task.InfoHash, Name: task.Name, Status: task.Status,
+		PercentDone: task.PercentDone, Size: task.Size,
+		AddTime: task.AddTime, LastUpdate: task.LastUpdate,
+		FileID: task.FileID, DeleteFileID: task.DeleteFileID,
+		URL: task.URL, WpPathID: task.WpPathID,
+		IsFinished: task.IsFinished(), IsDownloading: task.IsDownloading(),
+		IsFailed: task.IsFailed(),
 	}
+}
+
+// U115OfflinePagination 云下载任务分页。
+type U115OfflinePagination struct {
+	Page       int  `json:"page"`
+	PageSize   int  `json:"page_size"`
+	Total      int  `json:"total"`
+	TotalPages int  `json:"total_pages"`
+	HasPrev    bool `json:"has_prev"`
+	HasNext    bool `json:"has_next"`
+}
+
+// U115OfflineOverviewPayload GET /api/u115/offline/overview 响应。
+type U115OfflineOverviewPayload struct {
+	OK         bool                    `json:"ok"`
+	Tasks      []U115OfflineTaskPayload `json:"tasks"`
+	Pagination U115OfflinePagination   `json:"pagination"`
 }
 
 func (s *Server) handleU115OfflineOverview(w http.ResponseWriter, r *http.Request) {
@@ -366,7 +410,7 @@ func (s *Server) handleU115OfflineOverview(w http.ResponseWriter, r *http.Reques
 		s.rt.u115AuthError(w, err)
 		return
 	}
-	tasks := make([]map[string]any, 0, len(taskPage.Tasks))
+	tasks := make([]U115OfflineTaskPayload, 0, len(taskPage.Tasks))
 	for _, t := range taskPage.Tasks {
 		tasks = append(tasks, s.serializeOfflineTask(t))
 	}
@@ -374,12 +418,12 @@ func (s *Server) handleU115OfflineOverview(w http.ResponseWriter, r *http.Reques
 	if totalPages < 1 {
 		totalPages = 1
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ok": true, "tasks": tasks,
-		"pagination": map[string]any{
-			"page": taskPage.Page, "page_size": len(taskPage.Tasks),
-			"total": taskPage.Count, "total_pages": totalPages,
-			"has_prev": taskPage.Page > 1, "has_next": taskPage.Page < totalPages,
+	writeJSON(w, http.StatusOK, U115OfflineOverviewPayload{
+		OK: true, Tasks: tasks,
+		Pagination: U115OfflinePagination{
+			Page: taskPage.Page, PageSize: len(taskPage.Tasks),
+			Total: taskPage.Count, TotalPages: totalPages,
+			HasPrev: taskPage.Page > 1, HasNext: taskPage.Page < totalPages,
 		},
 	})
 }
@@ -390,6 +434,35 @@ func (s *Server) handleU115Space(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, payload)
+}
+
+// U115QuotaExpirePayload 配额过期明细。
+type U115QuotaExpirePayload struct {
+	Surplus    int64 `json:"surplus"`
+	ExpireTime int64 `json:"expire_time"`
+}
+
+// U115QuotaPackagePayload 单个配额包。
+type U115QuotaPackagePayload struct {
+	Name       string                   `json:"name"`
+	Count      int64                    `json:"count"`
+	Used       int64                    `json:"used"`
+	Surplus    int64                    `json:"surplus"`
+	ExpireInfo []U115QuotaExpirePayload `json:"expire_info"`
+}
+
+// U115QuotaInfoPayload 离线下载配额。
+type U115QuotaInfoPayload struct {
+	Count    int64                     `json:"count"`
+	Used     int64                     `json:"used"`
+	Surplus  int64                     `json:"surplus"`
+	Packages []U115QuotaPackagePayload `json:"packages"`
+}
+
+// U115QuotaResponse GET /api/u115/offline/quota 响应。
+type U115QuotaResponse struct {
+	OK    bool                `json:"ok"`
+	Quota U115QuotaInfoPayload `json:"quota"`
 }
 
 func (s *Server) handleU115OfflineQuota(w http.ResponseWriter, _ *http.Request) {
@@ -403,24 +476,24 @@ func (s *Server) handleU115OfflineQuota(w http.ResponseWriter, _ *http.Request) 
 		s.rt.u115AuthError(w, err)
 		return
 	}
-	packages := make([]map[string]any, 0, len(quota.Packages))
+	packages := make([]U115QuotaPackagePayload, 0, len(quota.Packages))
 	for _, item := range quota.Packages {
-		expireInfo := make([]map[string]any, 0, len(item.ExpireInfo))
+		expireInfo := make([]U115QuotaExpirePayload, 0, len(item.ExpireInfo))
 		for _, exp := range item.ExpireInfo {
-			expireInfo = append(expireInfo, map[string]any{
-				"surplus": exp.Surplus, "expire_time": exp.ExpireTime,
+			expireInfo = append(expireInfo, U115QuotaExpirePayload{
+				Surplus: exp.Surplus, ExpireTime: exp.ExpireTime,
 			})
 		}
-		packages = append(packages, map[string]any{
-			"name": item.Name, "count": item.Count, "used": item.Used,
-			"surplus": item.Surplus, "expire_info": expireInfo,
+		packages = append(packages, U115QuotaPackagePayload{
+			Name: item.Name, Count: item.Count, Used: item.Used,
+			Surplus: item.Surplus, ExpireInfo: expireInfo,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ok": true,
-		"quota": map[string]any{
-			"count": quota.Count, "used": quota.Used, "surplus": quota.Surplus,
-			"packages": packages,
+	writeJSON(w, http.StatusOK, U115QuotaResponse{
+		OK: true,
+		Quota: U115QuotaInfoPayload{
+			Count: quota.Count, Used: quota.Used, Surplus: quota.Surplus,
+			Packages: packages,
 		},
 	})
 }

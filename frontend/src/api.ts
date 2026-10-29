@@ -9,6 +9,9 @@ import type {
   StrmSyncRun,
   StrmSyncFile,
   StrmPlaybackHistoryResponse,
+  U115Overview,
+  U115Quota,
+  U115Space,
 } from '@/types/api'
 
 const api = axios.create({ baseURL: '/api' })
@@ -130,10 +133,10 @@ export const pollU115OauthStatus = (config?: { signal?: AbortSignal }) =>
   api.get('/u115/oauth/poll', { params: { ts: Date.now() }, ...config })
 export const testU115Connection = () => api.post('/u115/test')
 export const testU115Cookie = () => api.post('/u115/test-cookie')
-export const getU115OfflineOverview = (params?: Record<string, unknown>) =>
-  api.get('/u115/offline/overview', { params })
-export const getU115OfflineQuota = () => api.get('/u115/offline/quota')
-export const getU115Space = () => api.get('/u115/space')
+export const getU115OfflineOverview = (params?: { page?: number }) =>
+  api.get<U115Overview>('/u115/offline/overview', { params })
+export const getU115OfflineQuota = () => api.get<U115Quota>('/u115/offline/quota')
+export const getU115Space = () => api.get<U115Space>('/u115/space')
 export const addU115OfflineUrls = (data: { urls: string; wp_path_id?: string }) =>
   api.post('/u115/offline/add-urls', data)
 export const deleteU115OfflineTasks = (data: { info_hashes: string[]; del_source_file?: number }) =>

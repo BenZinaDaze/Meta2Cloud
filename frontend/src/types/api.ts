@@ -416,3 +416,65 @@ export interface StrmPlaybackHistoryResponse {
   items: StrmPlaybackLog[]
   stats: StrmPlaybackStats
 }
+
+// ── 115 网盘（离线下载）──
+// 与后端 payload struct 字段一一对应（internal/webui/u115svc.go）
+
+/** 云下载任务（overview.tasks 元素）。size 为字节数，add_time/last_update 为秒级时间戳 */
+export interface U115Task {
+  info_hash: string
+  name: string
+  status: number
+  percent_done: number
+  size: number
+  add_time: number | null
+  last_update: number | null
+  file_id: string | null
+  delete_file_id: string | null
+  url: string | null
+  wp_path_id?: string | null
+  is_finished: boolean
+  is_downloading: boolean
+  is_failed: boolean
+}
+
+/** GET /api/u115/offline/overview */
+export interface U115Overview {
+  ok: boolean
+  tasks: U115Task[]
+  pagination: {
+    page: number
+    page_size: number
+    total: number
+    total_pages: number
+    has_prev: boolean
+    has_next: boolean
+  }
+}
+
+/** 离线下载配额（quota 字段） */
+export interface U115QuotaInfo {
+  count: number
+  used: number
+  surplus: number
+  packages: {
+    name: string
+    count: number
+    used: number
+    surplus: number
+    expire_info: { surplus: number; expire_time: number }[]
+  }[]
+}
+
+/** GET /api/u115/offline/quota */
+export interface U115Quota {
+  ok: boolean
+  quota: U115QuotaInfo
+}
+
+/** GET /api/u115/space（测试连接响应同形状 + ok） */
+export interface U115Space {
+  total_space: number
+  remain_space: number
+  ok?: boolean
+}

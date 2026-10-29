@@ -15,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import PageHeader from '@/components/shared/PageHeader'
 import { formatBytes } from '@/lib/format'
+import type { U115Overview, U115QuotaInfo, U115Space, U115Task } from '@/types/api'
 import { formatDateTime } from '@/lib/time'
 import {
   AlertDialog,
@@ -29,34 +30,6 @@ import {
 import ParseTestModal from '@/components/modals/ParseTestModal'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-
-interface U115Task {
-  info_hash: string
-  name: string
-  url: string
-  status: number
-  size: string
-  percent_done: number
-  add_time: string
-  last_update: string
-  wp_path_id?: string
-}
-
-interface U115Overview {
-  tasks: U115Task[]
-  pagination?: {
-    page: number
-    total_pages: number
-    total: number
-    has_prev: boolean
-    has_next: boolean
-  }
-}
-
-interface U115Quota {
-  count: number
-  surplus: number
-}
 
 function statusMeta(status: number): { label: string; className: string } {
   if (status === 2) return { label: '已完成', className: 'bg-success/12 text-success' }
@@ -84,13 +57,13 @@ interface U115OfflinePageProps {
 
 export default function U115OfflinePage({ onToast }: U115OfflinePageProps) {
   const [overview, setOverview] = useState<U115Overview | null>(null)
-  const [quota, setQuota] = useState<U115Quota | null>(null)
+  const [quota, setQuota] = useState<U115QuotaInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [pageVisible, setPageVisible] = useState(true)
   const [urls, setUrls] = useState('')
   const [wpPathId, setWpPathId] = useState('')
-  const [driveSpace, setDriveSpace] = useState<{ remain_space: number; total_space: number } | null>(null)
+  const [driveSpace, setDriveSpace] = useState<U115Space | null>(null)
   const [parseTestFile, setParseTestFile] = useState<string | null>(null)
   const [deleteConfirmTask, setDeleteConfirmTask] = useState<U115Task | null>(null)
   const [page, setPage] = useState(1)
