@@ -22,6 +22,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"meta2cloud/internal/httpx"
 )
 
 const (
@@ -64,9 +66,8 @@ type Client struct {
 	qps          float64
 	CooldownSecs int
 
-	rateMu        sync.Mutex
-	nextAt        time.Time
-	cooldownUntil time.Time
+	// limiter 单桶预约节流 + 风控冷却（httpx，与 trakt 同一实现）
+	limiter *httpx.Limiter
 
 	webCookieMu sync.Mutex
 	webCookie   string
@@ -105,6 +106,11 @@ func NewClient(clientID string, opts ...Option) *Client {
 	for _, opt := range opts {
 		opt(c)
 	}
+	interval := time.Duration(0)
+	if c.qps > 0 {
+		interval = time.Duration(float64(time.Second) / c.qps)
+	}
+	c.limiter = httpx.NewLimiter(interval)
 	return c
 }
 
@@ -188,15 +194,7 @@ func (c *Client) refreshTokenLocked() (Token, error) {
 // ── 限流 ────────────────────────────────────────────────────
 
 func (c *Client) enterCooldown() {
-	until := time.Now().Add(time.Duration(c.CooldownSecs) * time.Second)
-	c.rateMu.Lock()
-	if until.After(c.cooldownUntil) {
-		c.cooldownUntil = until
-	}
-	if until.After(c.nextAt) {
-		c.nextAt = until
-	}
-	c.rateMu.Unlock()
+	c.limiter.EnterCooldown(time.Duration(c.CooldownSecs) * time.Second)
 }
 
 func rateLimitError(message string, code *float64, payload map[string]any) *APIError {
@@ -205,28 +203,13 @@ func rateLimitError(message string, code *float64, payload map[string]any) *APIE
 
 // sleepRateLimit 全项目共享的单桶限流：所有 115 请求（整理 API / 302 直链 / 下载 /
 // 上传控制）按同一节拍排队，总请求率不超过 qps，避免叠加触发 429。
+// 风控冷却期内直接拒绝（返回限流错误），由上层决定是否延后。
 func (c *Client) sleepRateLimit() error {
-	c.rateMu.Lock()
-	now := time.Now()
-	if now.Before(c.cooldownUntil) {
-		retryAfter := int(c.cooldownUntil.Sub(now).Seconds()) + 1
-		c.rateMu.Unlock()
+	if err := c.limiter.Reserve(); err != nil {
+		retryAfter := int(c.limiter.CooldownRemaining().Seconds()) + 1
 		return rateLimitError(fmt.Sprintf("115 接口冷却中，请 %d 秒后再试", retryAfter), strPtrFloat(429), map[string]any{
 			"retry_after": retryAfter,
 		})
-	}
-	reserveAt := now
-	if c.nextAt.After(reserveAt) {
-		reserveAt = c.nextAt
-	}
-	wait := reserveAt.Sub(now)
-	if c.qps > 0 {
-		reserveAt = reserveAt.Add(time.Duration(float64(time.Second) / c.qps))
-	}
-	c.nextAt = reserveAt
-	c.rateMu.Unlock()
-	if wait > 0 {
-		time.Sleep(wait)
 	}
 	return nil
 }

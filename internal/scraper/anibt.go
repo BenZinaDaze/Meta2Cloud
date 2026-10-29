@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -14,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"meta2cloud/internal/httpx"
 	"meta2cloud/internal/jsonx"
 )
 
@@ -49,40 +49,15 @@ func (s *AniBTSpider) RssHosts() []string { return []string{"anibt.net"} }
 // SetTestBaseURL 覆盖基础地址（仅测试使用）。
 func (s *AniBTSpider) SetTestBaseURL(baseURL string) { s.baseURL = baseURL }
 
+// requestWithRetry 抓取 JSON/RSS：3 次尝试、2s 固定间隔、4MB 体积上限（httpx.Fetch）。
 func (s *AniBTSpider) requestWithRetry(rawURL string) ([]byte, error) {
-	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		req, err := http.NewRequest(http.MethodGet, rawURL, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("User-Agent", anibtUA)
-		req.Header.Set("Accept", "application/json, application/rss+xml, application/xml;q=0.9, */*;q=0.8")
-		resp, err := s.hc.Do(req)
-		if err == nil {
-			if resp.StatusCode >= 400 {
-				resp.Body.Close()
-				lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, rawURL)
-			} else {
-				body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxSpiderBodyBytes+1))
-				resp.Body.Close()
-				if readErr == nil && len(body) > maxSpiderBodyBytes {
-					readErr = fmt.Errorf("响应超过大小上限（%dMB）", maxSpiderBodyBytes>>20)
-				}
-				if readErr != nil {
-					lastErr = readErr
-				} else {
-					return body, nil
-				}
-			}
-		} else {
-			lastErr = err
-		}
-		if attempt < 2 {
-			time.Sleep(2 * time.Second)
-		}
-	}
-	return nil, lastErr
+	return httpx.Fetch(s.hc, rawURL, httpx.FetchOptions{
+		Headers: map[string]string{
+			"User-Agent": anibtUA,
+			"Accept":     "application/json, application/rss+xml, application/xml;q=0.9, */*;q=0.8",
+		},
+		MaxBodyBytes: maxSpiderBodyBytes,
+	})
 }
 
 func (s *AniBTSpider) apiGet(path string, params map[string]string) (any, error) {

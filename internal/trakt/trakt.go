@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"meta2cloud/internal/httpx"
 )
 
 const (
@@ -146,9 +148,8 @@ type Client struct {
 
 	HTTP *http.Client
 
-	rateMu         sync.Mutex
-	nextAt         time.Time
-	cooldown       time.Time
+	// limiter 最小间隔节流 + 429 冷却（httpx，与 u115 同一实现）
+	limiter        *httpx.Limiter
 	tokenMu        sync.Mutex
 	token          *Token
 	OnTokenUpdated func(t Token)
@@ -178,6 +179,7 @@ func NewClient(clientID string, opts ...Option) *Client {
 	c := &Client{
 		ClientID: clientID,
 		HTTP:     &http.Client{Timeout: 30 * time.Second},
+		limiter:  httpx.NewLimiter(minInterval),
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -843,42 +845,21 @@ func (c *Client) authBase() string {
 	return defaultAuthBase
 }
 
-// throttle 最小间隔节拍（单桶预约，与 u115.sleepRateLimit 同思路的简化版）。
+// throttle 最小间隔节拍（httpx.Limiter 单桶预约，与 u115 同一实现）。
 func (c *Client) throttle() {
-	c.rateMu.Lock()
-	now := time.Now()
-	reserveAt := now
-	if c.nextAt.After(reserveAt) {
-		reserveAt = c.nextAt
-	}
-	wait := reserveAt.Sub(now)
-	c.nextAt = reserveAt.Add(minInterval)
-	c.rateMu.Unlock()
-	if wait > 0 {
-		time.Sleep(wait)
-	}
+	// 冷却检查已在 do() 入口完成；竞态窗口撞上冷却时按冷却拒绝
+	_ = c.limiter.Reserve()
 }
 
 func (c *Client) enterCooldown(retryAfter time.Duration) {
-	c.rateMu.Lock()
-	until := time.Now().Add(retryAfter)
-	if until.After(c.cooldown) {
-		c.cooldown = until
-	}
-	if until.After(c.nextAt) {
-		c.nextAt = until
-	}
-	c.rateMu.Unlock()
+	c.limiter.EnterCooldown(retryAfter)
 }
 
 // do 执行一次请求（base 为目标主机，path 以 / 开头）。auth=true 时自动携带并按需刷新 Bearer token。
 func (c *Client) do(method, base, path string, payload any, auth bool) ([]byte, int, http.Header, error) {
-	c.rateMu.Lock()
-	if wait := time.Until(c.cooldown); wait > 0 {
-		c.rateMu.Unlock()
+	if wait := c.limiter.CooldownRemaining(); wait > 0 {
 		return nil, 0, nil, fmt.Errorf("Trakt 接口冷却中，请 %d 秒后再试", int(wait.Seconds())+1)
 	}
-	c.rateMu.Unlock()
 	c.throttle()
 
 	var body io.Reader

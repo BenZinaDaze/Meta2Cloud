@@ -4,7 +4,6 @@ package scraper
 import (
 	"encoding/xml"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -12,6 +11,8 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+
+	"meta2cloud/internal/httpx"
 )
 
 const mikanBaseURL = "https://mikanani.me"
@@ -47,39 +48,16 @@ func (s *MikanSpider) RssHosts() []string { return []string{"mikanani.me", "mika
 // SetTestBaseURL 覆盖基础地址（仅测试使用）。
 func (s *MikanSpider) SetTestBaseURL(baseURL string) { s.baseURL = baseURL }
 
+// requestWithRetry 抓取页面：3 次尝试、2s 固定间隔、4MB 体积上限（httpx.Fetch）。
 func (s *MikanSpider) requestWithRetry(url string) (string, []byte, error) {
-	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		req, err := http.NewRequest(http.MethodGet, url, nil)
-		if err != nil {
-			return "", nil, err
-		}
-		req.Header.Set("User-Agent", mikanUA)
-		resp, err := s.hc.Do(req)
-		if err == nil {
-			if resp.StatusCode >= 400 {
-				resp.Body.Close()
-				lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, url)
-			} else {
-				body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxSpiderBodyBytes+1))
-				resp.Body.Close()
-				if readErr == nil && len(body) > maxSpiderBodyBytes {
-					readErr = fmt.Errorf("响应超过大小上限（%dMB）", maxSpiderBodyBytes>>20)
-				}
-				if readErr != nil {
-					lastErr = readErr
-				} else {
-					return string(body), body, nil
-				}
-			}
-		} else {
-			lastErr = err
-		}
-		if attempt < 2 {
-			time.Sleep(2 * time.Second)
-		}
+	body, err := httpx.Fetch(s.hc, url, httpx.FetchOptions{
+		Headers:      map[string]string{"User-Agent": mikanUA},
+		MaxBodyBytes: maxSpiderBodyBytes,
+	})
+	if err != nil {
+		return "", nil, err
 	}
-	return "", nil, lastErr
+	return string(body), body, nil
 }
 
 // SearchMedia 搜索番剧（含字幕组条目）。
