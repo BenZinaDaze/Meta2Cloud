@@ -146,37 +146,23 @@ func OpenLibraryStore(dbPath string) (*LibraryStore, error) {
 // Close 关闭。
 func (s *LibraryStore) Close() error { return s.db.Close() }
 
+// runMigrations library.db 的版本化迁移。library.db 由 LibraryStore/RSSStore/
+// IngestStore 共用，版本按 store 名隔离（见 migrate.go）。
+// 历史迁移 v1/v2（缺列即 ALTER）在版本管理引入前已由旧代码应用于全部存量库
+// （当前 DDL 亦含全部列），基线探测对齐后不再重放；后续加列追加 v3+ 即可。
 func (s *LibraryStore) runMigrations() error {
-	rows, err := s.db.Query("PRAGMA table_info(library_media)")
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	columns := map[string]bool{}
-	for rows.Next() {
-		var cid int
-		var name, ctype string
-		var notNull, pk int
-		var dflt sql.NullString
-		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
-			return err
-		}
-		columns[name] = true
-	}
-	rows.Close()
-	if !columns["folder_modified_time"] {
-		if _, err := s.db.Exec("ALTER TABLE library_media ADD COLUMN folder_modified_time INTEGER NOT NULL DEFAULT 0"); err != nil {
-			return err
-		}
-		log.Printf("已为 library_media 表新增 folder_modified_time 字段")
-	}
-	if !columns["parent_id"] {
-		if _, err := s.db.Exec("ALTER TABLE library_media ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''"); err != nil {
-			return err
-		}
-		log.Printf("已为 library_media 表新增 parent_id 字段")
-	}
-	return nil
+	return migrateStoreSchema(s.db, "library", func(db *sql.DB) (int, error) {
+		return baselineColumns(db, 2, "library_media", "folder_modified_time", "parent_id")
+	}, []migration{
+		{
+			version: 1, name: "library_media.folder_modified_time",
+			stmts: []string{"ALTER TABLE library_media ADD COLUMN folder_modified_time INTEGER NOT NULL DEFAULT 0"},
+		},
+		{
+			version: 2, name: "library_media.parent_id",
+			stmts: []string{"ALTER TABLE library_media ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''"},
+		},
+	})
 }
 
 func utcNow() string {

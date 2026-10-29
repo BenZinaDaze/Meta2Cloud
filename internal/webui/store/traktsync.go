@@ -15,7 +15,6 @@ import (
 	"log"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"meta2cloud/internal/syncengine"
@@ -78,6 +77,7 @@ CREATE TABLE IF NOT EXISTS sync_run_items (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
 	run_id     INTEGER NOT NULL,
 	media_type TEXT, tmdb_id INTEGER, season INTEGER, episode INTEGER, title TEXT,
+	anchor     TEXT NOT NULL DEFAULT 'tmdb',
 	direction  TEXT NOT NULL,               -- to_plex | to_trakt | unresolved
 	action     TEXT NOT NULL,               -- watched | unwatched | unresolved
 	success    INTEGER NOT NULL DEFAULT 1,
@@ -153,26 +153,35 @@ func OpenTraktSyncStore(dbPath string) (*TraktSyncStore, error) {
 		return nil, err
 	}
 	// 既有库补列（v2.4.0 的表没有 title/progress）：列已存在时报错忽略
-	for _, col := range []string{"title TEXT", "progress REAL"} {
-		if _, err := db.Exec("ALTER TABLE sync_runs ADD COLUMN " + col); err != nil &&
-			!strings.Contains(err.Error(), "duplicate column") {
-			db.Close()
-			return nil, err
+	// 版本化迁移（见 migrate.go）：
+	//   v1 sync_runs 补 title/progress（v2.4.0 前的表没有）；
+	//   v2 身份锚——sync_items/sync_ignores 主键加入 anchor（SQLite 不能改主键，
+	//      整表重建，重建语句带显式列清单可安全重放），sync_sessions/sync_run_items 补 anchor 列。
+	// 基线按历史应用顺序探测：有 progress 记 v1，progress+anchor 记 v2，
+	// 版本管理引入前的存量库不重放。
+	baseline := func(db *sql.DB) (int, error) {
+		hasProgress, err := columnExists(db, "sync_runs", "progress")
+		if err != nil || !hasProgress {
+			return 0, err
 		}
+		hasAnchor, err := columnExists(db, "sync_items", "anchor")
+		if err != nil || !hasAnchor {
+			return 1, err
+		}
+		return 2, nil
 	}
-	// 1b 身份锚迁移：sync_items/sync_ignores 主键加入 anchor，sync_sessions/
-	// sync_run_items 补 anchor 列。SQLite 不能改主键，涉及主键的表整表重建。
-	migrate := func(table string) error {
-		hasAnchor, err := columnExists(db, table, "anchor")
-		if err != nil {
-			return err
-		}
-		if hasAnchor {
-			return nil
-		}
-		switch table {
-		case "sync_items":
-			_, err = db.Exec(`ALTER TABLE sync_items RENAME TO sync_items_old;
+	if err := migrateStoreSchema(db, "traktsync", baseline, []migration{
+		{
+			version: 1, name: "sync_runs.title/progress",
+			stmts: []string{
+				"ALTER TABLE sync_runs ADD COLUMN title TEXT",
+				"ALTER TABLE sync_runs ADD COLUMN progress REAL",
+			},
+		},
+		{
+			version: 2, name: "身份锚 anchor", legacyTolerant: true,
+			stmts: []string{
+				`ALTER TABLE sync_items RENAME TO sync_items_old;
 CREATE TABLE sync_items (
 	media_type   TEXT    NOT NULL,
 	anchor       TEXT    NOT NULL DEFAULT 'tmdb',
@@ -197,9 +206,8 @@ INSERT INTO sync_items SELECT media_type, 'tmdb', tmdb_id, season, episode, plex
 	trakt_seen, trakt_watched, trakt_plays, trakt_last_watched_at, session_pushed_at, updated_at
 	FROM sync_items_old;
 DROP TABLE sync_items_old;
-CREATE INDEX IF NOT EXISTS idx_sync_items_plex_ref ON sync_items(plex_ref);`)
-		case "sync_ignores":
-			_, err = db.Exec(`ALTER TABLE sync_ignores RENAME TO sync_ignores_old;
+CREATE INDEX IF NOT EXISTS idx_sync_items_plex_ref ON sync_items(plex_ref);`,
+				`ALTER TABLE sync_ignores RENAME TO sync_ignores_old;
 CREATE TABLE sync_ignores (
 	media_type TEXT NOT NULL,
 	anchor     TEXT NOT NULL DEFAULT 'tmdb',
@@ -210,24 +218,14 @@ CREATE TABLE sync_ignores (
 	PRIMARY KEY (media_type, anchor, tmdb_id)
 );
 INSERT INTO sync_ignores SELECT media_type, 'tmdb', tmdb_id, title, reason, created_at FROM sync_ignores_old;
-DROP TABLE sync_ignores_old;`)
-		}
-		return err
-	}
-	for _, table := range []string{"sync_items", "sync_ignores"} {
-		if err := migrate(table); err != nil {
-			db.Close()
-			return nil, err
-		}
-	}
-	for _, col := range []string{"sync_sessions", "sync_run_items"} {
-		if has, err := columnExists(db, col, "anchor"); err == nil && !has {
-			if _, err := db.Exec("ALTER TABLE " + col + " ADD COLUMN anchor TEXT NOT NULL DEFAULT 'tmdb'"); err != nil &&
-				!strings.Contains(err.Error(), "duplicate column") {
-				db.Close()
-				return nil, err
-			}
-		}
+DROP TABLE sync_ignores_old;`,
+				"ALTER TABLE sync_sessions ADD COLUMN anchor TEXT NOT NULL DEFAULT 'tmdb'",
+				"ALTER TABLE sync_run_items ADD COLUMN anchor TEXT NOT NULL DEFAULT 'tmdb'",
+			},
+		},
+	}); err != nil {
+		db.Close()
+		return nil, err
 	}
 	s := &TraktSyncStore{db: db}
 	s.failStaleRunningRuns()

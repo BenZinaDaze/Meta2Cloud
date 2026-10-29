@@ -176,30 +176,17 @@ func absEqual(a, b string) bool {
 // Close 关闭。
 func (s *RSSStore) Close() error { return s.db.Close() }
 
+// migrateSchema rss_subscriptions 的版本化迁移（与 library 同库时版本按 store
+// 名隔离，见 migrate.go）。v1 在版本管理引入前已应用于存量库，基线对齐不重放。
 func (s *RSSStore) migrateSchema() error {
-	rows, err := s.db.Query("PRAGMA table_info(rss_subscriptions)")
-	if err != nil {
-		return err
-	}
-	columns := map[string]bool{}
-	for rows.Next() {
-		var cid int
-		var name, ctype string
-		var notNull, pk int
-		var dflt sql.NullString
-		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
-			rows.Close()
-			return err
-		}
-		columns[name] = true
-	}
-	rows.Close()
-	if !columns["poster_url"] {
-		if _, err := s.db.Exec("ALTER TABLE rss_subscriptions ADD COLUMN poster_url TEXT"); err != nil {
-			return err
-		}
-	}
-	return nil
+	return migrateStoreSchema(s.db, "rss", func(db *sql.DB) (int, error) {
+		return baselineColumns(db, 1, "rss_subscriptions", "poster_url")
+	}, []migration{
+		{
+			version: 1, name: "rss_subscriptions.poster_url",
+			stmts: []string{"ALTER TABLE rss_subscriptions ADD COLUMN poster_url TEXT"},
+		},
+	})
 }
 
 const subscriptionSelect = `SELECT id, name, media_title, media_type, tmdb_id, poster_url, site, rss_url,
