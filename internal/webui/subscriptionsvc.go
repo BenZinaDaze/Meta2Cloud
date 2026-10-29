@@ -439,6 +439,10 @@ func (rt *Runtime) checkSubscriptionRecord(rssStore *store.RSSStore, record *sto
 // first_error 取首条抓取错误；推送类错误单列 push_errors，不参与订阅源健康判定。
 func (rt *Runtime) PollSubscriptionsOnce() map[string]any {
 	rssStore := rt.GetRSSStore()
+	if rssStore == nil {
+		// 测试反复 InitRuntime 的交错窗口内 store 可能短暂不可用；跳过本轮
+		return map[string]any{}
+	}
 	records := rssStore.ListEnabledSubscriptions()
 	checked, pushed, errCount, pushErrCount := 0, 0, 0, 0
 	firstError := ""
