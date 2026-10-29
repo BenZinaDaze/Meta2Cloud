@@ -145,10 +145,11 @@ func TestListDuplicateFolderGroups(t *testing.T) {
 	ls, _ := newTitlePinTestStore(t)
 
 	mk := func(folderID string, tmdbID int64) {
-		ls.upsertLibraryItem(map[string]any{
+		row := rowFromMap(map[string]any{
 			"drive_folder_id": folderID, "media_type": "tv", "tmdb_id": tmdbID,
 			"title": "剧", "year": "2025",
-		}, utcNow(), 0)
+		})
+		ls.upsertLibraryItem(&row, utcNow(), 0)
 	}
 	// 同一媒体两个目录 → 一组；单目录媒体不出现
 	mk("folderA", 500)

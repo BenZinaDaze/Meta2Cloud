@@ -200,18 +200,57 @@ func (s *LibraryStore) getState(key string) (string, bool) {
 
 // ── 图片 URL 规范化 / 补水 ─────────────────────────────────
 
-func (s *LibraryStore) normalizeLibraryPayload(payload map[string]any) map[string]any {
-	payload["poster_url"] = tmdb.ExtractImagePath(anyStr(payload["poster_url"]))
-	payload["backdrop_url"] = tmdb.ExtractImagePath(anyStr(payload["backdrop_url"]))
-	if seasons, ok := payload["seasons"].([]any); ok {
-		for i, season := range seasons {
-			if d, ok := season.(map[string]any); ok {
-				d["poster_url"] = tmdb.ExtractImagePath(anyStr(d["poster_url"]))
-				seasons[i] = d
-			}
+// LibraryMediaRow library_media 行的写入侧类型化形状：webui 由 MediaItem 构造、
+// upsert 落库，raw_json 序列化即本结构的 JSON（键与既有行完全一致）。
+// 读取侧（快照分页/详情/与 TMDB 缓存合并，见 GetJoinedMediaItem）是
+// raw_json + TMDB 透传字段的开放文档，保持 map 形态——闭式 struct 需要先
+// 类型化整个 TMDB API 面，属独立工程。
+type LibraryMediaRow struct {
+	DriveFolderID      string           `json:"drive_folder_id,omitempty"`
+	MediaType          string           `json:"media_type"`
+	TmdbID             int64            `json:"tmdb_id"`
+	Title              string           `json:"title"`
+	OriginalTitle      string           `json:"original_title"`
+	Year               string           `json:"year"`
+	PosterURL          *string          `json:"poster_url"`
+	BackdropURL        *string          `json:"backdrop_url"`
+	Overview           string           `json:"overview"`
+	Rating             float64          `json:"rating"`
+	Status             *string          `json:"status,omitempty"`
+	DriveParentID      *string          `json:"drive_parent_id,omitempty"`
+	TotalEpisodes      *int64           `json:"total_episodes,omitempty"`
+	InLibraryEpisodes  *int64           `json:"in_library_episodes,omitempty"`
+	FolderModifiedTime *int64           `json:"folder_modified_time,omitempty"`
+	Seasons            []map[string]any `json:"seasons,omitempty"`
+}
+
+// normalizeImages 落库前规范化图片地址：整卡海报/背景与各季海报统一提取路径段。
+func (row *LibraryMediaRow) normalizeImages() {
+	norm := func(p *string) *string {
+		v := ""
+		if p != nil {
+			v = *p
+		}
+		v = tmdb.ExtractImagePath(v)
+		return &v
+	}
+	row.PosterURL = norm(row.PosterURL)
+	row.BackdropURL = norm(row.BackdropURL)
+	for _, season := range row.Seasons {
+		if d, ok := season["poster_url"]; ok {
+			season["poster_url"] = tmdb.ExtractImagePath(anyStr(d))
 		}
 	}
-	return payload
+}
+
+// rowFromMap 兼容桥：动态 map 载荷（PatchItem 的更新应用结果）转行结构。
+// 经 JSON 往返校验键与行结构的一致性；行外键被丢弃（写入面为闭集）。
+func rowFromMap(m map[string]any) LibraryMediaRow {
+	var row LibraryMediaRow
+	if b, err := json.Marshal(m); err == nil {
+		_ = json.Unmarshal(b, &row)
+	}
+	return row
 }
 
 func (s *LibraryStore) hydrateLibraryPayload(payload map[string]any) map[string]any {
@@ -730,21 +769,21 @@ type SaveDiff struct {
 // SaveSnapshot 全量保存媒体库快照。
 // 读旧值、清表、逐行写入同在一个事务：中途崩溃整体回滚，不会留下半库；
 // 也把逐行 upsert 的 N 次 auto-commit fsync 合并为一次提交。
-func (s *LibraryStore) SaveSnapshot(movies, tvShows []map[string]any) SaveDiff {
+func (s *LibraryStore) SaveSnapshot(movies, tvShows []LibraryMediaRow) SaveDiff {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	now := utcNow()
 	newMovies := map[int64]bool{}
 	for _, m := range movies {
-		if id := jsonx.Int(m, "tmdb_id", 0); id > 0 {
-			newMovies[id] = true
+		if m.TmdbID > 0 {
+			newMovies[m.TmdbID] = true
 		}
 	}
 	newTV := map[int64]bool{}
 	for _, t := range tvShows {
-		if id := jsonx.Int(t, "tmdb_id", 0); id > 0 {
-			newTV[id] = true
+		if t.TmdbID > 0 {
+			newTV[t.TmdbID] = true
 		}
 	}
 
@@ -784,10 +823,13 @@ func (s *LibraryStore) SaveSnapshot(movies, tvShows []map[string]any) SaveDiff {
 		log.Printf("媒体库快照保存失败（清表）：%v", err)
 		return SaveDiff{TotalMovies: len(movies), TotalTV: len(tvShows), ScannedAt: now}
 	}
-	for _, payload := range append(append([]map[string]any{}, movies...), tvShows...) {
-		mtime := jsonx.Int(payload, "folder_modified_time", 0)
-		if err := s.upsertLibraryItemTx(tx, payload, now, mtime); err != nil {
-			log.Printf("媒体库快照保存失败（写入 %s）：%v", jsonx.Str(payload, "drive_folder_id"), err)
+	for _, row := range append(append([]LibraryMediaRow{}, movies...), tvShows...) {
+		mtime := int64(0)
+		if row.FolderModifiedTime != nil {
+			mtime = *row.FolderModifiedTime
+		}
+		if err := s.upsertLibraryItemTx(tx, &row, now, mtime); err != nil {
+			log.Printf("媒体库快照保存失败（写入 %s）：%v", row.DriveFolderID, err)
 			return SaveDiff{TotalMovies: len(movies), TotalTV: len(tvShows), ScannedAt: now}
 		}
 	}
@@ -822,21 +864,34 @@ func (s *LibraryStore) SaveSnapshot(movies, tvShows []map[string]any) SaveDiff {
 	return diff
 }
 
-func (s *LibraryStore) upsertLibraryItem(payload map[string]any, scannedAt string, folderModifiedTime int64) {
-	if err := s.upsertLibraryItemTx(s.db, payload, scannedAt, folderModifiedTime); err != nil {
-		log.Printf("upsert library item 失败 [%s]: %v", jsonx.Str(payload, "drive_folder_id"), err)
+func (s *LibraryStore) upsertLibraryItem(row *LibraryMediaRow, scannedAt string, folderModifiedTime int64) {
+	if err := s.upsertLibraryItemTx(s.db, row, scannedAt, folderModifiedTime); err != nil {
+		log.Printf("upsert library item 失败 [%s]: %v", row.DriveFolderID, err)
 	}
 }
 
-// upsertLibraryItemTx 写入单条库条目（db 或 tx 二选一传入）；错误上抛由调用方决定处理。
-func (s *LibraryStore) upsertLibraryItemTx(db dbExecer, payload map[string]any, scannedAt string, folderModifiedTime int64) error {
-	payload = s.normalizeLibraryPayload(payload)
-	driveFolderID := jsonx.Str(payload, "drive_folder_id")
-	if driveFolderID == "" {
+// nullablePtr 指针转 SQL 可空值（nil → NULL）。
+func nullablePtr[T any](p *T) any {
+	if p == nil {
 		return nil
 	}
-	totalEps := nullableInt(payload["total_episodes"])
-	inLibEps := nullableInt(payload["in_library_episodes"])
+	return *p
+}
+
+// upsertLibraryItemTx 写入单条库条目（db 或 tx 二选一传入）；错误上抛由调用方决定处理。
+func (s *LibraryStore) upsertLibraryItemTx(db dbExecer, row *LibraryMediaRow, scannedAt string, folderModifiedTime int64) error {
+	row.normalizeImages()
+	if row.DriveFolderID == "" {
+		return nil
+	}
+	parentID := ""
+	if row.DriveParentID != nil {
+		parentID = *row.DriveParentID
+	}
+	status := ""
+	if row.Status != nil {
+		status = *row.Status
+	}
 	_, err := db.Exec(`INSERT INTO library_media(
 		drive_folder_id, media_type, tmdb_id, title, original_title, year,
 		poster_url, backdrop_url, overview, rating, status,
@@ -854,22 +909,22 @@ func (s *LibraryStore) upsertLibraryItemTx(db dbExecer, payload map[string]any, 
 		folder_modified_time = excluded.folder_modified_time,
 		parent_id = COALESCE(NULLIF(excluded.parent_id, ''), library_media.parent_id),
 		last_scanned_at = excluded.last_scanned_at, updated_at = excluded.updated_at`,
-		driveFolderID,
-		jsonx.Str(payload, "media_type"),
-		jsonx.Int(payload, "tmdb_id", 0),
-		jsonx.Str(payload, "title"),
-		jsonx.Str(payload, "original_title"),
-		jsonx.Str(payload, "year"),
-		nullableString(payload["poster_url"]),
-		nullableString(payload["backdrop_url"]),
-		jsonx.Str(payload, "overview"),
-		jsonx.Float(payload, "rating", 0),
-		jsonx.Str(payload, "status"),
-		totalEps,
-		inLibEps,
-		marshalJSON(payload),
+		row.DriveFolderID,
+		row.MediaType,
+		row.TmdbID,
+		row.Title,
+		row.OriginalTitle,
+		row.Year,
+		nullablePtr(row.PosterURL),
+		nullablePtr(row.BackdropURL),
+		row.Overview,
+		row.Rating,
+		status,
+		nullablePtr(row.TotalEpisodes),
+		nullablePtr(row.InLibraryEpisodes),
+		marshalJSON(row),
 		folderModifiedTime,
-		jsonx.Str(payload, "drive_parent_id"),
+		parentID,
 		scannedAt,
 		scannedAt,
 	)
@@ -879,48 +934,6 @@ func (s *LibraryStore) upsertLibraryItemTx(db dbExecer, payload map[string]any, 
 // dbExecer 数据库执行接口：*sql.DB 与 *sql.Tx 的公共子集，供写路径复用。
 type dbExecer interface {
 	Exec(query string, args ...any) (sql.Result, error)
-}
-
-func nullableInt(v any) any {
-	switch n := v.(type) {
-	case float64:
-		return int64(n)
-	case int:
-		return int64(n)
-	case int64:
-		return n
-	case *int64:
-		if n == nil {
-			return nil
-		}
-		return *n
-	case *int:
-		if n == nil {
-			return nil
-		}
-		return int64(*n)
-	}
-	return nil
-}
-
-func nullableString(v any) any {
-	switch s := v.(type) {
-	case string:
-		if tmdb.ExtractImagePath(s) != "" {
-			return tmdb.ExtractImagePath(s)
-		}
-		return s
-	case *string:
-		// 结构体字段直传 map 时是指针，不能静默丢成 NULL
-		if s == nil {
-			return nil
-		}
-		if tmdb.ExtractImagePath(*s) != "" {
-			return tmdb.ExtractImagePath(*s)
-		}
-		return *s
-	}
-	return nil
 }
 
 // IncrementalDiff 增量保存结果。
@@ -933,7 +946,7 @@ type IncrementalDiff struct {
 
 // SaveIncremental 增量保存媒体库条目。单事务写入：全部条目原子生效，
 // 中途失败整体回滚——读者（WebUI 分页/统计）不会看到半程数据；错误上抛由调用方记录。
-func (s *LibraryStore) SaveIncremental(items []map[string]any, folderMtimes map[string]int64) (IncrementalDiff, error) {
+func (s *LibraryStore) SaveIncremental(items []LibraryMediaRow, folderMtimes map[string]int64) (IncrementalDiff, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := utcNow()
@@ -943,23 +956,23 @@ func (s *LibraryStore) SaveIncremental(items []map[string]any, folderMtimes map[
 		return diff, fmt.Errorf("开启事务失败：%w", err)
 	}
 	defer func() { _ = tx.Rollback() }() // 提交后 Rollback 返回 ErrTxDone，忽略
-	for _, payload := range items {
-		driveFolderID := jsonx.Str(payload, "drive_folder_id")
-		if driveFolderID == "" {
+	for i := range items {
+		row := &items[i]
+		if row.DriveFolderID == "" {
 			continue
 		}
 		diff.Total++
 		var existing string
-		switch err := tx.QueryRow("SELECT drive_folder_id FROM library_media WHERE drive_folder_id = ?", driveFolderID).Scan(&existing); {
+		switch err := tx.QueryRow("SELECT drive_folder_id FROM library_media WHERE drive_folder_id = ?", row.DriveFolderID).Scan(&existing); {
 		case err == nil:
 			diff.UpdatedItems++
 		case errors.Is(err, sql.ErrNoRows):
 			diff.NewItems++
 		default:
-			return diff, fmt.Errorf("查询库条目 %s 失败：%w", driveFolderID, err)
+			return diff, fmt.Errorf("查询库条目 %s 失败：%w", row.DriveFolderID, err)
 		}
-		if err := s.upsertLibraryItemTx(tx, payload, now, folderMtimes[driveFolderID]); err != nil {
-			return diff, fmt.Errorf("写入库条目 %s 失败：%w", driveFolderID, err)
+		if err := s.upsertLibraryItemTx(tx, row, now, folderMtimes[row.DriveFolderID]); err != nil {
+			return diff, fmt.Errorf("写入库条目 %s 失败：%w", row.DriveFolderID, err)
 		}
 	}
 	if err := setStateTx(tx, scanAtKey, now); err != nil {
@@ -1017,7 +1030,12 @@ func (s *LibraryStore) PatchItem(driveFolderID string, updates map[string]any) b
 	if scannedAt == "" {
 		scannedAt = utcNow()
 	}
-	s.upsertLibraryItem(payload, scannedAt, jsonx.Int(payload, "folder_modified_time", 0))
+	row := rowFromMap(payload)
+	mtime := int64(0)
+	if row.FolderModifiedTime != nil {
+		mtime = *row.FolderModifiedTime
+	}
+	s.upsertLibraryItem(&row, scannedAt, mtime)
 	return true
 }
 

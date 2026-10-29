@@ -1,12 +1,25 @@
 package store
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"meta2cloud/internal/titlematch"
 )
+
+// toRows 测试辅助：map 字面量 → 行结构（经 JSON 往返，同时校验 tag 对齐）。
+func toRows(ms []map[string]any) []LibraryMediaRow {
+	out := make([]LibraryMediaRow, 0, len(ms))
+	for _, m := range ms {
+		b, _ := json.Marshal(m)
+		var r LibraryMediaRow
+		_ = json.Unmarshal(b, &r)
+		out = append(out, r)
+	}
+	return out
+}
 
 func newTestStore(t *testing.T) *LibraryStore {
 	t.Helper()
@@ -100,7 +113,7 @@ func TestLibrarySnapshotFlow(t *testing.T) {
 		{"drive_folder_id": "f2", "media_type": "tv", "tmdb_id": 1396, "title": "绝命毒师", "year": "2008",
 			"total_episodes": 62, "in_library_episodes": 50},
 	}
-	diff := s.SaveSnapshot(movies, tv)
+	diff := s.SaveSnapshot(toRows(movies), toRows(tv))
 	if diff.TotalMovies != 1 || diff.TotalTV != 1 || diff.NewMovies != 1 {
 		t.Fatalf("diff = %+v", diff)
 	}
@@ -113,7 +126,7 @@ func TestLibrarySnapshotFlow(t *testing.T) {
 		t.Errorf("poster_url = %v", v)
 	}
 	// 再保存一次：新增为 0
-	diff2 := s.SaveSnapshot(movies, tv)
+	diff2 := s.SaveSnapshot(toRows(movies), toRows(tv))
 	if diff2.NewMovies != 0 {
 		t.Errorf("重复保存 new_movies = %d, want 0", diff2.NewMovies)
 	}
@@ -135,7 +148,7 @@ func TestGetStatsDedupMultiFolder(t *testing.T) {
 		{"drive_folder_id": "f2", "media_type": "tv", "tmdb_id": 1396, "title": "Breaking Bad 绝命毒师",
 			"total_episodes": 62, "in_library_episodes": 30},
 	}
-	s.SaveSnapshot(nil, tv)
+	s.SaveSnapshot(nil, toRows(tv))
 	stats := s.GetStats()
 	if stats.TotalTVShows != 1 {
 		t.Errorf("total_tv_shows = %d, want 1（多目录按实体去重）", stats.TotalTVShows)
@@ -147,10 +160,10 @@ func TestGetStatsDedupMultiFolder(t *testing.T) {
 
 func TestMarkMissingAndPatch(t *testing.T) {
 	s := newTestStore(t)
-	s.SaveIncremental([]map[string]any{
+	s.SaveIncremental(toRows([]map[string]any{
 		{"drive_folder_id": "a", "media_type": "movie", "tmdb_id": 1, "title": "A"},
 		{"drive_folder_id": "b", "media_type": "movie", "tmdb_id": 2, "title": "B"},
-	}, nil)
+	}), nil)
 	if n, err := s.MarkMissingFolders([]string{"a"}); err != nil || n != 1 {
 		t.Errorf("markMissing = %d, %v, want 1, nil", n, err)
 	}
@@ -181,7 +194,7 @@ func TestGetSnapshotPage(t *testing.T) {
 		{"drive_folder_id": "t1", "media_type": "tv", "tmdb_id": 201, "title": "令和的斑小姐", "year": "2026", "in_library_episodes": 11, "folder_modified_time": 50},
 		{"drive_folder_id": "t2", "media_type": "tv", "tmdb_id": 201, "title": "令和妖神斑小姐", "year": "2026", "in_library_episodes": 12, "folder_modified_time": 60},
 	}
-	s.SaveSnapshot(movies, tv)
+	s.SaveSnapshot(toRows(movies), toRows(tv))
 
 	// 第 1 页（每页 2 条）：电影按 folder_modified_time 倒序
 	p1 := s.GetSnapshotPage(SnapshotQuery{SortBy: "folder_modified_time", SortOrder: "desc", Page: 1, PageSize: 2})
@@ -248,7 +261,7 @@ func TestBatchTmdbEntriesAndFolderGroups(t *testing.T) {
 		{"drive_folder_id": "t1", "media_type": "tv", "tmdb_id": 201, "title": "令和的斑小姐", "year": "2026"},
 		{"drive_folder_id": "t2", "media_type": "tv", "tmdb_id": 201, "title": "令和妖神斑小姐", "year": "2026"},
 	}
-	s.SaveSnapshot(movies, tv)
+	s.SaveSnapshot(toRows(movies), toRows(tv))
 
 	groups := s.ListFolderIDsGroupedByTmdb()
 	if got := groups["tv:201"]; len(got) != 2 {
@@ -262,9 +275,9 @@ func TestBatchTmdbEntriesAndFolderGroups(t *testing.T) {
 func TestMediaParentIDPersistence(t *testing.T) {
 	s := newTestStore(t)
 	// 带 drive_parent_id 的载荷：写入后可经 ListClassifiableItems 读回
-	s.SaveIncremental([]map[string]any{
+	s.SaveIncremental(toRows([]map[string]any{
 		{"drive_folder_id": "f1", "drive_parent_id": "cat-anime", "media_type": "tv", "tmdb_id": 1, "title": "A"},
-	}, nil)
+	}), nil)
 	refs := s.ListClassifiableItems()
 	if len(refs) != 1 || refs[0].ParentID != "cat-anime" {
 		t.Fatalf("parent_id 应为 cat-anime: %+v", refs)
@@ -275,9 +288,9 @@ func TestMediaParentIDPersistence(t *testing.T) {
 		t.Fatalf("更新后 parent_id 应为 cat-normal: %+v", refs)
 	}
 	// 不带父信息的载荷（如旧数据回放）不应清掉已有值
-	s.SaveIncremental([]map[string]any{
+	s.SaveIncremental(toRows([]map[string]any{
 		{"drive_folder_id": "f1", "media_type": "tv", "tmdb_id": 1, "title": "A"},
-	}, nil)
+	}), nil)
 	if refs = s.ListClassifiableItems(); refs[0].ParentID != "cat-normal" {
 		t.Fatalf("空父信息载荷不应清掉已有 parent_id: %+v", refs)
 	}

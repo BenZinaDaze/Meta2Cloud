@@ -25,6 +25,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// libRows 测试辅助：map 字面量 → 库行结构（经 JSON 往返）。
+func libRows(ms []map[string]any) []store.LibraryMediaRow {
+	out := make([]store.LibraryMediaRow, 0, len(ms))
+	for _, m := range ms {
+		b, _ := json.Marshal(m)
+		var r store.LibraryMediaRow
+		_ = json.Unmarshal(b, &r)
+		out = append(out, r)
+	}
+	return out
+}
+
 // testServer 以指定运行时构造裸 Server（不经 NewServer 的路由注册/后台任务），
 // 供直接调用单个 handler 方法的测试使用。
 func testServer(rt *Runtime) *Server { return &Server{rt: rt} }
@@ -1068,10 +1080,10 @@ func TestScanAggregatesDuplicateShowFolders(t *testing.T) {
 
 	// 预置库条目: 两个目录都已关联同一 tmdb_id(手动修正后的状态)
 	libStore := rt.GetLibraryStore()
-	libStore.SaveIncremental([]map[string]any{
+	libStore.SaveIncremental(libRows([]map[string]any{
 		{"drive_folder_id": showA.ID, "media_type": "tv", "tmdb_id": 312507, "title": "令和的斑小姐", "year": "2026"},
 		{"drive_folder_id": showB.ID, "media_type": "tv", "tmdb_id": 312507, "title": "令和妖神斑小姐", "year": "2026"},
-	}, nil)
+	}), nil)
 
 	server := NewServer(rt)
 	t.Cleanup(server.Close)
@@ -1119,9 +1131,9 @@ func TestGetMovieDetailByTmdbID(t *testing.T) {
 	rt.provider = fp.provider()
 
 	libStore := rt.GetLibraryStore()
-	libStore.SaveIncremental([]map[string]any{
+	libStore.SaveIncremental(libRows([]map[string]any{
 		{"drive_folder_id": movieFolder.ID, "media_type": "movie", "tmdb_id": 27205, "title": "盗梦空间", "year": "2010"},
-	}, nil)
+	}), nil)
 
 	server := NewServer(rt)
 	t.Cleanup(server.Close)
@@ -1175,10 +1187,10 @@ func TestIncrementalSiblingRescan(t *testing.T) {
 
 	// 预置库条目: 两个目录都已关联同一 tmdb_id(手动修正后的状态)
 	libStore := rt.GetLibraryStore()
-	libStore.SaveIncremental([]map[string]any{
+	libStore.SaveIncremental(libRows([]map[string]any{
 		{"drive_folder_id": showA.ID, "media_type": "tv", "tmdb_id": 312507, "title": "令和的斑小姐", "year": "2026"},
 		{"drive_folder_id": showB.ID, "media_type": "tv", "tmdb_id": 312507, "title": "令和妖神斑小姐", "year": "2026"},
-	}, nil)
+	}), nil)
 
 	server := NewServer(rt)
 	t.Cleanup(server.Close)
@@ -1198,10 +1210,10 @@ func TestIncrementalSiblingRescan(t *testing.T) {
 	}
 
 	// 模拟旧版本遗留的未聚合行: A 行回退为 11(mtime 不变)，B 行保持 12
-	libStore.SaveIncremental([]map[string]any{
+	libStore.SaveIncremental(libRows([]map[string]any{
 		{"drive_folder_id": showA.ID, "media_type": "tv", "tmdb_id": 312507,
 			"title": "令和的斑小姐", "year": "2026", "in_library_episodes": 11},
-	}, map[string]int64{showA.ID: 1000})
+	}), map[string]int64{showA.ID: 1000})
 
 	// 增量: 仅 B 的 Season 叶子 mtime 变化，A 未变
 	fp.addFile("令和妖神斑小姐 - S01E06v2.mkv", seasonB.ID)
@@ -1456,10 +1468,10 @@ func TestCategoriesReclassifyFlow(t *testing.T) {
 	tmdbClient.SetTestBaseURL(tmdbServer.URL)
 	rt.tmdbClient = tmdbClient
 
-	ls.SaveIncremental([]map[string]any{
+	ls.SaveIncremental(libRows([]map[string]any{
 		{"drive_folder_id": wrongShow.ID, "media_type": "tv", "tmdb_id": 325052, "title": "错放的动漫", "year": "2026"},
 		{"drive_folder_id": rightShow.ID, "media_type": "tv", "tmdb_id": 999, "title": "普通剧", "year": "2025"},
-	}, nil)
+	}), nil)
 	expires := float64(time.Now().Unix()) + 3600
 	_ = ls.UpsertTmdbDetail("tv", 325052, "zh-CN", map[string]any{
 		"name": "错放的动漫", "original_language": "ja",
@@ -1573,9 +1585,9 @@ func TestMediaClassificationEndpoint(t *testing.T) {
 		},
 	})
 	ls := rt.GetLibraryStore()
-	ls.SaveIncremental([]map[string]any{
+	ls.SaveIncremental(libRows([]map[string]any{
 		{"drive_folder_id": wrongShow.ID, "drive_parent_id": normal.ID, "media_type": "tv", "tmdb_id": 325052, "title": "错放的动漫"},
-	}, nil)
+	}), nil)
 
 	server := NewServer(rt)
 	t.Cleanup(server.Close)

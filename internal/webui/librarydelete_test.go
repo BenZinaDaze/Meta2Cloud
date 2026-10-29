@@ -48,9 +48,9 @@ func newLibraryDeleteServer(t *testing.T) *libraryDeleteEnv {
 	rt.provider = fp.provider()
 
 	// 库条目
-	rt.GetLibraryStore().SaveIncremental([]map[string]any{
+	rt.GetLibraryStore().SaveIncremental(libRows([]map[string]any{
 		{"drive_folder_id": show.ID, "media_type": "tv", "tmdb_id": int64(312507), "title": "删除之剧", "year": "2024"},
-	}, nil)
+	}), nil)
 
 	// STRM 记录 + 本地 .strm 文件
 	env := &libraryDeleteEnv{rt: rt, fp: fp, showID: show.ID, fileIDs: []string{f1.ID, f2.ID}}

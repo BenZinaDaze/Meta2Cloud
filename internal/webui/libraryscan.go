@@ -16,6 +16,7 @@ import (
 	"meta2cloud/internal/mediaparser"
 	"meta2cloud/internal/titlematch"
 	"meta2cloud/internal/tmdb"
+	"meta2cloud/internal/webui/store"
 )
 
 // ── 前端数据模型（对应 schemas/library.py，JSON 键保持一致） ──
@@ -716,36 +717,31 @@ func (rt *Runtime) ScanTVShowsIncremental(client cloudfile.Provider, cfg *config
 	return shows, currentMtimes
 }
 
-// mediaItemToPayload MediaItem → store 载荷。
-func mediaItemToPayload(m MediaItem) map[string]any {
-	payload := map[string]any{
-		"tmdb_id": m.TmdbID, "title": m.Title, "original_title": m.OriginalTitle,
-		"year": m.Year, "media_type": m.MediaType,
-		"poster_url": anyOfStr(m.PosterURL), "backdrop_url": anyOfStr(m.BackdropURL),
-		"overview": m.Overview, "rating": m.Rating,
-	}
-	if m.Status != nil {
-		payload["status"] = *m.Status
-	}
-	if m.DriveFolderID != nil {
-		payload["drive_folder_id"] = *m.DriveFolderID
-	}
-	if m.ParentFolderID != nil {
-		payload["drive_parent_id"] = *m.ParentFolderID
+// mediaItemToRow MediaItem → 库行结构（store.LibraryMediaRow，键经 json tag 编译期约束）。
+func mediaItemToRow(m MediaItem) store.LibraryMediaRow {
+	row := store.LibraryMediaRow{
+		TmdbID: m.TmdbID, Title: m.Title, OriginalTitle: m.OriginalTitle,
+		Year: m.Year, MediaType: m.MediaType,
+		PosterURL: m.PosterURL, BackdropURL: m.BackdropURL,
+		Overview: m.Overview, Rating: m.Rating,
+		Status: m.Status, DriveFolderID: strDeref(m.DriveFolderID),
+		DriveParentID: m.ParentFolderID,
 	}
 	if m.TotalEpisodes != nil {
-		payload["total_episodes"] = *m.TotalEpisodes
+		v := int64(*m.TotalEpisodes)
+		row.TotalEpisodes = &v
 	}
 	if m.InLibraryEpisodes != nil {
-		payload["in_library_episodes"] = *m.InLibraryEpisodes
+		v := int64(*m.InLibraryEpisodes)
+		row.InLibraryEpisodes = &v
 	}
 	if m.FolderModifiedTime != nil {
-		payload["folder_modified_time"] = *m.FolderModifiedTime
+		row.FolderModifiedTime = m.FolderModifiedTime
 	}
 	if m.Seasons != nil {
-		seasons := make([]any, 0, len(m.Seasons))
+		row.Seasons = make([]map[string]any, 0, len(m.Seasons))
 		for _, s := range m.Seasons {
-			episodes := make([]any, 0, len(s.Episodes))
+			episodes := make([]map[string]any, 0, len(s.Episodes))
 			for _, e := range s.Episodes {
 				episodes = append(episodes, map[string]any{
 					"episode_number": e.EpisodeNumber, "episode_title": e.EpisodeTitle,
@@ -760,18 +756,17 @@ func mediaItemToPayload(m MediaItem) map[string]any {
 			if s.PosterURL != nil {
 				season["poster_url"] = *s.PosterURL
 			}
-			seasons = append(seasons, season)
+			row.Seasons = append(row.Seasons, season)
 		}
-		payload["seasons"] = seasons
 	}
-	return payload
+	return row
 }
 
-func anyOfStr(s *string) any {
-	if s == nil || *s == "" {
-		return nil
+func strDeref(p *string) string {
+	if p == nil {
+		return ""
 	}
-	return *s
+	return *p
 }
 
 // RefreshLibrary 刷新媒体库（增量/全量），对应 services/pipeline._do_refresh_library。
@@ -793,7 +788,7 @@ func (rt *Runtime) RefreshLibrary(incremental bool) map[string]any {
 		for k, v := range tvMtimes {
 			allMtimes[k] = v
 		}
-		items := append(mediaItemsToPayloads(movies), mediaItemsToPayloads(tvShows)...)
+		items := append(mediaItemsToRows(movies), mediaItemsToRows(tvShows)...)
 		diff, err := libStore.SaveIncremental(items, allMtimes)
 		if err != nil {
 			log.Printf("刷新媒体库：增量保存失败：%v", err)
@@ -808,7 +803,7 @@ func (rt *Runtime) RefreshLibrary(incremental bool) map[string]any {
 	}
 	movies := rt.ScanMovies(client, cfg)
 	tvShows := rt.ScanTVShows(client, cfg, false)
-	diff := libStore.SaveSnapshot(mediaItemsToPayloads(movies), mediaItemsToPayloads(tvShows))
+	diff := libStore.SaveSnapshot(mediaItemsToRows(movies), mediaItemsToRows(tvShows))
 	return map[string]any{
 		"new_movies": diff.NewMovies, "new_tv": diff.NewTV,
 		"total_movies": diff.TotalMovies, "total_tv": diff.TotalTV,
@@ -816,10 +811,10 @@ func (rt *Runtime) RefreshLibrary(incremental bool) map[string]any {
 	}
 }
 
-func mediaItemsToPayloads(items []MediaItem) []map[string]any {
-	out := make([]map[string]any, 0, len(items))
+func mediaItemsToRows(items []MediaItem) []store.LibraryMediaRow {
+	out := make([]store.LibraryMediaRow, 0, len(items))
 	for _, m := range items {
-		out = append(out, mediaItemToPayload(m))
+		out = append(out, mediaItemToRow(m))
 	}
 	return out
 }
