@@ -127,9 +127,13 @@ func (rt *Runtime) doRunPipeline() {
 		opts.OnVideoIngested = rt.HandleVideoIngested
 	}
 	pipe := pipeline.New(provider, cfg, opts)
-	summary := pipe.Run()
+	summary, runErr := pipe.Run()
 
-	rt.appLog("pipeline", "pipeline_finish", "SUCCESS", "整理流程完成", map[string]any{
+	finishLevel, finishMsg := "SUCCESS", "整理流程完成"
+	if runErr != nil {
+		finishLevel, finishMsg = "ERROR", "整理流程中止："+runErr.Error()
+	}
+	rt.appLog("pipeline", "pipeline_finish", finishLevel, finishMsg, map[string]any{
 		"runId": runID, "okCount": summary.OKCount,
 		"skippedCount": summary.SkippedCount, "failedCount": summary.FailedCount,
 	})

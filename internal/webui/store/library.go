@@ -534,7 +534,9 @@ func (s *LibraryStore) GetSnapshotPage(q SnapshotQuery) *SnapshotPage {
 	totalCount := func(mt string) int {
 		w, a := snapshotWhere(q, mt)
 		var n int
-		_ = s.db.QueryRow(`SELECT COUNT(*) FROM (SELECT 1 FROM library_media WHERE `+w+` GROUP BY `+libraryDedupKey+`)`, a...).Scan(&n)
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM (SELECT 1 FROM library_media WHERE `+w+` GROUP BY `+libraryDedupKey+`)`, a...).Scan(&n); err != nil {
+			log.Printf("统计媒体库总数失败（media_type=%s）：%v", mt, err)
+		}
 		return n
 	}
 
@@ -977,8 +979,9 @@ func (s *LibraryStore) SaveIncremental(items []map[string]any, folderMtimes map[
 	return IncrementalDiff{NewItems: newCount, UpdatedItems: updatedCount, Total: total, ScannedAt: now}
 }
 
-// MarkMissingFolders 标记不在库中的文件夹，返回更新行数。
-func (s *LibraryStore) MarkMissingFolders(existingFolderIDs []string) int64 {
+// MarkMissingFolders 标记不在库中的文件夹，返回更新行数。失败上抛错误由调用方记录，
+// 不再静默返回 0——「标记失败」与「没有缺失」对用户是两回事。
+func (s *LibraryStore) MarkMissingFolders(existingFolderIDs []string) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var res sql.Result
@@ -998,10 +1001,9 @@ func (s *LibraryStore) MarkMissingFolders(existingFolderIDs []string) int64 {
 			args...)
 	}
 	if err != nil {
-		return 0
+		return 0, fmt.Errorf("标记缺失文件夹失败：%w", err)
 	}
-	n, _ := res.RowsAffected()
-	return n
+	return res.RowsAffected()
 }
 
 // PatchItem 局部更新库条目。

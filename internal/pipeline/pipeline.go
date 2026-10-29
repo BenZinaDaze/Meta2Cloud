@@ -224,29 +224,30 @@ func (p *Pipeline) getSeasonDetailCached(tmdbID string, seasonNum int) map[strin
 
 // ── 主入口 ──────────────────────────────────────────────────
 
-// Run 执行完整整理流程。
-func (p *Pipeline) Run() PipelineSummary {
+// Run 执行完整整理流程。致命失败（配置错误/扫描失败）返回非 nil error，
+// summary 为零值；单条文件的失败计入 summary.FailedCount，不算致命错误。
+func (p *Pipeline) Run() (PipelineSummary, error) {
 	// 扫描目录：配置值为网盘根起算的相对路径（兼容旧名字/ID），在使用处解析为目录 ID
 	if p.cfg.ActiveScanFolderID() == "" {
 		p.log("❌  配置错误：当前存储后端的下载目录未设置", "ERROR")
-		return PipelineSummary{}
+		return PipelineSummary{}, fmt.Errorf("当前存储后端的下载目录未设置")
 	}
 	scanFolder, ok := cloudfile.ResolveFolderRefOrPath(p.provider, p.cfg.ActiveScanFolderID())
 	if !ok {
 		p.log(fmt.Sprintf("❌  配置错误：下载目录 %q 在网盘根目录下不存在（请检查分类配置与 115 目录）",
 			p.cfg.ActiveScanFolderID()), "ERROR")
-		return PipelineSummary{}
+		return PipelineSummary{}, fmt.Errorf("下载目录 %q 在网盘根目录下不存在", p.cfg.ActiveScanFolderID())
 	}
 	if p.cfg.ActiveRootFolderID() == "" {
 		p.log("❌  配置错误：当前存储后端的媒体库根目录未设置", "ERROR")
-		return PipelineSummary{}
+		return PipelineSummary{}, fmt.Errorf("当前存储后端的媒体库根目录未设置")
 	}
 	// 无分类兜底模式：organizer 根目录（配置值为相对路径，兼容旧名字/ID）在此解析；分类模式下不使用 organizer 根
 	if p.categories == nil {
 		rootID, ok := cloudfile.ResolveFolderRefOrPath(p.provider, p.cfg.ActiveRootFolderID())
 		if !ok {
 			p.log(fmt.Sprintf("❌  配置错误：媒体库根目录 %q 在网盘根目录下不存在", p.cfg.ActiveRootFolderID()), "ERROR")
-			return PipelineSummary{}
+			return PipelineSummary{}, fmt.Errorf("媒体库根目录 %q 在网盘根目录下不存在", p.cfg.ActiveRootFolderID())
 		}
 		p.organizer.SetRootID(rootID)
 	}
@@ -263,10 +264,15 @@ func (p *Pipeline) Run() PipelineSummary {
 
 	p.log(fmt.Sprintf("\n📂 扫描文件夹：%s（含子文件夹）", scanFolder))
 	var allFiles []cloudfile.CloudFile
-	_ = cloudfile.WalkAll(p.provider, scanFolder, 10, func(f cloudfile.CloudFile) error {
+	// 扫描失败必须中止：吞掉错误会把「网盘不可达」伪装成「空媒体库」，
+	// 进而被下游当成无事可做的正常空跑
+	if err := cloudfile.WalkAll(p.provider, scanFolder, 10, func(f cloudfile.CloudFile) error {
 		allFiles = append(allFiles, f)
 		return nil
-	})
+	}); err != nil {
+		p.log(fmt.Sprintf("❌  扫描文件夹失败：%v", err), "ERROR")
+		return PipelineSummary{}, fmt.Errorf("扫描文件夹 %s 失败：%w", scanFolder, err)
+	}
 	var videos []cloudfile.CloudFile
 	var subtitles []cloudfile.CloudFile
 	for _, f := range allFiles {
@@ -292,7 +298,7 @@ func (p *Pipeline) Run() PipelineSummary {
 		p.log("\n🧹 检查并清理空子文件夹...")
 		p.cleanupEmptyFolders(scanFolder, "", true)
 		p.log("  空文件夹清理完毕。")
-		return PipelineSummary{}
+		return PipelineSummary{}, nil
 	}
 
 	p.log(fmt.Sprintf("  找到 %d 个视频文件", len(videos)))
@@ -324,7 +330,7 @@ func (p *Pipeline) Run() PipelineSummary {
 			summary.FailedCount++
 		}
 	}
-	return summary
+	return summary, nil
 }
 
 // ── 空文件夹清理 ────────────────────────────────────────────
@@ -605,10 +611,17 @@ func (p *Pipeline) processOne(video cloudfile.CloudFile, idx, total int, subtitl
 		}
 	}
 	var orgChain []cloudfile.CloudFile
+	var ensureErr error
 	if baseID != "" {
-		orgChain, targetFolder = p.organizer.EnsureFolderWithChainUnder(baseID, meta, video.Name)
+		orgChain, targetFolder, ensureErr = p.organizer.EnsureFolderWithChainUnder(baseID, meta, video.Name)
 	} else {
-		orgChain, targetFolder = p.organizer.EnsureFolderWithChainForMeta(meta, video.Name)
+		orgChain, targetFolder, ensureErr = p.organizer.EnsureFolderWithChainForMeta(meta, video.Name)
+	}
+	if ensureErr != nil {
+		result.Status = "failed"
+		result.Reason = fmt.Sprintf("文件夹创建失败：%v", ensureErr)
+		p.log("      ❌  "+result.Reason, "ERROR")
+		return result
 	}
 	if targetFolder == nil {
 		result.Status = "failed"

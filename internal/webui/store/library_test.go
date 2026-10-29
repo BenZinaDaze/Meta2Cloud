@@ -151,8 +151,8 @@ func TestMarkMissingAndPatch(t *testing.T) {
 		{"drive_folder_id": "a", "media_type": "movie", "tmdb_id": 1, "title": "A"},
 		{"drive_folder_id": "b", "media_type": "movie", "tmdb_id": 2, "title": "B"},
 	}, nil)
-	if n := s.MarkMissingFolders([]string{"a"}); n != 1 {
-		t.Errorf("markMissing = %d, want 1", n)
+	if n, err := s.MarkMissingFolders([]string{"a"}); err != nil || n != 1 {
+		t.Errorf("markMissing = %d, %v, want 1, nil", n, err)
 	}
 	if page := s.GetSnapshotPage(SnapshotQuery{MediaType: "movie", Page: 1, PageSize: 10}); page.TotalMovies != 1 {
 		t.Errorf("in_library 过滤失败: %+v", page)

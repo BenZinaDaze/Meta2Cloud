@@ -18,10 +18,11 @@ import (
 // ── 内存版 Fake Provider ────────────────────────────────────
 
 type fakeProvider struct {
-	mu       sync.Mutex
-	children map[string][]cloudfile.CloudFile // parentID → children
-	byID     map[string]cloudfile.CloudFile
-	nextID   int
+	mu          sync.Mutex
+	children    map[string][]cloudfile.CloudFile // parentID → children
+	byID        map[string]cloudfile.CloudFile
+	nextID      int
+	failListAll bool // 置真后 ListAllFiles 报错（扫描失败路径测试用）
 }
 
 func newFakeProvider() *fakeProvider {
@@ -73,6 +74,9 @@ func (f *fakeProvider) ListFiles(folderID string, pageSize int) ([]cloudfile.Clo
 }
 
 func (f *fakeProvider) ListAllFiles(folderID string) ([]cloudfile.CloudFile, error) {
+	if f.failListAll {
+		return nil, fmt.Errorf("模拟网盘不可达")
+	}
 	return f.ListFiles(folderID, 1000)
 }
 
@@ -329,7 +333,10 @@ func TestPipelineTVFlow(t *testing.T) {
 	p := New(provider, cfg, Options{
 		TmdbClient: tmdbClient,
 	})
-	summary := p.Run()
+	summary, err := p.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
 
 	if summary.OKCount != 1 || summary.FailedCount != 0 {
 		t.Fatalf("summary = %+v", summary)
@@ -371,7 +378,10 @@ func TestPipelineMovieFlow(t *testing.T) {
 	tmdbClient.SetTestBaseURL(server.URL)
 
 	p := New(provider, cfg, Options{TmdbClient: tmdbClient})
-	summary := p.Run()
+	summary, err := p.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
 	if summary.OKCount != 1 {
 		t.Fatalf("summary = %+v", summary)
 	}
@@ -382,6 +392,28 @@ func TestPipelineMovieFlow(t *testing.T) {
 	moved, _ := provider.FindFile("盗梦空间 (2010).mkv", movieFolder.ID)
 	if moved == nil {
 		t.Fatal("电影未移动（标准命名 盗梦空间 (2010).mkv）")
+	}
+}
+
+// 扫描失败必须中止并报错：吞掉错误会把「网盘不可达」伪装成「空媒体库」正常空跑。
+func TestPipelineScanFailureAborts(t *testing.T) {
+	provider := newFakeProvider()
+	scan := provider.AddFolder("扫描", "0")
+	provider.AddFile("Inception.2010.1080p.mkv", scan.ID)
+
+	cfg := newTestConfig()
+	cfg.U115.DownloadFolderID = scan.ID
+
+	provider.mu.Lock()
+	provider.failListAll = true
+	provider.mu.Unlock()
+
+	summary, err := New(provider, cfg, Options{}).Run()
+	if err == nil {
+		t.Fatal("扫描失败应返回错误而非空跑")
+	}
+	if summary.OKCount != 0 || summary.FailedCount != 0 {
+		t.Errorf("致命失败不应产生计数，summary = %+v", summary)
 	}
 }
 
@@ -464,7 +496,10 @@ func TestPipelineTitlePinReuse(t *testing.T) {
 			"tv:1396": {"旧译名", "2008"},
 		}),
 	})
-	summary := p.Run()
+	summary, err := p.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
 	if summary.OKCount != 1 {
 		t.Fatalf("summary = %+v", summary)
 	}
@@ -506,7 +541,9 @@ func TestPipelineMergeDuplicateFolders(t *testing.T) {
 			MediaType: "tv", TmdbID: 501, Folders: []DuplicateFolderInfo{{ID: oldFolder.ID}, {ID: newFolder.ID}},
 		}}},
 	})
-	p.Run()
+	if _, err := p.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
 
 	// 重复目录文件已并入钉扎目录
 	if f, _ := provider.FindFile("新译名 - S01E02.mkv", oldSeason.ID); f == nil {
@@ -546,7 +583,9 @@ func TestPipelineMergeSkippedWhenDisabled(t *testing.T) {
 			MediaType: "tv", TmdbID: 501, Folders: []DuplicateFolderInfo{{ID: oldFolder.ID}, {ID: newFolder.ID}},
 		}}},
 	})
-	p.Run()
+	if _, err := p.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
 
 	if f, _ := provider.FindFile("新译名 - S01E02.mkv", newFolder.ID); f == nil {
 		t.Fatal("开关关闭时不应移动文件")
@@ -579,7 +618,9 @@ func TestPipelineMergeDerivesPinFromOldestFolder(t *testing.T) {
 			Folders: []DuplicateFolderInfo{{ID: oldFolder.ID}, {ID: newFolder.ID}},
 		}}},
 	})
-	p.Run()
+	if _, err := p.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
 
 	if f, _ := provider.FindFile("新译名 - S01E02.mkv", oldSeason.ID); f == nil {
 		t.Fatal("文件未并入最旧目录")
@@ -682,7 +723,10 @@ func TestPipelineCategoryLayout(t *testing.T) {
 			},
 		},
 	})
-	summary := p.Run()
+	summary, err := p.Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
 	if summary.OKCount != 1 {
 		t.Fatalf("summary = %+v", summary)
 	}

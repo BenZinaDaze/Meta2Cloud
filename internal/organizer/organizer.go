@@ -76,26 +76,25 @@ func (o *MediaOrganizer) buildPath(meta *mediaparser.MetaBase) string {
 
 // EnsureFolderWithChainUnder 幂等创建目录链，返回「叶子目录 + 自基准之下到叶子的链条」。
 // 链条节点（剧名/Season）含 ID 与实际目录名，供 STRM 钩子免网络计算相对路径。
-func (o *MediaOrganizer) EnsureFolderWithChainUnder(baseID string, meta *mediaparser.MetaBase, label string) ([]cloudfile.CloudFile, *cloudfile.CloudFile) {
+// 创建失败返回错误，由调用方终止该条目整理并上报原因；baseID 为空视为配置错误。
+func (o *MediaOrganizer) EnsureFolderWithChainUnder(baseID string, meta *mediaparser.MetaBase, label string) ([]cloudfile.CloudFile, *cloudfile.CloudFile, error) {
 	if baseID == "" {
-		return nil, nil
+		return nil, nil, fmt.Errorf("基准目录未设置")
 	}
 	folder, chain, err := o.ensureFoldersUnder(baseID, meta, label)
 	if err != nil {
-		log.Printf("[organizer] 创建文件夹失败 %q: %v", label, err)
-		return nil, nil
+		return nil, nil, err
 	}
-	return chain, folder
+	return chain, folder, nil
 }
 
-// EnsureFolderWithChainForMeta 同 EnsureFolderForMeta，附带自根之下到叶子的链条。
-func (o *MediaOrganizer) EnsureFolderWithChainForMeta(meta *mediaparser.MetaBase, label string) ([]cloudfile.CloudFile, *cloudfile.CloudFile) {
+// EnsureFolderWithChainForMeta 同 EnsureFolderWithChainUnder，基准为媒体库根目录。
+func (o *MediaOrganizer) EnsureFolderWithChainForMeta(meta *mediaparser.MetaBase, label string) ([]cloudfile.CloudFile, *cloudfile.CloudFile, error) {
 	folder, chain, err := o.ensureFoldersUnder(o.rootID, meta, label)
 	if err != nil {
-		log.Printf("[organizer] 创建文件夹失败 %q: %v", label, err)
-		return nil, nil
+		return nil, nil, err
 	}
-	return chain, folder
+	return chain, folder, nil
 }
 
 // ensureFoldersUnder 在指定基准目录下幂等创建目录链。
