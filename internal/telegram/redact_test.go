@@ -1,5 +1,5 @@
 // notify_redact_test.go —— 错误日志脱敏（bot token 不随 *url.Error 外泄）测试。
-package pipeline
+package telegram
 
 import (
 	"errors"

@@ -1,35 +1,20 @@
-// notify.go —— Telegram 入库通知（数据采集、文案构建与发送）。
+// notify.go —— Telegram 入库通知：数据采集与文案构建（发送走 internal/telegram）。
 package pipeline
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"html"
-	"io"
 	"log"
-	"net/http"
-	"net/url"
 	"sort"
 	"strings"
-	"time"
 	"unicode"
 
 	"meta2cloud/internal/config"
 	"meta2cloud/internal/jsonx"
 	"meta2cloud/internal/strutil"
+	"meta2cloud/internal/telegram"
 	"meta2cloud/internal/tmdb"
 )
-
-// redactURLError 去掉 *url.Error 携带的完整 URL（路径含 bot token），只保留底层错误，
-// 防止请求失败时凭据随错误日志与上层调用方日志外泄。
-func redactURLError(err error) error {
-	var ue *url.Error
-	if errors.As(err, &ue) {
-		return ue.Err
-	}
-	return err
-}
 
 // notifyItem Telegram 入库通知条目。
 type notifyItem struct {
@@ -365,55 +350,6 @@ func (p *Pipeline) buildNotifyCaption(first notifyItem, items []notifyItem) stri
 
 // ── 对外发送能力（供任意模块复用） ──────────────────────────
 
-// SendTelegramMessage 用配置的 Bot 发送一条 HTML 文本通知。
-// 与整理流程解耦，供 STRM 同步、订阅、定时任务等任意模块复用。
-func SendTelegramMessage(tg config.Telegram, text string) error {
-	if tg.BotToken == "" || tg.ChatID == "" {
-		return fmt.Errorf("Telegram Bot Token 或 Chat ID 未配置")
-	}
-	return postTelegram(tg, "sendMessage", map[string]any{
-		"chat_id":    tg.ChatID,
-		"text":       text,
-		"parse_mode": "HTML",
-	}, 10)
-}
-
-// SendTelegramPhoto 用配置的 Bot 发送一条带图片的 HTML 通知。
-// imageURL 为完整图片地址（如 TMDB 横版背景图），拉取失败时返回错误。
-func SendTelegramPhoto(tg config.Telegram, imageURL, caption string) error {
-	if tg.BotToken == "" || tg.ChatID == "" {
-		return fmt.Errorf("Telegram Bot Token 或 Chat ID 未配置")
-	}
-	return postTelegram(tg, "sendPhoto", map[string]any{
-		"chat_id":    tg.ChatID,
-		"photo":      imageURL,
-		"caption":    caption,
-		"parse_mode": "HTML",
-	}, 15)
-}
-
-// postTelegram 调用一个 Telegram Bot API 方法（失败时记日志并返回错误）。
-func postTelegram(tg config.Telegram, method string, payload map[string]any, timeoutSecs int) error {
-	resp, err := postJSON(fmt.Sprintf("https://api.telegram.org/bot%s/%s", tg.BotToken, method), payload, timeoutSecs)
-	if err != nil {
-		err = fmt.Errorf("请求异常：%w", redactURLError(err))
-		log.Printf("Telegram %s %v", method, err)
-		return err
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	var result struct {
-		OK          bool   `json:"ok"`
-		Description string `json:"description"`
-	}
-	if json.Unmarshal(body, &result) == nil && !result.OK {
-		err = fmt.Errorf("%s", strings.TrimSpace(string(body)))
-		log.Printf("Telegram %s 发送失败：%s", method, string(body))
-		return err
-	}
-	return nil
-}
-
 // sendTgPhoto 发送带海报/背景图的通知；图片发送失败时降级为纯文本，通知不丢。
 func (p *Pipeline) sendTgPhoto(token, chatID, posterPath, caption string) {
 	defer func() {
@@ -424,26 +360,12 @@ func (p *Pipeline) sendTgPhoto(token, chatID, posterPath, caption string) {
 	tg := config.Telegram{BotToken: token, ChatID: chatID}
 	if posterPath != "" {
 		imageURL := tmdb.ImageURL(posterPath, "w780", p.cfg.TmdbImageBaseURL())
-		if err := SendTelegramPhoto(tg, imageURL, caption); err == nil {
+		if err := telegram.SendPhoto(tg, imageURL, caption); err == nil {
 			return
 		}
 		log.Printf("图片通知发送失败，降级为纯文本通知")
 	}
-	if err := SendTelegramMessage(tg, caption); err != nil {
+	if err := telegram.SendMessage(tg, caption); err != nil {
 		log.Printf("纯文本通知发送失败：%v", err)
 	}
-}
-
-func postJSON(url string, payload any, timeoutSecs int) (*http.Response, error) {
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(string(data)))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: time.Duration(timeoutSecs) * time.Second}
-	return client.Do(req)
 }

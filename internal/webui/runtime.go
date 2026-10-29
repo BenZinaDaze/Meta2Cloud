@@ -11,9 +11,9 @@ import (
 
 	"meta2cloud/internal/cloudfile"
 	"meta2cloud/internal/config"
-	"meta2cloud/internal/pipeline"
 	"meta2cloud/internal/plexserver"
 	"meta2cloud/internal/storage"
+	"meta2cloud/internal/telegram"
 	"meta2cloud/internal/tmdb"
 	"meta2cloud/internal/trakt"
 	"meta2cloud/internal/u115"
@@ -143,7 +143,7 @@ func InitRuntime(rootDir string) *Runtime {
 	rt.health = healthState{
 		now:      time.Now,
 		services: map[string]*serviceHealth{},
-		sendTG:   pipeline.SendTelegramMessage,
+		sendTG:   telegram.SendMessage,
 		tgConfig: func() config.Telegram { return rt.GetConfig().Telegram },
 	}
 	rt.torrentURLValidator = validateOutboundURL

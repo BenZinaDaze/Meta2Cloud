@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"meta2cloud/internal/config"
-	"meta2cloud/internal/pipeline"
 	"meta2cloud/internal/scraper"
+	"meta2cloud/internal/telegram"
 	"meta2cloud/internal/u115"
 	"meta2cloud/internal/webui/store"
 )
@@ -77,7 +77,7 @@ func setupHealthTest(t *testing.T) (*tgRecorder, *Runtime) {
 	rt.health.sendTG = rec.send
 	rt.health.tgConfig = func() config.Telegram { return config.Telegram{BotToken: "tok", ChatID: "cid"} }
 	t.Cleanup(func() {
-		rt.health.sendTG = pipeline.SendTelegramMessage
+		rt.health.sendTG = telegram.SendMessage
 		rt.health.tgConfig = func() config.Telegram { return rt.GetConfig().Telegram }
 		rt.health.now = time.Now
 		rt.resetHealthState()

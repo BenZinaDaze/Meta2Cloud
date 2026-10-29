@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"meta2cloud/internal/config"
-	"meta2cloud/internal/pipeline"
+	"meta2cloud/internal/telegram"
 	"meta2cloud/internal/tmdb"
 )
 
@@ -26,13 +26,13 @@ func TestTelegramModuleFromExternal(t *testing.T) {
 	}
 
 	// ① 文本通知
-	if err := pipeline.SendTelegramMessage(cfg.Telegram, "🧩 <b>模块联调</b> · SendTelegramMessage（webui → pipeline）"); err != nil {
+	if err := telegram.SendMessage(cfg.Telegram, "🧩 <b>模块联调</b> · SendTelegramMessage（webui → pipeline）"); err != nil {
 		t.Fatalf("SendTelegramMessage: %v", err)
 	}
 
 	// ② 图片通知（TMDB 横版背景图）
 	imageURL := tmdb.ImageURL("/kuYMjcQ6BeLTBYUR1l1T8W8ZMcf.jpg", "w780", cfg.TmdbImageBaseURL())
-	if err := pipeline.SendTelegramPhoto(cfg.Telegram, imageURL, "🧩 <b>模块联调</b> · SendTelegramPhoto"); err != nil {
+	if err := telegram.SendPhoto(cfg.Telegram, imageURL, "🧩 <b>模块联调</b> · SendTelegramPhoto"); err != nil {
 		t.Fatalf("SendTelegramPhoto: %v", err)
 	}
 }
