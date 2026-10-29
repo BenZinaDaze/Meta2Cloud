@@ -177,113 +177,127 @@ func (rt *Runtime) handlePlexPlaybackNotification(plexClient *plexserver.Client,
 // 常驻一条 SSE 连接，断线指数退避重连；事件经有界队列异步分发。
 func (rt *Runtime) ensureTraktSSELoop() {
 	rt.trakt.sseOnce.Do(func() {
+		go rt.runSSELoop()
+	})
+}
+
+// runSSELoop SSE 常驻循环。外层循环 panic 不带崩进程：记录后自动重启——
+// 重启前经 sleepWatcher 节流（≥5s）并尊重停止开关，Close 后不再复活。
+// 兜底性质的 should-never-happen 防护，与内层分发 goroutine 的单事件 recover 分工不同。
+func (rt *Runtime) runSSELoop() {
+	defer func() {
+		if r := recover(); r != nil {
+			rt.appLog("trakt", "sse_loop_panic", "ERROR", fmt.Sprintf("实时通知线程异常退出，自动重启：%v", r), nil)
+			if !sleepWatcher(rt.trakt.sseWatcher, 5*time.Second) {
+				return
+			}
+			go rt.runSSELoop()
+		}
+	}()
+	rt.appLog("trakt", "sse_started", "INFO", "Plex 实时通知线程已启动", nil)
+	backoff := 5 * time.Second
+	lastGateOK := true
+	for {
+		// 门控只看 sse 开关、配对就绪与 →Trakt 方向，不受「启用定时同步」影响：
+		// 实时推送是事件驱动的观看同步，与定时全量是两个独立开关
+		gate := func() (plexClient *plexserver.Client, traktClient *trakt.Client, syncStore *store.TraktSyncStore, ok bool) {
+			cfg := rt.GetConfig()
+			if !cfg.Trakt.SSEEnabled || !cfg.Trakt.SyncToTrakt || !cfg.IsPlexReady() || !cfg.IsTraktReady() {
+				return nil, nil, nil, false
+			}
+			plexClient = rt.GetPlexClient()
+			traktClient = rt.GetTraktClient()
+			syncStore = rt.GetTraktSyncStore()
+			if plexClient == nil || traktClient == nil {
+				return nil, nil, nil, false
+			}
+			return plexClient, traktClient, syncStore, true
+		}
+		plexClient, traktClient, syncStore, ok := gate()
+		if !ok {
+			rt.setSSEConnected(false)
+			if lastGateOK {
+				rt.appLog("trakt", "sse_gate_pending", "INFO", "实时通知未开启：需开启实时通知开关并完成 Trakt 与 Plex 授权，30 秒后重新检查", nil)
+				lastGateOK = false
+			}
+			if !sleepWatcher(rt.trakt.sseWatcher, 30*time.Second) {
+				return
+			}
+			continue
+		}
+		lastGateOK = true
+
+		// 有界异步分发：读循环永不被 Trakt 写入阻塞
+		events := make(chan plexserver.PlaybackNotification, sseEventQueueSize)
 		go func() {
-			rt.appLog("trakt", "sse_started", "INFO", "Plex 实时通知线程已启动", nil)
-			backoff := 5 * time.Second
-			lastGateOK := true
-			for {
-				// 门控只看 sse 开关、配对就绪与 →Trakt 方向，不受「启用定时同步」影响：
-				// 实时推送是事件驱动的观看同步，与定时全量是两个独立开关
-				gate := func() (plexClient *plexserver.Client, traktClient *trakt.Client, syncStore *store.TraktSyncStore, ok bool) {
-					cfg := rt.GetConfig()
-					if !cfg.Trakt.SSEEnabled || !cfg.Trakt.SyncToTrakt || !cfg.IsPlexReady() || !cfg.IsTraktReady() {
-						return nil, nil, nil, false
-					}
-					plexClient = rt.GetPlexClient()
-					traktClient = rt.GetTraktClient()
-					syncStore = rt.GetTraktSyncStore()
-					if plexClient == nil || traktClient == nil {
-						return nil, nil, nil, false
-					}
-					return plexClient, traktClient, syncStore, true
+			defer func() {
+				if r := recover(); r != nil {
+					rt.appLog("trakt", "sse_worker_panic", "ERROR", fmt.Sprintf("实时事件分发异常：%v", r), nil)
 				}
-				plexClient, traktClient, syncStore, ok := gate()
-				if !ok {
-					rt.setSSEConnected(false)
-					if lastGateOK {
-						rt.appLog("trakt", "sse_gate_pending", "INFO", "实时通知未开启：需开启实时通知开关并完成 Trakt 与 Plex 授权，30 秒后重新检查", nil)
-						lastGateOK = false
-					}
-					if !sleepWatcher(rt.trakt.sseWatcher, 30*time.Second) {
-						return
-					}
-					continue
-				}
-				lastGateOK = true
-
-				// 有界异步分发：读循环永不被 Trakt 写入阻塞
-				events := make(chan plexserver.PlaybackNotification, sseEventQueueSize)
-				go func() {
-					defer func() {
-						if r := recover(); r != nil {
-							rt.appLog("trakt", "sse_worker_panic", "ERROR", fmt.Sprintf("实时事件分发异常：%v", r), nil)
-						}
-					}()
-					for notif := range events {
-						rt.handlePlexPlaybackNotification(plexClient, traktClient, syncStore, notif)
-					}
-				}()
-
-				// 「已连接」只在真正订阅成功（HTTP 200）后报告，
-				// 订阅被拒/断线不算连接成功，退避继续累加
-				var openedAt time.Time
-				ctx, cancel := context.WithCancel(context.Background())
-				go func() {
-					select {
-					case <-rt.trakt.sseWatcher.stopCh:
-						cancel()
-					case <-ctx.Done():
-					}
-				}()
-				err := plexClient.StreamNotifications(ctx, func() {
-					openedAt = time.Now()
-					rt.setSSEConnected(true)
-					rt.NotifyServiceHealth("Plex", true, "")
-					rt.appLog("trakt", "sse_connected", "INFO",
-						fmt.Sprintf("Plex 实时通知已连接（%s）", plexClient.BaseURL), nil)
-				}, func(n plexserver.PlaybackNotification) {
-					select {
-					case events <- n:
-					default:
-						// 队列满：丢最旧，保最新
-						select {
-						case <-events:
-						default:
-						}
-						select {
-						case events <- n:
-						default:
-						}
-					}
-				})
-				cancel()
-				close(events)
-				rt.setSSEConnected(false)
-				if errors.Is(err, plexserver.ErrUnauthorized) {
-					rt.NotifyServiceHealth("Plex", false, err.Error())
-				}
-				msg := "连接结束"
-				if err != nil {
-					msg = err.Error()
-				}
-				rt.appLog("trakt", "sse_disconnected", "WARNING",
-					fmt.Sprintf("Plex 实时通知已断开（%s），将于 %s 后重新连接，期间由会话轮询同步", msg, backoff), nil)
-				// 退避策略：稳定连接（存活 ≥60s）后重置；秒断（订阅被拒/服务不可达）
-				// 则逐次加倍直至 60s，避免日志刷屏；端点不存在（旧版 PMS）降到 10 分钟一探
-				switch {
-				case errors.Is(err, plexserver.ErrNotificationsUnsupported):
-					backoff = 10 * time.Minute
-				case !openedAt.IsZero() && time.Since(openedAt) >= 60*time.Second:
-					backoff = 5 * time.Second
-				case backoff < 60*time.Second:
-					backoff *= 2
-				}
-				if !sleepWatcher(rt.trakt.sseWatcher, backoff) {
-					return
-				}
+			}()
+			for notif := range events {
+				rt.handlePlexPlaybackNotification(plexClient, traktClient, syncStore, notif)
 			}
 		}()
-	})
+
+		// 「已连接」只在真正订阅成功（HTTP 200）后报告，
+		// 订阅被拒/断线不算连接成功，退避继续累加
+		var openedAt time.Time
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			select {
+			case <-rt.trakt.sseWatcher.stopCh:
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+		err := plexClient.StreamNotifications(ctx, func() {
+			openedAt = time.Now()
+			rt.setSSEConnected(true)
+			rt.NotifyServiceHealth("Plex", true, "")
+			rt.appLog("trakt", "sse_connected", "INFO",
+				fmt.Sprintf("Plex 实时通知已连接（%s）", plexClient.BaseURL), nil)
+		}, func(n plexserver.PlaybackNotification) {
+			select {
+			case events <- n:
+			default:
+				// 队列满：丢最旧，保最新
+				select {
+				case <-events:
+				default:
+				}
+				select {
+				case events <- n:
+				default:
+				}
+			}
+		})
+		cancel()
+		close(events)
+		rt.setSSEConnected(false)
+		if errors.Is(err, plexserver.ErrUnauthorized) {
+			rt.NotifyServiceHealth("Plex", false, err.Error())
+		}
+		msg := "连接结束"
+		if err != nil {
+			msg = err.Error()
+		}
+		rt.appLog("trakt", "sse_disconnected", "WARNING",
+			fmt.Sprintf("Plex 实时通知已断开（%s），将于 %s 后重新连接，期间由会话轮询同步", msg, backoff), nil)
+		// 退避策略：稳定连接（存活 ≥60s）后重置；秒断（订阅被拒/服务不可达）
+		// 则逐次加倍直至 60s，避免日志刷屏；端点不存在（旧版 PMS）降到 10 分钟一探
+		switch {
+		case errors.Is(err, plexserver.ErrNotificationsUnsupported):
+			backoff = 10 * time.Minute
+		case !openedAt.IsZero() && time.Since(openedAt) >= 60*time.Second:
+			backoff = 5 * time.Second
+		case backoff < 60*time.Second:
+			backoff *= 2
+		}
+		if !sleepWatcher(rt.trakt.sseWatcher, backoff) {
+			return
+		}
+	}
 }
 
 // sleepWatcher 可中断的睡眠：stopCh 关闭时返回 false（线程退出）。
