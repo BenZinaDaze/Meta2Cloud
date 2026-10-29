@@ -192,7 +192,7 @@ func TestHandleStrmRedirectCacheHit(t *testing.T) {
 	rt := initStrmTestRuntime(t, "s3cret")
 	pickCode := "abc123def456ghi78"
 	expires := time.Now().Add(time.Hour)
-	rt.strmLinkCache.set(pickCode, "test-ua",
+	rt.strmSvc.strmLinkCache.set(pickCode, "test-ua",
 		"https://cdn.115.com/x/%E7%94%B5%E5%BD%B1.mkv?t="+strconv.FormatInt(time.Now().Unix()+7200, 10), expires)
 
 	rr := httptest.NewRecorder()
@@ -371,14 +371,14 @@ func TestStrmFetchLimiter(t *testing.T) {
 	}
 
 	// 4) 排队超时：占满信号量（向缓冲 channel 填充令牌）后请求应快速 503
-	originWait := rt.strmFetchWait
-	rt.strmFetchWait = 50 * time.Millisecond
-	t.Cleanup(func() { rt.strmFetchWait = originWait })
-	rt.strmFetchSem <- struct{}{}
-	rt.strmFetchSem <- struct{}{}
+	originWait := rt.strmSvc.strmFetchWait
+	rt.strmSvc.strmFetchWait = 50 * time.Millisecond
+	t.Cleanup(func() { rt.strmSvc.strmFetchWait = originWait })
+	rt.strmSvc.strmFetchSem <- struct{}{}
+	rt.strmSvc.strmFetchSem <- struct{}{}
 	rr := doReq("ccc123def456ghi78")
-	<-rt.strmFetchSem
-	<-rt.strmFetchSem
+	<-rt.strmSvc.strmFetchSem
+	<-rt.strmSvc.strmFetchSem
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("信号量占满应 503，得到 %d", rr.Code)
 	}

@@ -300,9 +300,9 @@ func (rt *Runtime) runTraktCron(stop <-chan struct{}) {
 		case <-timer.C:
 		}
 		nowStr := utcNowISO()
-		rt.traktWatcher.mu.Lock()
-		rt.traktWatcher.lastPolledAt = &nowStr
-		rt.traktWatcher.mu.Unlock()
+		rt.trakt.syncWatcher.mu.Lock()
+		rt.trakt.syncWatcher.lastPolledAt = &nowStr
+		rt.trakt.syncWatcher.mu.Unlock()
 		cfg := rt.GetConfig()
 		if !cfg.IsPlexReady() || !cfg.IsTraktReady() {
 			if !readyWarned {
@@ -458,7 +458,7 @@ func (rt *Runtime) StopBackgroundWatchers() {
 	rt.sched.strmCron.halt()
 	rt.sched.u115Cron.halt()
 	rt.sched.rssCron.halt()
-	for _, w := range []*watcherState{rt.sched.u115Auto, rt.sched.rssPoll, rt.sched.strmSync, rt.traktWatcher, rt.traktSessionWatcher, rt.traktSSEWatcher} {
+	for _, w := range []*watcherState{rt.sched.u115Auto, rt.sched.rssPoll, rt.sched.strmSync, rt.trakt.syncWatcher, rt.trakt.sessionWatcher, rt.trakt.sseWatcher} {
 		w.mu.Lock()
 		if !w.stopped {
 			w.stopped = true

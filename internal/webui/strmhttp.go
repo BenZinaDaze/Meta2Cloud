@@ -53,37 +53,40 @@ type negativeEntry struct {
 }
 
 func (s *Server) strmNegativeGet(pickCode string) (negativeEntry, bool) {
-	s.rt.strmNegMu.Lock()
-	defer s.rt.strmNegMu.Unlock()
-	e, ok := s.rt.strmNeg[pickCode]
+	svc := s.rt.strmSvc
+	svc.strmNegMu.Lock()
+	defer svc.strmNegMu.Unlock()
+	e, ok := svc.strmNeg[pickCode]
 	if ok && time.Now().After(e.until) {
-		delete(s.rt.strmNeg, pickCode)
+		delete(svc.strmNeg, pickCode)
 		return negativeEntry{}, false
 	}
 	return e, ok
 }
 
 func (s *Server) strmNegativeSet(pickCode string, status int, msg string) {
-	s.rt.strmNegMu.Lock()
-	defer s.rt.strmNegMu.Unlock()
-	if len(s.rt.strmNeg) > 1024 {
+	svc := s.rt.strmSvc
+	svc.strmNegMu.Lock()
+	defer svc.strmNegMu.Unlock()
+	if len(svc.strmNeg) > 1024 {
 		now := time.Now()
-		for k, v := range s.rt.strmNeg {
+		for k, v := range svc.strmNeg {
 			if now.After(v.until) {
-				delete(s.rt.strmNeg, k)
+				delete(svc.strmNeg, k)
 			}
 		}
 	}
-	s.rt.strmNeg[pickCode] = negativeEntry{status: status, msg: msg, until: time.Now().Add(s.rt.strmNegTTL)}
+	svc.strmNeg[pickCode] = negativeEntry{status: status, msg: msg, until: time.Now().Add(svc.strmNegTTL)}
 }
 
 // resetStrmLimiter 测试用：清空直链缓存、负缓存与信号量。
 func (rt *Runtime) resetStrmLimiter() {
-	rt.strmLinkCache.clear()
-	rt.strmNegMu.Lock()
-	rt.strmNeg = map[string]negativeEntry{}
-	rt.strmNegMu.Unlock()
-	rt.strmFetchSem = make(chan struct{}, strmFetchConcurrency)
+	svc := rt.strmSvc
+	svc.strmLinkCache.clear()
+	svc.strmNegMu.Lock()
+	svc.strmNeg = map[string]negativeEntry{}
+	svc.strmNegMu.Unlock()
+	svc.strmFetchSem = make(chan struct{}, strmFetchConcurrency)
 }
 
 // directLink 缓存的直链条目。
@@ -202,7 +205,7 @@ func (s *Server) handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 	// UA 必须透传：115 直链与 UA 绑定
 	ua := r.Header.Get("User-Agent")
 
-	if link, ok := s.rt.strmLinkCache.get(pickCode, ua); ok {
+	if link, ok := s.rt.strmSvc.strmLinkCache.get(pickCode, ua); ok {
 		s.strmRedirect(w, r, link)
 		recordPlayback(true, http.StatusFound, "", link.fileName)
 		return
@@ -225,10 +228,10 @@ func (s *Server) handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 
 	// 全局并发上限 + 排队超时：刮削扫描风暴时快速失败，不堆积
 	select {
-	case s.rt.strmFetchSem <- struct{}{}:
-		defer func() { <-s.rt.strmFetchSem }()
+	case s.rt.strmSvc.strmFetchSem <- struct{}{}:
+		defer func() { <-s.rt.strmSvc.strmFetchSem }()
 		// 双检：排队期间同 pickcode+UA 可能已被其他请求取到
-		if link, ok := s.rt.strmLinkCache.get(pickCode, ua); ok {
+		if link, ok := s.rt.strmSvc.strmLinkCache.get(pickCode, ua); ok {
 			s.strmRedirect(w, r, link)
 			recordPlayback(true, http.StatusFound, "", link.fileName)
 			return
@@ -242,7 +245,7 @@ func (s *Server) handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		expires := directURLExpiry(rawURL)
-		s.rt.strmLinkCache.set(pickCode, ua, rawURL, expires)
+		s.rt.strmSvc.strmLinkCache.set(pickCode, ua, rawURL, expires)
 
 		fileName := query.Get("file_name")
 		if fileName == "" {
@@ -252,7 +255,7 @@ func (s *Server) handleStrmRedirect(w http.ResponseWriter, r *http.Request) {
 		recordPlayback(false, http.StatusFound, "", fileName)
 		return
 
-	case <-time.After(s.rt.strmFetchWait):
+	case <-time.After(s.rt.strmSvc.strmFetchWait):
 		w.Header().Set("Retry-After", "10")
 		recordPlayback(false, http.StatusServiceUnavailable, "直链获取排队超时", query.Get("file_name"))
 		writeJSONError(w, http.StatusServiceUnavailable, "直链获取排队超时（扫描限流中），请稍后重试")

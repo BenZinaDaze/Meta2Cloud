@@ -62,39 +62,11 @@ type Runtime struct {
 	// ── 种子链接外呼校验钩子（测试可替换；见 u115svc.go）──
 	torrentURLValidator func(string) error
 
-	// ── STRM 直链缓存/负缓存/并发信号量（见 strmhttp.go）──
-	strmLinkCache *directLinkCache
-	strmNegMu     sync.Mutex
-	strmNeg       map[string]negativeEntry
-	strmFetchSem  chan struct{}
-	strmFetchWait time.Duration // 测试可调
-	strmNegTTL    time.Duration
-
 	// ── 整理管线单飞调度（见 pipelinesvc.go）──
 	pipeline pipelineState
 
 	// ── 观看同步运行态（scrobble / SSE / 会话轮询 / 双向同步；见 scrobble.go 等）──
-	sessionScrobbleMu   sync.Mutex
-	sessionScrobbleByID map[string]*sessionScrobble
-	traktSSEState       struct {
-		mu          sync.Mutex
-		connected   bool
-		lastEventAt time.Time
-	}
-	traktWatcher        *watcherState
-	traktSessionWatcher *watcherState
-	traktSSEWatcher     *watcherState
-	// u115AutoWatcher/rssWatcher/strmWatcher 非 cron 常驻轮询线程运行态
-	// （115 自动整理 / RSS 订阅 / STRM 直链同步）
-	u115AutoWatcher  *watcherState
-	rssWatcher       *watcherState
-	strmWatcher      *watcherState
-	traktSessionOnce sync.Once
-	traktSSEOnce     sync.Once
-	traktSyncState   struct {
-		mu      sync.Mutex
-		running bool
-	}
+	trakt traktState
 
 	jwtSecretOnce  sync.Once
 	jwtSecretValue string
@@ -102,7 +74,7 @@ type Runtime struct {
 	// broadcaster 日志 WS 实时广播（见 miscroutes.go）
 	broadcaster wsBroadcaster
 
-	// strmSvc STRM 同步服务（入库钩子缓冲，见 strmsvc.go）
+	// strmSvc STRM 域服务（302 直链缓存 + 同步引擎 + 入库钩子；见 strmsvc.go/strmhttp.go）
 	strmSvc *strmService
 
 	// loginLimiter 登录失败限速（内存级，按来源 IP；见 server.go）
@@ -166,12 +138,7 @@ func InitRuntime(rootDir string) *Runtime {
 	rt.categoriesM = 0
 	rt.configSig = [3]int64{}
 	rt.broadcaster = wsBroadcaster{conns: map[chan map[string]any]bool{}}
-	rt.sessionScrobbleByID = map[string]*sessionScrobble{}
-	rt.strmLinkCache = &directLinkCache{entries: map[string]directLink{}}
-	rt.strmNeg = map[string]negativeEntry{}
-	rt.strmFetchSem = make(chan struct{}, strmFetchConcurrency)
-	rt.strmFetchWait = strmFetchWaitTimeout
-	rt.strmNegTTL = strmNegativeCacheTTL
+	rt.trakt.scrobbleByID = map[string]*sessionScrobble{}
 	// health 钩子默认实现（包级 init 环依赖已随钩子入字段消除）
 	rt.health = healthState{
 		now:      time.Now,
@@ -180,9 +147,9 @@ func InitRuntime(rootDir string) *Runtime {
 		tgConfig: func() config.Telegram { return rt.GetConfig().Telegram },
 	}
 	rt.torrentURLValidator = validateOutboundURL
-	rt.traktWatcher = &watcherState{stopCh: make(chan struct{})}
-	rt.traktSessionWatcher = &watcherState{stopCh: make(chan struct{})}
-	rt.traktSSEWatcher = &watcherState{stopCh: make(chan struct{})}
+	rt.trakt.syncWatcher = &watcherState{stopCh: make(chan struct{})}
+	rt.trakt.sessionWatcher = &watcherState{stopCh: make(chan struct{})}
+	rt.trakt.sseWatcher = &watcherState{stopCh: make(chan struct{})}
 	rt.sched = schedulerState{
 		traktCron: &cronLoop{name: "观看同步"},
 		strmCron:  &cronLoop{name: "STRM 定时同步"},
@@ -192,7 +159,14 @@ func InitRuntime(rootDir string) *Runtime {
 		rssPoll:   &watcherState{stopCh: make(chan struct{})},
 		strmSync:  &watcherState{stopCh: make(chan struct{})},
 	}
-	rt.strmSvc = &strmService{rt: rt}
+	rt.strmSvc = &strmService{
+		rt:            rt,
+		strmLinkCache: &directLinkCache{entries: map[string]directLink{}},
+		strmNeg:       map[string]negativeEntry{},
+		strmFetchSem:  make(chan struct{}, strmFetchConcurrency),
+		strmFetchWait: strmFetchWaitTimeout,
+		strmNegTTL:    strmNegativeCacheTTL,
+	}
 	// 上一次初始化打开的存储句柄先关闭（重复 InitRuntime 的测试场景防 fd 泄漏）
 	rt.closeStores()
 	rt.initStores()

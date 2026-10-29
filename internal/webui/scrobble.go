@@ -4,6 +4,7 @@ package webui
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"meta2cloud/internal/plexserver"
@@ -89,21 +90,46 @@ type sessionScrobble struct {
 	unresolvedLogged bool
 }
 
+// traktState 观看同步域运行态：scrobble 会话表 / SSE 连接状态 / 双向同步
+// 运行标志 / 三个常驻线程的 watcherState 与启动 Once。
+type traktState struct {
+	scrobbleMu   sync.Mutex
+	scrobbleByID map[string]*sessionScrobble
+
+	sse struct {
+		mu          sync.Mutex
+		connected   bool
+		lastEventAt time.Time
+	}
+
+	run struct {
+		mu      sync.Mutex
+		running bool
+	}
+
+	syncWatcher    *watcherState // 定时全量同步心跳
+	sessionWatcher *watcherState // Plex 会话轮询心跳
+	sseWatcher     *watcherState // SSE 连接生命周期
+
+	sessionOnce sync.Once
+	sseOnce     sync.Once
+}
+
 func (rt *Runtime) scrobbleStateFor(sessionKey string) *sessionScrobble {
-	rt.sessionScrobbleMu.Lock()
-	defer rt.sessionScrobbleMu.Unlock()
-	st := rt.sessionScrobbleByID[sessionKey]
+	rt.trakt.scrobbleMu.Lock()
+	defer rt.trakt.scrobbleMu.Unlock()
+	st := rt.trakt.scrobbleByID[sessionKey]
 	if st == nil {
 		st = &sessionScrobble{}
-		rt.sessionScrobbleByID[sessionKey] = st
+		rt.trakt.scrobbleByID[sessionKey] = st
 	}
 	return st
 }
 
 func (rt *Runtime) dropScrobbleState(sessionKey string) {
-	rt.sessionScrobbleMu.Lock()
-	delete(rt.sessionScrobbleByID, sessionKey)
-	rt.sessionScrobbleMu.Unlock()
+	rt.trakt.scrobbleMu.Lock()
+	delete(rt.trakt.scrobbleByID, sessionKey)
+	rt.trakt.scrobbleMu.Unlock()
 }
 
 // scrobbleTransition 按状态跃迁上报 start/pause（均不计次）。仅 stop 收尾
@@ -262,10 +288,10 @@ func (rt *Runtime) finishSwitchedSession(syncStore *store.TraktSyncStore, traktC
 func (rt *Runtime) pollPlexSessionsOnce() {
 	cfg := rt.GetConfig()
 	nowStr := utcNowISO()
-	rt.traktSessionWatcher.mu.Lock()
-	rt.traktSessionWatcher.lastPolledAt = &nowStr
-	rt.traktSessionWatcher.lastPollError = nil
-	rt.traktSessionWatcher.mu.Unlock()
+	rt.trakt.sessionWatcher.mu.Lock()
+	rt.trakt.sessionWatcher.lastPolledAt = &nowStr
+	rt.trakt.sessionWatcher.lastPollError = nil
+	rt.trakt.sessionWatcher.mu.Unlock()
 
 	// 纯兜底策略：SSE 在线时不并行轮询——实时事件已覆盖会话观察与上报，
 	// 仅在 SSE 未连接（开关关闭/断线窗口/旧版 PMS 无端点）时才主动轮询。
@@ -294,9 +320,9 @@ func (rt *Runtime) pollPlexSessionsOnce() {
 	sessions, err := plexClient.Sessions()
 	if err != nil {
 		msg := fmt.Sprintf("%v", err)
-		rt.traktSessionWatcher.mu.Lock()
-		rt.traktSessionWatcher.lastPollError = &msg
-		rt.traktSessionWatcher.mu.Unlock()
+		rt.trakt.sessionWatcher.mu.Lock()
+		rt.trakt.sessionWatcher.lastPollError = &msg
+		rt.trakt.sessionWatcher.mu.Unlock()
 		if errors.Is(err, plexserver.ErrUnauthorized) {
 			rt.NotifyServiceHealth("Plex", false, err.Error())
 		}

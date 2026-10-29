@@ -16,15 +16,15 @@ import (
 // ── 实时推送（Plex SSE）─────────────────────────────────────
 
 func (rt *Runtime) setSSEConnected(connected bool) {
-	rt.traktSSEState.mu.Lock()
-	rt.traktSSEState.connected = connected
-	rt.traktSSEState.mu.Unlock()
+	rt.trakt.sse.mu.Lock()
+	rt.trakt.sse.connected = connected
+	rt.trakt.sse.mu.Unlock()
 }
 
 func (rt *Runtime) sseConnected() bool {
-	rt.traktSSEState.mu.Lock()
-	defer rt.traktSSEState.mu.Unlock()
-	return rt.traktSSEState.connected
+	rt.trakt.sse.mu.Lock()
+	defer rt.trakt.sse.mu.Unlock()
+	return rt.trakt.sse.connected
 }
 
 // sseEventQueueSize SSE 事件异步分发的有界队列长度：
@@ -176,7 +176,7 @@ func (rt *Runtime) handlePlexPlaybackNotification(plexClient *plexserver.Client,
 // ensureTraktSSELoop 启动 Plex 实时通知订阅（幂等）：
 // 常驻一条 SSE 连接，断线指数退避重连；事件经有界队列异步分发。
 func (rt *Runtime) ensureTraktSSELoop() {
-	rt.traktSSEOnce.Do(func() {
+	rt.trakt.sseOnce.Do(func() {
 		go func() {
 			rt.appLog("trakt", "sse_started", "INFO", "Plex 实时通知线程已启动", nil)
 			backoff := 5 * time.Second
@@ -204,7 +204,7 @@ func (rt *Runtime) ensureTraktSSELoop() {
 						rt.appLog("trakt", "sse_gate_pending", "INFO", "实时通知未开启：需开启实时通知开关并完成 Trakt 与 Plex 授权，30 秒后重新检查", nil)
 						lastGateOK = false
 					}
-					if !sleepWatcher(rt.traktSSEWatcher, 30*time.Second) {
+					if !sleepWatcher(rt.trakt.sseWatcher, 30*time.Second) {
 						return
 					}
 					continue
@@ -230,7 +230,7 @@ func (rt *Runtime) ensureTraktSSELoop() {
 				ctx, cancel := context.WithCancel(context.Background())
 				go func() {
 					select {
-					case <-rt.traktSSEWatcher.stopCh:
+					case <-rt.trakt.sseWatcher.stopCh:
 						cancel()
 					case <-ctx.Done():
 					}
@@ -278,7 +278,7 @@ func (rt *Runtime) ensureTraktSSELoop() {
 				case backoff < 60*time.Second:
 					backoff *= 2
 				}
-				if !sleepWatcher(rt.traktSSEWatcher, backoff) {
+				if !sleepWatcher(rt.trakt.sseWatcher, backoff) {
 					return
 				}
 			}
@@ -349,7 +349,7 @@ func (rt *Runtime) waitPlexReachable(stop <-chan struct{}) (ready, halted bool) 
 // ensureTraktSessionLoop 启动 Plex 会话轮询（正在看 → Trakt）。
 // 纯兜底：每轮先查 SSE 是否在线，在线则跳过实际轮询（见 pollPlexSessionsOnce）。
 func (rt *Runtime) ensureTraktSessionLoop() {
-	rt.traktSessionOnce.Do(func() {
+	rt.trakt.sessionOnce.Do(func() {
 		go func() {
 			rt.appLog("trakt", "session_poll_started", "INFO", "Plex 会话轮询线程已启动", nil)
 			for {
@@ -361,15 +361,15 @@ func (rt *Runtime) ensureTraktSessionLoop() {
 					defer func() {
 						if r := recover(); r != nil {
 							msg := fmt.Sprintf("%v", r)
-							rt.traktSessionWatcher.mu.Lock()
-							rt.traktSessionWatcher.lastPollError = &msg
-							rt.traktSessionWatcher.mu.Unlock()
+							rt.trakt.sessionWatcher.mu.Lock()
+							rt.trakt.sessionWatcher.lastPollError = &msg
+							rt.trakt.sessionWatcher.mu.Unlock()
 						}
 					}()
 					rt.pollPlexSessionsOnce()
 				}()
 				select {
-				case <-rt.traktSessionWatcher.stopCh:
+				case <-rt.trakt.sessionWatcher.stopCh:
 					rt.appLog("trakt", "session_poll_stopped", "INFO", "Plex 会话轮询线程已停止", nil)
 					return
 				case <-time.After(time.Duration(interval) * time.Second):

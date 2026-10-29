@@ -57,6 +57,14 @@ type strmService struct {
 	mu      sync.Mutex
 	running bool
 
+	// ── 302 直链层：正/负缓存与并发信号量（见 strmhttp.go）──
+	strmLinkCache *directLinkCache
+	strmNegMu     sync.Mutex
+	strmNeg       map[string]negativeEntry
+	strmFetchSem  chan struct{}
+	strmFetchWait time.Duration // 测试可调
+	strmNegTTL    time.Duration
+
 	// 入库钩子累积缓冲（同一批入库合并为一个 run）
 	hookMu      sync.Mutex
 	hookRunID   int64
