@@ -8,6 +8,77 @@
 > 注：早期 v1.0.2 ~ v1.1.7 的原始提交历史曾被重写（快照式平行历史），
 > 其条目由版本树比对还原；实际功能均已包含于主线 v1.1.8 及之后版本。
 
+## [v2.7.0] - 2026-10-29
+
+### 🐛 修复
+
+- RSS 轮询对 store 短暂不可用加 nil 防护（测试反复 InitRuntime 交错窗口防 panic） (`dc9dc92`)
+- 修复 StrmSyncPage 初始加载丢失（usePolling 重构误删），补齐四页冒烟测试 (`c0bd519`)
+- Plex SSE 常驻循环加 panic 自愈——记录后节流重启，不再带崩进程 (`0adaa48`)
+- 消除残余包级运行态——watcherState 全部并入 Runtime，修复 Close 后会话轮询停不住 (`efdbb20`)
+- 修复三处系统性吞错——组织失败/扫描失败/库标记失败不再静默 (`dfdaf5b`)
+- 配置解析失败快速暴露——Load 严格报错 + 启动校验 cron，运行中沿用最近可用配置 (`93699b6`)
+- SIGTERM/SIGINT 优雅关闭——HTTP 排空在途请求，停止后台任务并关闭存储句柄 (`004c59f`)
+
+### ♻️ 优化重构
+
+- trakt 域下沉——33 个方法自 Runtime 下沉到 traktService（批次 4） (`7c49c28`)
+- library 域下沉——14 个扫描/解析方法自 Runtime 下沉到 libraryService（批次 3） (`860f045`)
+- pipeline 域下沉——pipelineService 吸收调度状态与 4 方法（Runtime 拆分批次 2） (`2555422`)
+- library_media 写入边界类型化——LibraryMediaRow 替代 map 载荷 (`d4ac884`)
+- STRM 域 21 个方法自 Runtime 下沉到 strmService（Runtime 拆分收尾批次 1） (`ff35fed`)
+- toast 统一为直连 sonner，删除 onToast 全链路下钻 (`5f8ccd4`)
+- DashboardPage 892→312 行——卡片族外迁到 components/dashboard/ (`278cb82`)
+- WatchedSyncPage 714→260 行——明细/忽略/运行表抽到 components/watched/，StatCard 收敛 5 处副本 (`1854439`)
+- ConfigPage 863→360 行——9 个配置 tab 外迁为自包含 Section 组件 (`e0cb5f6`)
+- ingest 行扫描类型化——IngestRecordRow 替代 map[string]any (`848c755`)
+- 剩余 map 负载 struct 化——u115 OAuth/自动整理状态、ingest 统计 (`113b429`)
+- Telegram 传输层独立成 internal/telegram 包，webui 不再为发消息依赖 pipeline (`96351c2`)
+- 新增 usePolling 声明式轮询 hook，收敛六个页面各自手写的 setInterval (`dc00a60`)
+- 新增共享字符串工具，收敛 8 处复制的 firstNonEmpty/orDefault 变体 (`3ab5244`)
+- 新增共享 HTTP 基础设施——节流器与带重试的 GET 抓取，收敛五套手写实现 (`a7d2cf3`)
+- 仪表盘契约——GetStats/PipelineStatus struct 化，DashboardPage 内联类型收编共享类型 (`2deffae`)
+- 115 离线域契约 struct 化——任务/分页/配额/容量负载即类型源 (`276f65f`)
+- STRM 同步域契约 struct 化——status/runs/files/播放历史负载即类型源 (`d790c26`)
+- 观看同步域契约 struct 化——后端负载即类型源，前端收编共享类型并泛型化 (`ae2af96`)
+- schema 版本化迁移框架（schema_versions 表）替换三处手写补列 (`32af744`)
+- SaveIncremental 单事务化——原子生效 + 批量提速，错误上抛 (`12222a7`)
+- STRM 直链缓存并入 strmService，观看同步运行态收敛为 traktState（分域批次 3/3） (`8156eeb`)
+- health/classify/pipeline 状态收敛为域结构体，修复 runID 递增丢失（分域批次 2/3） (`b7633b2`)
+- 后台调度状态收敛为 schedulerState（Runtime 分域批次 1/3） (`8650b3e`)
+- 健康状态机/分类树缓存/cron 调度器/订阅预取并入 Runtime（DI-2 批次 C） (`9fc4277`)
+- STRM 直链缓存与整理管线调度状态并入 Runtime（DI-2 批次 B） (`6179dd0`)
+- 观看同步运行态并入 Runtime（DI-2 批次 A） (`3cf24c1`)
+- 移除全局单例，运行时实例化 + 依赖注入完成（DI-3 S终） (`c1755c8`)
+- JWT 签名校验与 STRM 钩子服务归 Runtime（DI-3 S2g-5） (`f886820`)
+- JWT 密钥/健康上报/目录解析等基础设施归 Runtime（DI-3 S2g-4） (`e868f0d`)
+- 消除全部业务代码 RT() 调用（DI-3 S2g-3） (`a0b7f71`)
+- watcher 后台调度归 Runtime（DI-3 S2g-2） (`a1bb68f`)
+- pipelinesvc 处理器方法化，appLog 归 Runtime（DI-3 S2g-1） (`e376204`)
+- trakt 域处理器方法化（DI-3 S2f） (`2817cc5`)
+- STRM 域处理器方法化（DI-3 S2e） (`9feecad`)
+- subscriptionsvc/u115svc/miscroutes 处理器方法化（DI-3 S2d） (`7104afb`)
+- 媒体域处理器方法化（DI-3 S2c） (`3bfb7c1`)
+- filemanager 处理器方法化，mergedConfigDict 归属 Runtime（DI-3 S2b） (`3fa95cc`)
+- configsvc 处理器方法化（DI-3 S2a） (`7e03140`)
+- Server 持有 *Runtime，server.go 全部处理器方法化（DI-3 S1） (`a731cc6`)
+- 存储单例启动时 fail-fast 打开，删除全部 handler 判空样板 (`176db75`)
+- 清理 deadcode 核实的无用符号（约 25 个 / 300+ 行） (`99b54a7`)
+- pan115 受管 Provider 装配下沉 internal/storage (`4f585d0`)
+- 1739 行 traktsvc.go 按职责拆分，4 组会话读写收敛为泛型助手 (`341bdba`)
+- 115 与观看同步配置区块拆为自包含 section 组件 (`d04ecf1`)
+- 配置页表单基础组件抽离到 components/config/fields.tsx (`51a54e4`)
+- ConfigPage 8 组 busy/message 状态对收敛为 useAsyncAction hook (`8cdeb74`)
+- 快照保存事务化，删除 GetSnapshot 双实现，标题匹配拆独立包 (`137d251`)
+
+### 🧹 杂项
+
+- 引入 MSW mock 层——页面冒烟测试与 api 拦截器测试的基础设施 (`6cd8362`)
+- 默认值常量化——DefaultWebUIUsername/DefaultPlexTimeoutSecs 收敛三处硬编码 (`90cc03d`)
+- 引入 Vitest + Testing Library 单元测试框架（47 用例） (`5a958a6`)
+- 删除 DI 迁移后的遗留符号（getLibraryStoreLocked/SetTmdbClientForTest） (`f95932c`)
+
+
 ## [v2.6.7] - 2026-10-28
 
 ### ✨ 新增
