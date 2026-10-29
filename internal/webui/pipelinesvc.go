@@ -79,8 +79,10 @@ func (a duplicateFolderAdapter) DuplicateFolderGroups() []pipeline.DuplicateFold
 	return out
 }
 
-// pipelineState 整理管线域状态：单飞运行 + 防抖计时器 + 运行计数（runID 用）。
-type pipelineState struct {
+// pipelineService 整理管线域服务：单飞调度 + 防抖 + 执行与状态负载。
+type pipelineService struct {
+	rt *Runtime
+
 	mu         sync.Mutex
 	debounce   *time.Timer
 	running    bool
@@ -88,56 +90,56 @@ type pipelineState struct {
 }
 
 // runID 生成短运行 ID（DI-2 迁移时曾丢失递增，所有运行都变成 run000000，已恢复）。
-func (rt *Runtime) newRunID() string {
-	rt.pipeline.mu.Lock()
-	rt.pipeline.runCounter++
-	n := rt.pipeline.runCounter
-	rt.pipeline.mu.Unlock()
+func (s *pipelineService) newRunID() string {
+	s.mu.Lock()
+	s.runCounter++
+	n := s.runCounter
+	s.mu.Unlock()
 	return fmt.Sprintf("run%06d", n)
 }
 
 // doRunPipeline 执行整理流程并刷新媒体库。
-func (rt *Runtime) doRunPipeline() {
-	rt.pipeline.mu.Lock()
-	if rt.pipeline.running {
-		rt.pipeline.mu.Unlock()
+func (s *pipelineService) doRunPipeline() {
+	s.mu.Lock()
+	if s.running {
+		s.mu.Unlock()
 		return
 	}
-	rt.pipeline.debounce = nil
-	rt.pipeline.running = true
-	rt.pipeline.mu.Unlock()
+	s.debounce = nil
+	s.running = true
+	s.mu.Unlock()
 
-	runID := rt.newRunID()
-	rt.appLog("pipeline", "pipeline_start", "INFO", "整理流程启动", map[string]any{"runId": runID})
+	runID := s.newRunID()
+	s.rt.appLog("pipeline", "pipeline_start", "INFO", "整理流程启动", map[string]any{"runId": runID})
 
-	cfg := rt.GetConfig()
-	provider := rt.GetStorageProvider()
+	cfg := s.rt.GetConfig()
+	provider := s.rt.GetStorageProvider()
 	if provider == nil {
-		rt.appLog("pipeline", "pipeline_exception", "ERROR", "整理流程执行异常", map[string]any{
+		s.rt.appLog("pipeline", "pipeline_exception", "ERROR", "整理流程执行异常", map[string]any{
 			"runId": runID, "error": "存储 Provider 不可用",
 		})
-		rt.pipeline.mu.Lock()
-		rt.pipeline.running = false
-		rt.pipeline.mu.Unlock()
+		s.mu.Lock()
+		s.running = false
+		s.mu.Unlock()
 		return
 	}
 
 	opts := pipeline.Options{
 		LogFn: func(level, message string) {
-			rt.BroadcastLog(level, message, runID)
+			s.rt.BroadcastLog(level, message, runID)
 		},
-		TmdbCache: rt.GetTmdbCache(),
+		TmdbCache: s.rt.GetTmdbCache(),
 	}
-	if is := rt.GetIngestStore(); is != nil {
+	if is := s.rt.GetIngestStore(); is != nil {
 		opts.IngestStore = ingestStoreAdapter{is}
 	}
-	if ls := rt.GetLibraryStore(); ls != nil {
+	if ls := s.rt.GetLibraryStore(); ls != nil {
 		opts.TitlePinStore = titlePinAdapter{ls}
 		opts.DuplicateFolders = duplicateFolderAdapter{ls}
 	}
-	opts.Categories = rt.GetCategories()
+	opts.Categories = s.rt.GetCategories()
 	if cfg.Strm.Enabled {
-		opts.OnVideoIngested = rt.strmSvc.HandleVideoIngested
+		opts.OnVideoIngested = s.rt.strmSvc.HandleVideoIngested
 	}
 	pipe := pipeline.New(provider, cfg, opts)
 	summary, runErr := pipe.Run()
@@ -146,7 +148,7 @@ func (rt *Runtime) doRunPipeline() {
 	if runErr != nil {
 		finishLevel, finishMsg = "ERROR", "整理流程中止："+runErr.Error()
 	}
-	rt.appLog("pipeline", "pipeline_finish", finishLevel, finishMsg, map[string]any{
+	s.rt.appLog("pipeline", "pipeline_finish", finishLevel, finishMsg, map[string]any{
 		"runId": runID, "okCount": summary.OKCount,
 		"skippedCount": summary.SkippedCount, "failedCount": summary.FailedCount,
 	})
@@ -157,35 +159,35 @@ func (rt *Runtime) doRunPipeline() {
 				log.Printf("媒体库刷新异常：%v", r)
 			}
 		}()
-		rt.RefreshLibrary(true)
+		s.rt.RefreshLibrary(true)
 	}()
-	rt.pipeline.mu.Lock()
-	rt.pipeline.running = false
-	rt.pipeline.mu.Unlock()
+	s.mu.Lock()
+	s.running = false
+	s.mu.Unlock()
 }
 
 // SchedulePipeline 调度整理流程（debounce>0 时防抖合并）。
 // 返回是否受理（已在运行且无防抖时拒绝）。
-func (rt *Runtime) SchedulePipeline(debounce int) bool {
-	rt.pipeline.mu.Lock()
-	defer rt.pipeline.mu.Unlock()
+func (s *pipelineService) SchedulePipeline(debounce int) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if debounce > 0 {
-		if rt.pipeline.debounce != nil {
-			rt.pipeline.debounce.Stop()
+		if s.debounce != nil {
+			s.debounce.Stop()
 			log.Printf("整理流程防抖计时器已重置 | 防抖：%d 秒", debounce)
 		} else {
-			rt.appLog("pipeline", "pipeline_schedule", "INFO", "检测到媒体变化，等待稳定后开始整理",
+			s.rt.appLog("pipeline", "pipeline_schedule", "INFO", "检测到媒体变化，等待稳定后开始整理",
 				map[string]any{"debounceSeconds": debounce})
 		}
-		rt.pipeline.debounce = time.AfterFunc(time.Duration(debounce)*time.Second, rt.doRunPipeline)
+		s.debounce = time.AfterFunc(time.Duration(debounce)*time.Second, s.doRunPipeline)
 		return true
 	}
-	if rt.pipeline.running {
-		rt.appLog("pipeline", "pipeline_skip_running", "WARNING", "整理流程已在运行，跳过本次触发", nil)
+	if s.running {
+		s.rt.appLog("pipeline", "pipeline_skip_running", "WARNING", "整理流程已在运行，跳过本次触发", nil)
 		return false
 	}
-	rt.appLog("pipeline", "pipeline_schedule", "INFO", "整理流程立即执行", map[string]any{"debounceSeconds": 0})
-	go rt.doRunPipeline()
+	s.rt.appLog("pipeline", "pipeline_schedule", "INFO", "整理流程立即执行", map[string]any{"debounceSeconds": 0})
+	go s.doRunPipeline()
 	return true
 }
 
@@ -196,10 +198,10 @@ type PipelineStatusPayload struct {
 	Debounce bool `json:"debounce"`
 }
 
-func (rt *Runtime) PipelineStatusPayload() PipelineStatusPayload {
-	rt.pipeline.mu.Lock()
-	defer rt.pipeline.mu.Unlock()
-	return PipelineStatusPayload{Running: rt.pipeline.running, Debounce: rt.pipeline.debounce != nil}
+func (s *pipelineService) PipelineStatusPayload() PipelineStatusPayload {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return PipelineStatusPayload{Running: s.running, Debounce: s.debounce != nil}
 }
 
 // ── HTTP 处理器 ─────────────────────────────────────────────
@@ -233,18 +235,18 @@ func (s *Server) handleTriggerWebhook(w http.ResponseWriter, r *http.Request) {
 	debounce := cfg.Telegram.DebounceSeconds
 	log.Printf("收到整理触发请求 | 来源：webhook，防抖：%d 秒", debounce)
 	status := "triggered"
-	if s.rt.SchedulePipeline(debounce) && debounce > 0 {
+	if s.rt.pipelineSvc.SchedulePipeline(debounce) && debounce > 0 {
 		status = "scheduled"
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": status})
 }
 
 func (s *Server) handlePipelineStatus(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.rt.PipelineStatusPayload())
+	writeJSON(w, http.StatusOK, s.rt.pipelineSvc.PipelineStatusPayload())
 }
 
 func (s *Server) handlePipelineTrigger(w http.ResponseWriter, _ *http.Request) {
-	s.rt.SchedulePipeline(0)
+	s.rt.pipelineSvc.SchedulePipeline(0)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "triggered"})
 }
 

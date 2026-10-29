@@ -138,7 +138,7 @@ func (rt *Runtime) pollU115AutoOrganizeOnce() {
 		return
 	}
 
-	if !rt.SchedulePipeline(cfg.Telegram.DebounceSeconds) {
+	if !rt.pipelineSvc.SchedulePipeline(cfg.Telegram.DebounceSeconds) {
 		rt.appLog("u115", "auto_organize_deferred", "WARNING",
 			"检测到 115 云下载任务完成，但当前整理流程忙碌，等待后续轮询重试", map[string]any{
 				"count": len(completed), "tasks": summarizeTasks(completed),

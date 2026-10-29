@@ -62,8 +62,8 @@ type Runtime struct {
 	// ── 种子链接外呼校验钩子（测试可替换；见 u115svc.go）──
 	torrentURLValidator func(string) error
 
-	// ── 整理管线单飞调度（见 pipelinesvc.go）──
-	pipeline pipelineState
+	// ── 整理管线服务（见 pipelinesvc.go）──
+	pipelineSvc *pipelineService
 
 	// ── 观看同步运行态（scrobble / SSE / 会话轮询 / 双向同步；见 scrobble.go 等）──
 	trakt traktState
@@ -159,6 +159,7 @@ func InitRuntime(rootDir string) *Runtime {
 		rssPoll:   &watcherState{stopCh: make(chan struct{})},
 		strmSync:  &watcherState{stopCh: make(chan struct{})},
 	}
+	rt.pipelineSvc = &pipelineService{rt: rt}
 	rt.strmSvc = &strmService{
 		rt:            rt,
 		strmLinkCache: &directLinkCache{entries: map[string]directLink{}},

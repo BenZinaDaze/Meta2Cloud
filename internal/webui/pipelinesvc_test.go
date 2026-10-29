@@ -62,6 +62,20 @@ func TestIngestStoreAdapterRecords(t *testing.T) {
 		t.Fatalf("期望 1 条入库记录，实际 %d", len(result.Items))
 	}
 	item := result.Items[0]
+	var seasonAny, episodeAny any
+	if item.Season != nil {
+		seasonAny = *item.Season
+	}
+	if item.Episode != nil {
+		episodeAny = *item.Episode
+	}
+	got := map[string]any{
+		"media_type": item.MediaType, "tmdb_id": item.TmdbID, "title": item.Title,
+		"original_title": item.OriginalTitle, "year": item.Year,
+		"season": seasonAny, "episode": episodeAny, "episode_title": item.EpisodeTitle,
+		"poster_path": item.PosterPath, "drive_folder_id": item.DriveFolderID,
+		"status": item.Status, "original_name": item.OriginalName,
+	}
 	for key, want := range map[string]any{
 		"media_type": "tv", "tmdb_id": int64(12345), "title": "葬送的芙莉莲",
 		"original_title": "Sousou no Frieren", "year": "2023",
@@ -69,7 +83,6 @@ func TestIngestStoreAdapterRecords(t *testing.T) {
 		"poster_path": "/poster.jpg", "drive_folder_id": "folder-1",
 		"status": "success", "original_name": "[SubGroup] Sousou no Frieren - 07 [1080p].mkv",
 	} {
-		got := map[string]any{"title": item.Title, "status": item.Status, "original_name": item.OriginalName}
 		if got[key] != want {
 			t.Errorf("%s = %v，期望 %v", key, got[key], want)
 		}
