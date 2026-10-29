@@ -69,4 +69,29 @@ export const handlers = [
   ),
   http.get('/api/config', () => HttpResponse.json({ webui: { username: 'admin' } })),
   http.get('/api/logs', () => HttpResponse.json({ items: [], summary: {}, maxId: 0 })),
+
+  // 观看同步历史
+  http.get('/api/trakt/sync/runs', () => HttpResponse.json({ total: 0, runs: [] })),
+  http.get('/api/trakt/sync/ignores', () => HttpResponse.json({ ignores: [], candidates: [] })),
+
+  // 配置页（主配置 dict 与解析规则）
+  http.get('/api/config/main', () =>
+    HttpResponse.json({
+      webui: { username: 'admin', token_expire_hours: 24, log_retention_days: 7 },
+      storage: { primary: 'pan115' },
+      u115: { client_id: '100197847', qps: 3 },
+      tmdb: { language: 'zh-CN', timeout: 10 },
+      pipeline: {},
+      subtitle: { enabled: true },
+      telegram: {},
+      mediavault: { scheme: 'http', timeout: 10 },
+      strm: { fetch_sidecar: true },
+      trakt: { session_poll_seconds: 45 },
+      plex: { timeout: 10 },
+      rss: { poll_cron: '*/5 * * * *' },
+    }),
+  ),
+  http.get('/api/config/parser-rules', () =>
+    HttpResponse.json({ parser: { custom_words: [], custom_release_groups: [] } }),
+  ),
 ]

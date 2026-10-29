@@ -144,6 +144,10 @@ export default function StrmSyncPage(props: StrmSyncPageProps) {
     }
   }, [page])
 
+  useEffect(() => {
+    fetchData(true)
+  }, [fetchData])
+
   // 同步进行中加密轮询，空闲时低速轮询
   usePolling(() => fetchData(), status?.running ? 3000 : 30000)
 
