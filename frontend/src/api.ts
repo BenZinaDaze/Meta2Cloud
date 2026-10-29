@@ -12,6 +12,7 @@ import type {
   U115Overview,
   U115Quota,
   U115Space,
+  U115OauthStatus,
   LibraryStats,
   IngestStats,
   DayStat,
@@ -129,7 +130,7 @@ export const testParse = (filename: string, skipTmdb: boolean = false) =>
 
 
 // ── 115 网盘 ──
-export const getU115OauthStatus = () => api.get('/u115/oauth/status')
+export const getU115OauthStatus = () => api.get<U115OauthStatus>('/u115/oauth/status')
 export const createU115OauthSession = (data: Record<string, unknown>, config?: { signal?: AbortSignal }) =>
   api.post('/u115/oauth/create', data, config)
 export const fetchU115QrCode = (config?: { signal?: AbortSignal }) =>

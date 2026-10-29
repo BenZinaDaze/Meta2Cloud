@@ -490,10 +490,7 @@ export interface LibraryStats {
   completion_rate: number
 }
 
-/**
- * GET /api/ingest/stats（后端 ingest.go Stats 暂为 map，字段手工同步）。
- * 注意含 days 与 deleted 键。
- */
+/** GET /api/ingest/stats（后端 IngestStats struct） */
 export interface IngestStats {
   days: number
   total: number
@@ -505,7 +502,7 @@ export interface IngestStats {
   deleted: number
 }
 
-/** GET /api/ingest/stats/daily 元素（含 movies 列；空缺天由前端补零） */
+/** GET /api/ingest/stats/daily 元素（后端 DayStat struct；空缺天由前端补零） */
 export interface DayStat {
   date: string
   total: number
@@ -531,4 +528,21 @@ export interface RecentIngest {
 export interface PipelineStatus {
   running: boolean
   debounce: boolean
+}
+
+/** GET /api/u115/oauth/status（后端 U115OauthStatusPayload，也内嵌于扫码创建/交换响应） */
+export interface U115OauthStatus {
+  client_id: string
+  token_path: string
+  session_path: string
+  cookie_configured: boolean
+  token_exists: boolean
+  session_exists: boolean
+  authorized: boolean
+  token_valid: boolean
+  token_expired: boolean
+  refresh_time: number | null
+  expires_at: number | null
+  refreshed: boolean
+  refresh_error: string
 }

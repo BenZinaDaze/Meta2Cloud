@@ -53,8 +53,8 @@ func TestIngestRoundTrip(t *testing.T) {
 	}
 	// 统计
 	stats := s.Stats(7)
-	if stats["total"] != int64(2) || stats["tv_episodes"] != int64(1) {
-		t.Errorf("stats = %v", stats)
+	if stats.Total != 2 || stats.TVEpisodes != 1 {
+		t.Errorf("stats = %+v", stats)
 	}
 }
 

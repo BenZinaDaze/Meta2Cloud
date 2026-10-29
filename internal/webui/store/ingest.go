@@ -329,7 +329,19 @@ func strOf(v any) string {
 }
 
 // Stats 近 N 天统计。
-func (s *IngestStore) Stats(days int) map[string]any {
+// IngestStats 入库统计（GET /api/ingest/stats 响应）。
+type IngestStats struct {
+	Days       int   `json:"days"`
+	Total      int64 `json:"total"`
+	Movies     int64 `json:"movies"`
+	TVEpisodes int64 `json:"tv_episodes"`
+	Success    int64 `json:"success"`
+	Failed     int64 `json:"failed"`
+	NoTmdb     int64 `json:"no_tmdb"`
+	Deleted    int64 `json:"deleted"`
+}
+
+func (s *IngestStore) Stats(days int) IngestStats {
 	if days <= 0 {
 		days = 7
 	}
@@ -346,18 +358,25 @@ func (s *IngestStore) Stats(days int) map[string]any {
 		FROM ingest_history WHERE ingested_at >= ?`, cutoff).Scan(
 		&total, &movies, &tvEpisodes, &success, &failed, &noTmdb, &deleted)
 	if err != nil {
-		return map[string]any{"days": days, "total": 0}
+		return IngestStats{Days: days}
 	}
-	return map[string]any{
-		"days": days, "total": total.Int64, "movies": movies.Int64,
-		"tv_episodes": tvEpisodes.Int64, "success": success.Int64,
-		"failed": failed.Int64, "no_tmdb": noTmdb.Int64,
-		"deleted": deleted.Int64,
+	return IngestStats{
+		Days: days, Total: total.Int64, Movies: movies.Int64,
+		TVEpisodes: tvEpisodes.Int64, Success: success.Int64,
+		Failed: failed.Int64, NoTmdb: noTmdb.Int64,
+		Deleted: deleted.Int64,
 	}
 }
 
 // DailyStats 近 N 天按天聚合入库量（UTC 日期；只返回有记录的日期，空缺天由前端补零）。
-func (s *IngestStore) DailyStats(days int) []map[string]any {
+// DayStat 按天聚合入库量（GET /api/ingest/stats/daily 元素；只返回有记录的日期，空缺天由前端补零）。
+type DayStat struct {
+	Date   string `json:"date"`
+	Total  int64  `json:"total"`
+	Movies int64  `json:"movies"`
+}
+
+func (s *IngestStore) DailyStats(days int) []DayStat {
 	if days <= 0 {
 		days = 30
 	}
@@ -372,14 +391,14 @@ func (s *IngestStore) DailyStats(days int) []map[string]any {
 		return nil
 	}
 	defer rows.Close()
-	out := []map[string]any{}
+	out := []DayStat{}
 	for rows.Next() {
 		var day string
 		var total, movies sql.NullInt64
 		if err := rows.Scan(&day, &total, &movies); err != nil {
 			continue
 		}
-		out = append(out, map[string]any{"date": day, "total": total.Int64, "movies": movies.Int64})
+		out = append(out, DayStat{Date: day, Total: total.Int64, Movies: movies.Int64})
 	}
 	return out
 }

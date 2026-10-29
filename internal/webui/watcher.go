@@ -13,12 +13,14 @@ import (
 )
 
 type watcherState struct {
-	mu                sync.Mutex
-	stopCh            chan struct{}
-	stopped           bool
-	lastPolledAt      *string
-	lastPollError     *string
-	lastTriggeredTask map[string]any
+	mu            sync.Mutex
+	stopCh        chan struct{}
+	stopped       bool
+	lastPolledAt  *string
+	lastPollError *string
+	// lastTriggeredTask 仅 115 自动整理 watcher 使用（最近一次触发的内存记录，
+	// 优先于存储中的一条）；lastSummary 仅 RSS 订阅 watcher 使用
+	lastTriggeredTask *U115AutoTriggeredPayload
 	lastSummary       map[string]any
 }
 
@@ -82,14 +84,14 @@ func (rt *Runtime) pollU115AutoOrganizeOnce() {
 		return
 	}
 	auth := rt.u115OauthStatusPayload()
-	if authorized, _ := auth["authorized"].(bool); !authorized {
+	if !auth.Authorized {
 		// 最常见失效形态：本地 token 过期且自动刷新被拒——调 API 前即上报失效，
 		// 避免早退导致永不告警（token 文件缺失等未配置形态不在此告警，防止误报）；
 		// 刷新成功/未过期则继续轮询，恢复上报由 GetTaskList 成功点负责，此处不误报 OK
-		if expired, _ := auth["token_expired"].(bool); expired {
+		if auth.TokenExpired {
 			reason := "115 授权已失效（刷新被拒）"
-			if refreshErr := anyStrValue(auth["refresh_error"]); refreshErr != "" {
-				reason += "：" + refreshErr
+			if auth.RefreshError != "" {
+				reason += "：" + auth.RefreshError
 			}
 			rt.NotifyServiceHealth("115", false, reason)
 		}
@@ -139,30 +141,33 @@ func (rt *Runtime) pollU115AutoOrganizeOnce() {
 	if !rt.SchedulePipeline(cfg.Telegram.DebounceSeconds) {
 		rt.appLog("u115", "auto_organize_deferred", "WARNING",
 			"检测到 115 云下载任务完成，但当前整理流程忙碌，等待后续轮询重试", map[string]any{
-				"count": len(completed), "tasks": rt.summarizeTasks(completed),
+				"count": len(completed), "tasks": summarizeTasks(completed),
 			})
 		return
 	}
 	for _, task := range completed {
 		autoStore.MarkTriggered(u115TaskKey(task))
 	}
-	triggeredPayload := map[string]any{
-		"triggered_at": utcNowISO(), "count": len(completed),
-		"tasks": rt.summarizeTasks(completed),
+	triggeredPayload := &U115AutoTriggeredPayload{
+		TriggeredAt: utcNowISO(), Count: len(completed),
+		Tasks: summarizeTasks(completed),
 	}
 	rt.sched.u115Auto.mu.Lock()
 	rt.sched.u115Auto.lastTriggeredTask = triggeredPayload
 	rt.sched.u115Auto.mu.Unlock()
 	rt.appLog("u115", "auto_organize_triggered", "SUCCESS",
-		fmt.Sprintf("检测到 %d 个 115 云下载任务完成，已触发自动整理", len(completed)), triggeredPayload)
+		fmt.Sprintf("检测到 %d 个 115 云下载任务完成，已触发自动整理", len(completed)), map[string]any{
+			"triggered_at": triggeredPayload.TriggeredAt, "count": triggeredPayload.Count,
+			"tasks": triggeredPayload.Tasks,
+		})
 }
 
-func (rt *Runtime) summarizeTasks(tasks []u115.OfflineTask) []map[string]any {
-	out := make([]map[string]any, 0, len(tasks))
+func summarizeTasks(tasks []u115.OfflineTask) []U115AutoTaskBrief {
+	out := make([]U115AutoTaskBrief, 0, len(tasks))
 	for _, task := range tasks {
-		out = append(out, map[string]any{
-			"info_hash": task.InfoHash, "name": task.Name,
-			"file_id": task.FileID, "wp_path_id": task.WpPathID,
+		out = append(out, U115AutoTaskBrief{
+			InfoHash: task.InfoHash, Name: task.Name,
+			FileID: task.FileID, WpPathID: task.WpPathID,
 		})
 	}
 	return out
@@ -468,20 +473,51 @@ func (rt *Runtime) StopBackgroundWatchers() {
 	}
 }
 
-// U115AutoOrganizeStatusPayload 115 自动整理状态。
-func (rt *Runtime) U115AutoOrganizeStatusPayload() map[string]any {
+// U115AutoTaskBrief 自动整理触发任务摘要（内存记录与存储回读共用形状）。
+type U115AutoTaskBrief struct {
+	InfoHash string  `json:"info_hash"`
+	Name     string  `json:"name"`
+	FileID   *string `json:"file_id"`
+	WpPathID *string `json:"wp_path_id"`
+}
+
+// U115AutoTriggeredPayload 最近一次自动整理触发记录。
+type U115AutoTriggeredPayload struct {
+	TriggeredAt string              `json:"triggered_at"`
+	Count       int                 `json:"count"`
+	Tasks       []U115AutoTaskBrief `json:"tasks"`
+}
+
+// U115AutoOrganizeStatusPayload GET /api/u115/offline/auto-organize-status 响应。
+type U115AutoOrganizeStatusPayload struct {
+	Enabled          bool                      `json:"enabled"`
+	StoragePrimary   string                    `json:"storage_primary"`
+	Authorized       bool                      `json:"authorized"`
+	WatcherAlive     bool                      `json:"watcher_alive"`
+	PollCron         string                    `json:"poll_cron"`
+	StableSeconds    int                       `json:"stable_seconds"`
+	DownloadFolderID string                    `json:"download_folder_id"`
+	LastPolledAt     *string                   `json:"last_polled_at"`
+	LastPollError    *string                   `json:"last_poll_error"`
+	LastTriggered    *U115AutoTriggeredPayload `json:"last_triggered"`
+}
+
+func (rt *Runtime) U115AutoOrganizeStatusPayload() U115AutoOrganizeStatusPayload {
 	cfg := rt.GetConfig()
 	autoStore := rt.GetU115AutoStore()
-	var lastTriggered map[string]any
+	var lastTriggered *U115AutoTriggeredPayload
 	if autoStore != nil {
 		if last := autoStore.GetLastTriggered(); last != nil {
-			lastTriggered = map[string]any{
-				"triggered_at": last.TriggeredAt, "count": 1,
-				"tasks": []map[string]any{{
-					"info_hash": last.InfoHash, "name": last.TaskName,
-					"file_id": last.FileID, "wp_path_id": last.WpPathID,
+			lastTriggered = &U115AutoTriggeredPayload{
+				Tasks: []U115AutoTaskBrief{{
+					InfoHash: last.InfoHash, Name: last.TaskName,
+					FileID: last.FileID, WpPathID: last.WpPathID,
 				}},
 			}
+			if last.TriggeredAt != nil {
+				lastTriggered.TriggeredAt = *last.TriggeredAt
+			}
+			lastTriggered.Count = 1
 		}
 	}
 	rt.sched.u115Auto.mu.Lock()
@@ -492,18 +528,17 @@ func (rt *Runtime) U115AutoOrganizeStatusPayload() map[string]any {
 	lastErr := rt.sched.u115Auto.lastPollError
 	rt.sched.u115Auto.mu.Unlock()
 
-	authorized, _ := rt.u115OauthStatusPayload()["authorized"].(bool)
-	return map[string]any{
-		"enabled":            cfg.U115.AutoOrganizeEnabled && cfg.ActiveStorageName() == "pan115",
-		"storage_primary":    cfg.ActiveStorageName(),
-		"authorized":         authorized,
-		"watcher_alive":      watcherAlive(rt.sched.u115Auto),
-		"poll_cron":          cfg.U115.AutoOrganizeCron,
-		"stable_seconds":     cfg.U115.AutoOrganizeStableSeconds,
-		"download_folder_id": cfg.U115.DownloadFolderID,
-		"last_polled_at":     lastPolled,
-		"last_poll_error":    lastErr,
-		"last_triggered":     lastTriggered,
+	return U115AutoOrganizeStatusPayload{
+		Enabled:          cfg.U115.AutoOrganizeEnabled && cfg.ActiveStorageName() == "pan115",
+		StoragePrimary:   cfg.ActiveStorageName(),
+		Authorized:       rt.u115OauthStatusPayload().Authorized,
+		WatcherAlive:     watcherAlive(rt.sched.u115Auto),
+		PollCron:         cfg.U115.AutoOrganizeCron,
+		StableSeconds:    cfg.U115.AutoOrganizeStableSeconds,
+		DownloadFolderID: cfg.U115.DownloadFolderID,
+		LastPolledAt:     lastPolled,
+		LastPollError:    lastErr,
+		LastTriggered:    lastTriggered,
 	}
 }
 

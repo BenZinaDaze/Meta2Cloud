@@ -335,8 +335,7 @@ func (rt *Runtime) pushItem(pushTarget string, item map[string]any) error {
 	torrentURL := anyStrValue(item["torrent_url"])
 	switch pushTarget {
 	case "u115":
-		auth := rt.u115OauthStatusPayload()
-		if authorized, _ := auth["authorized"].(bool); !authorized {
+		if !rt.u115OauthStatusPayload().Authorized {
 			return errPush115Unauthorized
 		}
 		if magnetURL == "" && torrentURL == "" {

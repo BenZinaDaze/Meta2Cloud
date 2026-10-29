@@ -15,6 +15,7 @@ import FolderSelectInput from '@/components/config/FolderSelectInput'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import type { U115OauthStatus } from '@/types/api'
 import { Separator } from '@/components/ui/separator'
 import { apiDetail, useAsyncAction } from '@/hooks/useAsyncAction'
 import { cn } from '@/lib/utils'
@@ -35,7 +36,7 @@ function formatBytes(bytes: number): string {
 }
 
 export default function U115Section({ cfg, set, original }: U115SectionProps) {
-  const [u115Oauth, setU115Oauth] = useState<{ authorized: boolean; token_exists: boolean } | null>(null)
+  const [u115Oauth, setU115Oauth] = useState<U115OauthStatus | null>(null)
   const u115OauthAction = useAsyncAction()
   const u115CookieAction = useAsyncAction()
   const [u115QrUrl, setU115QrUrl] = useState('')

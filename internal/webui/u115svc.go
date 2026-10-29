@@ -60,7 +60,24 @@ func (s *Server) loadU115DeviceSession(sessionPath string) (*u115.DeviceCodeSess
 
 // ── OAuth 状态 ──────────────────────────────────────────────
 
-func (rt *Runtime) u115OauthStatusPayload() map[string]any {
+// U115OauthStatusPayload GET /api/u115/oauth/status 响应（也内嵌于扫码创建/交换响应的 status 字段）。
+type U115OauthStatusPayload struct {
+	ClientID         string `json:"client_id"`
+	TokenPath        string `json:"token_path"`
+	SessionPath      string `json:"session_path"`
+	CookieConfigured bool   `json:"cookie_configured"`
+	TokenExists      bool   `json:"token_exists"`
+	SessionExists    bool   `json:"session_exists"`
+	Authorized       bool   `json:"authorized"`
+	TokenValid       bool   `json:"token_valid"`
+	TokenExpired     bool   `json:"token_expired"`
+	RefreshTime      *int64 `json:"refresh_time"`
+	ExpiresAt        *int64 `json:"expires_at"`
+	Refreshed        bool   `json:"refreshed"`
+	RefreshError     string `json:"refresh_error"`
+}
+
+func (rt *Runtime) u115OauthStatusPayload() U115OauthStatusPayload {
 	cfg := rt.GetConfig().U115
 	tokenPath := rt.resolveConfigPath(cfg.TokenJSON)
 	sessionPath := rt.resolveConfigPath(cfg.SessionJSON)
@@ -69,44 +86,47 @@ func (rt *Runtime) u115OauthStatusPayload() map[string]any {
 	_, sessionStatErr := os.Stat(sessionPath)
 	sessionExists := sessionStatErr == nil
 
-	tokenValid, tokenExpired, authorized, refreshed := false, false, false, false
-	var expiresAt, refreshTime any
-	var refreshErr string
-	if tokenExists {
-		if token, ok, _ := u115.LoadToken(tokenPath); ok {
-			refreshTime = token.RefreshTime
-			expiresAt = token.ExpiresAt()
-			tokenExpired = time.Now().Unix() >= token.ExpiresAt()
-			if tokenExpired {
-				// 尝试自动刷新
-				client := rt.GetU115Client()
-				if client != nil {
-					if refreshedToken, err := client.RefreshToken(); err == nil {
-						refreshed = true
-						refreshTime = refreshedToken.RefreshTime
-						expiresAt = refreshedToken.ExpiresAt()
-						tokenExpired = false
-						tokenValid = true
-						authorized = true
-					} else {
-						refreshErr = err.Error() // 刷新被拒：后台轮询凭此区分「刷新被拒」与「未配置」
-					}
-				}
+	payload := U115OauthStatusPayload{
+		ClientID:         cfg.ClientID,
+		TokenPath:        cfg.TokenJSON,
+		SessionPath:      cfg.SessionJSON,
+		CookieConfigured: strings.TrimSpace(cfg.Cookie) != "",
+		TokenExists:      tokenExists,
+		SessionExists:    sessionExists,
+	}
+	if !tokenExists {
+		return payload
+	}
+	token, ok, _ := u115.LoadToken(tokenPath)
+	if !ok {
+		return payload
+	}
+	refreshTime := token.RefreshTime
+	expiresAt := token.ExpiresAt()
+	payload.RefreshTime = &refreshTime
+	payload.ExpiresAt = &expiresAt
+	payload.TokenExpired = time.Now().Unix() >= expiresAt
+	if payload.TokenExpired {
+		// 尝试自动刷新
+		if client := rt.GetU115Client(); client != nil {
+			if refreshedToken, err := client.RefreshToken(); err == nil {
+				payload.Refreshed = true
+				rt := refreshedToken.RefreshTime
+				exp := refreshedToken.ExpiresAt()
+				payload.RefreshTime = &rt
+				payload.ExpiresAt = &exp
+				payload.TokenExpired = false
+				payload.TokenValid = true
+				payload.Authorized = true
 			} else {
-				tokenValid = true
-				authorized = true
+				payload.RefreshError = err.Error() // 刷新被拒：后台轮询凭此区分「刷新被拒」与「未配置」
 			}
 		}
+	} else {
+		payload.TokenValid = true
+		payload.Authorized = true
 	}
-	return map[string]any{
-		"client_id":  cfg.ClientID,
-		"token_path": cfg.TokenJSON, "session_path": cfg.SessionJSON,
-		"cookie_configured": strings.TrimSpace(cfg.Cookie) != "",
-		"token_exists":      tokenExists, "session_exists": sessionExists,
-		"authorized": authorized, "token_valid": tokenValid,
-		"token_expired": tokenExpired, "refresh_time": refreshTime,
-		"expires_at": expiresAt, "refreshed": refreshed, "refresh_error": refreshErr,
-	}
+	return payload
 }
 
 // ── HTTP 处理器 ─────────────────────────────────────────────

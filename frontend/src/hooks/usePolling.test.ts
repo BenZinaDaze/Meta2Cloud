@@ -65,12 +65,10 @@ describe('usePolling', () => {
   })
 
   it('始终执行最新的 fn（回调身份数变化不重建定时器）', () => {
-    let value = 0
     const seen: number[] = []
     const { rerender } = renderHook(({ v }) => usePolling(() => seen.push(v), 1000), {
       initialProps: { v: 0 },
     })
-    value = 1
     rerender({ v: 1 })
     act(() => {
       vi.advanceTimersByTime(1000)
