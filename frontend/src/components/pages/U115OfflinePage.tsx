@@ -52,11 +52,7 @@ function SummaryCard({ label, value, sub }: { label: string; value: string; sub?
   )
 }
 
-interface U115OfflinePageProps {
-  onToast?: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void
-}
-
-export default function U115OfflinePage({ onToast }: U115OfflinePageProps) {
+export default function U115OfflinePage() {
   const [overview, setOverview] = useState<U115Overview | null>(null)
   const [quota, setQuota] = useState<U115QuotaInfo | null>(null)
   const [loading, setLoading] = useState(true)
@@ -75,15 +71,11 @@ export default function U115OfflinePage({ onToast }: U115OfflinePageProps) {
       setOverview(res.data)
     } catch (e) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '读取 115 云下载概览失败'
-      if (onToast) {
-        onToast('error', '云下载加载失败', detail)
-      } else {
-        toast.error('云下载加载失败', { description: detail })
-      }
+      toast.error('云下载加载失败', { description: detail })
     } finally {
       setLoading(false)
     }
-  }, [onToast, page])
+  }, [page])
 
   const loadQuota = useCallback(async () => {
     try {

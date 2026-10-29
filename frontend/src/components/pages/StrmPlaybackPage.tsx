@@ -91,12 +91,7 @@ function StatCard({ label, value, icon, hint }: { label: string; value: React.Re
   )
 }
 
-interface StrmPlaybackPageProps {
-  onToast?: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void
-}
-
-export default function StrmPlaybackPage(props: StrmPlaybackPageProps) {
-  void props
+export default function StrmPlaybackPage() {
   const [items, setItems] = useState<StrmPlaybackLog[]>([])
   const [stats, setStats] = useState<StrmPlaybackStats | null>(null)
   const [total, setTotal] = useState(0)

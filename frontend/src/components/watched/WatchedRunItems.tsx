@@ -2,6 +2,7 @@
 // 展开行内自持加载与 2s 轮询（同步进行中「同步一条显示一条」），失败行带快捷忽略。
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Loader2, AlertCircle, CheckCircle, Film, Tv, Ban } from 'lucide-react'
+import { toast } from 'sonner'
 import { getWatchedSyncRunItems, setWatchedSyncIgnore } from '@/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -36,11 +37,10 @@ export function itemDisplayName(item: WatchedSyncRunItem): string {
 }
 
 // 明细失败行上的快捷忽略按钮（媒体级，加完即生效，下轮同步起排除）。
-function IgnoreItemButton({ mediaType, tmdbId, reason, onToast }: {
+function IgnoreItemButton({ mediaType, tmdbId, reason }: {
   mediaType: string
   tmdbId: number
   reason: string
-  onToast?: (type: 'success' | 'error', title: string, message?: string) => void
 }) {
   const [busy, setBusy] = useState(false)
   return (
@@ -52,10 +52,10 @@ function IgnoreItemButton({ mediaType, tmdbId, reason, onToast }: {
         setBusy(true)
         try {
           const res = await setWatchedSyncIgnore({ action: 'add', media_type: mediaType, tmdb_id: tmdbId, reason })
-          onToast?.('success', '已忽略', res.data?.message || '该媒体将不再参与同步')
+          toast.success('已忽略', { description: res.data?.message || '该媒体将不再参与同步' })
         } catch (e) {
           const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-          onToast?.('error', '忽略失败', detail || (e as Error).message)
+          toast.error('忽略失败', { description: detail || (e as Error).message })
         } finally {
           setBusy(false)
         }
@@ -69,10 +69,9 @@ function IgnoreItemButton({ mediaType, tmdbId, reason, onToast }: {
   )
 }
 
-export function RunItems({ runId, running, onToast }: {
+export function RunItems({ runId, running }: {
   runId: number
   running: boolean
-  onToast?: (type: 'success' | 'error', title: string, message?: string) => void
 }) {
   const [items, setItems] = useState<WatchedSyncRunItem[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -149,7 +148,7 @@ export function RunItems({ runId, running, onToast }: {
                         <span className="truncate">{it.error || '失败'}</span>
                       </span>
                       {it.media_type && it.tmdb_id && (
-                        <IgnoreItemButton mediaType={it.media_type} tmdbId={it.tmdb_id} reason={it.error || ''} onToast={onToast} />
+                        <IgnoreItemButton mediaType={it.media_type} tmdbId={it.tmdb_id} reason={it.error || ''} />
                       )}
                     </span>
                   )}

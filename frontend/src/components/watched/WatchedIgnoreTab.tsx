@@ -2,13 +2,14 @@
 // 忽略是媒体级的——整部电影/整部剧两侧均不再参与同步，恢复后下轮自动纳入。
 import { useState, useEffect, useCallback } from 'react'
 import { Loader2, AlertCircle, Ban, Undo2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { getWatchedSyncIgnores, setWatchedSyncIgnore } from '@/api'
 import { Button } from '@/components/ui/button'
 import { relativeTime } from '@/lib/time'
 import { DirectionIcon } from '@/components/watched/WatchedRunItems'
 import type { WatchedSyncIgnore, WatchedFailingMedia } from '@/types/api'
 
-export function WatchedIgnoreTab({ onToast }: { onToast?: (type: 'success' | 'error', title: string, message?: string) => void }) {
+export function WatchedIgnoreTab() {
   const [data, setData] = useState<{ ignores: WatchedSyncIgnore[]; candidates: WatchedFailingMedia[] } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
 
@@ -28,11 +29,11 @@ export function WatchedIgnoreTab({ onToast }: { onToast?: (type: 'success' | 'er
     setBusy(key)
     try {
       const res = await setWatchedSyncIgnore({ action, media_type: mediaType, tmdb_id: tmdbId, reason })
-      onToast?.('success', action === 'add' ? '已忽略' : '已恢复', res.data?.message)
+      toast.success(action === 'add' ? '已忽略' : '已恢复', { description: res.data?.message })
       await load()
     } catch (e) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      onToast?.('error', '操作失败', detail || (e as Error).message)
+      toast.error('操作失败', { description: detail || (e as Error).message })
     } finally {
       setBusy(null)
     }

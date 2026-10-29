@@ -159,7 +159,6 @@ interface LibraryPageProps {
   onRefresh?: () => void
   refreshing?: boolean
   refreshKey?: number
-  onToast?: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void
   onGlobalSearch?: (item: MediaItem) => void
   /** 直链打开详情：URL 中的 tmdb_id（/movies/:tmdbId、/tv/:tmdbId） */
   openTmdbId?: string

@@ -6,7 +6,6 @@ import { Toaster } from '@/components/ui/sonner'
 import Sidebar from '@/components/layout/Sidebar'
 import Topbar from '@/components/layout/Topbar'
 import MobileNav from '@/components/layout/MobileNav'
-import { toast } from 'sonner'
 
 const LoginPage = lazy(() => import('@/components/pages/LoginPage'))
 const DashboardPage = lazy(() => import('@/components/pages/DashboardPage'))
@@ -110,7 +109,6 @@ interface LibraryShared {
   onRefresh: () => void
   refreshing: boolean
   refreshKey: number
-  onToast: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void
   onGlobalSearch: (item: MediaItem) => void
 }
 
@@ -127,7 +125,6 @@ function LibraryRoute({ filter, base, shared }: { filter: string; base: string; 
       onRefresh={shared.onRefresh}
       refreshing={shared.refreshing}
       refreshKey={shared.refreshKey}
-      onToast={shared.onToast}
       onGlobalSearch={shared.onGlobalSearch}
     />
   )
@@ -161,10 +158,6 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
 
   const handoff = (location.state ?? null) as SearchHandoffState | null
 
-  const handleToast = useCallback((type: 'success' | 'error' | 'warning', title: string, message?: string) => {
-    toast[type](title, { description: message })
-  }, [])
-
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)
     try {
@@ -180,7 +173,6 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
     onRefresh: handleRefresh,
     refreshing,
     refreshKey,
-    onToast: handleToast,
     onGlobalSearch: (item) => navigate('/search', { state: { initialItem: item } }),
   }
 
@@ -238,20 +230,20 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
                   />
                 }
               />
-              <Route path="/subscriptions" element={<SubscriptionsPage onToast={handleToast} u115Authorized={u115Authorized} />} />
+              <Route path="/subscriptions" element={<SubscriptionsPage u115Authorized={u115Authorized} />} />
               <Route
                 path="/files"
                 element={u115Authorized ? <FileManagerPage /> : <Navigate to="/library" replace />}
               />
-              <Route path="/ingest-history" element={<IngestHistoryPage onToast={handleToast} />} />
-              <Route path="/title-pins" element={<TitlePinsPage onToast={handleToast} />} />
-              <Route path="/strm-sync" element={<StrmSyncPage onToast={handleToast} />} />
-              <Route path="/watched-sync" element={<WatchedSyncPage onToast={handleToast} />} />
-              <Route path="/strm-playback" element={<StrmPlaybackPage onToast={handleToast} />} />
+              <Route path="/ingest-history" element={<IngestHistoryPage />} />
+              <Route path="/title-pins" element={<TitlePinsPage />} />
+              <Route path="/strm-sync" element={<StrmSyncPage />} />
+              <Route path="/watched-sync" element={<WatchedSyncPage />} />
+              <Route path="/strm-playback" element={<StrmPlaybackPage />} />
               <Route path="/logs" element={<LogsPage />} />
               <Route
                 path="/u115-offline"
-                element={u115Authorized ? <U115OfflinePage onToast={handleToast} /> : <Navigate to="/library" replace />}
+                element={u115Authorized ? <U115OfflinePage /> : <Navigate to="/library" replace />}
               />
               <Route path="/config" element={<ConfigPage page="general" />} />
               <Route path="/config/filename-rules" element={<ConfigPage page="filenameRules" />} />

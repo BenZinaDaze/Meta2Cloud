@@ -55,17 +55,12 @@ const DEFAULT_CONFIG: CategoriesConfig = {
   ],
 }
 
-interface CategoriesPageProps {
-  onToast?: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void
-}
-
-export default function CategoriesPage({ onToast }: CategoriesPageProps) {
+export default function CategoriesPage() {
   const notify = useCallback(
     (type: 'success' | 'error' | 'warning', title: string, text?: string) => {
-      const fn = onToast ?? ((t: 'success' | 'error' | 'warning', x: string, d?: string) => toast[t](x, { description: d }))
-      fn(type, title, text)
+      toast[type](title, { description: text })
     },
-    [onToast],
+    [],
   )
 
   const [config, setConfig] = useState<CategoriesConfig>(DEFAULT_CONFIG)

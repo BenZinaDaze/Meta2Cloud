@@ -71,10 +71,9 @@ interface WatchedRunsTableProps {
   expandedGroups: Record<string, boolean>
   onToggleRun: (id: number) => void
   onToggleGroup: (key: string) => void
-  onToast?: (type: 'success' | 'error', title: string, message?: string) => void
 }
 
-export function WatchedRunsTable({ runs, expandedRun, expandedGroups, onToggleRun, onToggleGroup, onToast }: WatchedRunsTableProps) {
+export function WatchedRunsTable({ runs, expandedRun, expandedGroups, onToggleRun, onToggleGroup }: WatchedRunsTableProps) {
   const runGroups = groupConsecutiveRuns(runs)
 
   return (
@@ -183,7 +182,7 @@ export function WatchedRunsTable({ runs, expandedRun, expandedGroups, onToggleRu
                 {singleExpanded && (
                   <tr className="border-t border-border/40 bg-muted/20">
                     <td colSpan={9} className="px-4 py-3">
-                      <RunItems runId={latest.id} running={latest.finished_at == null} onToast={onToast} />
+                      <RunItems runId={latest.id} running={latest.finished_at == null} />
                     </td>
                   </tr>
                 )}

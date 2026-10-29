@@ -115,12 +115,7 @@ function StatCard({ label, value, icon }: { label: string; value: number; icon?:
   )
 }
 
-interface IngestHistoryPageProps {
-  onToast?: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void
-}
-
-export default function IngestHistoryPage(props: IngestHistoryPageProps) {
-  void props
+export default function IngestHistoryPage() {
   const [data, setData] = useState<IngestHistoryResponse | null>(null)
   const [stats, setStats] = useState<IngestStatsResponse | null>(null)
   const [loading, setLoading] = useState(true)

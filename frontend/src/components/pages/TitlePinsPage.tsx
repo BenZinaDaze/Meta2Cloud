@@ -16,12 +16,9 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import PageHeader from '@/components/shared/PageHeader'
+import { toast } from 'sonner'
 import { relativeTime } from '@/lib/time'
 import type { TitlePin } from '@/types/api'
-
-interface TitlePinsPageProps {
-  onToast: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void
-}
 
 const sourceLabels: Record<string, string> = {
   ingest_history: '首次入库',
@@ -123,7 +120,7 @@ function PinCard({
   )
 }
 
-export default function TitlePinsPage({ onToast }: TitlePinsPageProps) {
+export default function TitlePinsPage() {
   const [pins, setPins] = useState<TitlePin[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -155,20 +152,18 @@ export default function TitlePinsPage({ onToast }: TitlePinsPageProps) {
       try {
         const res = await adoptTitlePin(pin.media_type, pin.tmdb_id)
         const renamed = res.data?.renamed_folders ?? 0
-        onToast(
-          'success',
-          `已采用最新译名：${res.data?.title || pin.current_title}`,
-          renamed > 0 ? `已重命名 ${renamed} 个网盘目录，正在触发整理与 STRM 同步` : '已更新整理名称记录，正在触发整理与 STRM 同步',
-        )
+        toast.success(`已采用最新译名：${res.data?.title || pin.current_title}`, {
+          description: renamed > 0 ? `已重命名 ${renamed} 个网盘目录，正在触发整理与 STRM 同步` : '已更新整理名称记录，正在触发整理与 STRM 同步',
+        })
         await load()
       } catch (e) {
         const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-        onToast('error', '采用最新译名失败', msg || (e instanceof Error ? e.message : String(e)))
+        toast.error('采用最新译名失败', { description: msg || (e instanceof Error ? e.message : String(e)) })
       } finally {
         setAdoptingKey('')
       }
     },
-    [onToast, load],
+    [load],
   )
 
   const handleDelete = useCallback(async () => {
@@ -177,16 +172,16 @@ export default function TitlePinsPage({ onToast }: TitlePinsPageProps) {
     setDeleting(true)
     try {
       await deleteTitlePin(pin.media_type, pin.tmdb_id)
-      onToast('success', `已删除整理名称：${pin.pinned_title}`, '网盘目录不受影响；下次整理将重新确定名称')
+      toast.success(`已删除整理名称：${pin.pinned_title}`, { description: '网盘目录不受影响；下次整理将重新确定名称' })
       await load()
     } catch (e) {
       const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      onToast('error', '删除失败', msg || (e instanceof Error ? e.message : String(e)))
+      toast.error('删除失败', { description: msg || (e instanceof Error ? e.message : String(e)) })
     } finally {
       setDeleting(false)
       setDeleteTarget(null)
     }
-  }, [deleteTarget, onToast, load])
+  }, [deleteTarget, load])
 
   const kw = keyword.trim().toLowerCase()
   const filtered = kw

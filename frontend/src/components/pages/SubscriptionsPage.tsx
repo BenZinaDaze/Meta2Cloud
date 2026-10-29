@@ -157,7 +157,6 @@ function SubscriptionDetailContent({ item }: { item: Subscription }) {
 }
 
 interface SubscriptionsPageProps {
-  onToast?: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void
   u115Authorized?: boolean
 }
 

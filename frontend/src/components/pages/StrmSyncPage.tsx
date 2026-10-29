@@ -16,6 +16,7 @@ import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import PageHeader from '@/components/shared/PageHeader'
+import { toast } from 'sonner'
 import { usePolling } from '@/hooks/usePolling'
 import { relativeTime } from '@/lib/time'
 import type { StrmSyncRun, StrmSyncFile, StrmSyncStatus } from '@/types/api'
@@ -107,11 +108,7 @@ function RunFiles({ runId }: { runId: number }) {
   )
 }
 
-interface StrmSyncPageProps {
-  onToast?: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void
-}
-
-export default function StrmSyncPage(props: StrmSyncPageProps) {
+export default function StrmSyncPage() {
   const [status, setStatus] = useState<StrmSyncStatus | null>(null)
   const [runs, setRuns] = useState<StrmSyncRun[]>([])
   const [total, setTotal] = useState(0)
@@ -155,15 +152,15 @@ export default function StrmSyncPage(props: StrmSyncPageProps) {
     setSyncing(true)
     try {
       await triggerStrmSync()
-      props.onToast?.('success', '同步已启动', 'STRM 同步正在后台执行')
+      toast.success('同步已启动', { description: 'STRM 同步正在后台执行' })
       fetchData()
     } catch (e) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      props.onToast?.('error', '触发同步失败', detail || (e as Error).message)
+      toast.error('触发同步失败', { description: detail || (e as Error).message })
     } finally {
       setSyncing(false)
     }
-  }, [props, fetchData])
+  }, [fetchData])
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const running = !!status?.running

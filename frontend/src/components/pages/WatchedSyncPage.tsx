@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import PageHeader from '@/components/shared/PageHeader'
 import StatCard from '@/components/shared/StatCard'
+import { toast } from 'sonner'
 import { relativeTime } from '@/lib/time'
 import { usePolling } from '@/hooks/usePolling'
 import { TRIGGER_LABELS, WatchedRunsTable } from '@/components/watched/WatchedRunsTable'
@@ -26,11 +27,7 @@ import type { WatchedSyncStatus, WatchedSyncRun } from '@/types/api'
 
 const PAGE_SIZE = 20
 
-interface WatchedSyncPageProps {
-  onToast?: (type: 'success' | 'error' | 'warning', title: string, message?: string) => void
-}
-
-export default function WatchedSyncPage(props: WatchedSyncPageProps) {
+export default function WatchedSyncPage() {
   const [status, setStatus] = useState<WatchedSyncStatus | null>(null)
   const [runs, setRuns] = useState<WatchedSyncRun[]>([])
   const [total, setTotal] = useState(0)
@@ -83,15 +80,15 @@ export default function WatchedSyncPage(props: WatchedSyncPageProps) {
     setSyncing(true)
     try {
       await triggerWatchedSync()
-      props.onToast?.('success', '同步已启动', '观看同步正在后台执行')
+      toast.success('同步已启动', { description: '观看同步正在后台执行' })
       fetchData()
     } catch (e) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      props.onToast?.('error', '触发同步失败', detail || (e as Error).message)
+      toast.error('触发同步失败', { description: detail || (e as Error).message })
     } finally {
       setSyncing(false)
     }
-  }, [props, fetchData])
+  }, [fetchData])
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const running = !!status?.running
@@ -210,7 +207,6 @@ export default function WatchedSyncPage(props: WatchedSyncPageProps) {
             expandedGroups={expandedGroups}
             onToggleRun={(id) => setExpandedRun(expandedRun === id ? null : id)}
             onToggleGroup={(key) => setExpandedGroups((prev) => ({ ...prev, [key]: !prev[key] }))}
-            onToast={props.onToast}
           />
 
           {totalPages > 1 && (
@@ -238,7 +234,7 @@ export default function WatchedSyncPage(props: WatchedSyncPageProps) {
           )}
         </TabsContent>
         <TabsContent value="ignore" className="mt-4">
-          <WatchedIgnoreTab onToast={props.onToast} />
+          <WatchedIgnoreTab />
         </TabsContent>
       </Tabs>
     </div>
