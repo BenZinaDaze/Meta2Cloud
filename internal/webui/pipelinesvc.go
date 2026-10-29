@@ -159,7 +159,7 @@ func (s *pipelineService) doRunPipeline() {
 				log.Printf("媒体库刷新异常：%v", r)
 			}
 		}()
-		s.rt.RefreshLibrary(true)
+		s.rt.librarySvc.RefreshLibrary(true)
 	}()
 	s.mu.Lock()
 	s.running = false
@@ -260,7 +260,7 @@ func (s *Server) handleRefreshLibrary(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("%v", rec))
 		}
 	}()
-	diff := s.rt.RefreshLibrary(!full)
+	diff := s.rt.librarySvc.RefreshLibrary(!full)
 	s.rt.appLog("library", "refresh_scan_finish", "SUCCESS", "媒体库刷新完成", diff)
 	writeJSON(w, http.StatusOK, diff)
 }
@@ -271,7 +271,7 @@ func (s *Server) handleGetMovies(w http.ResponseWriter, _ *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.rt.ScanMovies(client, s.rt.GetConfig()))
+	writeJSON(w, http.StatusOK, s.rt.librarySvc.ScanMovies(client, s.rt.GetConfig()))
 }
 
 func (s *Server) handleGetTVShows(w http.ResponseWriter, _ *http.Request) {
@@ -280,7 +280,7 @@ func (s *Server) handleGetTVShows(w http.ResponseWriter, _ *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.rt.ScanTVShows(client, s.rt.GetConfig(), true))
+	writeJSON(w, http.StatusOK, s.rt.librarySvc.ScanTVShows(client, s.rt.GetConfig(), true))
 }
 
 func (s *Server) handleGetTVDetail(w http.ResponseWriter, r *http.Request) {
@@ -298,7 +298,7 @@ func (s *Server) handleGetTVDetail(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
 		return
 	}
-	for _, show := range s.rt.ScanTVShows(client, s.rt.GetConfig(), true) {
+	for _, show := range s.rt.librarySvc.ScanTVShows(client, s.rt.GetConfig(), true) {
 		if show.TmdbID == tmdbID {
 			writeJSON(w, http.StatusOK, show)
 			return
@@ -322,7 +322,7 @@ func (s *Server) handleGetMovieDetail(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "存储 Provider 不可用")
 		return
 	}
-	for _, movie := range s.rt.ScanMovies(client, s.rt.GetConfig()) {
+	for _, movie := range s.rt.librarySvc.ScanMovies(client, s.rt.GetConfig()) {
 		if movie.TmdbID == tmdbID {
 			writeJSON(w, http.StatusOK, movie)
 			return
@@ -359,7 +359,7 @@ func (s *Server) handleIngestHistory(w http.ResponseWriter, r *http.Request) {
 	result := is.Query(ingestQueryFromParams(q))
 	for i := range result.Items {
 		if result.Items[i].PosterPath != "" {
-			result.Items[i].PosterURL = s.rt.tmdbImageURL(result.Items[i].PosterPath, "w500")
+			result.Items[i].PosterURL = s.rt.librarySvc.tmdbImageURL(result.Items[i].PosterPath, "w500")
 		}
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -384,7 +384,7 @@ func (s *Server) handleIngestRecent(w http.ResponseWriter, r *http.Request) {
 	}
 	for i := range items {
 		if items[i].PosterPath != "" {
-			items[i].PosterURL = s.rt.tmdbImageURL(items[i].PosterPath, "w500")
+			items[i].PosterURL = s.rt.librarySvc.tmdbImageURL(items[i].PosterPath, "w500")
 		}
 	}
 	writeJSON(w, http.StatusOK, items)

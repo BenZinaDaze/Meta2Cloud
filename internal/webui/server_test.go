@@ -1261,7 +1261,7 @@ func TestScanCategoryPassthrough(t *testing.T) {
 		},
 	})
 
-	shows := rt.ScanTVShows(fp.provider(), rt.GetConfig(), false)
+	shows := rt.librarySvc.ScanTVShows(fp.provider(), rt.GetConfig(), false)
 	if len(shows) != 1 {
 		t.Fatalf("shows = %d, want 1（分类目录应透传）", len(shows))
 	}

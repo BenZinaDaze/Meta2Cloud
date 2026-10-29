@@ -157,10 +157,10 @@ func (s *Server) buildItemUpdates(info map[string]any, mediaType, driveFolderID 
 		"rating":   roundTo1F(jsonx.Float(info, "vote_average", 0)),
 	}
 	if p := jsonx.Str(info, "poster_path"); p != "" {
-		updates["poster_url"] = s.rt.tmdbImageURL(p, "w500")
+		updates["poster_url"] = s.rt.librarySvc.tmdbImageURL(p, "w500")
 	}
 	if b := jsonx.Str(info, "backdrop_path"); b != "" {
-		updates["backdrop_url"] = s.rt.tmdbImageURL(b, "")
+		updates["backdrop_url"] = s.rt.librarySvc.tmdbImageURL(b, "")
 	}
 	if mediaType == "tv" {
 		date := jsonx.Str(info, "first_air_date")
@@ -176,7 +176,7 @@ func (s *Server) buildItemUpdates(info map[string]any, mediaType, driveFolderID 
 			if client != nil {
 				driveEpisodes = collectDriveEpisodes(client, driveFolderID)
 			}
-			seasonsStatus, totalEps, inLibEps := s.rt.BuildSeasonsStatus(tmdbID, info, driveEpisodes, false)
+			seasonsStatus, totalEps, inLibEps := s.rt.librarySvc.BuildSeasonsStatus(tmdbID, info, driveEpisodes, false)
 			if len(seasonsStatus) > 0 {
 				updates["seasons"] = seasonsToAny(seasonsStatus)
 			}
@@ -709,7 +709,7 @@ func (s *Server) handleTmdbDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	serialized := s.rt.serializeTmdbResult(raw)
 	if mediaType == "tv" && raw["seasons"] != nil {
-		seasonsStatus, _, _ := s.rt.BuildSeasonsStatus(tmdbID, raw, map[epKey]bool{}, true)
+		seasonsStatus, _, _ := s.rt.librarySvc.BuildSeasonsStatus(tmdbID, raw, map[epKey]bool{}, true)
 		serialized["seasons"] = seasonsToAny(seasonsStatus)
 	}
 	serialized["in_library"] = false

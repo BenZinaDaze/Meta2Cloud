@@ -65,6 +65,9 @@ type Runtime struct {
 	// ── 整理管线服务（见 pipelinesvc.go）──
 	pipelineSvc *pipelineService
 
+	// ── 媒体库扫描服务（见 libraryscan.go）──
+	librarySvc *libraryService
+
 	// ── 观看同步运行态（scrobble / SSE / 会话轮询 / 双向同步；见 scrobble.go 等）──
 	trakt traktState
 
@@ -160,6 +163,7 @@ func InitRuntime(rootDir string) *Runtime {
 		strmSync:  &watcherState{stopCh: make(chan struct{})},
 	}
 	rt.pipelineSvc = &pipelineService{rt: rt}
+	rt.librarySvc = &libraryService{rt: rt}
 	rt.strmSvc = &strmService{
 		rt:            rt,
 		strmLinkCache: &directLinkCache{entries: map[string]directLink{}},
