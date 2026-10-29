@@ -854,29 +854,51 @@ func (s *Server) queryIntDefault(r *http.Request, key string, def int) int {
 	return def
 }
 
-func (s *Server) syncRunPayload(r store.StrmSyncRun) map[string]any {
-	return map[string]any{
-		"id": r.ID, "started_at": r.StartedAt, "finished_at": r.FinishedAt,
-		"trigger": r.Trigger, "created": r.Created, "updated": r.Updated,
-		"removed": r.Removed, "skipped": r.Skipped, "error": r.Error,
+// StrmSyncRunPayload 同步运行记录（status.last_run 与 runs 列表共用形状）。
+type StrmSyncRunPayload struct {
+	ID         int64   `json:"id"`
+	StartedAt  string  `json:"started_at"`
+	FinishedAt *string `json:"finished_at"`
+	Trigger    string  `json:"trigger"`
+	Created    int     `json:"created"`
+	Updated    int     `json:"updated"`
+	Removed    int     `json:"removed"`
+	Skipped    int     `json:"skipped"`
+	Error      *string `json:"error"`
+}
+
+func (s *Server) syncRunPayload(r store.StrmSyncRun) StrmSyncRunPayload {
+	return StrmSyncRunPayload{
+		ID: r.ID, StartedAt: r.StartedAt, FinishedAt: r.FinishedAt,
+		Trigger: r.Trigger, Created: r.Created, Updated: r.Updated,
+		Removed: r.Removed, Skipped: r.Skipped, Error: r.Error,
 	}
+}
+
+// StrmSyncStatusPayload GET /api/strm/sync/status 响应。
+type StrmSyncStatusPayload struct {
+	Enabled    bool                `json:"enabled"`
+	URLBase    string              `json:"url_base"`
+	Mappings   int                 `json:"mappings"`
+	Running    bool                `json:"running"`
+	TotalFiles int                 `json:"total_files"`
+	LastRun    *StrmSyncRunPayload `json:"last_run"`
 }
 
 func (s *Server) handleStrmSyncStatus(w http.ResponseWriter, _ *http.Request) {
 	cfg := s.rt.GetConfig()
 	st := s.rt.GetStrmStore()
-	payload := map[string]any{
-		"enabled":     cfg.Strm.Enabled,
-		"url_base":    cfg.Strm.URLBase,
-		"mappings":    len(cfg.Strm.Mappings),
-		"running":     s.rt.StrmSyncRunning(),
-		"total_files": 0,
-		"last_run":    nil,
+	payload := StrmSyncStatusPayload{
+		Enabled:  cfg.Strm.Enabled,
+		URLBase:  cfg.Strm.URLBase,
+		Mappings: len(cfg.Strm.Mappings),
+		Running:  s.rt.StrmSyncRunning(),
 	}
 	if st != nil {
-		payload["total_files"] = st.CountStrmFiles()
+		payload.TotalFiles = st.CountStrmFiles()
 		if last := st.GetLastFinishedSyncRun(); last != nil {
-			payload["last_run"] = s.syncRunPayload(*last)
+			run := s.syncRunPayload(*last)
+			payload.LastRun = &run
 		}
 	}
 	writeJSON(w, http.StatusOK, payload)
@@ -904,16 +926,34 @@ func (s *Server) handleStrmSyncTrigger(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "同步已启动"})
 }
 
+// StrmSyncRunsPayload GET /api/strm/sync/runs 响应。
+type StrmSyncRunsPayload struct {
+	Total int                  `json:"total"`
+	Runs  []StrmSyncRunPayload `json:"runs"`
+}
+
 func (s *Server) handleStrmSyncRuns(w http.ResponseWriter, r *http.Request) {
 	st := s.rt.GetStrmStore()
 	limit := s.queryIntDefault(r, "limit", 20)
 	offset := s.queryIntDefault(r, "offset", 0)
 	runs, total := st.ListSyncRuns(limit, offset)
-	items := make([]map[string]any, 0, len(runs))
+	items := make([]StrmSyncRunPayload, 0, len(runs))
 	for _, run := range runs {
 		items = append(items, s.syncRunPayload(run))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"total": total, "runs": items})
+	writeJSON(w, http.StatusOK, StrmSyncRunsPayload{Total: total, Runs: items})
+}
+
+// StrmSyncFilePayload 同步明细单条。
+type StrmSyncFilePayload struct {
+	ID        int64   `json:"id"`
+	RunID     int64   `json:"run_id"`
+	FileName  *string `json:"file_name"`
+	PanPath   *string `json:"pan_path"`
+	LocalPath *string `json:"local_path"`
+	Action    string  `json:"action"`
+	Success   bool    `json:"success"`
+	Error     *string `json:"error"`
 }
 
 func (s *Server) handleStrmSyncRunFiles(w http.ResponseWriter, r *http.Request) {
@@ -924,12 +964,12 @@ func (s *Server) handleStrmSyncRunFiles(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	files := st.ListSyncFiles(runID, s.queryIntDefault(r, "limit", 500))
-	items := make([]map[string]any, 0, len(files))
+	items := make([]StrmSyncFilePayload, 0, len(files))
 	for _, f := range files {
-		items = append(items, map[string]any{
-			"id": f.ID, "run_id": f.RunID, "file_name": f.FileName,
-			"pan_path": f.PanPath, "local_path": f.LocalPath,
-			"action": f.Action, "success": f.Success, "error": f.Error,
+		items = append(items, StrmSyncFilePayload{
+			ID: f.ID, RunID: f.RunID, FileName: f.FileName,
+			PanPath: f.PanPath, LocalPath: f.LocalPath,
+			Action: f.Action, Success: f.Success, Error: f.Error,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"files": items})

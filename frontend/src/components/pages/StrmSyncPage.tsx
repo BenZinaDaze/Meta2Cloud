@@ -17,38 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import PageHeader from '@/components/shared/PageHeader'
 import { relativeTime } from '@/lib/time'
-
-interface StrmSyncRun {
-  id: number
-  started_at: string
-  finished_at: string | null
-  trigger: string
-  created: number
-  updated: number
-  removed: number
-  skipped: number
-  error: string | null
-}
-
-interface StrmSyncFile {
-  id: number
-  run_id: number
-  file_name: string | null
-  pan_path: string | null
-  local_path: string | null
-  action: string
-  success: boolean
-  error: string | null
-}
-
-interface StrmSyncStatus {
-  enabled: boolean
-  url_base: string
-  mappings: number
-  running: boolean
-  total_files: number
-  last_run: StrmSyncRun | null
-}
+import type { StrmSyncRun, StrmSyncFile, StrmSyncStatus } from '@/types/api'
 
 const TRIGGER_LABELS: Record<string, string> = {
   manual: '手动',

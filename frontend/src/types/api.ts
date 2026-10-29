@@ -347,3 +347,72 @@ export interface WatchedSyncIgnoresResponse {
   ignores: WatchedSyncIgnore[]
   candidates: WatchedFailingMedia[]
 }
+
+// ── STRM（生成 + 302 直链播放）──
+// 与后端 payload struct 字段一一对应（internal/webui/strmsvc.go / strmhttp.go）
+
+/** 同步运行记录（status.last_run 与 runs 列表共用形状） */
+export interface StrmSyncRun {
+  id: number
+  started_at: string
+  finished_at: string | null
+  trigger: string
+  created: number
+  updated: number
+  removed: number
+  skipped: number
+  error: string | null
+}
+
+/** GET /api/strm/sync/status（StrmSyncStatusPayload） */
+export interface StrmSyncStatus {
+  enabled: boolean
+  url_base: string
+  mappings: number
+  running: boolean
+  total_files: number
+  last_run: StrmSyncRun | null
+}
+
+/** 同步明细单条 */
+export interface StrmSyncFile {
+  id: number
+  run_id: number
+  file_name: string | null
+  pan_path: string | null
+  local_path: string | null
+  action: string
+  success: boolean
+  error: string | null
+}
+
+/** 播放历史单条 */
+export interface StrmPlaybackLog {
+  id: number
+  played_at: string
+  pick_code: string
+  file_name: string | null
+  user_agent: string | null
+  cache_hit: boolean
+  duration_ms: number
+  status: number
+  error: string | null
+  pan_path: string | null
+  local_path: string | null
+}
+
+/** 播放统计（后端 StrmPlaybackStats） */
+export interface StrmPlaybackStats {
+  total: number
+  today: number
+  avg_latency_ms: number
+  cache_hit_rate: number
+  distinct_clients: number
+}
+
+/** GET /api/strm/playback/history */
+export interface StrmPlaybackHistoryResponse {
+  total: number
+  items: StrmPlaybackLog[]
+  stats: StrmPlaybackStats
+}

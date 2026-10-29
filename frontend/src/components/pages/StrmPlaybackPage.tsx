@@ -18,39 +18,18 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import PageHeader from '@/components/shared/PageHeader'
 import { relativeTime } from '@/lib/time'
-
-interface PlaybackItem {
-  id: number
-  played_at: string
-  pick_code: string
-  file_name: string | null
-  user_agent: string | null
-  cache_hit: boolean
-  duration_ms: number
-  status: number
-  error: string | null
-  pan_path: string | null
-  local_path: string | null
-}
-
-interface PlaybackStats {
-  total: number
-  today: number
-  avg_latency_ms: number
-  cache_hit_rate: number
-  distinct_clients: number
-}
+import type { StrmPlaybackLog, StrmPlaybackStats } from '@/types/api'
 
 const PAGE_SIZE = 50
 
 interface PlaybackGroup {
   /** 分组键：同一键的相邻记录合并（同一文件+客户端+结果） */
   key: string
-  items: PlaybackItem[]
+  items: StrmPlaybackLog[]
 }
 
 /** 相邻同键记录合并为一组：播放器拖动进度条会对同一文件连续产生多条 302 记录 */
-function groupConsecutive(items: PlaybackItem[]): PlaybackGroup[] {
+function groupConsecutive(items: StrmPlaybackLog[]): PlaybackGroup[] {
   const groups: PlaybackGroup[] = []
   for (const it of items) {
     const key = `${it.pick_code}|${it.user_agent || ''}|${it.status}`
@@ -117,8 +96,8 @@ interface StrmPlaybackPageProps {
 
 export default function StrmPlaybackPage(props: StrmPlaybackPageProps) {
   void props
-  const [items, setItems] = useState<PlaybackItem[]>([])
-  const [stats, setStats] = useState<PlaybackStats | null>(null)
+  const [items, setItems] = useState<StrmPlaybackLog[]>([])
+  const [stats, setStats] = useState<StrmPlaybackStats | null>(null)
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -158,7 +137,7 @@ export default function StrmPlaybackPage(props: StrmPlaybackPageProps) {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const groups = groupConsecutive(items)
 
-  const renderRow = (l: PlaybackItem) => {
+  const renderRow = (l: StrmPlaybackLog) => {
     const client = parseClient(l.user_agent || '')
     const ok = l.status === 302
     return (

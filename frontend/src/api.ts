@@ -5,6 +5,10 @@ import type {
   WatchedSyncRun,
   WatchedSyncRunItem,
   WatchedSyncIgnoresResponse,
+  StrmSyncStatus,
+  StrmSyncRun,
+  StrmSyncFile,
+  StrmPlaybackHistoryResponse,
 } from '@/types/api'
 
 const api = axios.create({ baseURL: '/api' })
@@ -138,14 +142,14 @@ export const clearU115OfflineTasks = (data: { flag: string }) =>
   api.post('/u115/offline/tasks/clear', data)
 
 // ── STRM（生成 + 302 播放） ──
-export const getStrmSyncStatus = () => api.get('/strm/sync/status')
+export const getStrmSyncStatus = () => api.get<StrmSyncStatus>('/strm/sync/status')
 export const triggerStrmSync = () => api.post('/strm/sync')
 export const listStrmSyncRuns = (params?: { limit?: number; offset?: number }) =>
-  api.get('/strm/sync/runs', { params })
+  api.get<{ total: number; runs: StrmSyncRun[] }>('/strm/sync/runs', { params })
 export const getStrmSyncRunFiles = (runId: number | string, params?: { limit?: number }) =>
-  api.get(`/strm/sync/runs/${runId}/files`, { params })
+  api.get<{ files: StrmSyncFile[] }>(`/strm/sync/runs/${runId}/files`, { params })
 export const getStrmPlaybackHistory = (params?: { limit?: number; offset?: number }) =>
-  api.get('/strm/playback/history', { params })
+  api.get<StrmPlaybackHistoryResponse>('/strm/playback/history', { params })
 
 // ── 观看同步（Trakt ↔ Plex） ──
 export const getTraktOauthStatus = (config?: { signal?: AbortSignal }) =>

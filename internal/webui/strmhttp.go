@@ -21,6 +21,8 @@ import (
 	"sync"
 	"time"
 
+	"meta2cloud/internal/webui/store"
+
 	"meta2cloud/internal/u115"
 )
 
@@ -274,21 +276,43 @@ func (s *Server) strmUpstreamError(err error) (int, string) {
 	}
 }
 
+// StrmPlaybackLogPayload 播放历史单条。
+type StrmPlaybackLogPayload struct {
+	ID         int64   `json:"id"`
+	PlayedAt   string  `json:"played_at"`
+	PickCode   string  `json:"pick_code"`
+	FileName   *string `json:"file_name"`
+	UserAgent  *string `json:"user_agent"`
+	CacheHit   bool    `json:"cache_hit"`
+	DurationMs int     `json:"duration_ms"`
+	Status     int     `json:"status"`
+	Error      *string `json:"error"`
+	PanPath    *string `json:"pan_path"`
+	LocalPath  *string `json:"local_path"`
+}
+
+// StrmPlaybackHistoryPayload GET /api/strm/playback/history 响应。
+type StrmPlaybackHistoryPayload struct {
+	Total int                       `json:"total"`
+	Items []StrmPlaybackLogPayload  `json:"items"`
+	Stats store.StrmPlaybackStats   `json:"stats"`
+}
+
 func (s *Server) handleStrmPlaybackHistory(w http.ResponseWriter, r *http.Request) {
 	st := s.rt.GetStrmStore()
 	logs, total := st.ListPlaybackLogs(s.queryIntDefault(r, "limit", 50), s.queryIntDefault(r, "offset", 0))
-	items := make([]map[string]any, 0, len(logs))
+	items := make([]StrmPlaybackLogPayload, 0, len(logs))
 	for _, l := range logs {
-		items = append(items, map[string]any{
-			"id": l.ID, "played_at": l.PlayedAt, "pick_code": l.PickCode,
-			"file_name": l.FileName, "user_agent": l.UserAgent,
-			"cache_hit": l.CacheHit, "duration_ms": l.DurationMs,
-			"status": l.Status, "error": l.Error,
-			"pan_path": l.PanPath, "local_path": l.LocalPath,
+		items = append(items, StrmPlaybackLogPayload{
+			ID: l.ID, PlayedAt: l.PlayedAt, PickCode: l.PickCode,
+			FileName: l.FileName, UserAgent: l.UserAgent,
+			CacheHit: l.CacheHit, DurationMs: l.DurationMs,
+			Status: l.Status, Error: l.Error,
+			PanPath: l.PanPath, LocalPath: l.LocalPath,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"total": total, "items": items, "stats": st.GetPlaybackStats(),
+	writeJSON(w, http.StatusOK, StrmPlaybackHistoryPayload{
+		Total: total, Items: items, Stats: st.GetPlaybackStats(),
 	})
 }
 
