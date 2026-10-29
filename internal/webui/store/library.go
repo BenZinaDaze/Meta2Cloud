@@ -7,6 +7,7 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -952,31 +953,45 @@ type IncrementalDiff struct {
 	ScannedAt    string `json:"scanned_at"`
 }
 
-// SaveIncremental 增量保存媒体库条目。
-func (s *LibraryStore) SaveIncremental(items []map[string]any, folderMtimes map[string]int64) IncrementalDiff {
+// SaveIncremental 增量保存媒体库条目。单事务写入：全部条目原子生效，
+// 中途失败整体回滚——读者（WebUI 分页/统计）不会看到半程数据；错误上抛由调用方记录。
+func (s *LibraryStore) SaveIncremental(items []map[string]any, folderMtimes map[string]int64) (IncrementalDiff, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := utcNow()
-	newCount, updatedCount, total := 0, 0, 0
+	diff := IncrementalDiff{ScannedAt: now}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return diff, fmt.Errorf("开启事务失败：%w", err)
+	}
+	defer func() { _ = tx.Rollback() }() // 提交后 Rollback 返回 ErrTxDone，忽略
 	for _, payload := range items {
 		driveFolderID := jsonx.Str(payload, "drive_folder_id")
 		if driveFolderID == "" {
 			continue
 		}
-		total++
+		diff.Total++
 		var existing string
-		err := s.db.QueryRow("SELECT drive_folder_id FROM library_media WHERE drive_folder_id = ?", driveFolderID).Scan(&existing)
-		if err == nil {
-			updatedCount++
-		} else {
-			newCount++
+		switch err := tx.QueryRow("SELECT drive_folder_id FROM library_media WHERE drive_folder_id = ?", driveFolderID).Scan(&existing); {
+		case err == nil:
+			diff.UpdatedItems++
+		case errors.Is(err, sql.ErrNoRows):
+			diff.NewItems++
+		default:
+			return diff, fmt.Errorf("查询库条目 %s 失败：%w", driveFolderID, err)
 		}
-		mtime := folderMtimes[driveFolderID]
-		s.upsertLibraryItem(payload, now, mtime)
+		if err := s.upsertLibraryItemTx(tx, payload, now, folderMtimes[driveFolderID]); err != nil {
+			return diff, fmt.Errorf("写入库条目 %s 失败：%w", driveFolderID, err)
+		}
 	}
-	_ = s.setState(scanAtKey, now)
-	log.Printf("媒体库增量更新完成：%d 项（新增 %d，更新 %d）", total, newCount, updatedCount)
-	return IncrementalDiff{NewItems: newCount, UpdatedItems: updatedCount, Total: total, ScannedAt: now}
+	if err := setStateTx(tx, scanAtKey, now); err != nil {
+		return diff, fmt.Errorf("写入扫描时间失败：%w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return diff, fmt.Errorf("提交事务失败：%w", err)
+	}
+	log.Printf("媒体库增量更新完成：%d 项（新增 %d，更新 %d）", diff.Total, diff.NewItems, diff.UpdatedItems)
+	return diff, nil
 }
 
 // MarkMissingFolders 标记不在库中的文件夹，返回更新行数。失败上抛错误由调用方记录，

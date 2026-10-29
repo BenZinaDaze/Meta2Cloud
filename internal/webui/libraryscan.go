@@ -794,7 +794,10 @@ func (rt *Runtime) RefreshLibrary(incremental bool) map[string]any {
 			allMtimes[k] = v
 		}
 		items := append(mediaItemsToPayloads(movies), mediaItemsToPayloads(tvShows)...)
-		diff := libStore.SaveIncremental(items, allMtimes)
+		diff, err := libStore.SaveIncremental(items, allMtimes)
+		if err != nil {
+			log.Printf("刷新媒体库：增量保存失败：%v", err)
+		}
 		if _, err := libStore.MarkMissingFolders(mapKeys(allMtimes)); err != nil {
 			log.Printf("刷新媒体库：标记缺失文件夹失败：%v", err)
 		}
