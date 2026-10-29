@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Plus, ArrowUp, ArrowDown, Trash2, Folder, ChevronDown, ChevronRight, FolderSync, Loader2 } from 'lucide-react'
 import { getCategories, saveCategories, reclassifyDry, reclassifyStart, reclassifyStatus } from '@/api'
 import { toast } from 'sonner'
@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import PageHeader from '@/components/shared/PageHeader'
+import { usePolling } from '@/hooks/usePolling'
 import type { CategoryDirs, CategoryRule, CategoriesConfig } from '@/types/api'
 
 const GENRE_OPTIONS = [
@@ -82,51 +83,42 @@ export default function CategoriesPage({ onToast }: CategoriesPageProps) {
   } | null>(null)
   const [executing, setExecuting] = useState(false)
   const [progress, setProgress] = useState<{ running: boolean; moved: number; failed: number; total: number } | null>(null)
-  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+  // 进度轮询开关：点击执行后开启；running 变为 false 时在轮询内报完成并关闭
+  const [pollingActive, setPollingActive] = useState(false)
 
-  const stopPolling = () => {
-    if (pollTimer.current) {
-      clearInterval(pollTimer.current)
-      pollTimer.current = null
-    }
-  }
-
-  // 后台归位进度轮询：running 变为 false 时报完成并停止
-  const startPolling = useCallback(() => {
-    stopPolling()
-    pollTimer.current = setInterval(async () => {
-      try {
-        const res = await reclassifyStatus()
-        const st: {
-          running: boolean
-          moved: number
-          failed: number
-          total: number
-          moves?: string[]
-          errors?: string[]
-        } = res.data
-        setProgress(st)
-        if (st && !st.running) {
-          stopPolling()
-          if (st.failed > 0) {
-            const errs = (st.errors || []).slice(0, 3).join('\n')
-            notify('warning', `重新归类完成：移动 ${st.moved} 项，失败 ${st.failed} 项`, errs || undefined)
-          } else {
-            const moves = st.moves || []
-            const detail =
-              moves.length > 0
-                ? moves.slice(0, 3).join('\n') + (moves.length > 3 ? `\n等 ${st.moved} 项` : '')
-                : `已移动 ${st.moved} 项`
-            notify('success', '全库重新归类完成', detail)
-          }
+  // 后台归位进度轮询
+  const pollProgress = useCallback(async () => {
+    try {
+      const res = await reclassifyStatus()
+      const st: {
+        running: boolean
+        moved: number
+        failed: number
+        total: number
+        moves?: string[]
+        errors?: string[]
+      } = res.data
+      setProgress(st)
+      if (st && !st.running) {
+        setPollingActive(false)
+        if (st.failed > 0) {
+          const errs = (st.errors || []).slice(0, 3).join('\n')
+          notify('warning', `重新归类完成：移动 ${st.moved} 项，失败 ${st.failed} 项`, errs || undefined)
+        } else {
+          const moves = st.moves || []
+          const detail =
+            moves.length > 0
+              ? moves.slice(0, 3).join('\n') + (moves.length > 3 ? `\n等 ${st.moved} 项` : '')
+              : `已移动 ${st.moved} 项`
+          notify('success', '全库重新归类完成', detail)
         }
-      } catch {
-        /* 静默重试 */
       }
-    }, 3000)
+    } catch {
+      /* 静默重试 */
+    }
   }, [notify])
 
-  useEffect(() => stopPolling, [])
+  usePolling(pollProgress, 3000, { enabled: pollingActive })
 
   const openReclassify = useCallback(async () => {
     setDryLoading(true)
@@ -149,7 +141,7 @@ export default function CategoriesPage({ onToast }: CategoriesPageProps) {
       setReclassifyOpen(false)
       notify('success', '已开始全库重新归类', '仅移动位置不正确的目录，完成后将自动同步 STRM')
       setProgress({ running: true, moved: 0, failed: 0, total: dryData?.total ?? 0 })
-      startPolling()
+      setPollingActive(true)
     } catch (e) {
       const resp = e as { response?: { data?: { state?: { running: boolean } }; status?: number } }
       if (resp?.response?.status === 409) {
@@ -161,7 +153,7 @@ export default function CategoriesPage({ onToast }: CategoriesPageProps) {
     } finally {
       setExecuting(false)
     }
-  }, [dryData, notify, startPolling])
+  }, [dryData, notify])
 
   const toggleCollapsed = (kind: 'tv' | 'movie') =>
     setCollapsed((c) => ({ ...c, [kind]: !c[kind] }))

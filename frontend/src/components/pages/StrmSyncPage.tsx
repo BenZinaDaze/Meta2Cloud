@@ -16,6 +16,7 @@ import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import PageHeader from '@/components/shared/PageHeader'
+import { usePolling } from '@/hooks/usePolling'
 import { relativeTime } from '@/lib/time'
 import type { StrmSyncRun, StrmSyncFile, StrmSyncStatus } from '@/types/api'
 
@@ -144,16 +145,7 @@ export default function StrmSyncPage(props: StrmSyncPageProps) {
   }, [page])
 
   // 同步进行中加密轮询，空闲时低速轮询
-  useEffect(() => {
-    fetchData(true)
-  }, [fetchData])
-
-  useEffect(() => {
-    const running = status?.running
-    const interval = running ? 3000 : 30000
-    const timer = setInterval(() => fetchData(), interval)
-    return () => clearInterval(timer)
-  }, [fetchData, status?.running])
+  usePolling(() => fetchData(), status?.running ? 3000 : 30000)
 
   const handleSync = useCallback(async () => {
     setSyncing(true)

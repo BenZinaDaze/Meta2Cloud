@@ -13,6 +13,7 @@ import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 import PageHeader from '@/components/shared/PageHeader'
 import { relativeTime } from '@/lib/time'
+import { usePolling } from '@/hooks/usePolling'
 import type {
   LibraryStats,
   IngestStats,
@@ -646,18 +647,15 @@ export default function DashboardPage() {
   }, [load])
 
   // 整理状态轮询：运行结束（true→false）时自动刷新仪表盘
-  useEffect(() => {
-    const timer = window.setInterval(async () => {
-      try {
-        const r = await getPipelineStatus()
-        const running = !!r.data?.running
-        setPipeline(r.data)
-        if (pipelineRef.current && !running) load()
-        pipelineRef.current = running
-      } catch { /* ignore */ }
-    }, 5000)
-    return () => window.clearInterval(timer)
-  }, [load])
+  usePolling(async () => {
+    try {
+      const r = await getPipelineStatus()
+      const running = !!r.data?.running
+      setPipeline(r.data)
+      if (pipelineRef.current && !running) load()
+      pipelineRef.current = running
+    } catch { /* ignore */ }
+  }, 5000)
 
   const dist = ingest7
     ? [

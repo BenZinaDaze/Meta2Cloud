@@ -17,6 +17,7 @@ import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import PageHeader from '@/components/shared/PageHeader'
+import { usePolling } from '@/hooks/usePolling'
 import { relativeTime } from '@/lib/time'
 import type { StrmPlaybackLog, StrmPlaybackStats } from '@/types/api'
 
@@ -129,10 +130,7 @@ export default function StrmPlaybackPage(props: StrmPlaybackPageProps) {
   }, [fetchData])
 
   // 低速轮询，播放中新记录自动出现
-  useEffect(() => {
-    const timer = setInterval(() => fetchData(), 30000)
-    return () => clearInterval(timer)
-  }, [fetchData])
+  usePolling(() => fetchData(), 30000)
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const groups = groupConsecutive(items)

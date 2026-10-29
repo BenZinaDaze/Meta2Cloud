@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import PageHeader from '@/components/shared/PageHeader'
 import { formatBytes } from '@/lib/format'
 import type { U115Overview, U115QuotaInfo, U115Space, U115Task } from '@/types/api'
+import { usePolling } from '@/hooks/usePolling'
 import { formatDateTime } from '@/lib/time'
 import {
   AlertDialog,
@@ -121,13 +122,9 @@ export default function U115OfflinePage({ onToast }: U115OfflinePageProps) {
     loadOverview()
   }, [busy, loadOverview, pageVisible])
 
-  useEffect(() => {
-    if (!pageVisible) return undefined
-    const timer = setInterval(() => {
-      if (!busy) loadOverview()
-    }, 15000)
-    return () => clearInterval(timer)
-  }, [busy, loadOverview, pageVisible])
+  usePolling(() => {
+    if (!busy) loadOverview()
+  }, 15000, { whenVisible: true })
 
   const tasks = useMemo(() => overview?.tasks || [], [overview])
   const pagination = overview?.pagination

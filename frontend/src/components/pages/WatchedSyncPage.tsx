@@ -28,6 +28,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import PageHeader from '@/components/shared/PageHeader'
 import { relativeTime } from '@/lib/time'
+import { usePolling } from '@/hooks/usePolling'
 import type {
   WatchedSyncRun,
   WatchedSyncRunItem,
@@ -178,27 +179,25 @@ function RunItems({ runId, running, onToast }: {
   const [items, setItems] = useState<WatchedSyncRunItem[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // 序列守卫：runId 切换后丢弃过期响应（轮询与补拉并存时防乱序覆盖）
+  const seq = useRef(0)
+  const load = useCallback(async () => {
+    const id = ++seq.current
+    try {
+      const res = await getWatchedSyncRunItems(runId, { limit: 1000 })
+      if (id !== seq.current) return
+      setItems(res.data?.items || [])
+    } catch (e) {
+      if (id === seq.current) setError((e as Error).message)
+    }
+  }, [runId])
+
   useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      try {
-        const res = await getWatchedSyncRunItems(runId, { limit: 1000 })
-        if (!cancelled) setItems(res.data?.items || [])
-      } catch (e) {
-        if (!cancelled) setError((e as Error).message)
-      }
-    }
     load()
-    // 同步进行中每 2 秒刷新，实现「同步一条显示一条」；结束后补拉一次完整明细
-    let timer: ReturnType<typeof setInterval> | null = null
-    if (running) {
-      timer = setInterval(load, 2000)
-    }
-    return () => {
-      cancelled = true
-      if (timer) clearInterval(timer)
-    }
-  }, [runId, running])
+  }, [load, running])
+
+  // 同步进行中每 2 秒刷新，实现「同步一条显示一条」；结束后上面的补拉覆盖完整明细
+  usePolling(load, 2000, { enabled: running })
 
   if (error) return <p className="px-3 py-2 text-xs text-destructive">明细加载失败：{error}</p>
   if (!items) return <p className="px-3 py-2 text-xs text-muted-foreground">加载中…</p>
@@ -431,12 +430,7 @@ export default function WatchedSyncPage(props: WatchedSyncPageProps) {
   }, [fetchData])
 
   // 同步进行中加密轮询，空闲时低速轮询
-  useEffect(() => {
-    const running = status?.running
-    const interval = running ? 3000 : 30000
-    const timer = setInterval(() => fetchData(), interval)
-    return () => clearInterval(timer)
-  }, [fetchData, status?.running])
+  usePolling(() => fetchData(), status?.running ? 3000 : 30000)
 
   // 有运行中的同步时自动展开它，实时逐条显示明细
   useEffect(() => {
