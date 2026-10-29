@@ -26,80 +26,80 @@ var traktSyncState struct {
 }
 
 // TraktSyncRunning 同步是否进行中。
-func (rt *Runtime) TraktSyncRunning() bool {
-	rt.trakt.run.mu.Lock()
-	defer rt.trakt.run.mu.Unlock()
-	return rt.trakt.run.running
+func (s *traktService) TraktSyncRunning() bool {
+	s.run.mu.Lock()
+	defer s.run.mu.Unlock()
+	return s.run.running
 }
 
 // TriggerTraktSync 异步触发一轮同步；已在进行中返回 false。
-func (rt *Runtime) TriggerTraktSync(trigger string) bool {
-	rt.trakt.run.mu.Lock()
-	if rt.trakt.run.running {
-		rt.trakt.run.mu.Unlock()
+func (s *traktService) TriggerTraktSync(trigger string) bool {
+	s.run.mu.Lock()
+	if s.run.running {
+		s.run.mu.Unlock()
 		return false
 	}
-	rt.trakt.run.running = true
-	rt.trakt.run.mu.Unlock()
+	s.run.running = true
+	s.run.mu.Unlock()
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				rt.appLog("trakt", "sync_panic", "ERROR", fmt.Sprintf("观看同步异常退出：%v", r), nil)
+				s.rt.appLog("trakt", "sync_panic", "ERROR", fmt.Sprintf("观看同步异常退出：%v", r), nil)
 			}
-			rt.trakt.run.mu.Lock()
-			rt.trakt.run.running = false
-			rt.trakt.run.mu.Unlock()
+			s.run.mu.Lock()
+			s.run.running = false
+			s.run.mu.Unlock()
 		}()
-		rt.runTraktSync(trigger)
+		s.runTraktSync(trigger)
 	}()
 	return true
 }
 
 // traktSyncLogger 引擎日志回调 → appLog。
-func (rt *Runtime) traktSyncLogger(level, message string, details map[string]any) {
-	rt.appLog("trakt", "sync", level, message, details)
+func (s *traktService) traktSyncLogger(level, message string, details map[string]any) {
+	s.rt.appLog("trakt", "sync", level, message, details)
 }
 
 // runTraktSync 构建引擎并执行一轮同步。
-func (rt *Runtime) runTraktSync(trigger string) {
-	cfg := rt.GetConfig()
-	traktClient := rt.GetTraktClient()
+func (s *traktService) runTraktSync(trigger string) {
+	cfg := s.rt.GetConfig()
+	traktClient := s.rt.GetTraktClient()
 	if traktClient == nil {
-		rt.appLog("trakt", "sync_skipped", "WARNING", "Trakt 客户端不可用（未配置或未授权），跳过同步", nil)
+		s.rt.appLog("trakt", "sync_skipped", "WARNING", "Trakt 客户端不可用（未配置或未授权），跳过同步", nil)
 		return
 	}
-	plexClient := rt.GetPlexClient()
+	plexClient := s.rt.GetPlexClient()
 	if plexClient == nil {
-		rt.appLog("trakt", "sync_skipped", "WARNING", "Plex 未配置服务器地址或未授权，跳过同步", nil)
+		s.rt.appLog("trakt", "sync_skipped", "WARNING", "Plex 未配置服务器地址或未授权，跳过同步", nil)
 		return
 	}
-	syncStore := rt.GetTraktSyncStore()
+	syncStore := s.rt.GetTraktSyncStore()
 	engine := &syncengine.Engine{
-		Playback: plexserver.NewSource(plexClient, rt.buildTitleIndex(), syncStore),
+		Playback: plexserver.NewSource(plexClient, s.rt.buildTitleIndex(), syncStore),
 		Trakt:    trakt.NewTraktSource(traktClient, syncStore, syncStore),
 		Store:    syncStore,
 		ToPlex:   cfg.Trakt.SyncToPlex,
 		ToTrakt:  cfg.Trakt.SyncToTrakt,
-		Log:      rt.traktSyncLogger,
+		Log:      s.traktSyncLogger,
 	}
 	started := time.Now()
 	summary, err := engine.Run(context.Background(), trigger)
 	took := time.Since(started).Round(time.Millisecond)
 	if err != nil {
-		rt.appLog("trakt", "sync_failed", "ERROR", fmt.Sprintf("观看同步失败（耗时 %s）：%v", took, err), nil)
+		s.rt.appLog("trakt", "sync_failed", "ERROR", fmt.Sprintf("观看同步失败（耗时 %s）：%v", took, err), nil)
 		// 仅授权失效上报健康状态；瞬时网络错误不告警
 		switch {
 		case errors.Is(err, trakt.ErrUnauthorized):
-			rt.NotifyServiceHealth("Trakt", false, "观看同步："+err.Error())
+			s.rt.NotifyServiceHealth("Trakt", false, "观看同步："+err.Error())
 		case errors.Is(err, plexserver.ErrUnauthorized):
-			rt.NotifyServiceHealth("Plex", false, "观看同步："+err.Error())
+			s.rt.NotifyServiceHealth("Plex", false, "观看同步："+err.Error())
 		}
 		return
 	}
 	// 全量成功即双向接口可达且授权有效：同时上报 Trakt 与 Plex 恢复
-	rt.NotifyServiceHealth("Trakt", true, "")
-	rt.NotifyServiceHealth("Plex", true, "")
-	rt.appLog("trakt", "sync_done", "SUCCESS",
+	s.rt.NotifyServiceHealth("Trakt", true, "")
+	s.rt.NotifyServiceHealth("Plex", true, "")
+	s.rt.appLog("trakt", "sync_done", "SUCCESS",
 		fmt.Sprintf("观看同步完成（耗时 %s）：记录到 Trakt %d 条，回写 Plex %d 条，冲突 %d，无法识别 %d，跳过 %d，失败 %d",
 			took, summary.ToTrakt, summary.ToPlex, summary.Conflicts, summary.Unresolved, summary.Skipped, summary.Failed),
 		map[string]any{
@@ -110,7 +110,7 @@ func (rt *Runtime) runTraktSync(trigger string) {
 		})
 	// 有未处理项时提醒（长尾故障不再沉默数天）：写入失败 / 两侧冲突 / 无法识别
 	if summary.Failed > 0 || summary.Conflicts > 0 || summary.Unresolved > 0 {
-		rt.notifyTraktSyncAnomaly(summary)
+		s.notifyTraktSyncAnomaly(summary)
 	}
 }
 
@@ -120,7 +120,7 @@ var (
 	traktAnomalyLast time.Time
 )
 
-func (rt *Runtime) notifyTraktSyncAnomaly(summary syncengine.RunSummary) {
+func (s *traktService) notifyTraktSyncAnomaly(summary syncengine.RunSummary) {
 	traktAnomalyMu.Lock()
 	if time.Since(traktAnomalyLast) < time.Hour {
 		traktAnomalyMu.Unlock()
@@ -128,7 +128,7 @@ func (rt *Runtime) notifyTraktSyncAnomaly(summary syncengine.RunSummary) {
 	}
 	traktAnomalyLast = time.Now()
 	traktAnomalyMu.Unlock()
-	rt.sendHealthTelegram("trakt", "Trakt", fmt.Sprintf(
+	s.rt.sendHealthTelegram("trakt", "Trakt", fmt.Sprintf(
 		"⚠️ 观看同步有未处理项：写入失败 %d 条，两侧状态冲突 %d 条，无法识别 %d 条。详情见同步记录",
 		summary.Failed, summary.Conflicts, summary.Unresolved))
 }
@@ -174,10 +174,10 @@ type TraktSyncStatusPayload struct {
 	LastRun             *TraktSyncRunPayload `json:"last_run"`
 }
 
-func (rt *Runtime) traktSyncStatusPayload() TraktSyncStatusPayload {
-	cfg := rt.GetConfig()
-	traktStatus := rt.traktOauthStatusPayload()
-	plex := rt.plexStatusPayload()
+func (s *traktService) traktSyncStatusPayload() TraktSyncStatusPayload {
+	cfg := s.rt.GetConfig()
+	traktStatus := s.traktOauthStatusPayload()
+	plex := s.plexStatusPayload()
 	payload := TraktSyncStatusPayload{
 		Enabled:             cfg.Trakt.Enabled,
 		TraktReady:          traktStatus.Ready,
@@ -189,16 +189,16 @@ func (rt *Runtime) traktSyncStatusPayload() TraktSyncStatusPayload {
 		SyncToTrakt:         cfg.Trakt.SyncToTrakt,
 		SyncCron:            cfg.Trakt.SyncCron,
 		SessionPollSeconds:  cfg.Trakt.SessionPollSeconds,
-		Running:             rt.TraktSyncRunning(),
-		SyncWatcherAlive:    watcherAlive(rt.trakt.syncWatcher),
-		SessionWatcherAlive: watcherAlive(rt.trakt.sessionWatcher),
+		Running:             s.TraktSyncRunning(),
+		SyncWatcherAlive:    watcherAlive(s.syncWatcher),
+		SessionWatcherAlive: watcherAlive(s.sessionWatcher),
 		SSEEnabled:          cfg.Trakt.SSEEnabled,
-		SSEConnected:        rt.sseConnected(),
-		LastPolledAt:        rt.trakt.syncWatcher.lastPolledAt,
-		LastPollError:       rt.trakt.syncWatcher.lastPollError,
-		LastSessionPolledAt: rt.trakt.sessionWatcher.lastPolledAt,
+		SSEConnected:        s.sseConnected(),
+		LastPolledAt:        s.syncWatcher.lastPolledAt,
+		LastPollError:       s.syncWatcher.lastPollError,
+		LastSessionPolledAt: s.sessionWatcher.lastPolledAt,
 	}
-	if store := rt.GetTraktSyncStore(); store != nil {
+	if store := s.rt.GetTraktSyncStore(); store != nil {
 		if last := store.GetLastFinishedSyncRun(); last != nil {
 			run := traktSyncRunPayload(*last)
 			payload.LastRun = &run
@@ -219,19 +219,19 @@ func traktSyncRunPayload(run store.TraktSyncRun) TraktSyncRunPayload {
 }
 
 func (s *Server) handleTraktSyncStatus(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.rt.traktSyncStatusPayload())
+	writeJSON(w, http.StatusOK, s.rt.traktSvc.traktSyncStatusPayload())
 }
 
 func (s *Server) handleTraktSyncTrigger(w http.ResponseWriter, _ *http.Request) {
-	if !s.rt.traktOauthStatusPayload().Authorized {
+	if !s.rt.traktSvc.traktOauthStatusPayload().Authorized {
 		writeJSONError(w, http.StatusBadRequest, "Trakt 未授权，请先完成设备码配对")
 		return
 	}
-	if !s.rt.plexStatusPayload().TokenConfigured {
+	if !s.rt.traktSvc.plexStatusPayload().TokenConfigured {
 		writeJSONError(w, http.StatusBadRequest, "Plex 未授权，请先完成 PIN 配对")
 		return
 	}
-	if !s.rt.TriggerTraktSync(triggerManual) {
+	if !s.rt.traktSvc.TriggerTraktSync(triggerManual) {
 		writeJSONError(w, http.StatusConflict, "观看同步已在进行中")
 		return
 	}
@@ -297,7 +297,7 @@ func (s *Server) handleTraktSyncRunItems(w http.ResponseWriter, r *http.Request)
 		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("读取同步明细失败：%v", err))
 		return
 	}
-	s.rt.enrichRunItemTitles(items)
+	s.rt.traktSvc.enrichRunItemTitles(items)
 	list := make([]TraktSyncRunItemPayload, 0, len(items))
 	for _, it := range items {
 		list = append(list, TraktSyncRunItemPayload{
@@ -356,7 +356,7 @@ func (s *Server) handleTraktSyncIgnores(w http.ResponseWriter, _ *http.Request) 
 			title = *c.Title
 		}
 		if title == "" {
-			title = s.rt.traktMediaTitle(c.MediaType, c.TmdbID)
+			title = s.rt.traktSvc.traktMediaTitle(c.MediaType, c.TmdbID)
 		}
 		candidates = append(candidates, TraktFailingMediaPayload{
 			MediaType: c.MediaType, Anchor: c.Anchor, TmdbID: c.TmdbID, Title: title,
@@ -367,8 +367,8 @@ func (s *Server) handleTraktSyncIgnores(w http.ResponseWriter, _ *http.Request) 
 }
 
 // traktMediaTitle 查媒体展示标题（tmdb_media 缓存优先，回退 library_media）。
-func (rt *Runtime) traktMediaTitle(mediaType string, tmdbID int64) string {
-	libStore := rt.GetLibraryStore()
+func (s *traktService) traktMediaTitle(mediaType string, tmdbID int64) string {
+	libStore := s.rt.GetLibraryStore()
 	if row := libStore.GetTmdbEntry(mediaType, tmdbID); row != nil && row.Title != "" {
 		return row.Title
 	}
@@ -398,13 +398,13 @@ func (s *Server) handleTraktSyncIgnoreSet(w http.ResponseWriter, r *http.Request
 		writeJSONError(w, http.StatusBadRequest, "media_type 须为 movie/tv 且 tmdb_id 有效")
 		return
 	}
-	ignoreDisplayName := s.rt.traktMediaTitle(req.MediaType, req.TmdbID)
+	ignoreDisplayName := s.rt.traktSvc.traktMediaTitle(req.MediaType, req.TmdbID)
 	if ignoreDisplayName == "" {
 		ignoreDisplayName = fmt.Sprintf("%s:%d", req.MediaType, req.TmdbID)
 	}
 	switch req.Action {
 	case "add":
-		title := s.rt.traktMediaTitle(req.MediaType, req.TmdbID)
+		title := s.rt.traktSvc.traktMediaTitle(req.MediaType, req.TmdbID)
 		if err := syncStore.AddSyncIgnore(req.MediaType, req.Anchor, req.TmdbID, title, req.Reason); err != nil {
 			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("保存忽略失败：%v", err))
 			return
@@ -428,8 +428,8 @@ func (s *Server) handleTraktSyncIgnoreSet(w http.ResponseWriter, r *http.Request
 // enrichRunItemTitles 就地为明细补充媒体标题（原位覆盖 Title）。
 // 优先 tmdb_media 缓存（含剧名/译名），回退 library_media；两者都只读。
 // unresolved 明细在记录时已带播放端标题，不覆盖。
-func (rt *Runtime) enrichRunItemTitles(items []store.TraktSyncRunItem) {
-	libStore := rt.GetLibraryStore()
+func (s *traktService) enrichRunItemTitles(items []store.TraktSyncRunItem) {
+	libStore := s.rt.GetLibraryStore()
 	for i := range items {
 		it := &items[i]
 		if it.MediaType == nil || it.TmdbID == nil || *it.TmdbID <= 0 {

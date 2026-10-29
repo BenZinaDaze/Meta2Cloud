@@ -68,8 +68,8 @@ type Runtime struct {
 	// ── 媒体库扫描服务（见 libraryscan.go）──
 	librarySvc *libraryService
 
-	// ── 观看同步运行态（scrobble / SSE / 会话轮询 / 双向同步；见 scrobble.go 等）──
-	trakt traktState
+	// ── 观看同步服务（见 traktservice.go）──
+	traktSvc *traktService
 
 	jwtSecretOnce  sync.Once
 	jwtSecretValue string
@@ -141,7 +141,6 @@ func InitRuntime(rootDir string) *Runtime {
 	rt.categoriesM = 0
 	rt.configSig = [3]int64{}
 	rt.broadcaster = wsBroadcaster{conns: map[chan map[string]any]bool{}}
-	rt.trakt.scrobbleByID = map[string]*sessionScrobble{}
 	// health 钩子默认实现（包级 init 环依赖已随钩子入字段消除）
 	rt.health = healthState{
 		now:      time.Now,
@@ -150,9 +149,13 @@ func InitRuntime(rootDir string) *Runtime {
 		tgConfig: func() config.Telegram { return rt.GetConfig().Telegram },
 	}
 	rt.torrentURLValidator = validateOutboundURL
-	rt.trakt.syncWatcher = &watcherState{stopCh: make(chan struct{})}
-	rt.trakt.sessionWatcher = &watcherState{stopCh: make(chan struct{})}
-	rt.trakt.sseWatcher = &watcherState{stopCh: make(chan struct{})}
+	rt.traktSvc = &traktService{
+		rt:             rt,
+		scrobbleByID:   map[string]*sessionScrobble{},
+		syncWatcher:    &watcherState{stopCh: make(chan struct{})},
+		sessionWatcher: &watcherState{stopCh: make(chan struct{})},
+		sseWatcher:     &watcherState{stopCh: make(chan struct{})},
+	}
 	rt.sched = schedulerState{
 		traktCron: &cronLoop{name: "观看同步"},
 		strmCron:  &cronLoop{name: "STRM 定时同步"},

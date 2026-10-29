@@ -305,9 +305,9 @@ func (rt *Runtime) runTraktCron(stop <-chan struct{}) {
 		case <-timer.C:
 		}
 		nowStr := utcNowISO()
-		rt.trakt.syncWatcher.mu.Lock()
-		rt.trakt.syncWatcher.lastPolledAt = &nowStr
-		rt.trakt.syncWatcher.mu.Unlock()
+		rt.traktSvc.syncWatcher.mu.Lock()
+		rt.traktSvc.syncWatcher.lastPolledAt = &nowStr
+		rt.traktSvc.syncWatcher.mu.Unlock()
 		cfg := rt.GetConfig()
 		if !cfg.IsPlexReady() || !cfg.IsTraktReady() {
 			if !readyWarned {
@@ -318,10 +318,10 @@ func (rt *Runtime) runTraktCron(stop <-chan struct{}) {
 			continue
 		}
 		readyWarned = false
-		if ready, halted := rt.waitPlexReachable(stop); halted {
+		if ready, halted := rt.traktSvc.waitPlexReachable(stop); halted {
 			return
 		} else if ready {
-			rt.TriggerTraktSync(triggerSchedule)
+			rt.traktSvc.TriggerTraktSync(triggerSchedule)
 		}
 	}
 }
@@ -447,8 +447,8 @@ func (rt *Runtime) runRSSCron(stop <-chan struct{}) {
 // StartupBackgroundWatchers 启动全部后台任务：非 cron 类监听线程常驻，
 // cron 类调度由配置变更检测按开关启停（见 ApplyWatchSchedules）。
 func (rt *Runtime) StartupBackgroundWatchers() {
-	rt.ensureTraktSessionLoop()
-	rt.ensureTraktSSELoop()
+	rt.traktSvc.ensureTraktSessionLoop()
+	rt.traktSvc.ensureTraktSSELoop()
 	rt.ApplyWatchSchedules(rt.GetConfig())
 }
 
@@ -463,7 +463,7 @@ func (rt *Runtime) StopBackgroundWatchers() {
 	rt.sched.strmCron.halt()
 	rt.sched.u115Cron.halt()
 	rt.sched.rssCron.halt()
-	for _, w := range []*watcherState{rt.sched.u115Auto, rt.sched.rssPoll, rt.sched.strmSync, rt.trakt.syncWatcher, rt.trakt.sessionWatcher, rt.trakt.sseWatcher} {
+	for _, w := range []*watcherState{rt.sched.u115Auto, rt.sched.rssPoll, rt.sched.strmSync, rt.traktSvc.syncWatcher, rt.traktSvc.sessionWatcher, rt.traktSvc.sseWatcher} {
 		w.mu.Lock()
 		if !w.stopped {
 			w.stopped = true

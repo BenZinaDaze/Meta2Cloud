@@ -37,10 +37,10 @@ type TraktOAuthStatusPayload struct {
 	Pairing      *TraktPairingPayload `json:"pairing"`
 }
 
-func (rt *Runtime) traktOauthStatusPayload() TraktOAuthStatusPayload {
-	cfg := rt.GetConfig().Trakt
-	ready := rt.GetConfig().IsTraktReady()
-	tokenPath := rt.resolveConfigPath(cfg.TokenJSON)
+func (s *traktService) traktOauthStatusPayload() TraktOAuthStatusPayload {
+	cfg := s.rt.GetConfig().Trakt
+	ready := s.rt.GetConfig().IsTraktReady()
+	tokenPath := s.rt.resolveConfigPath(cfg.TokenJSON)
 	token, tokenExists := func() (trakt.Token, bool) {
 		t, ok, err := trakt.LoadToken(tokenPath)
 		if err != nil {
@@ -58,7 +58,7 @@ func (rt *Runtime) traktOauthStatusPayload() TraktOAuthStatusPayload {
 		tokenExpired = time.Now().Unix() >= exp
 		if tokenExpired {
 			// 尝试自动刷新（与 115 状态载荷同思路）
-			if client := rt.GetTraktClient(); client != nil {
+			if client := s.rt.GetTraktClient(); client != nil {
 				if err := client.RefreshToken(); err == nil {
 					refreshed = true
 					if t, ok, _ := trakt.LoadToken(tokenPath); ok {
@@ -77,7 +77,7 @@ func (rt *Runtime) traktOauthStatusPayload() TraktOAuthStatusPayload {
 		}
 	}
 	// 配对会话存在时前端可继续轮询
-	session, _ := rt.loadTraktDeviceSession()
+	session, _ := s.rt.loadTraktDeviceSession()
 	var pairing *TraktPairingPayload
 	if session != nil && time.Now().Unix() < session.ExpiresAt {
 		pairing = &TraktPairingPayload{
@@ -114,10 +114,10 @@ type PlexStatusPayload struct {
 	Error            string              `json:"error,omitempty"`
 }
 
-func (rt *Runtime) plexStatusPayload() PlexStatusPayload {
-	cfg := rt.GetConfig()
-	authPath := rt.plexAuthPath()
-	auth, authErr := rt.loadPlexAuth(authPath)
+func (s *traktService) plexStatusPayload() PlexStatusPayload {
+	cfg := s.rt.GetConfig()
+	authPath := s.rt.plexAuthPath()
+	auth, authErr := s.rt.loadPlexAuth(authPath)
 	hasToken := authErr == nil && auth.AuthToken != ""
 	identifier := ""
 	if authErr == nil {
@@ -130,13 +130,13 @@ func (rt *Runtime) plexStatusPayload() PlexStatusPayload {
 		TokenConfigured:  hasToken,
 		ClientIdentifier: identifier,
 	}
-	if pinSession, err := rt.loadPlexPinSession(); err == nil {
+	if pinSession, err := s.rt.loadPlexPinSession(); err == nil {
 		payload.Pairing = &PlexPairingPayload{Code: pinSession.Code}
 	}
 	if !cfg.IsPlexReady() || !hasToken {
 		return payload
 	}
-	client := rt.GetPlexClient()
+	client := s.rt.GetPlexClient()
 	if client == nil {
 		return payload
 	}
@@ -153,7 +153,7 @@ func (rt *Runtime) plexStatusPayload() PlexStatusPayload {
 // ── HTTP 处理器：Trakt 设备码 ───────────────────────────────
 
 func (s *Server) handleTraktOauthStatus(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.rt.traktOauthStatusPayload())
+	writeJSON(w, http.StatusOK, s.rt.traktSvc.traktOauthStatusPayload())
 }
 
 func (s *Server) handleTraktOauthDevice(w http.ResponseWriter, _ *http.Request) {
@@ -183,7 +183,7 @@ func (s *Server) handleTraktOauthDevice(w http.ResponseWriter, _ *http.Request) 
 		"ok": true, "user_code": code.UserCode,
 		"verification_url": code.VerificationURL,
 		"expires_in":       code.ExpiresIn, "interval": code.Interval,
-		"status": s.rt.traktOauthStatusPayload(),
+		"status": s.rt.traktSvc.traktOauthStatusPayload(),
 	})
 }
 
@@ -241,7 +241,7 @@ func (s *Server) handleTraktOauthDisconnect(w http.ResponseWriter, _ *http.Reque
 	s.rt.invalidateTraktRuntimeCache()
 	s.rt.appLog("trakt", "oauth_disconnected", "INFO", "已断开 Trakt 授权", nil)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok": true, "status": s.rt.traktOauthStatusPayload(),
+		"ok": true, "status": s.rt.traktSvc.traktOauthStatusPayload(),
 	})
 }
 
