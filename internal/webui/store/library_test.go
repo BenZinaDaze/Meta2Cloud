@@ -119,8 +119,8 @@ func TestLibrarySnapshotFlow(t *testing.T) {
 	}
 	// 统计
 	stats := s.GetStats()
-	if stats["total_movies"] != 1 || stats["completion_rate"] != 80.6 && stats["completion_rate"] != 80.7 {
-		t.Errorf("stats = %v", stats)
+	if stats.TotalMovies != 1 || stats.CompletionRate != 80.6 && stats.CompletionRate != 80.7 {
+		t.Errorf("stats = %+v", stats)
 	}
 }
 
@@ -137,11 +137,11 @@ func TestGetStatsDedupMultiFolder(t *testing.T) {
 	}
 	s.SaveSnapshot(nil, tv)
 	stats := s.GetStats()
-	if stats["total_tv_shows"] != 1 {
-		t.Errorf("total_tv_shows = %v, want 1（多目录按实体去重）", stats["total_tv_shows"])
+	if stats.TotalTVShows != 1 {
+		t.Errorf("total_tv_shows = %d, want 1（多目录按实体去重）", stats.TotalTVShows)
 	}
-	if stats["total_episodes_in_library"] != int64(50) {
-		t.Errorf("total_episodes_in_library = %v, want 50（取各目录最大值，不虚增）", stats["total_episodes_in_library"])
+	if stats.TotalEpisodesInLib != 50 {
+		t.Errorf("total_episodes_in_library = %d, want 50（取各目录最大值，不虚增）", stats.TotalEpisodesInLib)
 	}
 }
 

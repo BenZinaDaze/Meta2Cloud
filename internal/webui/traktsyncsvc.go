@@ -137,18 +137,18 @@ func (rt *Runtime) notifyTraktSyncAnomaly(summary syncengine.RunSummary) {
 
 // TraktSyncRunPayload 同步运行记录（status.last_run 与 runs 列表共用同一形状）。
 type TraktSyncRunPayload struct {
-	ID          int64    `json:"id"`
-	StartedAt   string   `json:"started_at"`
-	FinishedAt  *string  `json:"finished_at"`
-	Trigger     string   `json:"trigger"`
-	ToTrakt     int      `json:"to_trakt"`
-	ToPlex      int      `json:"to_plex"`
-	Conflicts   int      `json:"conflicts"`
-	Unresolved  int      `json:"unresolved"`
-	Skipped     int      `json:"skipped"`
-	Error       *string  `json:"error"`
-	Title       *string  `json:"title"`    // 实时推送（sse/poll）记录的媒体标题；全量同步为 null
-	Progress    *float64 `json:"progress"` // 实时推送记录的进度；全量同步为 null
+	ID         int64    `json:"id"`
+	StartedAt  string   `json:"started_at"`
+	FinishedAt *string  `json:"finished_at"`
+	Trigger    string   `json:"trigger"`
+	ToTrakt    int      `json:"to_trakt"`
+	ToPlex     int      `json:"to_plex"`
+	Conflicts  int      `json:"conflicts"`
+	Unresolved int      `json:"unresolved"`
+	Skipped    int      `json:"skipped"`
+	Error      *string  `json:"error"`
+	Title      *string  `json:"title"`    // 实时推送（sse/poll）记录的媒体标题；全量同步为 null
+	Progress   *float64 `json:"progress"` // 实时推送记录的进度；全量同步为 null
 }
 
 // TraktSyncStatusPayload GET /api/trakt/sync/status 响应。
@@ -241,7 +241,7 @@ func (s *Server) handleTraktSyncTrigger(w http.ResponseWriter, _ *http.Request) 
 
 // TraktSyncRunsPayload GET /api/trakt/sync/runs 响应。
 type TraktSyncRunsPayload struct {
-	Total int                  `json:"total"`
+	Total int                   `json:"total"`
 	Runs  []TraktSyncRunPayload `json:"runs"`
 }
 
@@ -269,16 +269,16 @@ func (s *Server) handleTraktSyncRuns(w http.ResponseWriter, r *http.Request) {
 
 // TraktSyncRunItemPayload GET /api/trakt/sync/runs/{id}/items 单条明细。
 type TraktSyncRunItemPayload struct {
-	ID        int64    `json:"id"`
-	MediaType *string  `json:"media_type"`
-	TmdbID    *int64   `json:"tmdb_id"`
-	Season    *int     `json:"season"`
-	Episode   *int     `json:"episode"`
-	Title     *string  `json:"title"`
-	Direction string   `json:"direction"`
-	Action    string   `json:"action"`
-	Success   bool     `json:"success"`
-	Error     *string  `json:"error"`
+	ID        int64   `json:"id"`
+	MediaType *string `json:"media_type"`
+	TmdbID    *int64  `json:"tmdb_id"`
+	Season    *int    `json:"season"`
+	Episode   *int    `json:"episode"`
+	Title     *string `json:"title"`
+	Direction string  `json:"direction"`
+	Action    string  `json:"action"`
+	Success   bool    `json:"success"`
+	Error     *string `json:"error"`
 }
 
 func (s *Server) handleTraktSyncRunItems(w http.ResponseWriter, r *http.Request) {

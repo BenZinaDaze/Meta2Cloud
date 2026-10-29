@@ -478,3 +478,57 @@ export interface U115Space {
   remain_space: number
   ok?: boolean
 }
+
+// ── 仪表盘 ──
+
+/** GET /api/stats（后端 LibraryStats struct，library.go） */
+export interface LibraryStats {
+  total_movies: number
+  total_tv_shows: number
+  total_episodes_in_library: number
+  total_episodes_on_tmdb: number
+  completion_rate: number
+}
+
+/**
+ * GET /api/ingest/stats（后端 ingest.go Stats 暂为 map，字段手工同步）。
+ * 注意含 days 与 deleted 键。
+ */
+export interface IngestStats {
+  days: number
+  total: number
+  movies: number
+  tv_episodes: number
+  success: number
+  failed: number
+  no_tmdb: number
+  deleted: number
+}
+
+/** GET /api/ingest/stats/daily 元素（含 movies 列；空缺天由前端补零） */
+export interface DayStat {
+  date: string
+  total: number
+  movies: number
+}
+
+/** GET /api/ingest/recent 元素（后端 GetRecent 返回行 + poster_url 拼接） */
+export interface RecentIngest {
+  id: number
+  media_type: string
+  tmdb_id: number
+  title: string
+  year: string
+  season: number | null
+  episode: number | null
+  episode_title: string
+  status: string
+  poster_url?: string
+  ingested_at: string
+}
+
+/** GET /api/pipeline/status（后端 PipelineStatusPayload struct） */
+export interface PipelineStatus {
+  running: boolean
+  debounce: boolean
+}

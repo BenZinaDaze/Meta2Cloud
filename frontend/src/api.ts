@@ -12,6 +12,11 @@ import type {
   U115Overview,
   U115Quota,
   U115Space,
+  LibraryStats,
+  IngestStats,
+  DayStat,
+  RecentIngest,
+  PipelineStatus,
 } from '@/types/api'
 
 const api = axios.create({ baseURL: '/api' })
@@ -53,7 +58,7 @@ export const getLibrary = (params?: {
   sort_by?: string
   sort_order?: string
 }) => api.get('/library', { params })
-export const getStats = () => api.get('/stats')
+export const getStats = () => api.get<LibraryStats>('/stats')
 export const refreshLibrary = (full: boolean = false) => api.post('/library:refresh', null, { params: { full } })
 export const refreshMediaItem = (
   tmdb_id: number,
@@ -184,7 +189,7 @@ export const setWatchedSyncIgnore = (data: {
 // ── 其他 ──
 export const getLogs = (params?: { limit?: number; offset?: number }) =>
   api.get('/logs', { params })
-export const getPipelineStatus = () => api.get('/pipeline/status')
+export const getPipelineStatus = () => api.get<PipelineStatus>('/pipeline/status')
 export const triggerPipeline = () => api.post('/pipeline/trigger')
 
 // ── 入库历史 ──
@@ -199,13 +204,13 @@ export const getIngestHistory = (params?: {
 }) => api.get('/ingest/history', { params })
 
 export const getIngestStats = (days?: number) =>
-  api.get('/ingest/stats', { params: { days } })
+  api.get<IngestStats>('/ingest/stats', { params: { days } })
 
 export const getIngestDailyStats = (days?: number) =>
-  api.get('/ingest/stats/daily', { params: { days } })
+  api.get<DayStat[]>('/ingest/stats/daily', { params: { days } })
 
 export const getIngestRecent = (limit?: number) =>
-  api.get('/ingest/recent', { params: { limit } })
+  api.get<RecentIngest[]>('/ingest/recent', { params: { limit } })
 
 // ── 整理名称（标题钉扎）──
 export const listTitlePins = () => api.get('/title-pins')

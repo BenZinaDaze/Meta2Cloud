@@ -390,9 +390,9 @@ type U115OfflinePagination struct {
 
 // U115OfflineOverviewPayload GET /api/u115/offline/overview 响应。
 type U115OfflineOverviewPayload struct {
-	OK         bool                    `json:"ok"`
+	OK         bool                     `json:"ok"`
 	Tasks      []U115OfflineTaskPayload `json:"tasks"`
-	Pagination U115OfflinePagination   `json:"pagination"`
+	Pagination U115OfflinePagination    `json:"pagination"`
 }
 
 func (s *Server) handleU115OfflineOverview(w http.ResponseWriter, r *http.Request) {
@@ -461,7 +461,7 @@ type U115QuotaInfoPayload struct {
 
 // U115QuotaResponse GET /api/u115/offline/quota 响应。
 type U115QuotaResponse struct {
-	OK    bool                `json:"ok"`
+	OK    bool                 `json:"ok"`
 	Quota U115QuotaInfoPayload `json:"quota"`
 }
 

@@ -1219,12 +1219,17 @@ func (s *LibraryStore) GetJoinedMediaItem(mediaType string, tmdbID int64) map[st
 
 // GetStats 媒体库统计（单条 SQL 聚合，剧集多目录按实体去重后取集数最大值，
 // 与 GetSnapshotPage 的合并语义一致）。
-func (s *LibraryStore) GetStats() map[string]any {
-	zero := map[string]any{
-		"total_movies": 0, "total_tv_shows": 0,
-		"total_episodes_in_library": 0, "total_episodes_on_tmdb": 0,
-		"completion_rate": 0.0,
-	}
+// LibraryStats 媒体库统计（GET /api/stats 响应）。
+type LibraryStats struct {
+	TotalMovies         int     `json:"total_movies"`
+	TotalTVShows        int     `json:"total_tv_shows"`
+	TotalEpisodesInLib  int64   `json:"total_episodes_in_library"`
+	TotalEpisodesOnTmdb int64   `json:"total_episodes_on_tmdb"`
+	CompletionRate      float64 `json:"completion_rate"`
+}
+
+func (s *LibraryStore) GetStats() LibraryStats {
+	zero := LibraryStats{}
 	if _, ok := s.getState(scanAtKey); !ok {
 		return zero
 	}
@@ -1257,12 +1262,12 @@ func (s *LibraryStore) GetStats() map[string]any {
 	if totalEpsTmdb > 0 {
 		rate = float64(int64(float64(totalEpsLib)/float64(totalEpsTmdb)*1000+0.5)) / 10
 	}
-	return map[string]any{
-		"total_movies":              int(totalMovies),
-		"total_tv_shows":            int(totalTV),
-		"total_episodes_in_library": totalEpsLib,
-		"total_episodes_on_tmdb":    totalEpsTmdb,
-		"completion_rate":           rate,
+	return LibraryStats{
+		TotalMovies:         int(totalMovies),
+		TotalTVShows:        int(totalTV),
+		TotalEpisodesInLib:  totalEpsLib,
+		TotalEpisodesOnTmdb: totalEpsTmdb,
+		CompletionRate:      rate,
 	}
 }
 

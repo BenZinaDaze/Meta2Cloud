@@ -13,58 +13,16 @@ import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 import PageHeader from '@/components/shared/PageHeader'
 import { relativeTime } from '@/lib/time'
-
-interface LibraryStats {
-  total_movies: number
-  total_tv_shows: number
-  total_episodes_in_library: number
-  total_episodes_on_tmdb: number
-  completion_rate: number
-}
-
-interface IngestStats {
-  total: number
-  movies: number
-  tv_episodes: number
-  success: number
-  failed: number
-  no_tmdb: number
-}
-
-interface DayStat {
-  date: string
-  total: number
-}
-
-interface RecentIngest {
-  media_type: string
-  tmdb_id: number
-  title: string
-  year: string
-  season: number | null
-  episode: number | null
-  episode_title: string
-  status: string
-  poster_url?: string
-  ingested_at: string
-}
-
-interface StrmStatus {
-  enabled: boolean
-  running: boolean
-  mappings: number
-  total_files: number
-  last_run: {
-    id: number
-    trigger: string
-    created: number
-    updated: number
-    removed: number
-    skipped: number
-    finished_at: string | null
-    error: string | null
-  } | null
-}
+import type {
+  LibraryStats,
+  IngestStats,
+  DayStat,
+  RecentIngest,
+  StrmSyncStatus,
+  WatchedSyncStatus,
+  StrmPlaybackStats,
+  StrmPlaybackLog,
+} from '@/types/api'
 
 interface StrmRunBrief {
   id: number
@@ -73,24 +31,6 @@ interface StrmRunBrief {
   updated: number
   removed: number
   finished_at: string | null
-}
-
-interface WatchedStatus {
-  enabled: boolean
-  trakt_authorized: boolean
-  plex_connected: boolean
-  running: boolean
-  sync_to_trakt: boolean
-  sync_to_plex: boolean
-  last_run: {
-    trigger: string
-    to_trakt: number
-    to_plex: number
-    conflicts: number
-    skipped: number
-    finished_at: string | null
-    error: string | null
-  } | null
 }
 
 const statusBadge: Record<string, { label: string; className: string }> = {
@@ -106,24 +46,6 @@ const strmTriggerLabels: Record<string, string> = {
 
 const watchedTriggerLabels: Record<string, string> = {
   manual: '手动', schedule: '定时', activity: 'Trakt 活动', sse: '实时推送', poll: '会话轮询',
-}
-
-interface PlaybackStats {
-  total: number
-  today: number
-  avg_latency_ms: number
-  cache_hit_rate: number
-  distinct_clients: number
-}
-
-interface PlaybackItem {
-  played_at: string
-  file_name: string | null
-  user_agent: string | null
-  cache_hit: boolean
-  duration_ms: number
-  status: number
-  error: string | null
 }
 
 /** 识别常见播放器 User-Agent，返回友好名称（与播放记录页同规则） */
@@ -185,8 +107,8 @@ function fillDays(raw: unknown, days: number): DayStat[] {
   if (!Array.isArray(raw)) return []
   const map = new Map(
     raw
-      .filter((d): d is { date: string; total: number } => !!d && typeof d === 'object' && typeof (d as { date?: unknown }).date === 'string')
-      .map((d) => [d.date, Number(d.total) || 0]),
+      .filter((d): d is { date: string; total: number; movies: number } => !!d && typeof d === 'object' && typeof (d as { date?: unknown }).date === 'string')
+      .map((d) => [d.date, { total: Number(d.total) || 0, movies: Number(d.movies) || 0 } as const]),
   )
   const out: DayStat[] = []
   const now = new Date()
@@ -194,7 +116,8 @@ function fillDays(raw: unknown, days: number): DayStat[] {
     const d = new Date(now)
     d.setUTCDate(d.getUTCDate() - i)
     const key = d.toISOString().slice(0, 10)
-    out.push({ date: key, total: map.get(key) ?? 0 })
+    const v = map.get(key)
+    out.push({ date: key, total: v?.total ?? 0, movies: v?.movies ?? 0 })
   }
   return out
 }
@@ -430,7 +353,7 @@ function LastRunChips({ items }: { items: { label: string; value: number; classN
 
 // ── STRM 同步卡 ─────────────────────────────────────────────
 
-function StrmCard({ strm, runs, className = '' }: { strm: StrmStatus | null; runs: StrmRunBrief[]; className?: string }) {
+function StrmCard({ strm, runs, className = '' }: { strm: StrmSyncStatus | null; runs: StrmRunBrief[]; className?: string }) {
   const olderRuns = runs.filter((r) => r.id !== strm?.last_run?.id).slice(0, 2)
   return (
     <SectionCard
@@ -512,7 +435,7 @@ function ConnRow({ label, ok, okText, badText }: { label: string; ok: boolean; o
   )
 }
 
-function WatchedCard({ watched, className = '' }: { watched: WatchedStatus | null; className?: string }) {
+function WatchedCard({ watched, className = '' }: { watched: WatchedSyncStatus | null; className?: string }) {
   return (
     <SectionCard
       className={className}
@@ -577,7 +500,7 @@ function WatchedCard({ watched, className = '' }: { watched: WatchedStatus | nul
 function PlaybackCard({
   pb, strmEnabled, className = '',
 }: {
-  pb: { stats: PlaybackStats | null; items: PlaybackItem[] } | null
+  pb: { stats: StrmPlaybackStats | null; items: StrmPlaybackLog[] } | null
   strmEnabled: boolean
   className?: string
 }) {
@@ -662,12 +585,12 @@ export default function DashboardPage() {
   const [ingest14Total, setIngest14Total] = useState<number | null>(null)
   const [daily, setDaily] = useState<DayStat[]>([])
   const [recent, setRecent] = useState<RecentIngest[]>([])
-  const [strm, setStrm] = useState<StrmStatus | null>(null)
+  const [strm, setStrm] = useState<StrmSyncStatus | null>(null)
   const [strmRuns, setStrmRuns] = useState<StrmRunBrief[]>([])
   const [u115Space, setU115Space] = useState<{ total: number; remain: number } | null>(null)
-  const [playback, setPlayback] = useState<{ stats: PlaybackStats | null; items: PlaybackItem[] } | null>(null)
+  const [playback, setPlayback] = useState<{ stats: StrmPlaybackStats | null; items: StrmPlaybackLog[] } | null>(null)
   const [pipeline, setPipeline] = useState<{ running: boolean; debounce: boolean } | null>(null)
-  const [watched, setWatched] = useState<WatchedStatus | null>(null)
+  const [watched, setWatched] = useState<WatchedSyncStatus | null>(null)
   const pipelineRef = useRef(false)
 
   const load = useCallback(async () => {
@@ -694,10 +617,10 @@ export default function DashboardPage() {
       if (recentR.status === 'fulfilled' && Array.isArray(recentR.value.data)) {
         setRecent(recentR.value.data as RecentIngest[])
       }
-      if (strmR.status === 'fulfilled' && strmR.value.data) setStrm(strmR.value.data as StrmStatus)
+      if (strmR.status === 'fulfilled' && strmR.value.data) setStrm(strmR.value.data)
       if (runsR.status === 'fulfilled') setStrmRuns(normalizeRuns(runsR.value.data))
       if (playbackR.status === 'fulfilled' && playbackR.value.data) {
-        const d = playbackR.value.data as { stats?: PlaybackStats; items?: PlaybackItem[] }
+        const d = playbackR.value.data as { stats?: StrmPlaybackStats; items?: StrmPlaybackLog[] }
         setPlayback({ stats: d.stats ?? null, items: Array.isArray(d.items) ? d.items : [] })
       }
       // 115 空间可能因限流/冷却较慢，不阻塞首屏

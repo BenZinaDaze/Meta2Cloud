@@ -86,8 +86,8 @@ func (rt *Runtime) traktOauthStatusPayload() TraktOAuthStatusPayload {
 		}
 	}
 	return TraktOAuthStatusPayload{
-		Ready:     ready,
-		ClientID:  cfg.ClientID, TokenPath: cfg.TokenJSON,
+		Ready:    ready,
+		ClientID: cfg.ClientID, TokenPath: cfg.TokenJSON,
 		TokenExists: tokenExists, Authorized: authorized,
 		TokenValid: tokenValid, TokenExpired: tokenExpired,
 		RefreshTime: refreshTime, ExpiresAt: expiresAt, Refreshed: refreshed,

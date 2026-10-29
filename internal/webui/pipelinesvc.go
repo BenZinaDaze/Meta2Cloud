@@ -190,10 +190,16 @@ func (rt *Runtime) SchedulePipeline(debounce int) bool {
 }
 
 // PipelineStatusPayload 当前调度状态。
-func (rt *Runtime) PipelineStatusPayload() map[string]any {
+// PipelineStatusPayload GET /api/pipeline/status 响应。
+type PipelineStatusPayload struct {
+	Running  bool `json:"running"`
+	Debounce bool `json:"debounce"`
+}
+
+func (rt *Runtime) PipelineStatusPayload() PipelineStatusPayload {
 	rt.pipeline.mu.Lock()
 	defer rt.pipeline.mu.Unlock()
-	return map[string]any{"running": rt.pipeline.running, "debounce": rt.pipeline.debounce != nil}
+	return PipelineStatusPayload{Running: rt.pipeline.running, Debounce: rt.pipeline.debounce != nil}
 }
 
 // ── HTTP 处理器 ─────────────────────────────────────────────

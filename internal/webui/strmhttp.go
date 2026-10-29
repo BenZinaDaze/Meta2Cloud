@@ -293,9 +293,9 @@ type StrmPlaybackLogPayload struct {
 
 // StrmPlaybackHistoryPayload GET /api/strm/playback/history 响应。
 type StrmPlaybackHistoryPayload struct {
-	Total int                       `json:"total"`
-	Items []StrmPlaybackLogPayload  `json:"items"`
-	Stats store.StrmPlaybackStats   `json:"stats"`
+	Total int                      `json:"total"`
+	Items []StrmPlaybackLogPayload `json:"items"`
+	Stats store.StrmPlaybackStats  `json:"stats"`
 }
 
 func (s *Server) handleStrmPlaybackHistory(w http.ResponseWriter, r *http.Request) {
