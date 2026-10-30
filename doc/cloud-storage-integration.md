@@ -1,6 +1,6 @@
 # 云存储接入指南
 
-本文说明如何为 Meta2Cloud 接入新的云存储后端。项目通过 `internal/cloudfile.Provider` 接口抽象网盘能力，整理流程、媒体库扫描和 WebUI 文件管理都只依赖这个统一接口。
+本文说明如何为 Panoply 接入新的云存储后端。项目通过 `internal/cloudfile.Provider` 接口抽象网盘能力，整理流程、媒体库扫描和 WebUI 文件管理都只依赖这个统一接口。
 
 ## 接入位置
 

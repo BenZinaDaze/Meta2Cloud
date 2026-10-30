@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"meta2cloud/internal/httpx"
+	"panoply/internal/httpx"
 )
 
 const (

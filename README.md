@@ -1,8 +1,8 @@
-# Meta2Cloud
+# Panoply
 
 115 网盘一站式影音管理平台 —— 找片、订阅、云下载、自动整理、直链播放、观看同步，一个面板全搞定。
 
-![Release](https://img.shields.io/github/v/release/BenZinaDaze/Meta2Cloud) ![Docker Pulls](https://img.shields.io/docker/pulls/benz1/meta2cloud) ![License](https://img.shields.io/badge/License-GPL%20v3-blue)
+![Release](https://img.shields.io/github/v/release/BenZinaDaze/Panoply) ![Docker Pulls](https://img.shields.io/docker/pulls/benz1/panoply) ![License](https://img.shields.io/badge/License-GPL%20v3-blue)
 
 ## 为什么用这个？
 
@@ -13,7 +13,7 @@
 - 或者想用 Emby/Jellyfin，却不想把网盘文件搬回本地
 - 追新番，厌倦了手动找资源、传网盘、改文件名
 
-那 Meta2Cloud 可以帮你打通整条链路：
+那 Panoply 可以帮你打通整条链路：
 
 ```
 新番日历 / 资源检索
@@ -87,16 +87,16 @@ RSS 自动追番
 
 ```yaml
 services:
-  meta2cloud:
-    image: benz1/meta2cloud:latest
-    container_name: meta2cloud
+  panoply:
+    image: benz1/panoply:latest
+    container_name: panoply
     # 以 UID/GID 运行（默认 1000:1000，与媒体服务器 PUID/PGID=1000 一致，
     # 使其可删除/重命名生成的 STRM 文件；如需修改在 .env 中设置 PUID/PGID）
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
       - TZ=Asia/Shanghai
     volumes:
-      - ./meta2cloud-config:/app/config
+      - ./panoply-config:/app/config
       # 启用 STRM 直链播放：取消注释
       # 注意：WebUI 里 STRM 输出目录必须填容器内路径（如 /media/strm）
       # - ./strm:/media/strm
@@ -106,7 +106,7 @@ services:
 
 ```bash
 # 首次部署或从 root 运行的旧版本升级时需要：保证挂载目录可被 UID 1000 写入
-mkdir -p meta2cloud-config && chown -R 1000:1000 meta2cloud-config
+mkdir -p panoply-config && chown -R 1000:1000 panoply-config
 docker compose up -d
 ```
 
@@ -115,7 +115,7 @@ docker compose up -d
 **2. 获取初始密码**
 
 ```bash
-docker logs meta2cloud | grep 初始密码
+docker logs panoply | grep 初始密码
 ```
 
 **3. 打开 `http://localhost:38765` 完成初始化**
@@ -126,17 +126,17 @@ docker logs meta2cloud | grep 初始密码
 4. 用目录选择器直选网盘目录：下载目录、媒体库目录
 5. 开启「云下载自动整理」，之后离线下载完成的文件会自动整理入库
 
-> 所有配置都在 Web UI 完成，配置文件仅作持久化。不用 Docker？在 [Releases](https://github.com/BenZinaDaze/Meta2Cloud/releases) 下载二进制运行 `./meta2cloud serve` 即可，配置目录为工作目录下的 `config/`。
+> 所有配置都在 Web UI 完成，配置文件仅作持久化。不用 Docker？在 [Releases](https://github.com/BenZinaDaze/Panoply/releases) 下载二进制运行 `./panoply serve` 即可，配置目录为工作目录下的 `config/`。
 
 ## Web UI 截图
 
 | 仪表盘 | 媒体库总览 |
 |---|---|
-| ![仪表盘](doc/image/Meta2Cloud_20261021_144920_01.png) | ![媒体库总览](doc/image/Meta2Cloud_20261021_144920_02.png) |
+| ![仪表盘](doc/image/Panoply_20261021_144920_01.png) | ![媒体库总览](doc/image/Panoply_20261021_144920_02.png) |
 | **新番列表** | **订阅列表** |
-| ![新番列表](doc/image/Meta2Cloud_20261021_144920_03.png) | ![订阅列表](doc/image/Meta2Cloud_20261021_144920_04.png) |
+| ![新番列表](doc/image/Panoply_20261021_144920_03.png) | ![订阅列表](doc/image/Panoply_20261021_144920_04.png) |
 | **115 云下载** | **STRM 同步** |
-| ![115 云下载](doc/image/Meta2Cloud_20261021_144920_05.png) | ![STRM 同步](doc/image/Meta2Cloud_20261021_144920_06.png) |
+| ![115 云下载](doc/image/Panoply_20261021_144920_05.png) | ![STRM 同步](doc/image/Panoply_20261021_144920_06.png) |
 
 ## 配置说明
 
@@ -168,12 +168,12 @@ docker logs meta2cloud | grep 初始密码
 
 ### STRM 直链播放
 
-为网盘媒体库生成本地 `.strm` 文件（目录结构镜像网盘，外挂字幕自动跟随下载），播放时由 Meta2Cloud 实时 302 跳转 115 直链——原画直连播放，本地零占用。
+为网盘媒体库生成本地 `.strm` 文件（目录结构镜像网盘，外挂字幕自动跟随下载），播放时由 Panoply 实时 302 跳转 115 直链——原画直连播放，本地零占用。
 
 ```yaml
 strm:
   enabled: true
-  url_base: "http://192.168.1.10:38765"   # 播放器能访问到 Meta2Cloud 的地址，支持域名/反代
+  url_base: "http://192.168.1.10:38765"   # 播放器能访问到 Panoply 的地址，支持域名/反代
   url_secret: ""                           # 可选，防未授权调用；配置页可一键随机生成
   mappings:
     - pan_folder_id: "媒体库根目录 ID"      # 网盘目录
@@ -233,22 +233,22 @@ telegram:
 
 **115 接口频繁 429？**
 
-115 开放平台 QPS 限制为 3，Meta2Cloud 已内置限流与风控冷却。避免与其他 115 脚本共用同一账号密集调用。
+115 开放平台 QPS 限制为 3，Panoply 已内置限流与风控冷却。避免与其他 115 脚本共用同一账号密集调用。
 
 ## 从 v1 升级
 
-v2 起 Meta2Cloud 使用 Go 全面重构：单二进制部署、镜像更小、启动更快、内存占用更低。SQLite 表结构与 v1 一致，现有 `library.db` 和 115 授权 token 可直接沿用，**升级无需迁移**，替换镜像即可。各版本变更见 [CHANGELOG.md](CHANGELOG.md)。
+v2 起 Panoply 使用 Go 全面重构：单二进制部署、镜像更小、启动更快、内存占用更低。SQLite 表结构与 v1 一致，现有 `library.db` 和 115 授权 token 可直接沿用，**升级无需迁移**，替换镜像即可。各版本变更见 [CHANGELOG.md](CHANGELOG.md)。
 
-> v2.0.0 起仅支持 115 网盘。仍需 Google Drive 的用户请使用 [v1.3.1](https://github.com/BenZinaDaze/Meta2Cloud/releases/tag/v1.3.1)，配合仓库中的 [`docker-compose.gdrive.yml`](docker-compose.gdrive.yml) 部署。注意 v1.3.1 与 v2 不建议同时挂载同一数据目录。
+> v2.0.0 起仅支持 115 网盘。仍需 Google Drive 的用户请使用 [v1.3.1](https://github.com/BenZinaDaze/Panoply/releases/tag/v1.3.1)，配合仓库中的 [`docker-compose.gdrive.yml`](docker-compose.gdrive.yml) 部署。注意 v1.3.1 与 v2 不建议同时挂载同一数据目录。
 
 ## 开发
 
 ```bash
 # 构建
-go build -o meta2cloud ./cmd/meta2cloud
+go build -o panoply ./cmd/panoply
 
 # 启动 Web 服务（所有功能都通过 WebUI / WebAPI 使用）
-go run ./cmd/meta2cloud serve
+go run ./cmd/panoply serve
 
 # 后端测试
 go test ./internal/... -count=1

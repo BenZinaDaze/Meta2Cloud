@@ -61,7 +61,7 @@ func NewClient(baseURL, token, clientIdentifier string, opts ...Option) *Client 
 		PlexTVBase:       defaultPlexTVBase,
 		Token:            token,
 		ClientIdentifier: clientIdentifier,
-		Product:          "Meta2Cloud",
+		Product:          "Panoply",
 		Version:          "1.0",
 		HTTP:             &http.Client{Timeout: 15 * time.Second},
 	}

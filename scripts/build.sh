@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-IMAGE="${IMAGE:-benz1/meta2cloud}"
+IMAGE="${IMAGE:-benz1/panoply}"
 VERSION="${1:-}"
 
 set -- docker buildx build \

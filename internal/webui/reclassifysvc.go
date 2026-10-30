@@ -17,12 +17,12 @@ import (
 	"sync"
 	"time"
 
-	"meta2cloud/internal/cloudfile"
-	"meta2cloud/internal/config"
-	"meta2cloud/internal/jsonx"
-	"meta2cloud/internal/mediaparser"
-	"meta2cloud/internal/pipeline"
-	"meta2cloud/internal/webui/store"
+	"panoply/internal/cloudfile"
+	"panoply/internal/config"
+	"panoply/internal/jsonx"
+	"panoply/internal/mediaparser"
+	"panoply/internal/pipeline"
+	"panoply/internal/webui/store"
 )
 
 type reclassifyProgress struct {

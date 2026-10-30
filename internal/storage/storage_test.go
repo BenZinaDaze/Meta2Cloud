@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"meta2cloud/internal/cloudfile"
-	"meta2cloud/internal/config"
-	"meta2cloud/internal/u115"
+	"panoply/internal/cloudfile"
+	"panoply/internal/config"
+	"panoply/internal/u115"
 )
 
 func int64Ptr(v int64) *int64 { return &v }

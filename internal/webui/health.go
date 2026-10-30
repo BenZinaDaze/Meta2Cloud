@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"meta2cloud/internal/config"
+	"panoply/internal/config"
 )
 
 // healthNotifyCooldown 同一服务持续失效时的重复提醒冷却（1 天）。

@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strings"
 
-	"meta2cloud/internal/cloudfile"
-	"meta2cloud/internal/u115"
+	"panoply/internal/cloudfile"
+	"panoply/internal/u115"
 )
 
 func (s *Server) providerRootID() string {

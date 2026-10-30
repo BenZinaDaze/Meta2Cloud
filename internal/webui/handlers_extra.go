@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"meta2cloud/internal/webui/store"
+	"panoply/internal/webui/store"
 )
 
 func intQuery(r *http.Request, key string, def int) int {

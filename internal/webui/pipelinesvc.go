@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"meta2cloud/internal/pipeline"
-	"meta2cloud/internal/webui/store"
+	"panoply/internal/pipeline"
+	"panoply/internal/webui/store"
 )
 
 // appLog 写应用日志（库不可用时静默）。

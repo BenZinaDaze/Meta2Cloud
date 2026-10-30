@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"meta2cloud/internal/titlematch"
+	"panoply/internal/titlematch"
 )
 
 const ingestDDL = `

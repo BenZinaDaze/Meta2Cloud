@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"meta2cloud/internal/watched"
+	"panoply/internal/watched"
 )
 
 // fakeTitleIndex 标题反查替身。

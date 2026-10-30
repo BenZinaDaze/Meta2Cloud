@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"meta2cloud/internal/tmdb"
+	"panoply/internal/tmdb"
 	"strings"
 )
 

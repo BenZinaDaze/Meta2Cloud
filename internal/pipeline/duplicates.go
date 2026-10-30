@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unicode"
 
-	"meta2cloud/internal/cloudfile"
+	"panoply/internal/cloudfile"
 )
 
 // DuplicateFolderSource 重复目录分组来源接口（webui 层实现，可为 nil）。

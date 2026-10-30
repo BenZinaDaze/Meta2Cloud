@@ -2,23 +2,24 @@
 # v2.0.0 起后端为 Go 重构并移除 Google Drive，仅支持 115 网盘。
 #
 # 使用方法：
-#   1. mkdir -p meta2cloud-config
-#   2. 参考 v1.3.1 的 config/config.example.yaml 写入 meta2cloud-config/config.yaml
+#   1. mkdir -p panoply-config
+#   2. 参考 v1.3.1 的 config/config.example.yaml 写入 panoply-config/config.yaml
 #   3. 将 Google OAuth 凭据放入挂载目录：
-#        meta2cloud-config/credentials.json   （Google Cloud Console 下载的桌面应用凭据）
-#        meta2cloud-config/token.json          （首次授权后生成）
+#        panoply-config/credentials.json   （Google Cloud Console 下载的桌面应用凭据）
+#        panoply-config/token.json          （首次授权后生成）
 #   4. docker compose -f docker-compose.gdrive.yml up -d
 #
 # 注意：v1.3.1 与 v2.0.0 的 library.db 表结构兼容，
 #       但不要让两个版本同时挂载同一个数据目录。
 services:
-  meta2cloud:
-    container_name: meta2cloud-gdrive
+  panoply:
+    container_name: panoply-gdrive
+    # v1.3.1 为更名前发布的历史镜像，Docker Hub 上仅有旧名，保留原名才能拉取
     image: benz1/meta2cloud:v1.3.1
     environment:
       - TZ=Asia/Shanghai
     volumes:
-      - ./meta2cloud-config:/app/config
+      - ./panoply-config:/app/config
     network_mode: host
     restart: unless-stopped
     logging:

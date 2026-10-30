@@ -180,7 +180,7 @@ export default function Sidebar({
 
   // 检测最新版本
   useEffect(() => {
-    fetch('https://api.github.com/repos/BenZinaDaze/Meta2Cloud/tags')
+    fetch('https://api.github.com/repos/BenZinaDaze/Panoply/tags')
       .then(res => res.json())
       .then((tags: Array<{ name: string }>) => {
         if (tags && tags.length > 0) {
@@ -424,7 +424,7 @@ export default function Sidebar({
               </span>
             )}
             <a
-              href="https://github.com/BenZinaDaze/Meta2Cloud"
+              href="https://github.com/BenZinaDaze/Panoply"
               target="_blank"
               rel="noopener noreferrer"
               className="ml-auto inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"

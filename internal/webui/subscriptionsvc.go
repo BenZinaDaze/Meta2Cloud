@@ -13,13 +13,13 @@ import (
 	"strings"
 	"time"
 
-	"meta2cloud/internal/jsonx"
-	"meta2cloud/internal/mediaparser"
-	"meta2cloud/internal/scraper"
-	"meta2cloud/internal/strutil"
-	"meta2cloud/internal/tmdb"
-	"meta2cloud/internal/u115"
-	"meta2cloud/internal/webui/store"
+	"panoply/internal/jsonx"
+	"panoply/internal/mediaparser"
+	"panoply/internal/scraper"
+	"panoply/internal/strutil"
+	"panoply/internal/tmdb"
+	"panoply/internal/u115"
+	"panoply/internal/webui/store"
 )
 
 // getSubscriptionPollCron 订阅轮询 cron（配置 rss.poll_cron；空串表示不定时）。

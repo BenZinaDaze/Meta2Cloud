@@ -5,7 +5,7 @@ package u115
 import (
 	"strconv"
 
-	"meta2cloud/internal/jsonx"
+	"panoply/internal/jsonx"
 )
 
 func jString(m map[string]any, key string) string { return jsonx.Str(m, key) }

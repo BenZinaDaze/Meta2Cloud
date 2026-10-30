@@ -1,6 +1,6 @@
 # 资源站点接入指南
 
-本文说明如何给 Meta2Cloud 接入新的资源检索 / RSS 订阅站点。现有实现采用 spider 插件模式，入口在 `internal/scraper/`。
+本文说明如何给 Panoply 接入新的资源检索 / RSS 订阅站点。现有实现采用 spider 插件模式，入口在 `internal/scraper/`。
 
 ## 接入位置
 

@@ -1,19 +1,19 @@
 services:
-  # ── Meta2Cloud ────────────────────────────────────────────────
+  # ── Panoply ────────────────────────────────────────────────
   # WebUI 地址：http://localhost:38765
-  meta2cloud:
-    container_name: meta2cloud
-    image: benz1/meta2cloud:latest
+  panoply:
+    container_name: panoply
+    image: benz1/panoply:latest
     # 以 UID/GID 运行（默认 1000:1000，可在 .env 中覆盖）：与媒体服务器
     # （Cirvel/Emby/Jellyfin 等 PUID/PGID=1000）一致，其才能删除/重命名本程序生成的 STRM 文件。
     # PUID/PGID 从 .env 或 shell 环境读取（environment: 块中的同名变量不参与插值）。
-    # 要求挂载目录属主与之匹配（chown -R 1000:1000 meta2cloud-config strm），否则启动会 permission denied。
+    # 要求挂载目录属主与之匹配（chown -R 1000:1000 panoply-config strm），否则启动会 permission denied。
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
       - TZ=Asia/Shanghai
     volumes:
       # 运行时配置与数据（115 token、library.db 等），不打包进镜像
-      - ${PWD}/meta2cloud-config:/app/config
+      - ${PWD}/panoply-config:/app/config
       # STRM 输出目录（可选）：启用 STRM 时取消注释
       # 注意：WebUI 里 strm.mappings.local_path 必须填容器内路径（如 /media/strm），
       # Emby/Jellyfin 挂载同一个宿主目录 ./strm 即可读取（媒体服务器侧路径可不同）

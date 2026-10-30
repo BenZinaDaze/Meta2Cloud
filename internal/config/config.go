@@ -510,7 +510,7 @@ var DefaultStrmMediaExt = []string{
 var DefaultStrmSidecarExt = []string{"srt", "ass", "ssa"}
 
 // normalizeStrmURLBase 归一化 STRM 外部访问地址：去掉首尾空白与末尾斜杠；
-// 省略协议时默认补 http://（容器互访场景常见写法，如 "meta2cloud:38765"）。
+// 省略协议时默认补 http://（容器互访场景常见写法，如 "panoply:38765"）。
 func normalizeStrmURLBase(u string) string {
 	u = strings.TrimRight(strings.TrimSpace(u), "/")
 	if u == "" {
@@ -549,7 +549,7 @@ func EnsureDefaultFiles(configPath, secretsPath, rulesPath, categoriesPath strin
 		if err != nil {
 			return err
 		}
-		header := "# Meta2Cloud 主配置（首次启动自动生成；完整可配置项参考 config.example.yaml）\n" +
+		header := "# Panoply 主配置（首次启动自动生成；完整可配置项参考 config.example.yaml）\n" +
 			"# 登录密码等敏感项保存在同目录 secrets.yaml（权限 0600）；初始密码见启动日志\n"
 		if err := os.WriteFile(configPath, append([]byte(header), data...), 0o644); err != nil {
 			return err
@@ -840,7 +840,7 @@ func SaveSecrets(path string, m map[string]any) error {
 	if err != nil {
 		return err
 	}
-	header := "# Meta2Cloud 敏感配置（权限 0600；请勿提交到代码仓库或随日志外发）\n" +
+	header := "# Panoply 敏感配置（权限 0600；请勿提交到代码仓库或随日志外发）\n" +
 		"# 键与主配置一致，由 WebUI 保存时自动维护；此文件中的值优先于主配置\n"
 	return os.WriteFile(path, append([]byte(header), out...), 0o600)
 }

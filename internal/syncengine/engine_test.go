@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"meta2cloud/internal/watched"
+	"panoply/internal/watched"
 )
 
 // ── 测试替身 ────────────────────────────────────────────────

@@ -9,10 +9,10 @@ import (
 	"sync"
 	"testing"
 
-	"meta2cloud/internal/cloudfile"
-	"meta2cloud/internal/config"
-	"meta2cloud/internal/mediaparser"
-	"meta2cloud/internal/tmdb"
+	"panoply/internal/cloudfile"
+	"panoply/internal/config"
+	"panoply/internal/mediaparser"
+	"panoply/internal/tmdb"
 )
 
 // ── 内存版 Fake Provider ────────────────────────────────────

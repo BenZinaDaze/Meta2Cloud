@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# meta2cloud 一键发版脚本
+# panoply 一键发版脚本
 # 用法: scripts/release.sh [--dry-run] [--skip-checks] [-y] <版本号>
 # 示例: scripts/release.sh 2.2.0          # 发布 v2.2.0
 #       scripts/release.sh --dry-run 2.2.0  # 只演练，不做任何修改
@@ -188,7 +188,7 @@ if [ "$DRY_RUN" = "1" ]; then
     echo "🏃 [dry-run] 将执行:"
     echo "   git add CHANGELOG.md frontend/package.json"
     echo "   git commit -m 'release: $TAG'"
-    echo "   git tag -a $TAG -m 'Meta2Cloud $TAG'"
+    echo "   git tag -a $TAG -m 'Panoply $TAG'"
     echo "   git push origin main --follow-tags"
     echo "✅ 演练结束，未修改任何文件"
     exit 0
@@ -196,7 +196,7 @@ fi
 
 git add CHANGELOG.md frontend/package.json
 git commit -m "release: $TAG"
-git tag -a "$TAG" -m "Meta2Cloud $TAG"
+git tag -a "$TAG" -m "Panoply $TAG"
 
 echo "📦 已创建提交与 tag $TAG"
 # 推送确认：-y 跳过询问；交互终端询问 y/N；非交互环境（如 CI/脚本调用，stdin 关闭）
@@ -221,5 +221,5 @@ fi
 
 git push origin main --follow-tags
 echo "🎉 $TAG 发布完成！"
-echo "   - Docker 镜像: https://github.com/${GITHUB_REPOSITORY:-BenZinaDaze/Meta2Cloud}/actions"
-echo "   - GitHub Release: https://github.com/${GITHUB_REPOSITORY:-BenZinaDaze/Meta2Cloud}/releases"
+echo "   - Docker 镜像: https://github.com/${GITHUB_REPOSITORY:-BenZinaDaze/Panoply}/actions"
+echo "   - GitHub Release: https://github.com/${GITHUB_REPOSITORY:-BenZinaDaze/Panoply}/releases"

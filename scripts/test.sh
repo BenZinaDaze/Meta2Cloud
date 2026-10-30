@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# meta2cloud 后端测试脚本
+# panoply 后端测试脚本
 
 set -e
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.."

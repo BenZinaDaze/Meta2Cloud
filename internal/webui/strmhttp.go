@@ -21,9 +21,9 @@ import (
 	"sync"
 	"time"
 
-	"meta2cloud/internal/webui/store"
+	"panoply/internal/webui/store"
 
-	"meta2cloud/internal/u115"
+	"panoply/internal/u115"
 )
 
 // strmRedirectPath 302 跳转路由（GET/HEAD/POST 均支持，媒体服务器行为不一）。

@@ -10,7 +10,7 @@ on:
   workflow_dispatch:  # 允许手动触发（自动推送最新 tag + latest）
 
 env:
-  DOCKERHUB_IMAGE: benz1/meta2cloud
+  DOCKERHUB_IMAGE: benz1/panoply
 
 jobs:
   build-and-push:
@@ -84,5 +84,5 @@ jobs:
           build-args: |
             APP_VERSION=${{ env.APP_VERSION }}
           # 使用 Docker Hub registry 做缓存（无 10GB / 7 天限制，多平台友好）
-          cache-from: type=registry,ref=benz1/meta2cloud:buildcache
-          cache-to: type=registry,ref=benz1/meta2cloud:buildcache,mode=max
+          cache-from: type=registry,ref=benz1/panoply:buildcache
+          cache-to: type=registry,ref=benz1/panoply:buildcache,mode=max

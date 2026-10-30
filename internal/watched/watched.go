@@ -203,7 +203,7 @@ type WatchedStampProvider interface {
 }
 
 // TitleIndex 标题 → TMDB 身份反查（播放端路径兜底用；由宿主注入实现，
-// 数据来自 meta2cloud 自己维护的 media_title_pins / library_media，只读）。
+// 数据来自 panoply 自己维护的 media_title_pins / library_media，只读）。
 type TitleIndex interface {
 	// Lookup 精确/归一化匹配 (媒体类型, 标题, 年份)；未命中返回 false。
 	Lookup(mediaType, title string, year int64) (MediaKey, bool)

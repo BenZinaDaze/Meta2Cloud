@@ -1,4 +1,4 @@
-module meta2cloud
+module panoply
 
 go 1.27.3
 

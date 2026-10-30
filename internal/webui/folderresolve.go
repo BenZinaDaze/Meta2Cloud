@@ -4,7 +4,7 @@ package webui
 import (
 	"strings"
 
-	"meta2cloud/internal/cloudfile"
+	"panoply/internal/cloudfile"
 )
 
 // resolveFolderID 将配置中的目录值（网盘根起算的相对路径，兼容旧名字/ID）解析为网盘目录 ID。

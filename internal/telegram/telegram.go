@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"meta2cloud/internal/config"
+	"panoply/internal/config"
 )
 
 // SendMessage 用配置的 Bot 发送一条 HTML 文本消息。

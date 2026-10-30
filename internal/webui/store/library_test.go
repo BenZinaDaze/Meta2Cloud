@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"meta2cloud/internal/titlematch"
+	"panoply/internal/titlematch"
 )
 
 // toRows 测试辅助：map 字面量 → 行结构（经 JSON 往返，同时校验 tag 对齐）。

@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"meta2cloud/internal/tmdb"
+	"panoply/internal/tmdb"
 )
 
 // ── 测试辅助 ────────────────────────────────────────────────

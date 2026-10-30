@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"meta2cloud/internal/cloudfile"
-	"meta2cloud/internal/config"
-	"meta2cloud/internal/u115"
+	"panoply/internal/cloudfile"
+	"panoply/internal/config"
+	"panoply/internal/u115"
 )
 
 // ListProviders 列出内置 Provider 名称。

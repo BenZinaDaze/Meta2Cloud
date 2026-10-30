@@ -23,7 +23,7 @@ export const handlers = [
   http.get('/api/pipeline/status', () => HttpResponse.json({ running: false, debounce: false })),
   http.get('/api/strm/sync/status', () =>
     HttpResponse.json({
-      enabled: true, url_base: 'http://m2c:38765', mappings: 1, running: false,
+      enabled: true, url_base: 'http://panoply:38765', mappings: 1, running: false,
       total_files: 12, last_run: null,
     }),
   ),

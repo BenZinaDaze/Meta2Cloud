@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"meta2cloud/internal/cloudfile"
-	"meta2cloud/internal/config"
-	"meta2cloud/internal/jsonx"
-	"meta2cloud/internal/mediaparser"
-	"meta2cloud/internal/titlematch"
-	"meta2cloud/internal/tmdb"
-	"meta2cloud/internal/webui/store"
+	"panoply/internal/cloudfile"
+	"panoply/internal/config"
+	"panoply/internal/jsonx"
+	"panoply/internal/mediaparser"
+	"panoply/internal/titlematch"
+	"panoply/internal/tmdb"
+	"panoply/internal/webui/store"
 )
 
 // ── 前端数据模型（对应 schemas/library.py，JSON 键保持一致） ──

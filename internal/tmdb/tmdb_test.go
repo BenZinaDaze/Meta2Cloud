@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"meta2cloud/internal/mediaparser"
+	"panoply/internal/mediaparser"
 )
 
 func TestBuildCachePath(t *testing.T) {

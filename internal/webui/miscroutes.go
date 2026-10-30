@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"meta2cloud/internal/config"
-	"meta2cloud/internal/telegram"
-	"meta2cloud/internal/webui/store"
+	"panoply/internal/config"
+	"panoply/internal/telegram"
+	"panoply/internal/webui/store"
 )
 
 // handleMediavaultTest 测试 MediaVault 连接。
@@ -97,7 +97,7 @@ func (s *Server) handleTelegramTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tg := config.Telegram{BotToken: botToken, ChatID: chatID}
-	if err := telegram.SendMessage(tg, "✅ <b>Meta2Cloud</b>\nTelegram 通知配置正常，入库完成后将推送到此会话。"); err != nil {
+	if err := telegram.SendMessage(tg, "✅ <b>Panoply</b>\nTelegram 通知配置正常，入库完成后将推送到此会话。"); err != nil {
 		writeJSONError(w, http.StatusBadGateway, "测试通知发送失败："+err.Error())
 		return
 	}

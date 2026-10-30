@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"meta2cloud/internal/cloudfile"
-	"meta2cloud/internal/config"
-	"meta2cloud/internal/jsonx"
-	"meta2cloud/internal/tmdb"
-	"meta2cloud/internal/u115"
-	"meta2cloud/internal/webui/store"
+	"panoply/internal/cloudfile"
+	"panoply/internal/config"
+	"panoply/internal/jsonx"
+	"panoply/internal/tmdb"
+	"panoply/internal/u115"
+	"panoply/internal/webui/store"
 
 	"gopkg.in/yaml.v3"
 )

@@ -1,4 +1,4 @@
-// Package pipeline Meta2Cloud 完整流水线（对应 Python 版 core/pipeline.py）。
+// Package pipeline Panoply 完整流水线（对应 Python 版 core/pipeline.py）。
 //
 // 流程：扫描 → 解析 → TMDB（整剧+单集）→ 文件夹 → 移动。
 package pipeline
@@ -11,13 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"meta2cloud/internal/cloudfile"
-	"meta2cloud/internal/config"
-	"meta2cloud/internal/jsonx"
-	"meta2cloud/internal/mediaparser"
-	"meta2cloud/internal/organizer"
-	"meta2cloud/internal/strutil"
-	"meta2cloud/internal/tmdb"
+	"panoply/internal/cloudfile"
+	"panoply/internal/config"
+	"panoply/internal/jsonx"
+	"panoply/internal/mediaparser"
+	"panoply/internal/organizer"
+	"panoply/internal/strutil"
+	"panoply/internal/tmdb"
 )
 
 // ProcessResult 单文件处理结果。
@@ -254,7 +254,7 @@ func (p *Pipeline) Run() (PipelineSummary, error) {
 	}
 
 	p.log(strings.Repeat("=", 68))
-	p.log("  Meta2Cloud 开始整理")
+	p.log("  Panoply 开始整理")
 	if p.skipTmdb || p.tmdb == nil {
 		p.log("  ℹ️  跳过 TMDB — 只按文件名整理", "INFO")
 	}

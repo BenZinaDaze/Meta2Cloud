@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	"meta2cloud/internal/watched"
+	"panoply/internal/watched"
 )
 
 // historyChunkSize 单次 /sync/history 请求携带的最大条数（保守安全值）。

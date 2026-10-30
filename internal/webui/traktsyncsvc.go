@@ -11,11 +11,11 @@ import (
 	"sync"
 	"time"
 
-	"meta2cloud/internal/plexserver"
-	"meta2cloud/internal/syncengine"
-	"meta2cloud/internal/trakt"
-	"meta2cloud/internal/watched"
-	"meta2cloud/internal/webui/store"
+	"panoply/internal/plexserver"
+	"panoply/internal/syncengine"
+	"panoply/internal/trakt"
+	"panoply/internal/watched"
+	"panoply/internal/webui/store"
 )
 
 // ── 双向同步：单飞触发 ─────────────────────────────────────

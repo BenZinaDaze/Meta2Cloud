@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"meta2cloud/internal/cloudfile"
-	"meta2cloud/internal/jsonx"
-	"meta2cloud/internal/mediaparser"
-	"meta2cloud/internal/scraper"
-	"meta2cloud/internal/tmdb"
+	"panoply/internal/cloudfile"
+	"panoply/internal/jsonx"
+	"panoply/internal/mediaparser"
+	"panoply/internal/scraper"
+	"panoply/internal/tmdb"
 )
 
 var seasonNameRe = regexp.MustCompile(`(?i)Season\s*\d+`)
@@ -821,7 +821,7 @@ func (s *Server) handleScraperEpisodes(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleBangumiCalendar(w http.ResponseWriter, _ *http.Request) {
 	client := &http.Client{Timeout: 15 * time.Second}
 	req, _ := http.NewRequest(http.MethodGet, "https://api.bgm.tv/calendar", nil)
-	req.Header.Set("User-Agent", "Meta2Cloud/1.0 (https://github.com/BenZinaDaze/Meta2Cloud)")
+	req.Header.Set("User-Agent", "Panoply/1.0 (https://github.com/BenZinaDaze/Panoply)")
 	resp, err := client.Do(req)
 	if err != nil {
 		writeJSONError(w, http.StatusBadGateway, "Bangumi 日历服务暂时不可用，请稍后重试")

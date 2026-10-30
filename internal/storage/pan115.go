@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"meta2cloud/internal/cloudfile"
-	"meta2cloud/internal/strutil"
-	"meta2cloud/internal/u115"
+	"panoply/internal/cloudfile"
+	"panoply/internal/strutil"
+	"panoply/internal/u115"
 )
 
 // Pan115Provider 115 网盘存储 Provider。

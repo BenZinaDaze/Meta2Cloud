@@ -367,7 +367,7 @@ export default function WatchedSyncSection({ cfg, set }: WatchedSyncSectionProps
               在弹出的 Plex 授权页登录并确认。授权凭证保存在本地 plex-auth.json。
             </p>
             <FieldGroup>
-              <Field label="Plex 服务器地址" description="Meta2Cloud 需能直连该地址" fullWidth>
+              <Field label="Plex 服务器地址" description="Panoply 需能直连该地址" fullWidth>
                 <div className="max-w-xl">
                   <TextInput
                     value={(cfg?.plex as Record<string, unknown>)?.base_url as string | undefined}

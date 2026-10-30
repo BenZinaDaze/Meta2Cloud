@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"meta2cloud/internal/webui/store"
+	"panoply/internal/webui/store"
 )
 
 // libraryDeleteEnv 联动删除测试环境。

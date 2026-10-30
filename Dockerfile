@@ -34,7 +34,7 @@ COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 RUN CGO_ENABLED=0 GOARCH=${TARGETARCH} go build -trimpath \
     -ldflags "-s -w -X main.version=${APP_VERSION}" \
-    -o /out/meta2cloud ./cmd/meta2cloud
+    -o /out/panoply ./cmd/panoply
 
 
 FROM debian:bookworm-slim
@@ -51,7 +51,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # 复制后端二进制
-COPY --from=backend-builder /out/meta2cloud /app/meta2cloud
+COPY --from=backend-builder /out/panoply /app/panoply
 
 # 复制配置样例与前端构建产物
 COPY config/config.example.yaml /app/config/config.example.yaml
@@ -64,4 +64,4 @@ RUN mkdir -p /app/config/data /app/data
 EXPOSE 38765
 
 # 单进程启动：WebUI API + Webhook /trigger + 后台监听均在 38765
-CMD ["/app/meta2cloud", "serve", "--host", "0.0.0.0", "--port", "38765", "--root", "/app"]
+CMD ["/app/panoply", "serve", "--host", "0.0.0.0", "--port", "38765", "--root", "/app"]

@@ -12,7 +12,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 
-	"meta2cloud/internal/httpx"
+	"panoply/internal/httpx"
 )
 
 const mikanBaseURL = "https://mikanani.me"

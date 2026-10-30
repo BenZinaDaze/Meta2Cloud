@@ -1,4 +1,4 @@
-# meta2cloud 后端测试脚本 (PowerShell)
+# panoply 后端测试脚本 (PowerShell)
 Set-Location (Split-Path $PSScriptRoot -Parent)
 
 Write-Host "go vet..."

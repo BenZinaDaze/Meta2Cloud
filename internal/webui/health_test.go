@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"meta2cloud/internal/config"
-	"meta2cloud/internal/scraper"
-	"meta2cloud/internal/telegram"
-	"meta2cloud/internal/u115"
-	"meta2cloud/internal/webui/store"
+	"panoply/internal/config"
+	"panoply/internal/scraper"
+	"panoply/internal/telegram"
+	"panoply/internal/u115"
+	"panoply/internal/webui/store"
 )
 
 // fakeClock 可手动推进的时钟（rt.health.now 注入用）。

@@ -22,12 +22,12 @@ import (
 	"sync"
 	"time"
 
-	"meta2cloud/internal/cloudfile"
-	"meta2cloud/internal/config"
-	"meta2cloud/internal/pipeline"
-	"meta2cloud/internal/plexserver"
-	"meta2cloud/internal/u115"
-	"meta2cloud/internal/webui/store"
+	"panoply/internal/cloudfile"
+	"panoply/internal/config"
+	"panoply/internal/pipeline"
+	"panoply/internal/plexserver"
+	"panoply/internal/u115"
+	"panoply/internal/webui/store"
 )
 
 // strmWalkMaxDepth 网盘映射目录遍历深度上限。

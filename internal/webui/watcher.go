@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"meta2cloud/internal/config"
-	"meta2cloud/internal/u115"
+	"panoply/internal/config"
+	"panoply/internal/u115"
 )
 
 type watcherState struct {

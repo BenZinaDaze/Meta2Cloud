@@ -4,9 +4,9 @@ import (
 	"os"
 	"testing"
 
-	"meta2cloud/internal/config"
-	"meta2cloud/internal/telegram"
-	"meta2cloud/internal/tmdb"
+	"panoply/internal/config"
+	"panoply/internal/telegram"
+	"panoply/internal/tmdb"
 )
 
 // TestTelegramModuleFromExternal 从外部包（webui）调用 pipeline 通知模块的联调测试，

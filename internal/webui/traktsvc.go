@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"meta2cloud/internal/plexserver"
-	"meta2cloud/internal/trakt"
+	"panoply/internal/plexserver"
+	"panoply/internal/trakt"
 )
 
 // ── 状态载荷 ───────────────────────────────────────────────

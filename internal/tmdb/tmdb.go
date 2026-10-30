@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"meta2cloud/internal/jsonx"
-	"meta2cloud/internal/mediaparser"
+	"panoply/internal/jsonx"
+	"panoply/internal/mediaparser"
 )
 
 // redactURLError 去掉 *url.Error 携带的完整 URL（query 含 api_key），只保留底层错误，

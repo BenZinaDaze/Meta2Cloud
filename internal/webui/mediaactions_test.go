@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"meta2cloud/internal/cloudfile"
+	"panoply/internal/cloudfile"
 )
 
 func fileName(t *testing.T, fp *fakeWebProvider, id string) string {

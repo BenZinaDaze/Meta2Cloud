@@ -13,8 +13,8 @@ import (
 	"log"
 	"strconv"
 
-	"meta2cloud/internal/cloudfile"
-	"meta2cloud/internal/mediaparser"
+	"panoply/internal/cloudfile"
+	"panoply/internal/mediaparser"
 )
 
 // MediaOrganizer 媒体文件夹整理器。

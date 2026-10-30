@@ -11,9 +11,9 @@ import (
 	"net/http"
 	"os"
 
-	"meta2cloud/internal/cloudfile"
-	"meta2cloud/internal/jsonx"
-	"meta2cloud/internal/webui/store"
+	"panoply/internal/cloudfile"
+	"panoply/internal/jsonx"
+	"panoply/internal/webui/store"
 )
 
 // libraryMediaRef 待删条目的关键字段（必须在删库前读出，删除后即查不到）。

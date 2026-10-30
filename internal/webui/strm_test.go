@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"meta2cloud/internal/cloudfile"
-	"meta2cloud/internal/config"
-	"meta2cloud/internal/u115"
-	"meta2cloud/internal/webui/store"
+	"panoply/internal/cloudfile"
+	"panoply/internal/config"
+	"panoply/internal/u115"
+	"panoply/internal/webui/store"
 )
 
 // addVideoWithPickCode 向 fake 网盘添加带 pick_code 与大小的视频文件。
@@ -79,7 +79,7 @@ func initStrmTestRuntime(t *testing.T, urlSecret string) *Runtime {
 	t.Helper()
 	// 不用 t.TempDir：全局 RT 单例的监听线程可能在清理窗口内惰性重建
 	// config/data，与 RemoveAll 竞态会误判测试失败；此处清理尽力而为。
-	root, err := os.MkdirTemp("", "meta2cloud-strm-test")
+	root, err := os.MkdirTemp("", "panoply-strm-test")
 	if err != nil {
 		t.Fatalf("创建临时目录失败：%v", err)
 	}

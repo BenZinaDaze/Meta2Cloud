@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strings"
 
-	"meta2cloud/internal/cloudfile"
-	"meta2cloud/internal/config"
+	"panoply/internal/cloudfile"
+	"panoply/internal/config"
 )
 
 // handleGetCategories 回显分类配置。

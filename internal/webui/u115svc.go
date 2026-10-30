@@ -15,7 +15,7 @@ import (
 
 	qrcode "github.com/skip2/go-qrcode"
 
-	"meta2cloud/internal/u115"
+	"panoply/internal/u115"
 )
 
 // resolveConfigPath 相对路径基于项目根目录解析。
@@ -721,7 +721,7 @@ func (rt *Runtime) torrentFileName(torrentURL string) string {
 			return base
 		}
 	}
-	return "meta2cloud.torrent"
+	return "panoply.torrent"
 }
 
 // wantedFileIndexes 依据种子解析结果生成选中文件序号；无标记时全选。

@@ -44,7 +44,7 @@ jobs:
               echo "### Docker 镜像"
               echo
               echo '```'
-              echo "docker pull benz1/meta2cloud:${VERSION}"
+              echo "docker pull benz1/panoply:${VERSION}"
               echo '```'
             } > release_body.md
           fi

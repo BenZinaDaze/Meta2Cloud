@@ -17,8 +17,8 @@ import (
 	"strconv"
 	"time"
 
-	"meta2cloud/internal/syncengine"
-	"meta2cloud/internal/watched"
+	"panoply/internal/syncengine"
+	"panoply/internal/watched"
 )
 
 const traktSyncDDL = `

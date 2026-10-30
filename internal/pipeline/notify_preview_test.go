@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"meta2cloud/internal/config"
+	"panoply/internal/config"
 )
 
 // TestNotifyPreviewManual 手动预览富通知样式：

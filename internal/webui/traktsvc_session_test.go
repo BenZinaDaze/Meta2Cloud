@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"meta2cloud/internal/plexserver"
-	"meta2cloud/internal/trakt"
-	"meta2cloud/internal/watched"
-	"meta2cloud/internal/webui/store"
+	"panoply/internal/plexserver"
+	"panoply/internal/trakt"
+	"panoply/internal/watched"
+	"panoply/internal/webui/store"
 )
 
 type scrobbleCapture struct {

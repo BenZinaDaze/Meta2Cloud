@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────
-# Meta2Cloud 主配置模板
+# Panoply 主配置模板
 #
 # 首次启动会自动生成默认 config.yaml / parser-rules.yaml / categories.yaml
 # （WebUI 初始随机密码打印在启动日志），无需手动创建本文件。
@@ -183,7 +183,7 @@ mediavault:
 strm:
   enabled: false
 
-  # 播放器能访问到 Meta2Cloud 的地址（支持域名/反代；省略协议自动补 http://）
+  # 播放器能访问到 Panoply 的地址（支持域名/反代；省略协议自动补 http://）
   url_base: ""
 
   # 直链签名密钥（可选，防未授权调用；配置页可一键随机生成）
@@ -258,7 +258,7 @@ trakt:
 # Plex Media Server 连接（配合观看同步）
 # ─────────────────────────────────────────────────────────
 plex:
-  # Plex 服务器地址（Meta2Cloud 所在机器需能直连）
+  # Plex 服务器地址（Panoply 所在机器需能直连）
   base_url: ""
 
   # 授权凭证持久化路径（PIN 配对成功后自动写入，含 client_identifier 配对态）

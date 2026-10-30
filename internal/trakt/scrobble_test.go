@@ -13,7 +13,7 @@ import (
 	"sync"
 	"testing"
 
-	"meta2cloud/internal/watched"
+	"panoply/internal/watched"
 )
 
 // capturedRequest 记录一次请求的方法/路径/载荷。

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"meta2cloud/internal/watched"
+	"panoply/internal/watched"
 )
 
 // newTestClient 构造指向 httptest 服务器的客户端（API 与 OAuth 主机同指测试服务器）。

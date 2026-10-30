@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"meta2cloud/internal/watched"
+	"panoply/internal/watched"
 )
 
 // ── TitleIndex（media_title_pins / library_media 只读反查）──

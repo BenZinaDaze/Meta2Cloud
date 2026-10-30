@@ -4,8 +4,8 @@ package pipeline
 import (
 	"fmt"
 
-	"meta2cloud/internal/cloudfile"
-	"meta2cloud/internal/jsonx"
+	"panoply/internal/cloudfile"
+	"panoply/internal/jsonx"
 )
 
 // TmdbGenreIDs 提取 TMDB 详情的流派 ID 列表（16 = 动画，与语言设置无关）。

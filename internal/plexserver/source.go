@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"meta2cloud/internal/watched"
+	"panoply/internal/watched"
 )
 
 // Source watched.Provider 的 Plex 实现。
@@ -19,7 +19,7 @@ import (
 // （同步引擎每轮先枚举后写入，天然满足）；跨轮直接调用 Mark* 会因索引缺失失败。
 type Source struct {
 	Client *Client
-	// Titles 标题反查（meta2cloud 自有 media_title_pins/library_media 的只读视图），可为 nil。
+	// Titles 标题反查（panoply 自有 media_title_pins/library_media 的只读视图），可为 nil。
 	Titles watched.TitleIndex
 	// Mapper 外部 ID 归一化（tmdb/tvdb/imdb → 规范键），由宿主注入持久化实现。
 	Mapper watched.IDMapper

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# meta2cloud 本地全栈开发启动脚本
+# panoply 本地全栈开发启动脚本
 # 一键并联启动 Go 后端和 Vite 前端
 
 set -e
@@ -20,12 +20,12 @@ cleanup() {
 }
 trap cleanup INT TERM
 
-echo "🚀 Starting meta2cloud development environment..."
+echo "🚀 Starting panoply development environment..."
 
 # 启动 Go 后端（端口 38765）
 cd "$PROJECT_ROOT"
-go build -o /tmp/meta2cloud-dev ./cmd/meta2cloud
-/tmp/meta2cloud-dev serve --host 0.0.0.0 --port 38765 --root "$PROJECT_ROOT" &
+go build -o /tmp/panoply-dev ./cmd/panoply
+/tmp/panoply-dev serve --host 0.0.0.0 --port 38765 --root "$PROJECT_ROOT" &
 BACKEND_PID=$!
 echo "✅ Backend:  http://localhost:38765 (pid $BACKEND_PID)"
 

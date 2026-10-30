@@ -1,8 +1,8 @@
-// meta2cloud 服务入口（对应 Python 版 webui 服务）。
+// panoply 服务入口（对应 Python 版 webui 服务）。
 //
 // 用法：
 //
-//	meta2cloud serve    # 启动 Web 服务（默认 0.0.0.0:38765）
+//	panoply serve    # 启动 Web 服务（默认 0.0.0.0:38765）
 //
 // 整理一律通过 WebAPI 触发：POST /api/pipeline/trigger（WebUI「一键整理」按钮）。
 package main
@@ -19,16 +19,16 @@ import (
 	"syscall"
 	"time"
 
-	"meta2cloud/internal/webui"
+	"panoply/internal/webui"
 )
 
 // version 构建时由 -ldflags "-X main.version=..." 注入（CI/脚本传入 tag）。
 var version = "dev"
 
-const usage = `Meta2Cloud — 115 网盘影音管理平台：自动整理、资源检索订阅、STRM 直链播放、观看同步
+const usage = `Panoply — 115 网盘影音管理平台：自动整理、资源检索订阅、STRM 直链播放、观看同步
 
 用法:
-  meta2cloud serve [flags]        启动 Web 服务（整理通过 WebAPI 触发）
+  panoply serve [flags]        启动 Web 服务（整理通过 WebAPI 触发）
 
 serve flags:
   --host HOST      监听地址（默认 0.0.0.0）
@@ -67,7 +67,7 @@ func runServe(args []string) {
 	server := webui.NewServer(rt)
 
 	addr := fmt.Sprintf("%s:%d", *host, *port)
-	log.Printf("Meta2Cloud v%s Web 服务启动：http://%s", version, addr)
+	log.Printf("Panoply v%s Web 服务启动：http://%s", version, addr)
 
 	httpSrv := &http.Server{Addr: addr, Handler: server.Handler()}
 	go func() {
@@ -91,5 +91,5 @@ func runServe(args []string) {
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("Web 服务异常退出：%v", err)
 	}
-	log.Println("Meta2Cloud 已退出")
+	log.Println("Panoply 已退出")
 }

@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"meta2cloud/internal/pipeline"
-	"meta2cloud/internal/webui/store"
+	"panoply/internal/pipeline"
+	"panoply/internal/webui/store"
 )
 
 // TestIsLoopbackRequest 环回地址判定（webhook 未配置密钥时的兜底限制）。

@@ -4,7 +4,7 @@
 .codex
 
 # Go 构建产物（本地编译不入镜像）
-meta2cloud
+panoply
 *.exe
 /tmp
 

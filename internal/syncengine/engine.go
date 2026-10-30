@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"time"
 
-	"meta2cloud/internal/watched"
+	"panoply/internal/watched"
 )
 
 const (

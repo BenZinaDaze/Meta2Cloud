@@ -1,6 +1,6 @@
 # 发版手册
 
-本文档描述 Meta2Cloud 的完整发版流程。日常发版只需一条命令：
+本文档描述 Panoply 的完整发版流程。日常发版只需一条命令：
 
 ```bash
 scripts/release.sh 2.2.0        # 发布 v2.2.0
@@ -81,7 +81,7 @@ scripts/release.sh -y 2.2.0            # 跳过 push 前的确认
    ```bash
    git add CHANGELOG.md frontend/package.json
    git commit -m "release: vX.Y.Z"
-   git tag -a vX.Y.Z -m "Meta2Cloud vX.Y.Z"
+   git tag -a vX.Y.Z -m "Panoply vX.Y.Z"
    git push origin main --follow-tags
    ```
 
@@ -93,8 +93,8 @@ scripts/release.sh -y 2.2.0            # 跳过 push 前的确认
 
 构建 `linux/amd64` + `linux/arm64` 多平台镜像并推送 Docker Hub：
 
-- `benz1/meta2cloud:vX.Y.Z`
-- `benz1/meta2cloud:latest`
+- `benz1/panoply:vX.Y.Z`
+- `benz1/panoply:latest`
 
 镜像内通过 `APP_VERSION` 注入版本号（Go `main.version` + 前端 `VITE_APP_VERSION`）。
 
@@ -109,8 +109,8 @@ scripts/release.sh -y 2.2.0            # 跳过 push 前的确认
 ```bash
 gh run list --limit 4                          # 两个 workflow 均应绿色
 gh release view vX.Y.Z                         # Release 存在且正文完整
-docker manifest inspect benz1/meta2cloud:vX.Y.Z | grep architecture   # amd64 + arm64
-docker pull benz1/meta2cloud:vX.Y.Z            # 本地拉取冒烟
+docker manifest inspect benz1/panoply:vX.Y.Z | grep architecture   # amd64 + arm64
+docker pull benz1/panoply:vX.Y.Z            # 本地拉取冒烟
 ```
 
 用户视角验证：WebUI 侧边栏/关于页显示的版本号应为 `vX.Y.Z`。

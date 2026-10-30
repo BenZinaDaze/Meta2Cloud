@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"sync"
 
-	"meta2cloud/internal/cloudfile"
+	"panoply/internal/cloudfile"
 )
 
 // fakeWebProvider 内存版网盘（webui 测试用）。

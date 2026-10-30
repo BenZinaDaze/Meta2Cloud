@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"meta2cloud/internal/webui/store"
+	"panoply/internal/webui/store"
 )
 
 // Server WebUI 服务。所有 handler 均为 Server 方法，依赖经构造注入的 rt 取用。

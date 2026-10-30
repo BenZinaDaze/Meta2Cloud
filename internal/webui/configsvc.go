@@ -14,11 +14,11 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"meta2cloud/internal/config"
-	"meta2cloud/internal/jsonx"
-	"meta2cloud/internal/mediaparser"
-	"meta2cloud/internal/strutil"
-	"meta2cloud/internal/tmdb"
+	"panoply/internal/config"
+	"panoply/internal/jsonx"
+	"panoply/internal/mediaparser"
+	"panoply/internal/strutil"
+	"panoply/internal/tmdb"
 )
 
 // ── 读取 ────────────────────────────────────────────────────

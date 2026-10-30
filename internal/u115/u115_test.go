@@ -60,7 +60,7 @@ func TestParseShareURL(t *testing.T) {
 
 func TestComputeUploadHashesBytes(t *testing.T) {
 	// 小于 128MB 时 preid == fileid（全量哈希）
-	data := []byte("hello world meta2cloud")
+	data := []byte("hello world panoply")
 	h := ComputeUploadHashesBytes(data)
 	if h.FileSize != int64(len(data)) {
 		t.Errorf("FileSize = %d, want %d", h.FileSize, len(data))

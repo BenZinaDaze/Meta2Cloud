@@ -1,5 +1,5 @@
 # Go 编译产物
-/meta2cloud
+/panoply
 *.exe
 
 # Python

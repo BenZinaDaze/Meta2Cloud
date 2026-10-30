@@ -14,7 +14,7 @@ import (
 	"strings"
 	"sync"
 
-	"meta2cloud/internal/tmdb"
+	"panoply/internal/tmdb"
 )
 
 const rssDDL = `

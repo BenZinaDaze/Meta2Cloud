@@ -23,8 +23,8 @@ import (
 	"sync"
 	"time"
 
-	"meta2cloud/internal/httpx"
-	"meta2cloud/internal/strutil"
+	"panoply/internal/httpx"
+	"panoply/internal/strutil"
 )
 
 const (

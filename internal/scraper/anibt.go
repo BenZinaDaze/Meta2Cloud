@@ -13,14 +13,14 @@ import (
 	"strings"
 	"time"
 
-	"meta2cloud/internal/httpx"
-	"meta2cloud/internal/jsonx"
-	"meta2cloud/internal/strutil"
+	"panoply/internal/httpx"
+	"panoply/internal/jsonx"
+	"panoply/internal/strutil"
 )
 
 const anibtBaseURL = "https://anibt.net"
 
-const anibtUA = "Meta2Cloud/0.1 (+https://github.com/)"
+const anibtUA = "Panoply/0.1 (+https://github.com/)"
 
 var anibtTorrentHashRe = regexp.MustCompile(`/([0-9a-fA-F]{40})\.torrent(?:$|\?)`)
 

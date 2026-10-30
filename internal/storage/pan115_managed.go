@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"meta2cloud/internal/cloudfile"
-	"meta2cloud/internal/u115"
+	"panoply/internal/cloudfile"
+	"panoply/internal/u115"
 )
 
 // resolveFolderRefPathOnly 仅按「网盘根起算的相对路径/名字」解析目录引用，

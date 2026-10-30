@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"meta2cloud/internal/cloudfile"
+	"panoply/internal/cloudfile"
 )
 
 // SubtitleMatch 字幕匹配结果。

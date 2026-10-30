@@ -9,11 +9,11 @@ import (
 	"strings"
 	"unicode"
 
-	"meta2cloud/internal/config"
-	"meta2cloud/internal/jsonx"
-	"meta2cloud/internal/strutil"
-	"meta2cloud/internal/telegram"
-	"meta2cloud/internal/tmdb"
+	"panoply/internal/config"
+	"panoply/internal/jsonx"
+	"panoply/internal/strutil"
+	"panoply/internal/telegram"
+	"panoply/internal/tmdb"
 )
 
 // notifyItem Telegram 入库通知条目。

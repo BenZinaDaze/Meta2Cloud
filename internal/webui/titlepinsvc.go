@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"meta2cloud/internal/jsonx"
-	"meta2cloud/internal/mediaparser"
-	"meta2cloud/internal/strutil"
+	"panoply/internal/jsonx"
+	"panoply/internal/mediaparser"
+	"panoply/internal/strutil"
 )
 
 // titlePinItem 整理名称列表条目。

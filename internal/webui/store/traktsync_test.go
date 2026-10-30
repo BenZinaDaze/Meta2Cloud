@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"meta2cloud/internal/syncengine"
-	"meta2cloud/internal/watched"
+	"panoply/internal/syncengine"
+	"panoply/internal/watched"
 )
 
 func openTestTraktSyncStore(t *testing.T) *TraktSyncStore {

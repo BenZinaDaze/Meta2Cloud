@@ -20,10 +20,10 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"meta2cloud/internal/jsonx"
-	"meta2cloud/internal/strutil"
-	"meta2cloud/internal/titlematch"
-	"meta2cloud/internal/tmdb"
+	"panoply/internal/jsonx"
+	"panoply/internal/strutil"
+	"panoply/internal/titlematch"
+	"panoply/internal/tmdb"
 )
 
 const libraryDDL = `

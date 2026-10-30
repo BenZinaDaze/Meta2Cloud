@@ -1,12 +1,21 @@
 # 更新日志
 
-本文件记录 Meta2Cloud 每个版本的显著变更，格式参考
+本文件记录 Panoply 每个版本的显著变更，格式参考
 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 发版操作手册见 [doc/release.md](doc/release.md)。
 
 > 注：早期 v1.0.2 ~ v1.1.7 的原始提交历史曾被重写（快照式平行历史），
 > 其条目由版本树比对还原；实际功能均已包含于主线 v1.1.8 及之后版本。
+
+## [Unreleased]
+
+### 🏷️ 项目更名 Meta2Cloud → Panoply
+
+- 全量更名：代码、模块路径（`panoply`）、二进制（`panoply serve`）、Docker 镜像（`benz1/panoply`）、文档与 Web UI 标题
+- 存量用户迁移：Docker 用户将镜像与容器名改为 `benz1/panoply`、数据卷 `panoply-config`（沿用原目录内容即可）；二进制用户改用 `./panoply serve`
+- 历史镜像 `benz1/meta2cloud` 各版本保留可拉取；`docker-compose.gdrive.yml` 的 v1.3.1 仍指向旧名镜像（Docker Hub 上仅存的历史发布）
+- GitHub 仓库同步更名为 `BenZinaDaze/Panoply`，旧地址自动重定向
 
 ## [v2.7.0] - 2026-10-29
 
@@ -227,7 +236,7 @@
 
 ### 🧹 杂项
 
-- gitignore 的 meta2cloud 模式锚定根目录，避免误伤 cmd/meta2cloud (`18df876`)
+- gitignore 的 panoply 模式锚定根目录，避免误伤 cmd/panoply (`18df876`)
 
 
 ## [v2.4.2] - 2026-10-21
@@ -540,7 +549,7 @@
 ### 新增
 
 - 115自动整理 (`ae40c1c`)
-- 接入 pan115 存储抽象并统一项目命名为 Meta2Cloud (`eb9eb9f`)
+- 接入 pan115 存储抽象并统一项目命名为 Panoply (`eb9eb9f`)
 - 新增115授权和115云下载 (`6b7230c`)
 - 增加aira2开关，增加授权状态 (`00c6551`)
 
@@ -945,7 +954,7 @@
 - （go）WebUI 配置服务——读写/校验/解析测试 (`aca68c3`)
 - （go）WebUI 扫描服务与流程调度——媒体库刷新/扫描/webhook/日志/入库历史 (`890d2a0`)
 - （go）WebUI 剩余存储层——入库历史/应用日志/115自动整理/RSS订阅 (`75e858e`)
-- （go）cmd/meta2cloud 入口(serve/pipeline)+进度文档更新 (`489b0b8`)
+- （go）cmd/panoply 入口(serve/pipeline)+进度文档更新 (`489b0b8`)
 - （go）WebUI 服务核心——运行时单例、JWT 认证、HTTP 骨架 (`70aec46`)
 - （go）WebUI 存储层——媒体实体库 + TMDB 实体缓存 (`8e973cb`)
 - （go）移植 RSS 订阅爬虫层(mikan + anibt) (`f1b512a`)

@@ -1,7 +1,7 @@
 # AniBT Open API 资源检索参考
 
 来源：https://wiki.anibt.net/docs/open-api  
-用途：为 Meta2Cloud 后续实现 AniBT 资源检索、RSS 订阅、字幕组 slug 映射与 Bangumi ID 查询提供本地参考。更新时间：2026-07-01。
+用途：为 Panoply 后续实现 AniBT 资源检索、RSS 订阅、字幕组 slug 映射与 Bangumi ID 查询提供本地参考。更新时间：2026-07-01。
 
 ## 基本约定
 
