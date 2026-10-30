@@ -6,6 +6,7 @@ import { StatePanel } from '@/components/StatePanel'
 import { Button } from '@/components/ui/button'
 import SubscriptionModal from '@/components/modals/SubscriptionModal'
 import { cn } from '@/lib/utils'
+import { copyToClipboard } from '@/lib/clipboard'
 import type { MediaItem, Subscription } from '@/types/api'
 import { toast } from 'sonner'
 import _resultsCache from '@/utils/resultsCache'
@@ -312,7 +313,7 @@ export default function ScraperResultsView({ item, onBack }: ScraperResultsViewP
   const handleCopy = (ep: Episode) => {
     const url = ep.magnet_url || ep.torrent_url
     if (!url) return
-    navigator.clipboard.writeText(url)
+    copyToClipboard(url)
       .then(() => toast.success('已复制链接'))
       .catch((e) => toast.error('复制失败', { description: e.message }))
   }
@@ -501,7 +502,7 @@ export default function ScraperResultsView({ item, onBack }: ScraperResultsViewP
                                   size="sm"
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    navigator.clipboard.writeText(rssUrl)
+                                    copyToClipboard(rssUrl)
                                       .then(() => toast.success('已复制 RSS 链接'))
                                       .catch((err) => toast.error('复制失败', { description: err.message }))
                                   }}
