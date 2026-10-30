@@ -9,8 +9,8 @@ export default function Logo({ className = 'size-8' }: { className?: string }) {
     >
       <defs>
         <linearGradient id="tide-mark-bg" x1="8" y1="6" x2="58" y2="60" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="oklch(80% 0.19 148)" />
-          <stop offset="1" stopColor="oklch(62% 0.17 152)" />
+          <stop offset="0" stopColor="#4cd16f" />
+          <stop offset="1" stopColor="#169e4c" />
         </linearGradient>
         <radialGradient id="tide-mark-glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(18 12) rotate(65) scale(32 28)">
           <stop stopColor="oklch(95% 0.08 135)" stopOpacity=".5" />
@@ -26,21 +26,20 @@ export default function Logo({ className = 'size-8' }: { className?: string }) {
       <path
         d="M10 38c5.5 0 5.5-5 11-5s5.5 5 11 5 5.5-5 11-5 5.5 5 11 5"
         stroke="oklch(100% 0 0)"
-        strokeWidth="4.5"
+        strokeWidth={5}
         strokeLinecap="round"
       />
       <path
-        d="M14 48c4.7 0 4.7-4.5 9.3-4.5s4.7 4.5 9.4 4.5 4.7-4.5 9.3-4.5 4.7 4.5 9.4 4.5"
+        d="M13 49c4.75 0 4.75-4.5 9.5-4.5s4.75 4.5 9.5 4.5 4.75-4.5 9.5-4.5 4.75 4.5 9.5 4.5"
         stroke="oklch(100% 0 0)"
-        strokeOpacity=".5"
-        strokeWidth="4"
+        strokeOpacity={0.6}
+        strokeWidth={4.4}
         strokeLinecap="round"
       />
       {/* 元数据星点 */}
       <path
-        d="M32 11.5l2.2 4.6 5 .7-3.6 3.6.9 5-4.5-2.4-4.5 2.4.9-5-3.6-3.6 5-.7L32 11.5z"
+        d="M32 10.7 33.3 15.8 40 16.6 36 20.5 37 26 32 23.4 27 26 28 20.5 24 16.6 30.7 15.8Z"
         fill="oklch(100% 0 0)"
-        fillOpacity=".95"
       />
     </svg>
   )

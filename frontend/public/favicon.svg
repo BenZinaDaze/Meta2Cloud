@@ -1,22 +1,17 @@
 <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="tide-mark-bg" x1="8" y1="6" x2="58" y2="60" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#2fd66d" />
-      <stop offset="1" stop-color="#14a046" />
+      <stop offset="0" stop-color="#4cd16f" />
+      <stop offset="1" stop-color="#169e4c" />
     </linearGradient>
-    <radialGradient id="tide-mark-glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(18 12) rotate(65) scale(32 28)">
-      <stop stop-color="#d9ffe3" stop-opacity=".5" />
-      <stop offset="1" stop-color="#d9ffe3" stop-opacity="0" />
-    </radialGradient>
   </defs>
 
   <rect x="4" y="4" width="56" height="56" rx="17" fill="url(#tide-mark-bg)" />
-  <rect x="4" y="4" width="56" height="56" rx="17" fill="url(#tide-mark-glow)" />
-  <rect x="4.75" y="4.75" width="54.5" height="54.5" rx="16.25" stroke="#ffffff" stroke-opacity=".35" stroke-width="1.5" />
+  <rect x="4.75" y="4.75" width="54.5" height="54.5" rx="16.25" stroke="#ffffff" stroke-opacity=".35" stroke-width="1.5" fill="none" />
 
   <!-- 潮汐波浪（白色，高对比） -->
-  <path d="M10 38c5.5 0 5.5-5 11-5s5.5 5 11 5 5.5-5 11-5 5.5 5 11 5" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round" />
-  <path d="M14 48c4.7 0 4.7-4.5 9.3-4.5s4.7 4.5 9.4 4.5 4.7-4.5 9.3-4.5 4.7 4.5 9.4 4.5" stroke="#ffffff" stroke-opacity=".5" stroke-width="4" stroke-linecap="round" />
+  <path d="M10 38c5.5 0 5.5-5 11-5s5.5 5 11 5 5.5-5 11-5 5.5 5 11 5" stroke="#ffffff" stroke-width="5" stroke-linecap="round" fill="none" />
+  <path d="M13 49c4.75 0 4.75-4.5 9.5-4.5s4.75 4.5 9.5 4.5 4.75-4.5 9.5-4.5 4.75 4.5 9.5 4.5" stroke="#ffffff" stroke-opacity=".6" stroke-width="4.4" stroke-linecap="round" fill="none" />
   <!-- 元数据星点 -->
-  <path d="M32 11.5l2.2 4.6 5 .7-3.6 3.6.9 5-4.5-2.4-4.5 2.4.9-5-3.6-3.6 5-.7L32 11.5z" fill="#ffffff" fill-opacity=".95" />
+  <path d="M32 10.7 33.3 15.8 40 16.6 36 20.5 37 26 32 23.4 27 26 28 20.5 24 16.6 30.7 15.8Z" fill="#ffffff" />
 </svg>
