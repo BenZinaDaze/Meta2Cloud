@@ -51,9 +51,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           <div className="relative flex items-center gap-3">
             <Logo className="size-10" />
             <div>
-              <div className="text-lg font-bold tracking-tight">
-                Meta<span className="text-gradient-tide">2</span>Cloud
-              </div>
+              <div className="text-lg font-bold tracking-tight">Panoply</div>
               <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70">
                 Media Archive
               </div>
@@ -85,9 +83,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           <div className="mb-8 flex items-center gap-3 lg:hidden">
             <Logo className="size-9" />
             <div>
-              <div className="font-bold tracking-tight">
-                Meta<span className="text-gradient-tide">2</span>Cloud
-              </div>
+              <div className="font-bold tracking-tight">Panoply</div>
               <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70">
                 Media Archive
               </div>

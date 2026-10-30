@@ -52,9 +52,7 @@ export default function Topbar({ onOpenParseTest, onToggleSidebar, u115Authorize
           {/* 移动端品牌 */}
           <div className="flex items-center gap-2 lg:hidden">
             <Logo className="size-7" />
-            <span className="text-sm font-bold tracking-tight">
-              Meta<span className="text-gradient-tide">2</span>Cloud
-            </span>
+            <span className="text-sm font-bold tracking-tight">Panoply</span>
           </div>
         </div>
 

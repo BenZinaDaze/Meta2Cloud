@@ -224,7 +224,7 @@ export default function Sidebar({
         <Logo className="size-8 drop-shadow-[0_2px_8px_oklch(76%_0.19_150/0.45)]" />
         <div className="min-w-0">
           <div className="text-sm font-bold leading-tight tracking-tight text-foreground">
-            Meta<span className="text-gradient-tide">2</span>Cloud
+            Panoply
           </div>
           <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-foreground/45">
             Media Archive
